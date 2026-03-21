@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #26272f;
+  background-color: #fffef9;
+  font-family: "Plus Jakarta Sans", "Segoe UI", "Helvetica Neue", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+@layer components {
+  .panel-surface {
+    @apply rounded-3xl border border-white/70 bg-white/95 shadow-soft backdrop-blur;
+  }
+
+  .page-grid {
+    @apply grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px];
+  }
+
+  .section-heading {
+    @apply text-lg font-semibold text-ink-900;
+  }
+
+  .field-label {
+    @apply mb-2 block text-sm font-medium text-ink-700;
+  }
+
+  .field-input {
+    @apply w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-ink-900 outline-none transition focus:border-primary-300 focus:ring-4 focus:ring-primary-100;
+  }
+}

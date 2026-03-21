@@ -1,0 +1,16 @@
+{
+  "name": "vinh-khanh-platform",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix apps/admin-web run dev",
+    "dev:admin": "npm --prefix apps/admin-web run dev",
+    "dev:backend": "dotnet run --project apps/backend-api/VinhKhanh.BackendApi.csproj",
+    "build": "npm --prefix apps/admin-web run build",
+    "build:admin": "npm --prefix apps/admin-web run build",
+    "build:backend": "dotnet build apps/backend-api/VinhKhanh.BackendApi.csproj",
+    "preview": "npm --prefix apps/admin-web run preview",
+    "lint": "npm --prefix apps/admin-web run lint",
+    "install:admin": "npm --prefix apps/admin-web install"
+  }
+}

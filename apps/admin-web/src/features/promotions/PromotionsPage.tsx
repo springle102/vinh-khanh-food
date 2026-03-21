@@ -1,0 +1,222 @@
+import { useState, type FormEvent } from "react";
+import { Card } from "../../components/ui/Card";
+import { DataTable, type DataColumn } from "../../components/ui/DataTable";
+import { Button } from "../../components/ui/Button";
+import { Modal } from "../../components/ui/Modal";
+import { Input, Textarea } from "../../components/ui/Input";
+import { Select } from "../../components/ui/Select";
+import { StatusBadge } from "../../components/ui/StatusBadge";
+import { useAdminData } from "../../data/store";
+import { useAuth } from "../auth/AuthContext";
+import type { Promotion } from "../../data/types";
+import { formatDateTime } from "../../lib/utils";
+import { getPlaceTitle } from "../../lib/selectors";
+
+type PromotionForm = {
+  id?: string;
+  placeId: string;
+  title: string;
+  description: string;
+  startAt: string;
+  endAt: string;
+  status: Promotion["status"];
+};
+
+const defaultPromotionForm: PromotionForm = {
+  placeId: "",
+  title: "",
+  description: "",
+  startAt: "",
+  endAt: "",
+  status: "upcoming",
+};
+
+export const PromotionsPage = () => {
+  const { state, savePromotion } = useAdminData();
+  const { user } = useAuth();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState<PromotionForm>({
+    ...defaultPromotionForm,
+    placeId: state.places[0]?.id ?? "",
+  });
+
+  const openModal = (promotion?: Promotion) => {
+    setForm(
+      promotion
+        ? {
+          id: promotion.id,
+          placeId: promotion.placeId,
+          title: promotion.title,
+          description: promotion.description,
+          startAt: promotion.startAt.slice(0, 16),
+          endAt: promotion.endAt.slice(0, 16),
+          status: promotion.status,
+        }
+        : {
+          ...defaultPromotionForm,
+          placeId: state.places[0]?.id ?? "",
+        },
+    );
+    setModalOpen(true);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!user) {
+      return;
+    }
+
+    savePromotion(
+      {
+        id: form.id,
+        placeId: form.placeId,
+        title: form.title,
+        description: form.description,
+        startAt: new Date(form.startAt).toISOString(),
+        endAt: new Date(form.endAt).toISOString(),
+        status: form.status,
+      },
+      user,
+    );
+    setModalOpen(false);
+  };
+
+  const columns: DataColumn<Promotion>[] = [
+    {
+      key: "promotion",
+      header: "Ưu đãi",
+      render: (item) => (
+        <div>
+          <p className="font-semibold text-ink-900">{item.title}</p>
+          <p className="mt-1 text-sm text-ink-500">{item.description}</p>
+        </div>
+      ),
+    },
+    {
+      key: "place",
+      header: "Địa điểm",
+      render: (item) => <p className="font-medium text-ink-800">{getPlaceTitle(state, item.placeId)}</p>,
+    },
+    {
+      key: "window",
+      header: "Hiệu lực",
+      render: (item) => (
+        <div>
+          <p className="text-sm text-ink-600">{formatDateTime(item.startAt)}</p>
+          <p className="mt-1 text-sm text-ink-600">{formatDateTime(item.endAt)}</p>
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      header: "Trạng thái",
+      render: (item) => <StatusBadge status={item.status} />,
+    },
+    {
+      key: "actions",
+      header: "Thao tác",
+      render: (item) => (
+        <Button variant="secondary" onClick={() => openModal(item)}>
+          Chỉnh sửa
+        </Button>
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">Promotions</p>
+            <h1 className="mt-3 text-3xl font-bold text-ink-900">Quản lý ưu đãi, sự kiện và thông báo chiến dịch</h1>
+          </div>
+          <Button onClick={() => openModal()}>Tạo ưu đãi</Button>
+        </div>
+      </Card>
+
+      <Card>
+        <DataTable data={state.promotions} columns={columns} rowKey={(row) => row.id} />
+      </Card>
+
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={form.id ? "Cập nhật ưu đãi" : "Tạo ưu đãi mới"}
+        description="Thông tin khuyến mãi có thể dùng cho banner, push notification và place detail."
+      >
+        <form className="space-y-5" onSubmit={handleSubmit}>
+          <div>
+            <label className="field-label">Địa điểm</label>
+            <Select
+              value={form.placeId}
+              onChange={(event) => setForm((current) => ({ ...current, placeId: event.target.value }))}
+            >
+              {state.places.map((place) => (
+                <option key={place.id} value={place.id}>
+                  {getPlaceTitle(state, place.id)}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="grid gap-5 md:grid-cols-2">
+            <div>
+              <label className="field-label">Tên ưu đãi</label>
+              <Input
+                value={form.title}
+                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <label className="field-label">Trạng thái</label>
+              <Select
+                value={form.status}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, status: event.target.value as Promotion["status"] }))
+                }
+              >
+                <option value="upcoming">Upcoming</option>
+                <option value="active">Active</option>
+                <option value="expired">Expired</option>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <label className="field-label">Mô tả</label>
+            <Textarea
+              value={form.description}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, description: event.target.value }))
+              }
+            />
+          </div>
+          <div className="grid gap-5 md:grid-cols-2">
+            <div>
+              <label className="field-label">Bắt đầu</label>
+              <Input
+                type="datetime-local"
+                value={form.startAt}
+                onChange={(event) => setForm((current) => ({ ...current, startAt: event.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="field-label">Kết thúc</label>
+              <Input
+                type="datetime-local"
+                value={form.endAt}
+                onChange={(event) => setForm((current) => ({ ...current, endAt: event.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 border-t border-sand-100 pt-5">
+            <Button variant="ghost" onClick={() => setModalOpen(false)}>
+              Hủy
+            </Button>
+            <Button type="submit">Lưu ưu đãi</Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+};
