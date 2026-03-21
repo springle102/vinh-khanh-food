@@ -14,7 +14,7 @@ const demoAccounts = [
   },
   {
     label: "Chủ quán",
-    email: "bbq@vinhkhanh.vn",
+    email: "content@vinhkhanh.vn",
     password: "Admin@123",
   },
 ];

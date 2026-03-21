@@ -34,3 +34,4 @@ C:\Users\ADMIN\OneDrive\Tài liệu\Playground 2\.dotnet-home\backend-build\Vi
 C:\Users\ADMIN\OneDrive\Tài liệu\Playground 2\.dotnet-home\backend-build\VinhKhanh.BackendApi.runtimeconfig.json
 C:\Users\ADMIN\OneDrive\Tài liệu\Playground 2\.dotnet-home\backend-build\VinhKhanh.BackendApi.dll
 C:\Users\ADMIN\OneDrive\Tài liệu\Playground 2\.dotnet-home\backend-build\VinhKhanh.BackendApi.pdb
+C:\Users\ADMIN\OneDrive\Tài liệu\Playground 2\apps\backend-api\obj\Debug\net10.0\VinhKhanh.BackendApi.sourcelink.json
