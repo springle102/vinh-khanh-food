@@ -6,7 +6,6 @@ const items = [
   { to: "/", label: "Tổng quan", icon: "dashboard" as const },
   { to: "/places", label: "Địa điểm", icon: "map" as const },
   { to: "/content", label: "Món ăn", icon: "content" as const },
-  { to: "/media", label: "Audio & Media", icon: "audio" as const },
   { to: "/qr-routes", label: "QR", icon: "qr" as const },
   { to: "/users", label: "Tài khoản", icon: "users" as const },
   { to: "/promotions", label: "Ưu đãi", icon: "gift" as const },

@@ -1,0 +1,15 @@
+.dotnet-home/
+.tmp-*.log
+
+**/bin/
+**/obj/
+
+.vs/
+*.user
+*.suo
+
+node_modules/
+dist/
+.env
+.DS_Store
+*.tsbuildinfo

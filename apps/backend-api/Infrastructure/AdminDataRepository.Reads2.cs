@@ -1,0 +1,365 @@
+using Microsoft.Data.SqlClient;
+using VinhKhanh.BackendApi.Models;
+
+namespace VinhKhanh.BackendApi.Infrastructure;
+
+public sealed partial class AdminDataRepository
+{
+    private IReadOnlyList<TourRoute> GetRoutes(SqlConnection connection, SqlTransaction? transaction)
+    {
+        const string routesSql = """
+            SELECT Id, Name, [Description], DurationMinutes, Difficulty, IsFeatured
+            FROM dbo.Routes
+            ORDER BY Name, Id;
+            """;
+        const string stopsSql = """
+            SELECT RouteId, StopOrder, PlaceId
+            FROM dbo.RouteStops
+            ORDER BY RouteId, StopOrder;
+            """;
+
+        var stopMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        using (var stopsCommand = CreateCommand(connection, transaction, stopsSql))
+        using (var stopsReader = stopsCommand.ExecuteReader())
+        {
+            while (stopsReader.Read())
+            {
+                var routeId = ReadString(stopsReader, "RouteId");
+                if (!stopMap.TryGetValue(routeId, out var items))
+                {
+                    items = [];
+                    stopMap[routeId] = items;
+                }
+
+                items.Add(ReadString(stopsReader, "PlaceId"));
+            }
+        }
+
+        var routes = new List<TourRoute>();
+        using (var routesCommand = CreateCommand(connection, transaction, routesSql))
+        using (var routesReader = routesCommand.ExecuteReader())
+        {
+            while (routesReader.Read())
+            {
+                var routeId = ReadString(routesReader, "Id");
+                routes.Add(new TourRoute
+                {
+                    Id = routeId,
+                    Name = ReadString(routesReader, "Name"),
+                    Description = ReadString(routesReader, "Description"),
+                    DurationMinutes = ReadInt(routesReader, "DurationMinutes"),
+                    Difficulty = ReadString(routesReader, "Difficulty"),
+                    StopPlaceIds = stopMap.GetValueOrDefault(routeId, []),
+                    IsFeatured = ReadBool(routesReader, "IsFeatured")
+                });
+            }
+        }
+
+        return routes;
+    }
+
+    private IReadOnlyList<Promotion> GetPromotions(SqlConnection connection, SqlTransaction? transaction)
+    {
+        const string sql = """
+            SELECT Id, PlaceId, Title, [Description], StartAt, EndAt, [Status]
+            FROM dbo.Promotions
+            ORDER BY StartAt DESC, Id DESC;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql);
+        using var reader = command.ExecuteReader();
+
+        var items = new List<Promotion>();
+        while (reader.Read())
+        {
+            items.Add(MapPromotion(reader));
+        }
+
+        return items;
+    }
+
+    private IReadOnlyList<Review> GetReviews(SqlConnection connection, SqlTransaction? transaction)
+    {
+        const string sql = """
+            SELECT Id, PlaceId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]
+            FROM dbo.Reviews
+            ORDER BY CreatedAt DESC, Id DESC;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql);
+        using var reader = command.ExecuteReader();
+
+        var items = new List<Review>();
+        while (reader.Read())
+        {
+            items.Add(MapReview(reader));
+        }
+
+        return items;
+    }
+
+    private IReadOnlyList<ViewLog> GetViewLogs(SqlConnection connection, SqlTransaction? transaction)
+    {
+        const string sql = """
+            SELECT Id, PlaceId, LanguageCode, DeviceType, ViewedAt
+            FROM dbo.ViewLogs
+            ORDER BY ViewedAt DESC, Id DESC;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql);
+        using var reader = command.ExecuteReader();
+
+        var items = new List<ViewLog>();
+        while (reader.Read())
+        {
+            items.Add(new ViewLog
+            {
+                Id = ReadString(reader, "Id"),
+                PlaceId = ReadString(reader, "PlaceId"),
+                LanguageCode = ReadString(reader, "LanguageCode"),
+                DeviceType = ReadString(reader, "DeviceType"),
+                ViewedAt = ReadDateTimeOffset(reader, "ViewedAt")
+            });
+        }
+
+        return items;
+    }
+
+    private IReadOnlyList<AudioListenLog> GetAudioListenLogs(SqlConnection connection, SqlTransaction? transaction)
+    {
+        const string sql = """
+            SELECT Id, PlaceId, LanguageCode, ListenedAt, DurationInSeconds
+            FROM dbo.AudioListenLogs
+            ORDER BY ListenedAt DESC, Id DESC;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql);
+        using var reader = command.ExecuteReader();
+
+        var items = new List<AudioListenLog>();
+        while (reader.Read())
+        {
+            items.Add(new AudioListenLog
+            {
+                Id = ReadString(reader, "Id"),
+                PlaceId = ReadString(reader, "PlaceId"),
+                LanguageCode = ReadString(reader, "LanguageCode"),
+                ListenedAt = ReadDateTimeOffset(reader, "ListenedAt"),
+                DurationInSeconds = ReadInt(reader, "DurationInSeconds")
+            });
+        }
+
+        return items;
+    }
+
+    private IReadOnlyList<AuditLog> GetAuditLogs(SqlConnection connection, SqlTransaction? transaction)
+    {
+        const string sql = """
+            SELECT Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt
+            FROM dbo.AuditLogs
+            ORDER BY CreatedAt DESC, Id DESC;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql);
+        using var reader = command.ExecuteReader();
+
+        var items = new List<AuditLog>();
+        while (reader.Read())
+        {
+            items.Add(new AuditLog
+            {
+                Id = ReadString(reader, "Id"),
+                ActorName = ReadString(reader, "ActorName"),
+                ActorRole = ReadString(reader, "ActorRole"),
+                Action = ReadString(reader, "Action"),
+                Target = ReadString(reader, "TargetValue"),
+                CreatedAt = ReadDateTimeOffset(reader, "CreatedAt")
+            });
+        }
+
+        return items;
+    }
+
+    private SystemSetting GetSettings(SqlConnection connection, SqlTransaction? transaction)
+    {
+        const string settingSql = """
+            SELECT Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd, MapProvider,
+                   StorageProvider, TtsProvider, GeofenceRadiusMeters, QrAutoPlay, GuestReviewEnabled, AnalyticsRetentionDays
+            FROM dbo.SystemSettings
+            WHERE Id = 1;
+            """;
+        const string languagesSql = """
+            SELECT LanguageType, LanguageCode
+            FROM dbo.SystemSettingLanguages
+            WHERE SettingId = 1
+            ORDER BY LanguageType, LanguageCode;
+            """;
+
+        var setting = new SystemSetting();
+        using (var settingCommand = CreateCommand(connection, transaction, settingSql))
+        using (var settingReader = settingCommand.ExecuteReader())
+        {
+            if (settingReader.Read())
+            {
+                setting = new SystemSetting
+                {
+                    AppName = ReadString(settingReader, "AppName"),
+                    SupportEmail = ReadString(settingReader, "SupportEmail"),
+                    DefaultLanguage = ReadString(settingReader, "DefaultLanguage"),
+                    FallbackLanguage = ReadString(settingReader, "FallbackLanguage"),
+                    PremiumUnlockPriceUsd = ReadInt(settingReader, "PremiumUnlockPriceUsd"),
+                    MapProvider = ReadString(settingReader, "MapProvider"),
+                    StorageProvider = ReadString(settingReader, "StorageProvider"),
+                    TtsProvider = ReadString(settingReader, "TtsProvider"),
+                    GeofenceRadiusMeters = ReadInt(settingReader, "GeofenceRadiusMeters"),
+                    QrAutoPlay = ReadBool(settingReader, "QrAutoPlay"),
+                    GuestReviewEnabled = ReadBool(settingReader, "GuestReviewEnabled"),
+                    AnalyticsRetentionDays = ReadInt(settingReader, "AnalyticsRetentionDays")
+                };
+            }
+        }
+
+        using (var languagesCommand = CreateCommand(connection, transaction, languagesSql))
+        using (var languagesReader = languagesCommand.ExecuteReader())
+        {
+            while (languagesReader.Read())
+            {
+                var type = ReadString(languagesReader, "LanguageType");
+                var languageCode = ReadString(languagesReader, "LanguageCode");
+
+                if (string.Equals(type, "free", StringComparison.OrdinalIgnoreCase))
+                {
+                    setting.FreeLanguages.Add(languageCode);
+                }
+                else if (string.Equals(type, "premium", StringComparison.OrdinalIgnoreCase))
+                {
+                    setting.PremiumLanguages.Add(languageCode);
+                }
+            }
+        }
+
+        return setting;
+    }
+
+    private AdminUser? GetUserByCredentials(SqlConnection connection, SqlTransaction? transaction, string email, string password)
+    {
+        const string sql = """
+            SELECT TOP 1 Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPlaceId
+            FROM dbo.AdminUsers
+            WHERE LOWER(Email) = LOWER(?) AND [Password] = ? AND [Status] = ?
+            ORDER BY CreatedAt DESC;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, email, password, "active");
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? MapAdminUser(reader) : null;
+    }
+
+    private AdminUser? GetUserById(SqlConnection connection, SqlTransaction? transaction, string id)
+    {
+        const string sql = """
+            SELECT TOP 1 Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPlaceId
+            FROM dbo.AdminUsers
+            WHERE Id = ?;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? MapAdminUser(reader) : null;
+    }
+
+    private RefreshSession? GetRefreshSession(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string refreshToken,
+        DateTimeOffset now)
+    {
+        const string sql = """
+            SELECT TOP 1 RefreshToken, UserId, ExpiresAt
+            FROM dbo.RefreshSessions
+            WHERE RefreshToken = ? AND ExpiresAt > ?;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, refreshToken, now);
+        using var reader = command.ExecuteReader();
+
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new RefreshSession
+        {
+            RefreshToken = ReadString(reader, "RefreshToken"),
+            UserId = ReadString(reader, "UserId"),
+            ExpiresAt = ReadDateTimeOffset(reader, "ExpiresAt")
+        };
+    }
+
+    private Place? GetPlaceById(SqlConnection connection, SqlTransaction? transaction, string id)
+    {
+        return GetPlaces(connection, transaction).FirstOrDefault(item => item.Id == id);
+    }
+
+    private Translation? GetTranslationById(SqlConnection connection, SqlTransaction? transaction, string id)
+    {
+        const string sql = """
+            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
+            FROM dbo.PlaceTranslations
+            WHERE Id = ?;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? MapTranslation(reader) : null;
+    }
+
+    private Translation? GetTranslationByKey(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string entityType,
+        string entityId,
+        string languageCode)
+    {
+        const string sql = """
+            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
+            FROM dbo.PlaceTranslations
+            WHERE EntityType = ? AND EntityId = ? AND LanguageCode = ?;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, entityType, entityId, languageCode);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? MapTranslation(reader) : null;
+    }
+
+    private AudioGuide? GetAudioGuideById(SqlConnection connection, SqlTransaction? transaction, string id)
+    {
+        const string sql = """
+            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, AudioUrl, VoiceType, SourceType, [Status], UpdatedBy, UpdatedAt
+            FROM dbo.AudioGuides
+            WHERE Id = ?;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? MapAudioGuide(reader) : null;
+    }
+
+    private AudioGuide? GetAudioGuideByKey(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string entityType,
+        string entityId,
+        string languageCode)
+    {
+        const string sql = """
+            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, AudioUrl, VoiceType, SourceType, [Status], UpdatedBy, UpdatedAt
+            FROM dbo.AudioGuides
+            WHERE EntityType = ? AND EntityId = ? AND LanguageCode = ?;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, entityType, entityId, languageCode);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? MapAudioGuide(reader) : null;
+    }
+}

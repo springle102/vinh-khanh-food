@@ -14,18 +14,77 @@ const createMarkerIcon = () =>
   L.divIcon({
     className: "vinh-khanh-map-marker",
     html: `
-      <div style="
-        width: 18px;
-        height: 18px;
-        border-radius: 9999px;
-        background: #f97316;
-        border: 3px solid #ffffff;
-        box-shadow: 0 6px 18px rgba(124, 45, 18, 0.35);
-      "></div>
+      <div style="position: relative; width: 28px; height: 38px;">
+        <div style="
+          position: absolute;
+          left: 50%;
+          top: 18px;
+          width: 16px;
+          height: 16px;
+          border-radius: 9999px;
+          background: rgba(249, 115, 22, 0.22);
+          transform: translateX(-50%);
+          box-shadow: 0 0 0 8px rgba(249, 115, 22, 0.10);
+        "></div>
+        <div style="
+          position: absolute;
+          left: 50%;
+          top: 0;
+          width: 24px;
+          height: 24px;
+          border-radius: 9999px 9999px 9999px 0;
+          background: #f97316;
+          border: 3px solid #ffffff;
+          box-shadow: 0 10px 24px rgba(124, 45, 18, 0.30);
+          transform: translateX(-50%) rotate(-45deg);
+        "></div>
+        <div style="
+          position: absolute;
+          left: 50%;
+          top: 7px;
+          width: 8px;
+          height: 8px;
+          border-radius: 9999px;
+          background: #ffffff;
+          transform: translateX(-50%);
+        "></div>
+      </div>
     `,
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
+    iconSize: [28, 38],
+    iconAnchor: [14, 34],
   });
+
+type NominatimReverseResult = {
+  display_name?: string;
+  name?: string;
+  address?: Partial<Record<string, string>>;
+};
+
+const formatReverseAddress = (result: NominatimReverseResult) => {
+  const address = result.address ?? {};
+  const roadLine = [address.house_number, address.road].filter(Boolean).join(" ");
+  const parts = [
+    result.name,
+    roadLine,
+    address.neighbourhood,
+    address.suburb,
+    address.quarter,
+    address.city_district,
+    address.borough,
+    address.county,
+    address.city,
+    address.state,
+    address.country,
+  ]
+    .map((part) => normalizeAddress(part ?? ""))
+    .filter(Boolean);
+
+  const dedupedParts = parts.filter(
+    (part, index) => parts.findIndex((candidate) => candidate.toLowerCase() === part.toLowerCase()) === index,
+  );
+
+  return normalizeAddress(dedupedParts.join(", ") || result.display_name || "");
+};
 
 type OpenStreetMapPickerProps = {
   address: string;
@@ -45,11 +104,16 @@ export const OpenStreetMapPicker = ({
   const mapElementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+  const markerHaloRef = useRef<L.CircleMarker | null>(null);
   const onChangeRef = useRef(onChange);
   const onAddressResolvedRef = useRef(onAddressResolved);
   const lastGeocodedAddressRef = useRef("");
   const skipNextAddressLookupRef = useRef(false);
   const reverseGeocodeAbortRef = useRef<AbortController | null>(null);
+  const forwardGeocodeAbortRef = useRef<AbortController | null>(null);
+  const forwardGeocodeTimerRef = useRef<number | null>(null);
+  const reverseLookupTokenRef = useRef(0);
+  const forwardLookupTokenRef = useRef(0);
   const [geocodeState, setGeocodeState] = useState<
     "idle" | "searching" | "resolved" | "not-found" | "error"
   >("idle");
@@ -73,18 +137,30 @@ export const OpenStreetMapPicker = ({
     onAddressResolvedRef.current = onAddressResolved;
   }, [onAddressResolved]);
 
+  const cancelPendingForwardGeocode = () => {
+    forwardGeocodeAbortRef.current?.abort();
+    forwardGeocodeAbortRef.current = null;
+
+    if (forwardGeocodeTimerRef.current !== null) {
+      window.clearTimeout(forwardGeocodeTimerRef.current);
+      forwardGeocodeTimerRef.current = null;
+    }
+  };
+
   const reverseGeocodePosition = async (nextLat: number, nextLng: number) => {
+    cancelPendingForwardGeocode();
     reverseGeocodeAbortRef.current?.abort();
 
     const controller = new AbortController();
     reverseGeocodeAbortRef.current = controller;
+    const lookupToken = ++reverseLookupTokenRef.current;
 
     try {
       setGeocodeState("searching");
       setGeocodeMessage("Đang cập nhật địa chỉ theo vị trí đã chọn...");
 
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=vi&lat=${nextLat}&lon=${nextLng}`,
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&namedetails=1&accept-language=vi&lat=${nextLat}&lon=${nextLng}`,
         {
           signal: controller.signal,
           headers: {
@@ -97,10 +173,12 @@ export const OpenStreetMapPicker = ({
         throw new Error(`Nominatim reverse request failed with status ${response.status}`);
       }
 
-      const result = (await response.json()) as {
-        display_name?: string;
-      };
-      const resolvedAddress = normalizeAddress(result.display_name ?? "");
+      const result = (await response.json()) as NominatimReverseResult;
+      if (lookupToken !== reverseLookupTokenRef.current) {
+        return;
+      }
+
+      const resolvedAddress = formatReverseAddress(result);
 
       if (!resolvedAddress) {
         setGeocodeState("not-found");
@@ -115,7 +193,7 @@ export const OpenStreetMapPicker = ({
       onAddressResolvedRef.current(resolvedAddress);
       setGeocodeState("resolved");
       setGeocodeMessage(
-        "Đã cập nhật địa chỉ theo vị trí trên bản đồ. Bạn vẫn có thể sửa lại nếu cần.",
+        "Đã cập nhật địa chỉ theo điểm bạn vừa chọn trên bản đồ.",
       );
     } catch (error) {
       if (controller.signal.aborted) {
@@ -149,6 +227,8 @@ export const OpenStreetMapPicker = ({
     }
 
     const controller = new AbortController();
+    forwardGeocodeAbortRef.current = controller;
+    const lookupToken = ++forwardLookupTokenRef.current;
     const timer = window.setTimeout(async () => {
       try {
         setGeocodeState("searching");
@@ -182,6 +262,10 @@ export const OpenStreetMapPicker = ({
           lon: string;
         }>;
 
+        if (lookupToken !== forwardLookupTokenRef.current) {
+          return;
+        }
+
         if (!results.length) {
           setGeocodeState("not-found");
           setGeocodeMessage(
@@ -214,10 +298,17 @@ export const OpenStreetMapPicker = ({
         );
       }
     }, 700);
+    forwardGeocodeTimerRef.current = timer;
 
     return () => {
       controller.abort();
       window.clearTimeout(timer);
+      if (forwardGeocodeAbortRef.current === controller) {
+        forwardGeocodeAbortRef.current = null;
+      }
+      if (forwardGeocodeTimerRef.current === timer) {
+        forwardGeocodeTimerRef.current = null;
+      }
     };
   }, [address]);
 
@@ -243,46 +334,72 @@ export const OpenStreetMapPicker = ({
       draggable: true,
       icon: createMarkerIcon(),
     }).addTo(map);
+    const markerHalo = L.circleMarker(selectedPosition, {
+      radius: 16,
+      color: "#f97316",
+      weight: 2,
+      fillColor: "#fb923c",
+      fillOpacity: 0.18,
+      interactive: false,
+    }).addTo(map);
+
+    marker.bindPopup("Vị trí đã chọn", {
+      autoClose: false,
+      closeButton: false,
+      className: "vinh-khanh-map-popup",
+      offset: [0, -18],
+    });
+    marker.openPopup();
 
     map.on("click", (event: L.LeafletMouseEvent) => {
       const nextPosition = event.latlng;
       marker.setLatLng(nextPosition);
+      markerHalo.setLatLng(nextPosition);
       map.panTo(nextPosition);
+      marker.openPopup();
       onChangeRef.current(nextPosition.lat, nextPosition.lng);
       void reverseGeocodePosition(nextPosition.lat, nextPosition.lng);
     });
 
     marker.on("dragend", () => {
       const nextPosition = marker.getLatLng();
+      markerHalo.setLatLng(nextPosition);
+      marker.openPopup();
       onChangeRef.current(nextPosition.lat, nextPosition.lng);
       void reverseGeocodePosition(nextPosition.lat, nextPosition.lng);
     });
 
     mapRef.current = map;
     markerRef.current = marker;
+    markerHaloRef.current = markerHalo;
 
     requestAnimationFrame(() => {
       map.invalidateSize();
     });
 
     return () => {
+      cancelPendingForwardGeocode();
       reverseGeocodeAbortRef.current?.abort();
+      markerHalo.remove();
       marker.remove();
       map.remove();
+      markerHaloRef.current = null;
       markerRef.current = null;
       mapRef.current = null;
     };
   }, [selectedPosition]);
 
   useEffect(() => {
-    if (!mapRef.current || !markerRef.current) {
+    if (!mapRef.current || !markerRef.current || !markerHaloRef.current) {
       return;
     }
 
     markerRef.current.setLatLng(selectedPosition);
+    markerHaloRef.current.setLatLng(selectedPosition);
     mapRef.current.setView(selectedPosition, mapRef.current.getZoom(), {
       animate: false,
     });
+    markerRef.current.openPopup();
 
     requestAnimationFrame(() => {
       mapRef.current?.invalidateSize();

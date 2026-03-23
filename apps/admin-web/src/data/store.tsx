@@ -91,7 +91,7 @@ type AdminDataContextValue = {
   isRefreshing: boolean;
   bootstrapError: string | null;
   refreshData: () => Promise<AdminDataState>;
-  savePlace: (draft: PlaceDraft, actor: AdminUser) => Promise<void>;
+  savePlace: (draft: PlaceDraft, actor: AdminUser) => Promise<Place>;
   saveUser: (
     user: Omit<AdminUser, "id" | "createdAt" | "lastLoginAt"> & { id?: string },
     actor: AdminUser,
@@ -216,6 +216,8 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       } finally {
         await refreshData();
       }
+
+      return savedPlace;
     },
     [refreshData, state.settings.freeLanguages, state.translations],
   );

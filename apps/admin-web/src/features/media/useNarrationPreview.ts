@@ -14,7 +14,7 @@ type PreviewState = {
 
 type AudioPreviewCandidate = Pick<
   AudioGuide,
-  "id" | "entityId" | "languageCode" | "audioUrl" | "voiceType" | "sourceType"
+  "id" | "entityId" | "languageCode" | "audioUrl" | "sourceType"
 > & {
   previewText?: string;
 };
@@ -34,20 +34,6 @@ const languageLocales: Record<AudioGuide["languageCode"], string> = {
   ja: "ja-JP",
 };
 
-const voiceRates: Record<AudioGuide["voiceType"], number> = {
-  north: 1,
-  central: 0.98,
-  south: 0.95,
-  standard: 1,
-};
-
-const voiceHints: Record<AudioGuide["voiceType"], string[]> = {
-  north: ["north", "bac", "hanoi"],
-  central: ["central", "trung", "hue", "danang"],
-  south: ["south", "nam", "saigon", "hcm"],
-  standard: [],
-};
-
 const normalize = (value: string) => value.trim().toLowerCase();
 
 const resolveNarrationText = (
@@ -63,21 +49,14 @@ const resolveNarrationText = (
 const selectVoice = (
   availableVoices: SpeechSynthesisVoice[],
   languageCode: AudioGuide["languageCode"],
-  voiceType: AudioGuide["voiceType"],
 ) => {
   const locale = normalize(languageLocales[languageCode]);
   const localePrefix = locale.split("-")[0];
-  const regionHints = voiceHints[voiceType];
   const languageVoices = availableVoices.filter((voice) =>
     normalize(voice.lang).startsWith(localePrefix),
   );
 
-  const regionMatch = languageVoices.find((voice) =>
-    regionHints.some((hint) => normalize(voice.name).includes(hint)),
-  );
-
   return (
-    regionMatch ??
     languageVoices.find((voice) => normalize(voice.lang) === locale) ??
     languageVoices[0] ??
     availableVoices[0] ??
@@ -209,13 +188,9 @@ export const useNarrationPreview = (state: AdminDataState) => {
 
       const utterance = new SpeechSynthesisUtterance(narrationText);
       utterance.lang = languageLocales[guide.languageCode];
-      utterance.rate = voiceRates[guide.voiceType];
+      utterance.rate = 1;
 
-      const selectedVoice = selectVoice(
-        availableVoicesRef.current,
-        guide.languageCode,
-        guide.voiceType,
-      );
+      const selectedVoice = selectVoice(availableVoicesRef.current, guide.languageCode);
 
       if (selectedVoice) {
         utterance.voice = selectedVoice;

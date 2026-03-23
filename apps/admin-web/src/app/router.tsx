@@ -5,7 +5,6 @@ import { LoginPage } from "../features/auth/LoginPage";
 import { RequireAuth } from "../features/auth/RequireAuth";
 import { ContentPage } from "../features/content/ContentPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
-import { MediaPage } from "../features/media/MediaPage";
 import { PlacesPage } from "../features/places/PlacesPage";
 import { PromotionsPage } from "../features/promotions/PromotionsPage";
 import { QrRoutesPage } from "../features/qr/QrRoutesPage";
@@ -27,7 +26,7 @@ export const router = createBrowserRouter([
           { index: true, element: <DashboardPage /> },
           { path: "places", element: <PlacesPage /> },
           { path: "content", element: <ContentPage /> },
-          { path: "media", element: <MediaPage /> },
+          { path: "media", element: <Navigate to="/places" replace /> },
           { path: "qr-routes", element: <QrRoutesPage /> },
           { path: "users", element: <UsersPage /> },
           { path: "promotions", element: <PromotionsPage /> },

@@ -69,8 +69,8 @@ apps/admin-web/
   - các hàm `save*` giờ gọi API backend rồi refresh bootstrap
 - `types.ts`
   - định nghĩa shape dữ liệu frontend theo contract backend
-- `sql/admin-seed.sql`
-  - file dữ liệu đang được backend persist ngược về
+- `sql/admin-seed-sqlserver.sql`
+  - file SQL Server dùng để tạo schema và nạp dữ liệu mẫu
 
 Lưu ý quan trọng:
 
@@ -208,12 +208,12 @@ Chứa:
 
 Đây là nơi backend đang giữ nguồn dữ liệu chuẩn cho admin:
 
-- đọc dữ liệu từ `admin-seed.sql`
+- đọc và ghi trực tiếp vào các bảng SQL Server
 - trả bootstrap cho frontend
 - xử lý login/refesh/logout
 - xử lý save/update/delete cho từng entity
 - append audit log
-- persist lại dữ liệu backend sau mỗi thay đổi
+- đảm bảo các bảng hệ thống cần thiết tồn tại trước khi phục vụ request
 
 Quan trọng:
 

@@ -97,7 +97,7 @@ Lưu ý quan trọng:
 - Backend là **một API duy nhất**.
 - Backend được chia thành **6 nhóm nghiệp vụ REST** rõ ràng.
 - Toàn bộ nhóm nghiệp vụ dùng chung `AdminDataRepository` và `StorageService`.
-- Dữ liệu vận hành hiện đang persist về `admin-seed.sql`.
+- Dữ liệu vận hành hiện đang persist trực tiếp về SQL Server.
 - File upload nằm dưới `/wwwroot/storage`.
 
 Hai nhóm cuối trong bảng dưới đây là hướng mở rộng hợp lý cho giai đoạn sau.
@@ -117,7 +117,7 @@ Hai nhóm cuối trong bảng dưới đây là hướng mở rộng hợp lý c
 
 ### 2.3 Luồng kiến trúc hiện tại
 
-`admin-web (React + Vite) -> REST Controllers -> AdminDataRepository + StorageService -> admin-seed.sql + /wwwroot/storage`
+`admin-web (React + Vite) -> REST Controllers -> AdminDataRepository + StorageService -> SQL Server + /wwwroot/storage`
 
 ## 3. Phạm vi dự án
 
@@ -138,7 +138,7 @@ Hai nhóm cuối trong bảng dưới đây là hướng mở rộng hợp lý c
 - Cổng thanh toán online cho nội dung premium
 - Tích hợp CRM, ERP hoặc POS của từng quán
 - AI tự động sinh nội dung hoàn chỉnh trong production
-- Kiến trúc DB quan hệ hoàn chỉnh nếu chưa thay seed SQL hiện tại
+- Kiến trúc DB quan hệ nâng cao hơn nếu cần mở rộng sâu hơn trong giai đoạn sau
 
 ## 4. Stakeholder và người dùng
 
@@ -294,7 +294,7 @@ Hai nhóm cuối trong bảng dưới đây là hướng mở rộng hợp lý c
 | NFR-03 | Toàn vẹn dữ liệu | Frontend phải đồng bộ lại state từ backend sau thao tác cập nhật thành công. |
 | NFR-04 | Truy vết | Các hành vi quan trọng phải có audit log để đối soát lịch sử. |
 | NFR-05 | Khả dụng | Hệ thống phải vận hành ổn định trong môi trường demo và nội bộ. |
-| NFR-06 | Mở rộng | Kiến trúc API cần cho phép chuyển từ seed SQL sang DB quan hệ ở giai đoạn sau. |
+| NFR-06 | Mở rộng | Kiến trúc API cần cho phép mở rộng schema SQL Server, migration va tach lop du lieu ro hon o giai doan sau. |
 | NFR-07 | Khả dụng giao diện | Giao diện phù hợp desktop và tablet, dễ thao tác cho nhóm vận hành nội dung. |
 | NFR-08 | Tương thích dữ liệu | Hỗ trợ UTF-8 và nhập liệu đa ngôn ngữ. |
 | NFR-09 | Bảo trì | Contract giữa frontend và backend phải rõ ràng, dễ kiểm thử và dễ mở rộng. |
@@ -319,11 +319,11 @@ Hai nhóm cuối trong bảng dưới đây là hướng mở rộng hợp lý c
 
 | Rủi ro | Tác động | Hướng xử lý đề xuất |
 |---|---|---|
-| Backend hiện vẫn persist qua seed SQL thay vì cơ sở dữ liệu quan hệ hoàn chỉnh | Khó mở rộng và kiểm soát đồng thời khi số lượng dữ liệu tăng | Lập kế hoạch chuyển sang EF Core + SQL Server ở giai đoạn sau |
+| Backend phụ thuộc vào cấu hình kết nối SQL Server và chất lượng dữ liệu seed ban đầu | Có thể lỗi bootstrap nếu instance, quyền hoặc bảng dữ liệu chưa đúng | Chuẩn hóa connection string, import seed SQL Server và bổ sung kiểm tra kết nối sớm |
 | Bản dịch, audio và mô tả điểm đến cần được vận hành nhất quán | Ảnh hưởng trải nghiệm du khách | Áp dụng quy trình kiểm duyệt nội dung trước publish |
 | Upload media dung lượng lớn | Ảnh hưởng hiệu năng | Chuẩn hóa giới hạn file và chiến lược lưu trữ |
 | Nếu role và phạm vi `managedPlaceId` không được kiểm soát chặt ở backend | Người dùng có thể thao tác vượt quyền | Kiểm tra role và `managedPlaceId` ở backend |
-| Admin web phụ thuộc vào backend API, storage và dữ liệu seed ban đầu | Rủi ro khi trình diễn hoặc vận hành demo | Chuẩn bị trước dữ liệu seed, storage và checklist vận hành |
+| Admin web phụ thuộc vào backend API, storage và dữ liệu mẫu ban đầu | Rủi ro khi trình diễn hoặc vận hành demo | Chuẩn bị trước dữ liệu SQL Server, storage và checklist vận hành |
 
 ## 12. Tiêu chí nghiệm thu và roadmap
 

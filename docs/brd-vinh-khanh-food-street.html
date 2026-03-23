@@ -882,7 +882,7 @@
                         nhất</strong>,
                     nhưng đã được chia thành <strong>6 nhóm nghiệp vụ REST</strong> rõ ràng, dùng chung
                     <code>AdminDataRepository</code> và <code>StorageService</code>. Dữ liệu vận hành hiện đang
-                    persist về <code>admin-seed.sql</code> và file upload nằm dưới <code>/wwwroot/storage</code>.
+                    persist trực tiếp về <code>SQL Server</code> và file upload nằm dưới <code>/wwwroot/storage</code>.
                     Hai card cuối là hướng mở rộng hợp lý cho giai đoạn sau.
                 </p>
 
@@ -934,7 +934,7 @@
                 <div class="arch-flow">
                     <strong>Luồng kiến trúc hiện tại</strong>
                     <span><code>admin-web (React + Vite)</code> → <code>REST Controllers</code> →
-                        <code>AdminDataRepository + StorageService</code> → <code>admin-seed.sql +
+                        <code>AdminDataRepository + StorageService</code> → <code>SQL Server +
                             /wwwroot/storage</code></span>
                 </div>
             </div>

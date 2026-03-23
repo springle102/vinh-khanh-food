@@ -109,6 +109,13 @@ public sealed record PromotionUpsertRequest(
     string ActorName,
     string ActorRole);
 
+public sealed record ReviewCreateRequest(
+    string PlaceId,
+    string UserName,
+    int Rating,
+    string Comment,
+    string LanguageCode);
+
 public sealed record ReviewStatusRequest(
     string Status,
     string ActorName,

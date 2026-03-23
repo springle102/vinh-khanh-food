@@ -63,33 +63,24 @@ const clearSession = () => {
 };
 
 export const AuthProvider = ({ children }: PropsWithChildren) => {
-  const { state, isBootstrapping, refreshData } = useAdminData();
+  const { state, refreshData } = useAdminData();
   const [user, setUser] = useState<AdminUser | null>(null);
-  const [isInitializing, setInitializing] = useState(true);
+  const [isInitializing, setInitializing] = useState(false);
 
   useEffect(() => {
-    if (isBootstrapping) {
+    if (!user) {
       return;
     }
 
-    const session = readSession();
-    if (!session) {
-      setUser(null);
-      setInitializing(false);
-      return;
-    }
-
-    const nextUser = state.users.find((item) => item.id === session.userId && item.status === "active") ?? null;
+    const nextUser = state.users.find((item) => item.id === user.id && item.status === "active") ?? null;
     if (!nextUser) {
       clearSession();
       setUser(null);
-      setInitializing(false);
       return;
     }
 
     setUser(nextUser);
-    setInitializing(false);
-  }, [isBootstrapping, state.users]);
+  }, [state.users, user]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -109,7 +100,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         if (!nextUser) {
           clearSession();
           setUser(null);
-          return { ok: false, message: "Dang nhap thanh cong nhung khong tim thay tai khoan trong bootstrap." };
+          return { ok: false, message: "Đăng nhập thành công nhưng không tìm thấy tài khoản trong bootstrap." };
         }
 
         setUser(nextUser);
@@ -119,7 +110,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         setUser(null);
         return {
           ok: false,
-          message: error instanceof Error ? error.message : "Dang nhap khong thanh cong.",
+          message: error instanceof Error ? error.message : "Đăng nhập không thành công.",
         };
       } finally {
         setInitializing(false);
