@@ -12,6 +12,11 @@ Hệ thống phục vụ các bài toán chính:
 - lưu trữ dữ liệu tập trung trên backend và SQL Server
 - tải tệp thật qua backend storage thay vì lưu dữ liệu demo trong trình duyệt
 
+## Các tính năng cần cải thiện
+- thêm trang quản lý user
+- sửa lỗi định vị
+- thêm tính năng duyệt cho super admin
+
 ## 2. Công nghệ được sử dụng
 
 ### Frontend admin web
