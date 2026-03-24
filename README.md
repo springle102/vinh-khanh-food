@@ -16,6 +16,7 @@ Hệ thống phục vụ các bài toán chính:
 - thêm trang quản lý user
 - sửa lỗi định vị
 - thêm tính năng duyệt cho super admin
+- sửa lỗi tiếng việt không dấu thành tiếng việt có dấu
 
 ## 2. Công nghệ được sử dụng
 
