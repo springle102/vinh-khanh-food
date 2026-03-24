@@ -6,6 +6,48 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed partial class AdminDataRepository
 {
+    public EndUser? UpdateEndUserStatus(string id, EndUserStatusUpdateRequest request)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var existing = GetEndUserById(connection, transaction, id);
+        if (existing is null)
+        {
+            transaction.Rollback();
+            return null;
+        }
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.CustomerUsers
+            SET IsBanned = ?,
+                [Status] = CASE
+                    WHEN ? = CAST(1 AS bit) THEN N'banned'
+                    WHEN IsActive = CAST(1 AS bit) THEN N'active'
+                    ELSE N'inactive'
+                END
+            WHERE Id = ?;
+            """,
+            request.IsBanned,
+            request.IsBanned,
+            id);
+
+        AppendAuditLog(
+            connection,
+            transaction,
+            request.ActorName,
+            request.ActorRole,
+            request.IsBanned ? "Khoa nguoi dung cuoi" : "Mo khoa nguoi dung cuoi",
+            id);
+
+        var saved = GetEndUserById(connection, transaction, id);
+        transaction.Commit();
+        return saved;
+    }
+
     public MediaAsset SaveMediaAsset(string? id, MediaAssetUpsertRequest request)
     {
         using var connection = OpenConnection();

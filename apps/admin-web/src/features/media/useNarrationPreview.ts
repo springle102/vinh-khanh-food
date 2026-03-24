@@ -42,8 +42,18 @@ const resolveNarrationText = (
   languageCode: AudioGuide["languageCode"],
 ) => {
   const translation = getPoiTranslation(state, entityId, languageCode);
+  const title = translation?.title?.trim() || state.pois.find((poi) => poi.id === entityId)?.slug || "";
+  const narrationBody = (translation?.fullText || translation?.shortText || "").trim();
 
-  return translation?.fullText || translation?.shortText || "";
+  if (!title && !narrationBody) {
+    return "";
+  }
+
+  if (!narrationBody) {
+    return title;
+  }
+
+  return narrationBody.startsWith(title) ? narrationBody : `${title}. ${narrationBody}`;
 };
 
 const selectVoice = (

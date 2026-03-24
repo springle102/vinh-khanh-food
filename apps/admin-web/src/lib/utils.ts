@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import type { CustomerStatus, LanguageCode, Role, UserStatus } from "../data/types";
+import type { EndUserStatusCode, LanguageCode, Role, UserStatus } from "../data/types";
 
 export const cn = (...values: Array<string | false | null | undefined>) => clsx(values);
 
@@ -21,9 +21,34 @@ export const userStatusLabels: Record<UserStatus, string> = {
   locked: "Đã khóa",
 };
 
-export const customerStatusLabels: Record<CustomerStatus, string> = {
-  active: "Đang hoạt động",
-  blocked: "Đã chặn",
+export const endUserStatusLabels: Record<EndUserStatusCode, string> = {
+  ACTIVE: "Đang hoạt động",
+  INACTIVE: "Không hoạt động",
+  BANNED: "Đã ban",
+};
+
+export const endUserStatusBadgeTone: Record<EndUserStatusCode, string> = {
+  ACTIVE: "active",
+  INACTIVE: "inactive",
+  BANNED: "banned",
+};
+
+export const resolveEndUserStatus = ({
+  isActive,
+  isBanned,
+}: {
+  isActive: boolean;
+  isBanned: boolean;
+}): EndUserStatusCode => {
+  if (isBanned) {
+    return "BANNED";
+  }
+
+  if (isActive) {
+    return "ACTIVE";
+  }
+
+  return "INACTIVE";
 };
 
 export const formatDateTime = (value: string | null) => {

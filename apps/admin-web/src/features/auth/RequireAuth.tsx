@@ -12,7 +12,7 @@ export const RequireAuth = () => {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">
             Session
           </p>
-          <h1 className="mt-3 text-2xl font-bold">Dang khoi phuc phien dang nhap</h1>
+          <h1 className="mt-3 text-2xl font-bold">Đang khôi phục phiên đăng nhập</h1>
         </div>
       </main>
     );

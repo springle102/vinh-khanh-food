@@ -28,7 +28,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<CustomerUser> GetCustomerUsers(SqlConnection connection, SqlTransaction? transaction)
     {
         const string usersSql = """
-            SELECT Id, Name, Email, Phone, [Status], PreferredLanguage, IsPremium, TotalScans, CreatedAt, LastActiveAt
+            SELECT Id, Name, Email, Phone, [Status], IsActive, IsBanned, PreferredLanguage, Username, DeviceId, Country, DeviceType, IsPremium, TotalScans, CreatedAt, LastActiveAt
             FROM dbo.CustomerUsers
             ORDER BY CreatedAt DESC, Id DESC;
             """;
@@ -62,14 +62,22 @@ public sealed partial class AdminDataRepository
             while (usersReader.Read())
             {
                 var customerId = ReadString(usersReader, "Id");
+                var isActive = ReadBool(usersReader, "IsActive");
+                var isBanned = ReadBool(usersReader, "IsBanned");
                 customers.Add(new CustomerUser
                 {
                     Id = customerId,
                     Name = ReadString(usersReader, "Name"),
                     Email = ReadString(usersReader, "Email"),
                     Phone = ReadString(usersReader, "Phone"),
-                    Status = ReadString(usersReader, "Status"),
+                    Status = ResolveEndUserStatus(isBanned, isActive),
+                    IsActive = isActive,
+                    IsBanned = isBanned,
                     PreferredLanguage = ReadString(usersReader, "PreferredLanguage"),
+                    Username = ReadNullableString(usersReader, "Username"),
+                    DeviceId = ReadNullableString(usersReader, "DeviceId"),
+                    Country = ReadString(usersReader, "Country"),
+                    DeviceType = ReadString(usersReader, "DeviceType"),
                     IsPremium = ReadBool(usersReader, "IsPremium"),
                     TotalScans = ReadInt(usersReader, "TotalScans"),
                     FavoritePoiIds = favoriteMap.GetValueOrDefault(customerId, []),
@@ -80,6 +88,26 @@ public sealed partial class AdminDataRepository
         }
 
         return customers;
+    }
+
+    private IReadOnlyList<EndUser> GetEndUsers(SqlConnection connection, SqlTransaction? transaction)
+    {
+        const string sql = """
+            SELECT Id, Username, DeviceId, IsActive, IsBanned, PreferredLanguage, Country, DeviceType, CreatedAt, LastActiveAt, [Status]
+            FROM dbo.CustomerUsers
+            ORDER BY CreatedAt DESC, Id DESC;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql);
+        using var reader = command.ExecuteReader();
+
+        var items = new List<EndUser>();
+        while (reader.Read())
+        {
+            items.Add(MapEndUser(reader));
+        }
+
+        return items;
     }
 
     private IReadOnlyList<PoiCategory> GetCategories(SqlConnection connection, SqlTransaction? transaction)

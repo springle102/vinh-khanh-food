@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { DataTable, type DataColumn } from "../../components/ui/DataTable";
@@ -8,16 +8,23 @@ import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
-import type { AudioGuide, Poi } from "../../data/types";
+import type { AudioGuide, LanguageCode, Poi, PoiDetail, RegionVoice } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
 import { getCategoryName, getOwnerName, getPoiTranslation, searchPois } from "../../lib/selectors";
 import { formatDateTime, formatNumber, languageLabels, slugify } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
-import { useNarrationPreview } from "../media/useNarrationPreview";
 import { OpenStreetMapPicker, type PoiMapItem } from "./OpenStreetMapPicker";
+import { usePoiNarrationPlayback } from "./usePoiNarrationPlayback";
 
 const DEFAULT_LAT = 10.7578;
 const DEFAULT_LNG = 106.7033;
+
+const voiceLabels: Record<RegionVoice, string> = {
+  standard: "Tiêu chuẩn",
+  north: "Miền Bắc",
+  central: "Miền Trung",
+  south: "Miền Nam",
+};
 
 type PoiFormState = {
   id?: string;
@@ -77,44 +84,110 @@ const findPoiAudioGuide = (
   audioGuides: AudioGuide[],
   poiId?: string,
   languageCode?: AudioGuide["languageCode"],
+  voiceType?: AudioGuide["voiceType"],
 ) =>
   audioGuides.find(
     (item) =>
       item.entityType === "poi" &&
       item.entityId === poiId &&
+      item.languageCode === languageCode &&
+      (!voiceType || item.voiceType === voiceType),
+  ) ??
+  audioGuides.find(
+    (item) =>
+      item.entityType === "poi" &&
+      item.entityId === poiId &&
       item.languageCode === languageCode,
-  ) ?? null;
+  ) ??
+  null;
 
-const createPoiNarrationCandidate = (
-  poi: Poi,
-  audioGuide: AudioGuide | null,
-  previewText: string,
-) => {
-  const shouldUseTts = Boolean(previewText);
+const getPoiNarrationLanguages = (state: ReturnType<typeof useAdminData>["state"], poi: Poi) => {
+  const languages = new Set<LanguageCode>([poi.defaultLanguageCode]);
 
-  return {
-    id: audioGuide?.id ?? `poi-preview-${poi.id}-${poi.defaultLanguageCode}`,
-    entityId: poi.id,
-    languageCode: poi.defaultLanguageCode,
-    audioUrl: shouldUseTts ? "" : audioGuide?.audioUrl ?? "",
-    sourceType: shouldUseTts ? ("tts" as const) : (audioGuide?.sourceType ?? "tts"),
-    previewText: previewText || undefined,
-  };
+  state.translations.forEach((item) => {
+    if (item.entityType === "poi" && item.entityId === poi.id && (item.fullText || item.shortText)) {
+      languages.add(item.languageCode);
+    }
+  });
+
+  state.audioGuides.forEach((item) => {
+    if (item.entityType === "poi" && item.entityId === poi.id) {
+      languages.add(item.languageCode);
+    }
+  });
+
+  return [...languages];
+};
+
+const getPoiNarrationLanguagesFromDetail = (detail: PoiDetail) => {
+  const languages = new Set<LanguageCode>([detail.poi.defaultLanguageCode]);
+
+  detail.translations.forEach((item) => {
+    if (item.fullText || item.shortText) {
+      languages.add(item.languageCode);
+    }
+  });
+
+  detail.audioGuides.forEach((item) => {
+    languages.add(item.languageCode);
+  });
+
+  return [...languages];
 };
 
 export const PoisPage = () => {
   const { state, saveAudioGuide, savePoi } = useAdminData();
   const { user } = useAuth();
-  const { previewState, previewAudioGuide, stopPreview } = useNarrationPreview(state);
+  const {
+    playbackState,
+    stopCurrentAudio,
+    primePlayback,
+    getPOINarrationText: resolvePOINarrationText,
+    getPOIAudio: resolvePOIAudio,
+    playPOIAudio: startPOIAudio,
+    playPoiNarration,
+    buildPlaybackKey,
+  } = usePoiNarrationPlayback(state);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<Poi["status"] | "all">("all");
   const [selectedPoiId, setSelectedPoiId] = useState<string | null>(null);
+  const [selectedPoiDetail, setSelectedPoiDetail] = useState<PoiDetail | null>(null);
+  const [selectedNarrationLanguage, setSelectedNarrationLanguage] = useState<LanguageCode>("vi");
+  const [selectedVoice, setSelectedVoice] = useState<RegionVoice>("standard");
   const [isModalOpen, setModalOpen] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [isUploadingAudio, setUploadingAudio] = useState(false);
   const [formError, setFormError] = useState("");
+  const [addressSearchVersion, setAddressSearchVersion] = useState(0);
+  const [hasNarrationInteraction, setHasNarrationInteraction] = useState(false);
+  const [isFetchingPoiDetail, setFetchingPoiDetail] = useState(false);
+  const [visiblePoiIds, setVisiblePoiIds] = useState<string[]>([]);
   const [hasSlugBeenManuallyEdited, setHasSlugBeenManuallyEdited] = useState(false);
   const [form, setForm] = useState<PoiFormState>(() => createDefaultForm(state.categories[0]?.id ?? ""));
+  const [playbackIntent, setPlaybackIntent] = useState<{
+    token: number;
+    poiId: string | null;
+    language: LanguageCode;
+    voice: RegionVoice;
+    detail: PoiDetail | null;
+  }>({
+    token: 0,
+    poiId: null,
+    language: "vi",
+    voice: "standard",
+    detail: null,
+  });
+  const poiDetailCacheRef = useRef(new Map<string, PoiDetail>());
+  const poiDetailAbortRef = useRef<AbortController | null>(null);
+  const lastNarrationSelectionRef = useRef<{
+    poiId: string | null;
+    language: LanguageCode;
+    voice: RegionVoice;
+  }>({
+    poiId: null,
+    language: "vi",
+    voice: "standard",
+  });
 
   const filteredPois = useMemo(() => {
     const searched = searchPois(state.pois, state, keyword);
@@ -132,20 +205,37 @@ export const PoisPage = () => {
     }
   }, [filteredPois, selectedPoiId]);
 
-  const selectedPoi = state.pois.find((item) => item.id === selectedPoiId) ?? null;
+  const selectedPoi = selectedPoiDetail?.poi ?? state.pois.find((item) => item.id === selectedPoiId) ?? null;
+  const availableNarrationLanguages = useMemo(
+    () =>
+      selectedPoiDetail
+        ? getPoiNarrationLanguagesFromDetail(selectedPoiDetail)
+        : selectedPoi
+          ? getPoiNarrationLanguages(state, selectedPoi)
+          : [],
+    [selectedPoi, selectedPoiDetail, state],
+  );
+  const selectedPlaybackKey = selectedPoi
+    ? buildPlaybackKey(selectedPoi.id, selectedNarrationLanguage, selectedVoice)
+    : null;
   const selectedTranslation = selectedPoi
-    ? getPoiTranslation(state, selectedPoi.id, selectedPoi.defaultLanguageCode)
+    ? selectedPoiDetail?.translations.find((item) => item.languageCode === selectedNarrationLanguage) ??
+      getPoiTranslation(state, selectedPoi.id, selectedNarrationLanguage)
     : null;
   const selectedAudio = selectedPoi
-    ? findPoiAudioGuide(state.audioGuides, selectedPoi.id, selectedPoi.defaultLanguageCode)
-    : null;
-  const selectedNarrationText = selectedTranslation?.fullText || selectedTranslation?.shortText || "";
-  const selectedNarrationCandidate = selectedPoi
-    ? createPoiNarrationCandidate(selectedPoi, selectedAudio, selectedNarrationText)
+    ? findPoiAudioGuide(
+        selectedPoiDetail?.audioGuides ?? state.audioGuides,
+        selectedPoi.id,
+        selectedNarrationLanguage,
+        selectedVoice,
+      )
     : null;
   const isSelectedPoiNarrationPlaying =
-    selectedNarrationCandidate?.id === previewState.audioGuideId &&
-    previewState.status === "playing";
+    selectedPlaybackKey === playbackState.playbackKey &&
+    playbackState.status === "playing";
+  const isSelectedPoiNarrationPaused =
+    selectedPlaybackKey === playbackState.playbackKey &&
+    playbackState.status === "paused";
 
   const mapPois = useMemo<PoiMapItem[]>(
     () =>
@@ -162,39 +252,135 @@ export const PoisPage = () => {
     [filteredPois, state],
   );
 
+  const getPOINarrationText = useCallback(
+    (poi: Poi, language: LanguageCode) => resolvePOINarrationText(poi, language),
+    [resolvePOINarrationText],
+  );
+
+  const getPOIAudio = useCallback(
+    (poi: Poi, language: LanguageCode, voice: RegionVoice, detail?: PoiDetail | null) =>
+      resolvePOIAudio(poi, language, voice, detail),
+    [resolvePOIAudio],
+  );
+
+  const playPOIAudio = useCallback(
+    (audioSource: Awaited<ReturnType<typeof resolvePOIAudio>>) => startPOIAudio(audioSource),
+    [startPOIAudio],
+  );
+
+  const fetchPOIDetail = useCallback(
+    async (poiId: string, options?: { useCache?: boolean; updateSelected?: boolean }) => {
+      const cached = poiDetailCacheRef.current.get(poiId);
+      if (options?.useCache && cached) {
+        if (options.updateSelected) {
+          setSelectedPoiDetail(cached);
+        }
+
+        return cached;
+      }
+
+      if (options?.updateSelected) {
+        poiDetailAbortRef.current?.abort();
+      }
+
+      const controller = new AbortController();
+      if (options?.updateSelected) {
+        poiDetailAbortRef.current = controller;
+        setFetchingPoiDetail(true);
+      }
+
+      try {
+        const detail = await adminApi.getPoiDetail(poiId, controller.signal);
+        poiDetailCacheRef.current.set(poiId, detail);
+
+        if (options?.updateSelected && poiDetailAbortRef.current === controller) {
+          setSelectedPoiDetail(detail);
+        }
+
+        return detail;
+      } finally {
+        if (options?.updateSelected && poiDetailAbortRef.current === controller) {
+          poiDetailAbortRef.current = null;
+          setFetchingPoiDetail(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const prefetchPoiNarration = useCallback(
+    async (poiId: string) => {
+      const fallbackPoi = state.pois.find((item) => item.id === poiId);
+      if (!fallbackPoi) {
+        return;
+      }
+
+      const detail = await fetchPOIDetail(poiId, { useCache: true, updateSelected: false }).catch(
+        () => null,
+      );
+      const effectivePoi = detail?.poi ?? fallbackPoi;
+      await getPOIAudio(
+        effectivePoi,
+        selectedNarrationLanguage,
+        selectedVoice,
+        detail,
+      ).catch(() => null);
+    },
+    [fetchPOIDetail, getPOIAudio, selectedNarrationLanguage, selectedVoice, state.pois],
+  );
+
   const handlePoiSelect = useCallback(
     (poiId: string) => {
-      setSelectedPoiId(poiId);
+      primePlayback();
 
       const poi = state.pois.find((item) => item.id === poiId);
       if (!poi) {
         return;
       }
 
-      const translation = getPoiTranslation(state, poi.id, poi.defaultLanguageCode);
-      const audioGuide = findPoiAudioGuide(state.audioGuides, poi.id, poi.defaultLanguageCode);
-      const previewText = translation?.fullText || translation?.shortText || "";
+      const cachedDetail = poiDetailCacheRef.current.get(poiId);
+      const supportedLanguages = cachedDetail
+        ? getPoiNarrationLanguagesFromDetail(cachedDetail)
+        : getPoiNarrationLanguages(state, poi);
+      const nextLanguage = supportedLanguages.includes(selectedNarrationLanguage)
+        ? selectedNarrationLanguage
+        : poi.defaultLanguageCode;
 
-      void previewAudioGuide(createPoiNarrationCandidate(poi, audioGuide, previewText));
+      // Marker click only updates the selected POI and queues one playback intent.
+      // The actual narration is started inside useEffect below so the flow stays:
+      // map click -> selectedPOI -> resolve narration -> play audio/TTS.
+      setSelectedPoiId(poiId);
+      setSelectedPoiDetail(cachedDetail ?? null);
+      setHasNarrationInteraction(true);
+      setSelectedNarrationLanguage(nextLanguage);
+      setPlaybackIntent((current) => ({
+        token: current.token + 1,
+        poiId,
+        language: nextLanguage,
+        voice: selectedVoice,
+        detail: cachedDetail ?? null,
+      }));
     },
-    [previewAudioGuide, state],
+    [primePlayback, selectedNarrationLanguage, selectedVoice, state],
   );
 
   const openCreateModal = () => {
-    stopPreview();
+    stopCurrentAudio();
     setHasSlugBeenManuallyEdited(false);
     setFormError("");
+    setAddressSearchVersion(0);
     setForm(createDefaultForm(state.categories[0]?.id ?? ""));
     setModalOpen(true);
   };
 
   const openEditModal = (poi: Poi) => {
-    stopPreview();
+    stopCurrentAudio();
     const translation = getPoiTranslation(state, poi.id, poi.defaultLanguageCode);
     const audioGuide = findPoiAudioGuide(state.audioGuides, poi.id, poi.defaultLanguageCode);
 
     setHasSlugBeenManuallyEdited(false);
     setFormError("");
+    setAddressSearchVersion(0);
     setSelectedPoiId(poi.id);
     setForm({
       id: poi.id,
@@ -223,11 +409,110 @@ export const PoisPage = () => {
     setModalOpen(true);
   };
 
+  const triggerAddressSearch = useCallback(() => {
+    setAddressSearchVersion((current) => current + 1);
+  }, []);
+
+  const handleAddressKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter") {
+        return;
+      }
+
+      event.preventDefault();
+      triggerAddressSearch();
+    },
+    [triggerAddressSearch],
+  );
+
   useEffect(() => {
     if (!selectedPoiId) {
-      stopPreview();
+      poiDetailAbortRef.current?.abort();
+      setSelectedPoiDetail(null);
+      setFetchingPoiDetail(false);
+      stopCurrentAudio();
     }
-  }, [selectedPoiId, stopPreview]);
+  }, [selectedPoiId, stopCurrentAudio]);
+
+  useEffect(() => {
+    if (!selectedPoiId) {
+      return;
+    }
+
+    void fetchPOIDetail(selectedPoiId, {
+      useCache: false,
+      updateSelected: true,
+    }).catch(() => undefined);
+  }, [fetchPOIDetail, selectedPoiId]);
+
+  useEffect(() => {
+    if (!selectedPoi || !availableNarrationLanguages.length) {
+      return;
+    }
+
+    if (!availableNarrationLanguages.includes(selectedNarrationLanguage)) {
+      setSelectedNarrationLanguage(selectedPoi.defaultLanguageCode);
+    }
+  }, [availableNarrationLanguages, selectedNarrationLanguage, selectedPoi]);
+
+  useEffect(() => {
+    const previousSelection = lastNarrationSelectionRef.current;
+    lastNarrationSelectionRef.current = {
+      poiId: selectedPoiId,
+      language: selectedNarrationLanguage,
+      voice: selectedVoice,
+    };
+
+    if (!hasNarrationInteraction || !selectedPoiId) {
+      return;
+    }
+
+    const shouldReplayCurrentPoi =
+      previousSelection.poiId === selectedPoiId &&
+      (previousSelection.language !== selectedNarrationLanguage ||
+        previousSelection.voice !== selectedVoice);
+
+    if (!shouldReplayCurrentPoi) {
+      return;
+    }
+
+    setPlaybackIntent((current) => ({
+      token: current.token + 1,
+      poiId: selectedPoiId,
+      language: selectedNarrationLanguage,
+      voice: selectedVoice,
+      detail: selectedPoiDetail,
+    }));
+  }, [hasNarrationInteraction, selectedNarrationLanguage, selectedPoiDetail, selectedPoiId, selectedVoice]);
+
+  useEffect(() => {
+    if (!hasNarrationInteraction || !playbackIntent.poiId || playbackIntent.token === 0) {
+      return;
+    }
+
+    const fallbackPoi = state.pois.find((item) => item.id === playbackIntent.poiId);
+    const effectivePoi = playbackIntent.detail?.poi ?? fallbackPoi;
+    if (!effectivePoi) {
+      return;
+    }
+
+    void playPoiNarration({
+      poi: effectivePoi,
+      language: playbackIntent.language,
+      voice: playbackIntent.voice,
+      detail: playbackIntent.detail,
+    });
+  }, [hasNarrationInteraction, playbackIntent, playPoiNarration, state.pois]);
+
+  useEffect(() => {
+    const poiIdsToPrefetch = visiblePoiIds.length
+      ? visiblePoiIds
+      : mapPois.slice(0, 8).map((poi) => poi.id);
+
+    poiIdsToPrefetch.forEach((poiId) => {
+      void prefetchPoiNarration(poiId);
+    });
+  }, [mapPois, prefetchPoiNarration, visiblePoiIds]);
 
   const handleAudioFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const nextFile = event.target.files?.[0];
@@ -412,6 +697,10 @@ export const PoisPage = () => {
             lat={selectedPoi?.lat ?? DEFAULT_LAT}
             lng={selectedPoi?.lng ?? DEFAULT_LNG}
             onPoiSelect={handlePoiSelect}
+            onPoiHover={(poiId) => {
+              void prefetchPoiNarration(poiId);
+            }}
+            onVisiblePoiIdsChange={setVisiblePoiIds}
           />
         </Card>
 
@@ -429,7 +718,7 @@ export const PoisPage = () => {
                   ["Slug", selectedPoi.slug],
                   ["Phân loại", getCategoryName(state, selectedPoi.categoryId)],
                   ["Chủ quản lý", getOwnerName(state, selectedPoi.ownerUserId)],
-                  ["Ngôn ngữ", languageLabels[selectedPoi.defaultLanguageCode]],
+                  ["Ngôn ngữ", languageLabels[selectedNarrationLanguage]],
                   ["Khu vực", `${selectedPoi.ward}, ${selectedPoi.district}`],
                   ["Cập nhật", formatDateTime(selectedPoi.updatedAt)],
                 ].map(([label, value]) => (
@@ -439,17 +728,59 @@ export const PoisPage = () => {
                   </div>
                 ))}
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="field-label">Ngôn ngữ thuyết minh</label>
+                  <Select
+                    value={selectedNarrationLanguage}
+                    onChange={(event) =>
+                      setSelectedNarrationLanguage(event.target.value as LanguageCode)
+                    }
+                  >
+                    {availableNarrationLanguages.map((languageCode) => (
+                      <option key={languageCode} value={languageCode}>
+                        {languageLabels[languageCode]}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="field-label">Giọng đọc</label>
+                  <Select
+                    value={selectedVoice}
+                    onChange={(event) => setSelectedVoice(event.target.value as RegionVoice)}
+                  >
+                    {Object.entries(voiceLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
               <div className="rounded-3xl border border-sand-100 bg-sand-50 p-4">
                 <p className="text-sm font-semibold text-ink-900">Mô tả POI</p>
                 <p className="mt-3 text-sm leading-6 text-ink-600">
-                  {selectedTranslation?.fullText || selectedTranslation?.shortText || "Chưa có thuyết minh cho POI này."}
+                  {getPOINarrationText(selectedPoi, selectedNarrationLanguage) || "Chưa có thuyết minh cho POI này."}
                 </p>
                 <p className="mt-3 text-xs text-ink-500">
                   Audio: {selectedAudio ? `${selectedAudio.sourceType} / ${selectedAudio.status}` : "Chưa có"}
                 </p>
-                {previewState.audioGuideId === selectedNarrationCandidate?.id ? (
-                  <p className="mt-3 text-xs text-ink-500">{previewState.message}</p>
-                ) : null}
+                <p
+                  className={`mt-3 text-xs ${
+                    playbackState.status === "error"
+                      ? "text-rose-700"
+                      : playbackState.status === "playing"
+                        ? "text-emerald-700"
+                        : playbackState.status === "paused"
+                          ? "text-amber-700"
+                          : "text-ink-500"
+                  }`}
+                >
+                  {playbackState.isLoadingPOI
+                    ? "Đang tải thuyết minh..."
+                    : playbackState.message || "Chọn một POI trên bản đồ để tự động phát thuyết minh."}
+                </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {selectedPoi.tags.length ? (
@@ -464,7 +795,16 @@ export const PoisPage = () => {
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => handlePoiSelect(selectedPoi.id)}>
-                  {isSelectedPoiNarrationPlaying ? "Dung thuyet minh" : "Phat thuyet minh"}
+                  {playbackState.isLoadingPOI
+                    ? "Đang tải..."
+                    : isSelectedPoiNarrationPlaying
+                      ? "Tạm dừng"
+                      : isSelectedPoiNarrationPaused
+                        ? "Tiếp tục"
+                        : "Phát lại"}
+                </Button>
+                <Button variant="ghost" onClick={() => stopCurrentAudio("Đã dừng thuyết minh.")}>
+                  Dừng
                 </Button>
                 <Button variant="secondary" onClick={() => openEditModal(selectedPoi)}>
                   Sửa POI này
@@ -570,7 +910,13 @@ export const PoisPage = () => {
 
               <div>
                 <label className="field-label">Địa chỉ</label>
-                <Input value={form.address} onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))} required />
+                <Input
+                  value={form.address}
+                  onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
+                  onBlur={triggerAddressSearch}
+                  onKeyDown={handleAddressKeyDown}
+                  required
+                />
               </div>
 
               <div className="grid gap-5 md:grid-cols-4">
@@ -679,13 +1025,27 @@ export const PoisPage = () => {
               address={form.address}
               lat={parseCoordinate(form.lat, DEFAULT_LAT)}
               lng={parseCoordinate(form.lng, DEFAULT_LNG)}
-              onAddressResolved={(addressValue) => setForm((current) => ({ ...current, address: addressValue }))}
+              addressSearchVersion={addressSearchVersion}
+              onLocationResolved={(location) =>
+                startTransition(() =>
+                  setForm((current) => ({
+                    ...current,
+                    address: location.address || current.address,
+                    district: location.district || current.district,
+                    ward: location.ward || current.ward,
+                    lat: location.lat.toFixed(6),
+                    lng: location.lng.toFixed(6),
+                  })),
+                )
+              }
               onChange={(latValue, lngValue) =>
-                setForm((current) => ({
-                  ...current,
-                  lat: latValue.toFixed(6),
-                  lng: lngValue.toFixed(6),
-                }))
+                startTransition(() =>
+                  setForm((current) => ({
+                    ...current,
+                    lat: latValue.toFixed(6),
+                    lng: lngValue.toFixed(6),
+                  })),
+                )
               }
             />
           </div>

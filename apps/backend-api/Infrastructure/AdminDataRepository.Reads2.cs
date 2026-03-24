@@ -267,6 +267,50 @@ public sealed partial class AdminDataRepository
         return reader.Read() ? MapAdminUser(reader) : null;
     }
 
+    private EndUser? GetEndUserById(SqlConnection connection, SqlTransaction? transaction, string id)
+    {
+        const string sql = """
+            SELECT TOP 1 Id, Username, DeviceId, IsActive, IsBanned, PreferredLanguage, Country, DeviceType, CreatedAt, LastActiveAt, [Status]
+            FROM dbo.CustomerUsers
+            WHERE Id = ?;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? MapEndUser(reader) : null;
+    }
+
+    private IReadOnlyList<EndUserPoiVisit> GetEndUserHistory(SqlConnection connection, SqlTransaction? transaction, string userId)
+    {
+        const string sql = """
+            SELECT visits.Id, visits.UserId, visits.PoiId, poi.Slug, poi.AddressLine, visits.VisitedAt, visits.TranslatedLanguage
+            FROM dbo.UserPoiVisits AS visits
+            INNER JOIN dbo.Pois AS poi ON poi.Id = visits.PoiId
+            WHERE visits.UserId = ?
+            ORDER BY visits.VisitedAt DESC, visits.Id DESC;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, userId);
+        using var reader = command.ExecuteReader();
+
+        var items = new List<EndUserPoiVisit>();
+        while (reader.Read())
+        {
+            items.Add(new EndUserPoiVisit
+            {
+                Id = ReadString(reader, "Id"),
+                UserId = ReadString(reader, "UserId"),
+                PoiId = ReadString(reader, "PoiId"),
+                PoiSlug = ReadString(reader, "Slug"),
+                PoiAddress = ReadString(reader, "AddressLine"),
+                VisitedAt = ReadDateTimeOffset(reader, "VisitedAt"),
+                TranslatedLanguage = ReadString(reader, "TranslatedLanguage")
+            });
+        }
+
+        return items;
+    }
+
     private RefreshSession? GetRefreshSession(
         SqlConnection connection,
         SqlTransaction? transaction,

@@ -1,5 +1,10 @@
 .dotnet-home/
+.dotnet-home*/
+.npm-cache/
+.nuget-local/
+.tmp-build/
 .tmp-*.log
+.tmp-hosts-backup
 
 **/bin/
 **/obj/

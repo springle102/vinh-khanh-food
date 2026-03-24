@@ -52,6 +52,18 @@ public sealed record AdminUserUpsertRequest(
     string ActorName,
     string ActorRole);
 
+public sealed record EndUserStatusUpdateRequest(
+    bool IsBanned,
+    string ActorName,
+    string ActorRole);
+
+public sealed record GeocodingLocationResponse(
+    string Address,
+    string District,
+    string Ward,
+    double Lat,
+    double Lng);
+
 public sealed record TranslationUpsertRequest(
     string EntityType,
     string EntityId,
@@ -163,6 +175,11 @@ public sealed record AdminBootstrapResponse(
     IReadOnlyList<Models.AudioListenLog> AudioListenLogs,
     IReadOnlyList<Models.AuditLog> AuditLogs,
     Models.SystemSetting Settings);
+
+public sealed record PoiDetailResponse(
+    Models.Poi Poi,
+    IReadOnlyList<Models.Translation> Translations,
+    IReadOnlyList<Models.AudioGuide> AudioGuides);
 
 public sealed record StoredFileResponse(
     string Url,

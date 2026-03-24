@@ -10,40 +10,36 @@ namespace VinhKhanh.BackendApi.Controllers;
 public sealed class UsersController(AdminDataRepository repository) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<ApiResponse<IReadOnlyList<AdminUser>>> GetUsers()
-        => Ok(ApiResponse<IReadOnlyList<AdminUser>>.Ok(repository.GetUsers()));
+    public ActionResult<ApiResponse<IReadOnlyList<EndUser>>> GetUsers()
+        => Ok(ApiResponse<IReadOnlyList<EndUser>>.Ok(repository.GetEndUsers()));
 
     [HttpGet("{id}")]
-    public ActionResult<ApiResponse<AdminUser>> GetUserById(string id)
+    public ActionResult<ApiResponse<EndUser>> GetUserById(string id)
     {
-        var user = repository.GetUsers().FirstOrDefault(item => item.Id == id);
+        var user = repository.GetEndUserById(id);
         return user is null
-            ? NotFound(ApiResponse<AdminUser>.Fail("Khong tim thay tai khoan admin."))
-            : Ok(ApiResponse<AdminUser>.Ok(user));
+            ? NotFound(ApiResponse<EndUser>.Fail("Khong tim thay nguoi dung cuoi."))
+            : Ok(ApiResponse<EndUser>.Ok(user));
     }
 
-    [HttpPost]
-    public ActionResult<ApiResponse<AdminUser>> CreateUser([FromBody] AdminUserUpsertRequest request)
+    [HttpGet("{id}/history")]
+    public ActionResult<ApiResponse<IReadOnlyList<EndUserPoiVisit>>> GetUserHistory(string id)
     {
-        if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Email))
+        var user = repository.GetEndUserById(id);
+        if (user is null)
         {
-            return BadRequest(ApiResponse<AdminUser>.Fail("Ten va email la bat buoc."));
+            return NotFound(ApiResponse<IReadOnlyList<EndUserPoiVisit>>.Fail("Khong tim thay nguoi dung cuoi."));
         }
 
-        var saved = repository.SaveUser(null, request);
-        return CreatedAtAction(nameof(GetUserById), new { id = saved.Id }, ApiResponse<AdminUser>.Ok(saved, "Tao tai khoan admin thanh cong."));
+        return Ok(ApiResponse<IReadOnlyList<EndUserPoiVisit>>.Ok(repository.GetEndUserHistory(id)));
     }
 
-    [HttpPut("{id}")]
-    public ActionResult<ApiResponse<AdminUser>> UpdateUser(string id, [FromBody] AdminUserUpsertRequest request)
+    [HttpPatch("{id}/status")]
+    public ActionResult<ApiResponse<EndUser>> UpdateUserStatus(string id, [FromBody] EndUserStatusUpdateRequest request)
     {
-        var existing = repository.GetUsers().Any(item => item.Id == id);
-        if (!existing)
-        {
-            return NotFound(ApiResponse<AdminUser>.Fail("Khong tim thay tai khoan admin."));
-        }
-
-        var saved = repository.SaveUser(id, request);
-        return Ok(ApiResponse<AdminUser>.Ok(saved, "Cap nhat tai khoan admin thanh cong."));
+        var updated = repository.UpdateEndUserStatus(id, request);
+        return updated is null
+            ? NotFound(ApiResponse<EndUser>.Fail("Khong tim thay nguoi dung cuoi."))
+            : Ok(ApiResponse<EndUser>.Ok(updated, "Cap nhat trang thai nguoi dung thanh cong."));
     }
 }

@@ -12,6 +12,7 @@ import type {
   AdminDataState,
   AdminUser,
   AudioGuide,
+  CustomerUser,
   FoodItem,
   MediaAsset,
   Poi,
@@ -108,6 +109,11 @@ type AdminDataContextValue = {
   saveReviewStatus: (
     reviewId: string,
     status: Review["status"],
+    actor: AdminUser,
+  ) => Promise<void>;
+  saveCustomerUserStatus: (
+    userId: string,
+    isBanned: boolean,
     actor: AdminUser,
   ) => Promise<void>;
   saveSettings: (settings: SystemSetting, actor: AdminUser) => Promise<void>;
@@ -304,6 +310,19 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     [refreshData],
   );
 
+  const saveCustomerUserStatus = useCallback(
+    async (userId: string, isBanned: boolean, actor: AdminUser) => {
+      await adminApi.saveEndUserStatus(userId, {
+        isBanned,
+        actorName: actor.name,
+        actorRole: actor.role,
+      });
+
+      await refreshData();
+    },
+    [refreshData],
+  );
+
   const saveSettings = useCallback(
     async (settingsDraft: SystemSetting, actor: AdminUser) => {
       await adminApi.saveSettings({
@@ -349,6 +368,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       saveAudioGuide,
       saveTranslation,
       saveReviewStatus,
+      saveCustomerUserStatus,
       saveSettings,
       saveMediaAsset,
       saveFoodItem,
@@ -363,6 +383,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       saveMediaAsset,
       savePoi,
       savePromotion,
+      saveCustomerUserStatus,
       saveReviewStatus,
       saveSettings,
       saveTranslation,

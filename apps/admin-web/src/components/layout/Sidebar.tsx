@@ -3,14 +3,15 @@ import { cn } from "../../lib/utils";
 import { Icon } from "../ui/Icons";
 
 const items = [
-  { to: "/", label: "Tong quan", icon: "dashboard" as const },
+  { to: "/", label: "Tổng quan", icon: "dashboard" as const },
   { to: "/pois", label: "POI", icon: "map" as const },
-  { to: "/content", label: "Mon an", icon: "content" as const },
-  { to: "/users", label: "Tai khoan", icon: "users" as const },
-  { to: "/promotions", label: "Uu dai", icon: "gift" as const },
-  { to: "/reviews", label: "Danh gia", icon: "star" as const },
-  { to: "/activity", label: "Nhat ky", icon: "activity" as const },
-  { to: "/settings", label: "Cai dat", icon: "settings" as const },
+  { to: "/content", label: "Món ăn", icon: "content" as const },
+  { to: "/users", label: "Chủ quán", icon: "users" as const },
+  { to: "/end-users", label: "Người dùng", icon: "users" as const },
+  { to: "/promotions", label: "Ưu đãi", icon: "gift" as const },
+  { to: "/reviews", label: "Đánh giá", icon: "star" as const },
+  { to: "/activity", label: "Nhật ký", icon: "activity" as const },
+  { to: "/settings", label: "Cài đặt", icon: "settings" as const },
 ];
 
 export const Sidebar = ({
@@ -40,7 +41,7 @@ export const Sidebar = ({
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary-600">Vinh Khanh</p>
-          <h1 className="text-lg font-bold text-ink-900">Admin Console</h1>
+          <h1 className="text-lg font-bold text-ink-900">Bảng điều khiển</h1>
         </div>
       </div>
 

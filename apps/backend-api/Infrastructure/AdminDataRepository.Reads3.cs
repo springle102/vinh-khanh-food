@@ -80,6 +80,37 @@ public sealed partial class AdminDataRepository
         };
     }
 
+    private static EndUser MapEndUser(SqlDataReader reader)
+    {
+        var isActive = ReadBool(reader, "IsActive");
+        var isBanned = ReadBool(reader, "IsBanned");
+
+        return new EndUser
+        {
+            Id = ReadString(reader, "Id"),
+            Username = ReadNullableString(reader, "Username"),
+            DeviceId = ReadNullableString(reader, "DeviceId"),
+            IsActive = isActive,
+            IsBanned = isBanned,
+            DefaultLanguage = ReadString(reader, "PreferredLanguage"),
+            Country = ReadString(reader, "Country"),
+            DeviceType = ReadString(reader, "DeviceType"),
+            CreatedAt = ReadDateTimeOffset(reader, "CreatedAt"),
+            LastActiveAt = ReadNullableDateTimeOffset(reader, "LastActiveAt"),
+            Status = ResolveEndUserStatus(isBanned, isActive)
+        };
+    }
+
+    private static string ResolveEndUserStatus(bool isBanned, bool isActive)
+    {
+        if (isBanned)
+        {
+            return "banned";
+        }
+
+        return isActive ? "active" : "inactive";
+    }
+
     private static Translation MapTranslation(SqlDataReader reader)
     {
         return new Translation

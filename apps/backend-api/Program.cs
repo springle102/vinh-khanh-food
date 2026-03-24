@@ -10,6 +10,12 @@ builder.Logging.AddDebug();
 
 builder.Services.AddSingleton<AdminDataRepository>();
 builder.Services.AddSingleton<StorageService>();
+builder.Services.AddHttpClient<GeocodingProxyService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(8);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("VinhKhanhAdmin/1.0");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+});
 builder.Services.AddControllers();
 
 builder.Services.AddCors(options =>

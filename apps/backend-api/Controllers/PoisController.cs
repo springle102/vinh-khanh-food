@@ -53,6 +53,30 @@ public sealed class PoisController(AdminDataRepository repository) : ControllerB
             : Ok(ApiResponse<Poi>.Ok(poi));
     }
 
+    [HttpGet("{id}/detail")]
+    public ActionResult<ApiResponse<PoiDetailResponse>> GetPoiDetailById(string id)
+    {
+        var poi = repository.GetPois().FirstOrDefault(item => item.Id == id);
+        if (poi is null)
+        {
+            return NotFound(ApiResponse<PoiDetailResponse>.Fail("Khong tim thay POI."));
+        }
+
+        var translations = repository.GetTranslations()
+            .Where(item => item.EntityType == "poi" && item.EntityId == id)
+            .OrderByDescending(item => item.UpdatedAt)
+            .ToList();
+        var audioGuides = repository.GetAudioGuides()
+            .Where(item => item.EntityType == "poi" && item.EntityId == id)
+            .OrderByDescending(item => item.UpdatedAt)
+            .ToList();
+
+        return Ok(ApiResponse<PoiDetailResponse>.Ok(new PoiDetailResponse(
+            poi,
+            translations,
+            audioGuides)));
+    }
+
     [HttpPost]
     public ActionResult<ApiResponse<Poi>> CreatePoi([FromBody] PoiUpsertRequest request)
     {

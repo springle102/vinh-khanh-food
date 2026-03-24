@@ -1,16 +1,16 @@
 import { useMemo, useState, type FormEvent } from "react";
+import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { DataTable, type DataColumn } from "../../components/ui/DataTable";
-import { Button } from "../../components/ui/Button";
-import { Modal } from "../../components/ui/Modal";
 import { Input } from "../../components/ui/Input";
+import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
-import { useAuth } from "../auth/AuthContext";
 import type { AdminUser } from "../../data/types";
-import { formatDateTime, getInitials, roleLabels } from "../../lib/utils";
 import { getPoiTitle } from "../../lib/selectors";
+import { formatDateTime, getInitials, roleLabels } from "../../lib/utils";
+import { useAuth } from "../auth/AuthContext";
 
 type UserForm = {
   id?: string;
@@ -51,28 +51,28 @@ export const UsersPage = () => {
     setForm(
       account
         ? {
-          id: account.id,
-          name: account.name,
-          email: account.email,
-          phone: account.phone,
-          role: account.role,
-          password: account.password,
-          status: account.status,
-          avatarColor: account.avatarColor,
-          managedPoiId: account.managedPoiId ?? "",
-        }
+            id: account.id,
+            name: account.name,
+            email: account.email,
+            phone: account.phone,
+            role: account.role,
+            password: account.password,
+            status: account.status,
+            avatarColor: account.avatarColor,
+            managedPoiId: account.managedPoiId ?? "",
+          }
         : defaultUserForm,
     );
     setModalOpen(true);
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user || !canManageUsers) {
       return;
     }
 
-    saveUser(
+    await saveUser(
       {
         ...form,
         managedPoiId: form.role === "PLACE_OWNER" ? form.managedPoiId || null : null,
@@ -113,12 +113,10 @@ export const UsersPage = () => {
     },
     {
       key: "poi",
-      header: "Quán phụ trách",
+      header: "POI phụ trách",
       render: (account) => (
         <p className="text-sm text-ink-600">
-          {account.role === "SUPER_ADMIN"
-            ? "Toàn hệ thống"
-            : getPoiTitle(state, account.managedPoiId ?? "")}
+          {account.role === "SUPER_ADMIN" ? "Toàn hệ thống" : getPoiTitle(state, account.managedPoiId ?? "")}
         </p>
       ),
     },
@@ -135,9 +133,7 @@ export const UsersPage = () => {
     {
       key: "activity",
       header: "Lần đăng nhập cuối",
-      render: (account) => (
-        <p className="text-sm text-ink-600">{formatDateTime(account.lastLoginAt)}</p>
-      ),
+      render: (account) => <p className="text-sm text-ink-600">{formatDateTime(account.lastLoginAt)}</p>,
     },
     {
       key: "actions",
@@ -156,11 +152,13 @@ export const UsersPage = () => {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">
-              Quản trị tài khoản
+              Quản trị tài khoản chủ quán
             </p>
-            <h1 className="mt-3 text-3xl font-bold text-ink-900">
-              Quản lý Super Admin và tài khoản chủ quán
-            </h1>
+            <h1 className="mt-3 text-3xl font-bold text-ink-900">Quản lý Super Admin và tài khoản chủ quán</h1>
+            <p className="mt-3 text-sm leading-6 text-ink-500">
+              Đây là khu vực riêng để quản lý tài khoản admin và chủ quán. End-user mobile được tách sang trang riêng
+              trên sidebar.
+            </p>
           </div>
           <Button onClick={() => openModal()} disabled={!canManageUsers}>
             Thêm tài khoản chủ quán
@@ -189,9 +187,7 @@ export const UsersPage = () => {
 
       {!canManageUsers ? (
         <Card className="border border-amber-100 bg-amber-50">
-          <p className="font-semibold text-amber-800">
-            Tài khoản hiện tại không có quyền quản lý tài khoản quản trị.
-          </p>
+          <p className="font-semibold text-amber-800">Tài khoản hiện tại không có quyền quản lý tài khoản admin.</p>
           <p className="mt-2 text-sm text-amber-700">
             Hãy đăng nhập bằng Super Admin để cấp quyền hoặc khóa tài khoản chủ quán.
           </p>
@@ -205,10 +201,10 @@ export const UsersPage = () => {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={form.id ? "Cập nhật tài khoản" : "Tạo tài khoản chủ quán"}
-        description="Super Admin có thể gán mỗi tài khoản chủ quán cho một quán cụ thể trong hệ thống."
+        title={form.id ? "Cập nhật tài khoản admin" : "Tạo tài khoản chủ quán"}
+        description="Super Admin có thể gán mỗi tài khoản PLACE_OWNER cho một POI cụ thể trong hệ thống."
       >
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-5" onSubmit={(event) => void handleSubmit(event)}>
           <div className="grid gap-5 md:grid-cols-2">
             <div>
               <label className="field-label">Họ tên</label>
@@ -266,15 +262,13 @@ export const UsersPage = () => {
               </Select>
             </div>
             <div className="md:col-span-2">
-              <label className="field-label">Quán phụ trách</label>
+              <label className="field-label">POI phụ trách</label>
               <Select
                 value={form.managedPoiId}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, managedPoiId: event.target.value }))
-                }
+                onChange={(event) => setForm((current) => ({ ...current, managedPoiId: event.target.value }))}
                 disabled={form.role === "SUPER_ADMIN"}
               >
-                <option value="">Chưa gán quán</option>
+                <option value="">Chưa gán POI</option>
                 {state.pois.map((poi) => (
                   <option key={poi.id} value={poi.id}>
                     {getPoiTitle(state, poi.id)}

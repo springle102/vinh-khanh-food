@@ -22,12 +22,44 @@ public sealed class CustomerUser
     public string Email { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public bool IsBanned { get; set; }
     public string PreferredLanguage { get; set; } = "vi";
+    public string? Username { get; set; }
+    public string? DeviceId { get; set; }
+    public string Country { get; set; } = string.Empty;
+    public string DeviceType { get; set; } = "android";
     public bool IsPremium { get; set; }
     public int TotalScans { get; set; }
     public List<string> FavoritePoiIds { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastActiveAt { get; set; }
+}
+
+public sealed class EndUser
+{
+    public string Id { get; set; } = string.Empty;
+    public string? Username { get; set; }
+    public string? DeviceId { get; set; }
+    public bool IsActive { get; set; }
+    public bool IsBanned { get; set; }
+    public string DefaultLanguage { get; set; } = "vi";
+    public string Country { get; set; } = string.Empty;
+    public string DeviceType { get; set; } = "android";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? LastActiveAt { get; set; }
+    public string Status { get; set; } = "active";
+}
+
+public sealed class EndUserPoiVisit
+{
+    public string Id { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public string PoiId { get; set; } = string.Empty;
+    public string PoiSlug { get; set; } = string.Empty;
+    public string PoiAddress { get; set; } = string.Empty;
+    public DateTimeOffset VisitedAt { get; set; }
+    public string TranslatedLanguage { get; set; } = "vi";
 }
 
 public sealed class PoiCategory

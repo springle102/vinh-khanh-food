@@ -4,13 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "npm --prefix apps/admin-web run dev",
+    "dev:": "node scripts/dev-command.cjs",
     "dev:admin": "npm --prefix apps/admin-web run dev",
-    "dev:backend": "dotnet run --project apps/backend-api/VinhKhanh.BackendApi.csproj",
+    "dev:backend": "node scripts/backend-command.cjs dev",
     "build": "npm --prefix apps/admin-web run build",
     "build:admin": "npm --prefix apps/admin-web run build",
-    "build:backend": "dotnet build apps/backend-api/VinhKhanh.BackendApi.csproj",
+    "build:backend": "node scripts/backend-command.cjs build",
     "preview": "npm --prefix apps/admin-web run preview",
     "lint": "npm --prefix apps/admin-web run lint",
-    "install:admin": "npm --prefix apps/admin-web install"
+    "install:admin": "node -r ./scripts/npm-dns-override.cjs ./scripts/install-admin.cjs"
   }
 }

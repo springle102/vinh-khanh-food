@@ -33,6 +33,9 @@ GO
 IF OBJECT_ID(N'dbo.PoiTags', N'U') IS NOT NULL
     DROP TABLE dbo.PoiTags;
 GO
+IF OBJECT_ID(N'dbo.UserPoiVisits', N'U') IS NOT NULL
+    DROP TABLE dbo.UserPoiVisits;
+GO
 IF OBJECT_ID(N'dbo.AudioListenLogs', N'U') IS NOT NULL
     DROP TABLE dbo.AudioListenLogs;
 GO
@@ -115,11 +118,23 @@ CREATE TABLE dbo.CustomerUsers (
     Email NVARCHAR(200) NOT NULL,
     Phone NVARCHAR(30) NOT NULL,
     [Status] NVARCHAR(30) NOT NULL,
+    IsActive BIT NOT NULL,
+    IsBanned BIT NOT NULL,
     PreferredLanguage NVARCHAR(20) NOT NULL,
     IsPremium BIT NOT NULL,
     TotalScans INT NOT NULL,
     CreatedAt DATETIMEOFFSET(7) NOT NULL,
-    LastActiveAt DATETIMEOFFSET(7) NULL
+    LastActiveAt DATETIMEOFFSET(7) NULL,
+    Username NVARCHAR(120) NULL,
+    DeviceId NVARCHAR(200) NULL,
+    Country NVARCHAR(20) NOT NULL,
+    DeviceType NVARCHAR(20) NOT NULL,
+    CONSTRAINT CK_CustomerUsers_Status CHECK ([Status] IN (N'active', N'inactive', N'banned')),
+    CONSTRAINT CK_CustomerUsers_DeviceType CHECK (DeviceType IN (N'android', N'ios')),
+    CONSTRAINT CK_CustomerUsers_Identity CHECK (
+        NULLIF(LTRIM(RTRIM(Username)), N'') IS NOT NULL OR
+        NULLIF(LTRIM(RTRIM(DeviceId)), N'') IS NOT NULL
+    )
 );
 GO
 
@@ -154,6 +169,20 @@ CREATE TABLE dbo.CustomerFavoritePois (
     CONSTRAINT FK_CustomerFavoritePois_CustomerUsers FOREIGN KEY (CustomerUserId) REFERENCES dbo.CustomerUsers(Id),
     CONSTRAINT FK_CustomerFavoritePois_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id)
 );
+GO
+
+CREATE TABLE dbo.UserPoiVisits (
+    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
+    UserId NVARCHAR(50) NOT NULL,
+    PoiId NVARCHAR(50) NOT NULL,
+    VisitedAt DATETIMEOFFSET(7) NOT NULL,
+    TranslatedLanguage NVARCHAR(20) NOT NULL,
+    CONSTRAINT FK_UserPoiVisits_CustomerUsers FOREIGN KEY (UserId) REFERENCES dbo.CustomerUsers(Id),
+    CONSTRAINT FK_UserPoiVisits_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id)
+);
+GO
+CREATE INDEX IX_UserPoiVisits_UserId_VisitedAt
+    ON dbo.UserPoiVisits (UserId, VisitedAt DESC);
 GO
 
 CREATE TABLE dbo.PoiTags (
@@ -341,13 +370,18 @@ INSERT INTO dbo.AdminUsers (Id, Name, Email, Phone, Role, [Password], [Status], 
 INSERT INTO dbo.AdminUsers (Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId) VALUES (N'user-owner-oc', N'Lê Quốc Bảo', N'oc@vinhkhanh.vn', N'0909 188 003', N'PLACE_OWNER', N'Admin@123', N'active', CAST(N'2025-12-29T02:00:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-18T11:22:00+00:00' AS datetimeoffset(7)), N'#d9a845', N'poi-snail-signature');
 INSERT INTO dbo.AdminUsers (Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId) VALUES (N'user-owner-dessert', N'Phạm Mỹ Linh', N'che@vinhkhanh.vn', N'0909 188 004', N'PLACE_OWNER', N'Admin@123', N'locked', CAST(N'2026-01-05T02:00:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-12T07:20:00+00:00' AS datetimeoffset(7)), N'#7c2d12', N'poi-sweet-lane');
 GO
-INSERT INTO dbo.CustomerUsers (Id, Name, Email, Phone, [Status], PreferredLanguage, IsPremium, TotalScans, CreatedAt, LastActiveAt) VALUES (N'customer-1', N'Nguyễn Bảo Vy', N'baovy@gmail.com', N'0911 000 111', N'active', N'vi', 0, 12, CAST(N'2026-01-10T03:00:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-19T03:15:00+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.CustomerUsers (Id, Name, Email, Phone, [Status], PreferredLanguage, IsPremium, TotalScans, CreatedAt, LastActiveAt) VALUES (N'customer-2', N'Lucas Martin', N'lucas@example.com', N'+84 901 111 222', N'active', N'en', 1, 24, CAST(N'2026-01-15T03:00:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-19T05:20:00+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.CustomerUsers (Id, Name, Email, Phone, [Status], PreferredLanguage, IsPremium, TotalScans, CreatedAt, LastActiveAt) VALUES (N'customer-3', N'Kim Seo Yoon', N'seoyoon@example.com', N'+84 902 222 333', N'blocked', N'ko', 1, 8, CAST(N'2026-02-02T03:00:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-17T09:05:00+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.CustomerUsers (Id, Name, Email, Phone, [Status], IsActive, IsBanned, PreferredLanguage, IsPremium, TotalScans, CreatedAt, LastActiveAt, Username, DeviceId, Country, DeviceType) VALUES (N'customer-1', N'Nguyễn Bảo Vy', N'baovy@gmail.com', N'0911 000 111', N'active', 1, 0, N'vi', 0, 12, CAST(N'2026-01-10T03:00:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-19T03:15:00+00:00' AS datetimeoffset(7)), N'bao.vy', N'android-baovy-001', N'VN', N'android');
+INSERT INTO dbo.CustomerUsers (Id, Name, Email, Phone, [Status], IsActive, IsBanned, PreferredLanguage, IsPremium, TotalScans, CreatedAt, LastActiveAt, Username, DeviceId, Country, DeviceType) VALUES (N'customer-2', N'Lucas Martin', N'lucas@example.com', N'+84 901 111 222', N'inactive', 0, 0, N'en', 1, 24, CAST(N'2026-01-15T03:00:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-19T05:20:00+00:00' AS datetimeoffset(7)), N'lucas.martin', N'ios-lucas-002', N'FR', N'ios');
+INSERT INTO dbo.CustomerUsers (Id, Name, Email, Phone, [Status], IsActive, IsBanned, PreferredLanguage, IsPremium, TotalScans, CreatedAt, LastActiveAt, Username, DeviceId, Country, DeviceType) VALUES (N'customer-3', N'Kim Seo Yoon', N'seoyoon@example.com', N'+84 902 222 333', N'banned', 1, 1, N'ko', 1, 8, CAST(N'2026-02-02T03:00:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-17T09:05:00+00:00' AS datetimeoffset(7)), NULL, N'ios-seoyoon-003', N'KR', N'ios');
 GO
 INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, DefaultLanguageCode, District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'poi-bbq-night', N'quang-truong-am-thuc-bbq-night', N'126 Vĩnh Khánh, Phường Khánh Hội, TP.HCM', 10.763724, 106.701693, N'cat-bbq', N'published', 1, N'vi', N'Quận 4', N'Khánh Hội', N'120.000 - 350.000 VND', 50, 96, N'user-owner-bbq', N'Ánh Xuân', CAST(N'2025-11-19T03:15:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-23T15:09:14.6740258+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, DefaultLanguageCode, District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'poi-snail-signature', N'quan-oc-vinh-khanh-signature', N'42 Vĩnh Khánh, Phường Khánh Hội, TP.HCM', 10.75803, 106.70162, N'cat-oc', N'published', 1, N'vi', N'Quận 4', N'Khánh Hội', N'80.000 - 280.000 VND', 45, 98, N'user-owner-oc', N'Minh Ánh', CAST(N'2025-11-19T02:00:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-19T09:25:00+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, DefaultLanguageCode, District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'poi-sweet-lane', N'hem-che-vinh-khanh', N'88/4 Vĩnh Khánh, Phường Vĩnh Hội, TP.HCM', 10.75712, 106.70302, N'cat-dessert', N'draft', 0, N'vi', N'Quận 4', N'Vĩnh Hội', N'25.000 - 75.000 VND', 25, 73, N'user-owner-dessert', N'Phạm Mỹ Linh', CAST(N'2026-01-16T02:00:00+00:00' AS datetimeoffset(7)), CAST(N'2026-03-16T07:10:00+00:00' AS datetimeoffset(7)));
+GO
+INSERT INTO dbo.UserPoiVisits (Id, UserId, PoiId, VisitedAt, TranslatedLanguage) VALUES (N'visit-1', N'customer-1', N'poi-snail-signature', CAST(N'2026-03-18T05:40:00+00:00' AS datetimeoffset(7)), N'vi');
+INSERT INTO dbo.UserPoiVisits (Id, UserId, PoiId, VisitedAt, TranslatedLanguage) VALUES (N'visit-2', N'customer-1', N'poi-bbq-night', CAST(N'2026-03-19T03:15:00+00:00' AS datetimeoffset(7)), N'en');
+INSERT INTO dbo.UserPoiVisits (Id, UserId, PoiId, VisitedAt, TranslatedLanguage) VALUES (N'visit-3', N'customer-2', N'poi-bbq-night', CAST(N'2026-03-19T05:20:00+00:00' AS datetimeoffset(7)), N'en');
+INSERT INTO dbo.UserPoiVisits (Id, UserId, PoiId, VisitedAt, TranslatedLanguage) VALUES (N'visit-4', N'customer-3', N'poi-snail-signature', CAST(N'2026-03-17T09:05:00+00:00' AS datetimeoffset(7)), N'ko');
 GO
 INSERT INTO dbo.CustomerFavoritePois (CustomerUserId, PoiId) VALUES (N'customer-1', N'poi-snail-signature');
 INSERT INTO dbo.CustomerFavoritePois (CustomerUserId, PoiId) VALUES (N'customer-1', N'poi-bbq-night');

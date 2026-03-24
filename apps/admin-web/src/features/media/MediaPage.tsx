@@ -55,6 +55,23 @@ const createBlankNarrationForm = (isPremium = false): NarrationForm => ({
   isPremium,
 });
 
+const buildNarrationPreviewText = (title: string, shortText: string, fullText: string) => {
+  const normalizedTitle = title.trim();
+  const narrationBody = (fullText || shortText).trim();
+
+  if (!normalizedTitle && !narrationBody) {
+    return "";
+  }
+
+  if (!narrationBody) {
+    return normalizedTitle;
+  }
+
+  return narrationBody.startsWith(normalizedTitle)
+    ? narrationBody
+    : `${normalizedTitle}. ${narrationBody}`;
+};
+
 export const MediaPage = () => {
   const { state, saveAudioGuide, saveTranslation } = useAdminData();
   const { user } = useAuth();
@@ -219,7 +236,11 @@ export const MediaPage = () => {
     ),
   ).length;
 
-  const previewNarrationText = narrationForm.fullText || narrationForm.shortText;
+  const previewNarrationText = buildNarrationPreviewText(
+    narrationForm.title,
+    narrationForm.shortText,
+    narrationForm.fullText,
+  );
   const previewAudioDraft: AudioGuide & { previewText: string } = {
     id: audioForm.id ?? "__draft-audio__",
     entityType: "poi",

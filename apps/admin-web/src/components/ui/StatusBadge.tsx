@@ -3,6 +3,8 @@ import { cn } from "../../lib/utils";
 const toneMap: Record<string, string> = {
   published: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   active: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  inactive: "bg-slate-100 text-slate-700 ring-slate-200",
+  banned: "bg-rose-50 text-rose-700 ring-rose-100",
   ready: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   approved: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   draft: "bg-amber-50 text-amber-700 ring-amber-100",

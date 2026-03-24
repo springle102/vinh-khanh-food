@@ -2,9 +2,14 @@ import type {
   AdminDataState,
   AdminUser,
   AudioGuide,
+  CustomerUser,
+  EndUserPoiVisit,
+  EndUserProfile,
   FoodItem,
+  GeocodingLocation,
   MediaAsset,
   Poi,
+  PoiDetail,
   Promotion,
   Review,
   SystemSetting,
@@ -58,7 +63,7 @@ const parseResponse = async <T>(response: Response) => {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
     if (!response.ok) {
-      throw new ApiError("Backend tra ve phan hoi khong hop le.", response.status);
+      throw new ApiError("Backend trả về phản hồi không hợp lệ.", response.status);
     }
 
     return null as T;
@@ -66,7 +71,7 @@ const parseResponse = async <T>(response: Response) => {
 
   const payload = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok || !payload.success || payload.data === null) {
-    throw new ApiError(payload.message ?? "Yeu cau den backend that bai.", response.status);
+    throw new ApiError(payload.message ?? "Yêu cầu đến backend thất bại.", response.status);
   }
 
   return payload.data;
@@ -91,7 +96,7 @@ const jsonRequest = async <T>(path: string, method: string, body?: unknown) =>
   });
 
 export const getErrorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : "Yeu cau den backend that bai.";
+  error instanceof Error ? error.message : "Yêu cầu đến backend thất bại.";
 
 export const adminApi = {
   getBootstrap: () => request<AdminDataState>("/api/v1/bootstrap"),
@@ -109,6 +114,14 @@ export const adminApi = {
       body: formData,
     });
   },
+  reverseGeocode: (lat: number, lng: number, signal?: AbortSignal) =>
+    request<GeocodingLocation>(`/api/v1/geocoding/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`, { signal }),
+  forwardGeocode: (query: string, signal?: AbortSignal) =>
+    request<GeocodingLocation>(`/api/v1/geocoding/search?q=${encodeURIComponent(query)}`, { signal }),
+  getPoiById: (poiId: string, signal?: AbortSignal) =>
+    request<Poi>(`/api/v1/pois/${poiId}`, { signal }),
+  getPoiDetail: (poiId: string, signal?: AbortSignal) =>
+    request<PoiDetail>(`/api/v1/pois/${poiId}/detail`, { signal }),
   savePoi: (poi: {
     id?: string;
     slug: string;
@@ -142,7 +155,15 @@ export const adminApi = {
     actorName: string;
     actorRole: AdminUser["role"];
   }) =>
-    jsonRequest<AdminUser>(account.id ? `/api/v1/users/${account.id}` : "/api/v1/users", account.id ? "PUT" : "POST", account),
+    jsonRequest<AdminUser>(account.id ? `/api/v1/admin-users/${account.id}` : "/api/v1/admin-users", account.id ? "PUT" : "POST", account),
+  getEndUser: (userId: string) => request<EndUserProfile>(`/api/v1/users/${userId}`),
+  getEndUserHistory: (userId: string) => request<EndUserPoiVisit[]>(`/api/v1/users/${userId}/history`),
+  saveEndUserStatus: (userId: string, payload: {
+    isBanned: boolean;
+    actorName: string;
+    actorRole: AdminUser["role"];
+  }) =>
+    jsonRequest<EndUserProfile>(`/api/v1/users/${userId}/status`, "PATCH", payload),
   savePromotion: (promotion: {
     id?: string;
     poiId: string;

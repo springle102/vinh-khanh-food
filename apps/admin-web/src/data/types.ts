@@ -2,7 +2,8 @@ export type LanguageCode = "vi" | "en" | "zh-CN" | "ko" | "ja";
 export type RegionVoice = "north" | "central" | "south" | "standard";
 export type Role = "SUPER_ADMIN" | "PLACE_OWNER";
 export type UserStatus = "active" | "locked";
-export type CustomerStatus = "active" | "blocked";
+export type CustomerStatus = "active" | "inactive" | "banned";
+export type EndUserStatusCode = "ACTIVE" | "INACTIVE" | "BANNED";
 export type ContentStatus = "draft" | "published" | "archived";
 export type EntityType = "poi" | "food_item" | "route";
 export type AudioSourceType = "uploaded" | "tts";
@@ -11,6 +12,14 @@ export type MediaType = "image" | "video";
 export type PromotionStatus = "upcoming" | "active" | "expired";
 export type ReviewStatus = "pending" | "approved" | "hidden";
 export type DeviceType = "ios" | "android" | "web";
+
+export interface GeocodingLocation {
+  address: string;
+  district: string;
+  ward: string;
+  lat: number;
+  lng: number;
+}
 
 export interface AdminUser {
   id: string;
@@ -32,12 +41,42 @@ export interface CustomerUser {
   email: string;
   phone: string;
   status: CustomerStatus;
+  isActive: boolean;
+  isBanned: boolean;
   preferredLanguage: LanguageCode;
   isPremium: boolean;
   totalScans: number;
   favoritePoiIds: string[];
   createdAt: string;
   lastActiveAt: string | null;
+  username?: string | null;
+  deviceId?: string | null;
+  country?: string;
+  deviceType?: Extract<DeviceType, "ios" | "android">;
+}
+
+export interface EndUserProfile {
+  id: string;
+  username: string | null;
+  deviceId: string | null;
+  isActive: boolean;
+  isBanned: boolean;
+  defaultLanguage: LanguageCode;
+  country: string;
+  deviceType: Extract<DeviceType, "ios" | "android">;
+  createdAt: string;
+  lastActiveAt: string | null;
+  status: CustomerStatus;
+}
+
+export interface EndUserPoiVisit {
+  id: string;
+  userId: string;
+  poiId: string;
+  poiSlug: string;
+  poiAddress: string;
+  visitedAt: string;
+  translatedLanguage: LanguageCode;
 }
 
 export interface PoiCategory {
@@ -106,6 +145,12 @@ export interface AudioGuide {
   status: AudioStatus;
   updatedBy: string;
   updatedAt: string;
+}
+
+export interface PoiDetail {
+  poi: Poi;
+  translations: Translation[];
+  audioGuides: AudioGuide[];
 }
 
 export interface MediaAsset {
