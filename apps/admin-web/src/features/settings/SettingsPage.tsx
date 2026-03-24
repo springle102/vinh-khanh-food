@@ -281,16 +281,6 @@ export const SettingsPage = () => {
               <label className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm text-ink-700">
                 <input
                   type="checkbox"
-                  checked={form.qrAutoPlay}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, qrAutoPlay: event.target.checked }))
-                  }
-                />
-                Tự động phát audio sau khi quét QR
-              </label>
-              <label className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm text-ink-700">
-                <input
-                  type="checkbox"
                   checked={form.guestReviewEnabled}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, guestReviewEnabled: event.target.checked }))

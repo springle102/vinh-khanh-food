@@ -5,9 +5,8 @@ import { LoginPage } from "../features/auth/LoginPage";
 import { RequireAuth } from "../features/auth/RequireAuth";
 import { ContentPage } from "../features/content/ContentPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
-import { PlacesPage } from "../features/places/PlacesPage";
+import { PoisPage } from "../features/pois/PoisPage";
 import { PromotionsPage } from "../features/promotions/PromotionsPage";
-import { QrRoutesPage } from "../features/qr/QrRoutesPage";
 import { ReviewsPage } from "../features/reviews/ReviewsPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { UsersPage } from "../features/users/UsersPage";
@@ -24,10 +23,9 @@ export const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <DashboardPage /> },
-          { path: "places", element: <PlacesPage /> },
+          { path: "pois", element: <PoisPage /> },
           { path: "content", element: <ContentPage /> },
-          { path: "media", element: <Navigate to="/places" replace /> },
-          { path: "qr-routes", element: <QrRoutesPage /> },
+          { path: "media", element: <Navigate to="/pois" replace /> },
           { path: "users", element: <UsersPage /> },
           { path: "promotions", element: <PromotionsPage /> },
           { path: "reviews", element: <ReviewsPage /> },

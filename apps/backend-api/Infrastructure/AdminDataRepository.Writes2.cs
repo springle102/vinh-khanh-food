@@ -94,11 +94,11 @@ public sealed partial class AdminDataRepository
                 connection,
                 transaction,
                 """
-                INSERT INTO dbo.FoodItems (Id, PlaceId, Name, [Description], PriceRange, ImageUrl, SpicyLevel)
+                INSERT INTO dbo.FoodItems (Id, PoiId, Name, [Description], PriceRange, ImageUrl, SpicyLevel)
                 VALUES (?, ?, ?, ?, ?, ?, ?);
                 """,
                 foodId,
-                request.PlaceId,
+                request.PoiId,
                 request.Name,
                 request.Description,
                 request.PriceRange,
@@ -112,7 +112,7 @@ public sealed partial class AdminDataRepository
                 transaction,
                 """
                 UPDATE dbo.FoodItems
-                SET PlaceId = ?,
+                SET PoiId = ?,
                     Name = ?,
                     [Description] = ?,
                     PriceRange = ?,
@@ -120,7 +120,7 @@ public sealed partial class AdminDataRepository
                     SpicyLevel = ?
                 WHERE Id = ?;
                 """,
-                request.PlaceId,
+                request.PoiId,
                 request.Name,
                 request.Description,
                 request.PriceRange,
@@ -200,7 +200,7 @@ public sealed partial class AdminDataRepository
                 routeId);
         }
 
-        ReplaceRouteStops(connection, transaction, routeId, request.StopPlaceIds);
+        ReplaceRouteStops(connection, transaction, routeId, request.StopPoiIds);
 
         AppendAuditLog(
             connection,
@@ -251,11 +251,11 @@ public sealed partial class AdminDataRepository
                 connection,
                 transaction,
                 """
-                INSERT INTO dbo.Promotions (Id, PlaceId, Title, [Description], StartAt, EndAt, [Status])
+                INSERT INTO dbo.Promotions (Id, PoiId, Title, [Description], StartAt, EndAt, [Status])
                 VALUES (?, ?, ?, ?, ?, ?, ?);
                 """,
                 promotionId,
-                request.PlaceId,
+                request.PoiId,
                 request.Title,
                 request.Description,
                 request.StartAt,
@@ -269,7 +269,7 @@ public sealed partial class AdminDataRepository
                 transaction,
                 """
                 UPDATE dbo.Promotions
-                SET PlaceId = ?,
+                SET PoiId = ?,
                     Title = ?,
                     [Description] = ?,
                     StartAt = ?,
@@ -277,7 +277,7 @@ public sealed partial class AdminDataRepository
                     [Status] = ?
                 WHERE Id = ?;
                 """,
-                request.PlaceId,
+                request.PoiId,
                 request.Title,
                 request.Description,
                 request.StartAt,
@@ -324,7 +324,7 @@ public sealed partial class AdminDataRepository
         var review = new Review
         {
             Id = CreateId("review"),
-            PlaceId = request.PlaceId,
+            PoiId = request.PoiId,
             UserName = string.IsNullOrWhiteSpace(request.UserName) ? "Guest" : request.UserName,
             Rating = request.Rating,
             Comment = request.Comment,
@@ -337,11 +337,11 @@ public sealed partial class AdminDataRepository
             connection,
             transaction,
             """
-            INSERT INTO dbo.Reviews (Id, PlaceId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status])
+            INSERT INTO dbo.Reviews (Id, PoiId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status])
             VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """,
             review.Id,
-            review.PlaceId,
+            review.PoiId,
             review.UserName,
             review.Rating,
             review.Comment,
@@ -349,7 +349,7 @@ public sealed partial class AdminDataRepository
             review.CreatedAt,
             review.Status);
 
-        AppendAuditLog(connection, transaction, review.UserName, "CUSTOMER", "Tao danh gia", review.PlaceId);
+        AppendAuditLog(connection, transaction, review.UserName, "CUSTOMER", "Tao danh gia", review.PoiId);
 
         transaction.Commit();
         return review;
@@ -371,46 +371,6 @@ public sealed partial class AdminDataRepository
         AppendAuditLog(connection, transaction, request.ActorName, request.ActorRole, "Cap nhat trang thai danh gia", id);
 
         var saved = GetReviewById(connection, transaction, id);
-        transaction.Commit();
-        return saved;
-    }
-
-    public QRCodeRecord? UpdateQrState(string id, QrCodeStateRequest request)
-    {
-        using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
-
-        var existing = GetQrCodeById(connection, transaction, id);
-        if (existing is null)
-        {
-            transaction.Rollback();
-            return null;
-        }
-
-        ExecuteNonQuery(connection, transaction, "UPDATE dbo.QRCodes SET IsActive = ? WHERE Id = ?;", request.IsActive, id);
-        AppendAuditLog(connection, transaction, request.ActorName, request.ActorRole, "Cap nhat trang thai QR", id);
-
-        var saved = GetQrCodeById(connection, transaction, id);
-        transaction.Commit();
-        return saved;
-    }
-
-    public QRCodeRecord? UpdateQrImage(string id, QrCodeImageRequest request)
-    {
-        using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
-
-        var existing = GetQrCodeById(connection, transaction, id);
-        if (existing is null)
-        {
-            transaction.Rollback();
-            return null;
-        }
-
-        ExecuteNonQuery(connection, transaction, "UPDATE dbo.QRCodes SET QrImageUrl = ? WHERE Id = ?;", request.QrImageUrl, id);
-        AppendAuditLog(connection, transaction, request.ActorName, request.ActorRole, "Cap nhat anh QR", id);
-
-        var saved = GetQrCodeById(connection, transaction, id);
         transaction.Commit();
         return saved;
     }
@@ -437,7 +397,6 @@ public sealed partial class AdminDataRepository
                     StorageProvider = ?,
                     TtsProvider = ?,
                     GeofenceRadiusMeters = ?,
-                    QrAutoPlay = ?,
                     GuestReviewEnabled = ?,
                     AnalyticsRetentionDays = ?
                 WHERE Id = 1;
@@ -451,7 +410,6 @@ public sealed partial class AdminDataRepository
                 request.StorageProvider,
                 request.TtsProvider,
                 request.GeofenceRadiusMeters,
-                request.QrAutoPlay,
                 request.GuestReviewEnabled,
                 request.AnalyticsRetentionDays);
         }
@@ -463,9 +421,9 @@ public sealed partial class AdminDataRepository
                 """
                 INSERT INTO dbo.SystemSettings (
                     Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd,
-                    MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, QrAutoPlay, GuestReviewEnabled, AnalyticsRetentionDays
+                    MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, GuestReviewEnabled, AnalyticsRetentionDays
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 request.AppName,
                 request.SupportEmail,
@@ -476,7 +434,6 @@ public sealed partial class AdminDataRepository
                 request.StorageProvider,
                 request.TtsProvider,
                 request.GeofenceRadiusMeters,
-                request.QrAutoPlay,
                 request.GuestReviewEnabled,
                 request.AnalyticsRetentionDays);
         }
@@ -491,30 +448,30 @@ public sealed partial class AdminDataRepository
         return saved;
     }
 
-    private void ReplacePlaceTags(SqlConnection connection, SqlTransaction transaction, string placeId, IEnumerable<string>? tags)
+    private void ReplacePoiTags(SqlConnection connection, SqlTransaction transaction, string poiId, IEnumerable<string>? tags)
     {
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PlaceTags WHERE PlaceId = ?;", placeId);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTags WHERE PoiId = ?;", poiId);
 
         foreach (var tag in NormalizeList(tags))
         {
-            ExecuteNonQuery(connection, transaction, "INSERT INTO dbo.PlaceTags (PlaceId, TagValue) VALUES (?, ?);", placeId, tag);
+            ExecuteNonQuery(connection, transaction, "INSERT INTO dbo.PoiTags (PoiId, TagValue) VALUES (?, ?);", poiId, tag);
         }
     }
 
-    private void ReplaceRouteStops(SqlConnection connection, SqlTransaction transaction, string routeId, IEnumerable<string>? stopPlaceIds)
+    private void ReplaceRouteStops(SqlConnection connection, SqlTransaction transaction, string routeId, IEnumerable<string>? stopPoiIds)
     {
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.RouteStops WHERE RouteId = ?;", routeId);
 
         var order = 1;
-        foreach (var stopPlaceId in NormalizeList(stopPlaceIds, distinct: false))
+        foreach (var stopPoiId in NormalizeList(stopPoiIds, distinct: false))
         {
             ExecuteNonQuery(
                 connection,
                 transaction,
-                "INSERT INTO dbo.RouteStops (RouteId, StopOrder, PlaceId) VALUES (?, ?, ?);",
+                "INSERT INTO dbo.RouteStops (RouteId, StopOrder, PoiId) VALUES (?, ?, ?);",
                 routeId,
                 order,
-                stopPlaceId);
+                stopPoiId);
             order++;
         }
     }
@@ -536,49 +493,6 @@ public sealed partial class AdminDataRepository
                 languageType,
                 languageCode);
         }
-    }
-
-    private void UpsertPlaceQr(SqlConnection connection, SqlTransaction transaction, string placeId, string slug, string status)
-    {
-        var existing = GetQrCodeByEntity(connection, transaction, "place", placeId);
-        var qrValue = $"https://guide.vinhkhanh.vn/scan/{slug}";
-        var qrImageUrl = $"https://api.qrserver.com/v1/create-qr-code/?size=320x320&data={Uri.EscapeDataString(qrValue)}";
-        var isActive = string.Equals(status, "published", StringComparison.OrdinalIgnoreCase);
-
-        if (existing is null)
-        {
-            ExecuteNonQuery(
-                connection,
-                transaction,
-                """
-                INSERT INTO dbo.QRCodes (Id, EntityType, EntityId, QrValue, QrImageUrl, IsActive, LastScanAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?);
-                """,
-                CreateId("qr"),
-                "place",
-                placeId,
-                qrValue,
-                qrImageUrl,
-                isActive,
-                null);
-
-            return;
-        }
-
-        ExecuteNonQuery(
-            connection,
-            transaction,
-            """
-            UPDATE dbo.QRCodes
-            SET QrValue = ?,
-                QrImageUrl = ?,
-                IsActive = ?
-            WHERE Id = ?;
-            """,
-            qrValue,
-            qrImageUrl,
-            isActive,
-            existing.Id);
     }
 
     private AuthTokensResponse CreateSession(SqlConnection connection, SqlTransaction transaction, AdminUser user)

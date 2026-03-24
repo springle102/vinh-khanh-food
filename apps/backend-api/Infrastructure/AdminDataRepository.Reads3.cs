@@ -21,7 +21,7 @@ public sealed partial class AdminDataRepository
     private FoodItem? GetFoodItemById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, PlaceId, Name, [Description], PriceRange, ImageUrl, SpicyLevel
+            SELECT TOP 1 Id, PoiId, Name, [Description], PriceRange, ImageUrl, SpicyLevel
             FROM dbo.FoodItems
             WHERE Id = ?;
             """;
@@ -39,7 +39,7 @@ public sealed partial class AdminDataRepository
     private Promotion? GetPromotionById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, PlaceId, Title, [Description], StartAt, EndAt, [Status]
+            SELECT TOP 1 Id, PoiId, Title, [Description], StartAt, EndAt, [Status]
             FROM dbo.Promotions
             WHERE Id = ?;
             """;
@@ -52,7 +52,7 @@ public sealed partial class AdminDataRepository
     private Review? GetReviewById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, PlaceId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]
+            SELECT TOP 1 Id, PoiId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]
             FROM dbo.Reviews
             WHERE Id = ?;
             """;
@@ -60,32 +60,6 @@ public sealed partial class AdminDataRepository
         using var command = CreateCommand(connection, transaction, sql, id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? MapReview(reader) : null;
-    }
-
-    private QRCodeRecord? GetQrCodeById(SqlConnection connection, SqlTransaction? transaction, string id)
-    {
-        const string sql = """
-            SELECT TOP 1 Id, EntityType, EntityId, QrValue, QrImageUrl, IsActive, LastScanAt
-            FROM dbo.QRCodes
-            WHERE Id = ?;
-            """;
-
-        using var command = CreateCommand(connection, transaction, sql, id);
-        using var reader = command.ExecuteReader();
-        return reader.Read() ? MapQrCode(reader) : null;
-    }
-
-    private QRCodeRecord? GetQrCodeByEntity(SqlConnection connection, SqlTransaction? transaction, string entityType, string entityId)
-    {
-        const string sql = """
-            SELECT TOP 1 Id, EntityType, EntityId, QrValue, QrImageUrl, IsActive, LastScanAt
-            FROM dbo.QRCodes
-            WHERE EntityType = ? AND EntityId = ?;
-            """;
-
-        using var command = CreateCommand(connection, transaction, sql, entityType, entityId);
-        using var reader = command.ExecuteReader();
-        return reader.Read() ? MapQrCode(reader) : null;
     }
 
     private static AdminUser MapAdminUser(SqlDataReader reader)
@@ -102,7 +76,7 @@ public sealed partial class AdminDataRepository
             CreatedAt = ReadDateTimeOffset(reader, "CreatedAt"),
             LastLoginAt = ReadNullableDateTimeOffset(reader, "LastLoginAt"),
             AvatarColor = ReadString(reader, "AvatarColor"),
-            ManagedPlaceId = ReadNullableString(reader, "ManagedPlaceId")
+            ManagedPoiId = ReadNullableString(reader, "ManagedPoiId")
         };
     }
 
@@ -161,7 +135,7 @@ public sealed partial class AdminDataRepository
         return new FoodItem
         {
             Id = ReadString(reader, "Id"),
-            PlaceId = ReadString(reader, "PlaceId"),
+            PoiId = ReadString(reader, "PoiId"),
             Name = ReadString(reader, "Name"),
             Description = ReadString(reader, "Description"),
             PriceRange = ReadString(reader, "PriceRange"),
@@ -175,7 +149,7 @@ public sealed partial class AdminDataRepository
         return new Promotion
         {
             Id = ReadString(reader, "Id"),
-            PlaceId = ReadString(reader, "PlaceId"),
+            PoiId = ReadString(reader, "PoiId"),
             Title = ReadString(reader, "Title"),
             Description = ReadString(reader, "Description"),
             StartAt = ReadDateTimeOffset(reader, "StartAt"),
@@ -189,7 +163,7 @@ public sealed partial class AdminDataRepository
         return new Review
         {
             Id = ReadString(reader, "Id"),
-            PlaceId = ReadString(reader, "PlaceId"),
+            PoiId = ReadString(reader, "PoiId"),
             UserName = ReadString(reader, "UserName"),
             Rating = ReadInt(reader, "Rating"),
             Comment = ReadString(reader, "CommentText"),
@@ -199,17 +173,4 @@ public sealed partial class AdminDataRepository
         };
     }
 
-    private static QRCodeRecord MapQrCode(SqlDataReader reader)
-    {
-        return new QRCodeRecord
-        {
-            Id = ReadString(reader, "Id"),
-            EntityType = ReadString(reader, "EntityType"),
-            EntityId = ReadString(reader, "EntityId"),
-            QrValue = ReadString(reader, "QrValue"),
-            QrImageUrl = ReadString(reader, "QrImageUrl"),
-            IsActive = ReadBool(reader, "IsActive"),
-            LastScanAt = ReadNullableDateTimeOffset(reader, "LastScanAt")
-        };
-    }
 }

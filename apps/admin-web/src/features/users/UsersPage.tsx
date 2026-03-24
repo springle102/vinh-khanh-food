@@ -10,7 +10,7 @@ import { useAdminData } from "../../data/store";
 import { useAuth } from "../auth/AuthContext";
 import type { AdminUser } from "../../data/types";
 import { formatDateTime, getInitials, roleLabels } from "../../lib/utils";
-import { getPlaceTitle } from "../../lib/selectors";
+import { getPoiTitle } from "../../lib/selectors";
 
 type UserForm = {
   id?: string;
@@ -21,7 +21,7 @@ type UserForm = {
   password: string;
   status: AdminUser["status"];
   avatarColor: string;
-  managedPlaceId: string;
+  managedPoiId: string;
 };
 
 const defaultUserForm: UserForm = {
@@ -32,7 +32,7 @@ const defaultUserForm: UserForm = {
   password: "Admin@123",
   status: "active",
   avatarColor: "#f97316",
-  managedPlaceId: "",
+  managedPoiId: "",
 };
 
 export const UsersPage = () => {
@@ -59,7 +59,7 @@ export const UsersPage = () => {
           password: account.password,
           status: account.status,
           avatarColor: account.avatarColor,
-          managedPlaceId: account.managedPlaceId ?? "",
+          managedPoiId: account.managedPoiId ?? "",
         }
         : defaultUserForm,
     );
@@ -75,7 +75,7 @@ export const UsersPage = () => {
     saveUser(
       {
         ...form,
-        managedPlaceId: form.role === "PLACE_OWNER" ? form.managedPlaceId || null : null,
+        managedPoiId: form.role === "PLACE_OWNER" ? form.managedPoiId || null : null,
       },
       user,
     );
@@ -112,13 +112,13 @@ export const UsersPage = () => {
       ),
     },
     {
-      key: "place",
+      key: "poi",
       header: "Quán phụ trách",
       render: (account) => (
         <p className="text-sm text-ink-600">
           {account.role === "SUPER_ADMIN"
             ? "Toàn hệ thống"
-            : getPlaceTitle(state, account.managedPlaceId ?? "")}
+            : getPoiTitle(state, account.managedPoiId ?? "")}
         </p>
       ),
     },
@@ -268,16 +268,16 @@ export const UsersPage = () => {
             <div className="md:col-span-2">
               <label className="field-label">Quán phụ trách</label>
               <Select
-                value={form.managedPlaceId}
+                value={form.managedPoiId}
                 onChange={(event) =>
-                  setForm((current) => ({ ...current, managedPlaceId: event.target.value }))
+                  setForm((current) => ({ ...current, managedPoiId: event.target.value }))
                 }
                 disabled={form.role === "SUPER_ADMIN"}
               >
                 <option value="">Chưa gán quán</option>
-                {state.places.map((place) => (
-                  <option key={place.id} value={place.id}>
-                    {getPlaceTitle(state, place.id)}
+                {state.pois.map((poi) => (
+                  <option key={poi.id} value={poi.id}>
+                    {getPoiTitle(state, poi.id)}
                   </option>
                 ))}
               </Select>

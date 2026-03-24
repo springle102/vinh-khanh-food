@@ -13,7 +13,7 @@ public sealed partial class AdminDataRepository
             ORDER BY Name, Id;
             """;
         const string stopsSql = """
-            SELECT RouteId, StopOrder, PlaceId
+            SELECT RouteId, StopOrder, PoiId
             FROM dbo.RouteStops
             ORDER BY RouteId, StopOrder;
             """;
@@ -31,7 +31,7 @@ public sealed partial class AdminDataRepository
                     stopMap[routeId] = items;
                 }
 
-                items.Add(ReadString(stopsReader, "PlaceId"));
+                items.Add(ReadString(stopsReader, "PoiId"));
             }
         }
 
@@ -49,7 +49,7 @@ public sealed partial class AdminDataRepository
                     Description = ReadString(routesReader, "Description"),
                     DurationMinutes = ReadInt(routesReader, "DurationMinutes"),
                     Difficulty = ReadString(routesReader, "Difficulty"),
-                    StopPlaceIds = stopMap.GetValueOrDefault(routeId, []),
+                    StopPoiIds = stopMap.GetValueOrDefault(routeId, []),
                     IsFeatured = ReadBool(routesReader, "IsFeatured")
                 });
             }
@@ -61,7 +61,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<Promotion> GetPromotions(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, PlaceId, Title, [Description], StartAt, EndAt, [Status]
+            SELECT Id, PoiId, Title, [Description], StartAt, EndAt, [Status]
             FROM dbo.Promotions
             ORDER BY StartAt DESC, Id DESC;
             """;
@@ -81,7 +81,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<Review> GetReviews(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, PlaceId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]
+            SELECT Id, PoiId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]
             FROM dbo.Reviews
             ORDER BY CreatedAt DESC, Id DESC;
             """;
@@ -101,7 +101,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<ViewLog> GetViewLogs(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, PlaceId, LanguageCode, DeviceType, ViewedAt
+            SELECT Id, PoiId, LanguageCode, DeviceType, ViewedAt
             FROM dbo.ViewLogs
             ORDER BY ViewedAt DESC, Id DESC;
             """;
@@ -115,7 +115,7 @@ public sealed partial class AdminDataRepository
             items.Add(new ViewLog
             {
                 Id = ReadString(reader, "Id"),
-                PlaceId = ReadString(reader, "PlaceId"),
+                PoiId = ReadString(reader, "PoiId"),
                 LanguageCode = ReadString(reader, "LanguageCode"),
                 DeviceType = ReadString(reader, "DeviceType"),
                 ViewedAt = ReadDateTimeOffset(reader, "ViewedAt")
@@ -128,7 +128,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<AudioListenLog> GetAudioListenLogs(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, PlaceId, LanguageCode, ListenedAt, DurationInSeconds
+            SELECT Id, PoiId, LanguageCode, ListenedAt, DurationInSeconds
             FROM dbo.AudioListenLogs
             ORDER BY ListenedAt DESC, Id DESC;
             """;
@@ -142,7 +142,7 @@ public sealed partial class AdminDataRepository
             items.Add(new AudioListenLog
             {
                 Id = ReadString(reader, "Id"),
-                PlaceId = ReadString(reader, "PlaceId"),
+                PoiId = ReadString(reader, "PoiId"),
                 LanguageCode = ReadString(reader, "LanguageCode"),
                 ListenedAt = ReadDateTimeOffset(reader, "ListenedAt"),
                 DurationInSeconds = ReadInt(reader, "DurationInSeconds")
@@ -184,7 +184,7 @@ public sealed partial class AdminDataRepository
     {
         const string settingSql = """
             SELECT Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd, MapProvider,
-                   StorageProvider, TtsProvider, GeofenceRadiusMeters, QrAutoPlay, GuestReviewEnabled, AnalyticsRetentionDays
+                   StorageProvider, TtsProvider, GeofenceRadiusMeters, GuestReviewEnabled, AnalyticsRetentionDays
             FROM dbo.SystemSettings
             WHERE Id = 1;
             """;
@@ -212,7 +212,6 @@ public sealed partial class AdminDataRepository
                     StorageProvider = ReadString(settingReader, "StorageProvider"),
                     TtsProvider = ReadString(settingReader, "TtsProvider"),
                     GeofenceRadiusMeters = ReadInt(settingReader, "GeofenceRadiusMeters"),
-                    QrAutoPlay = ReadBool(settingReader, "QrAutoPlay"),
                     GuestReviewEnabled = ReadBool(settingReader, "GuestReviewEnabled"),
                     AnalyticsRetentionDays = ReadInt(settingReader, "AnalyticsRetentionDays")
                 };
@@ -244,7 +243,7 @@ public sealed partial class AdminDataRepository
     private AdminUser? GetUserByCredentials(SqlConnection connection, SqlTransaction? transaction, string email, string password)
     {
         const string sql = """
-            SELECT TOP 1 Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPlaceId
+            SELECT TOP 1 Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId
             FROM dbo.AdminUsers
             WHERE LOWER(Email) = LOWER(?) AND [Password] = ? AND [Status] = ?
             ORDER BY CreatedAt DESC;
@@ -258,7 +257,7 @@ public sealed partial class AdminDataRepository
     private AdminUser? GetUserById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPlaceId
+            SELECT TOP 1 Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId
             FROM dbo.AdminUsers
             WHERE Id = ?;
             """;
@@ -296,16 +295,16 @@ public sealed partial class AdminDataRepository
         };
     }
 
-    private Place? GetPlaceById(SqlConnection connection, SqlTransaction? transaction, string id)
+    private Poi? GetPoiById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
-        return GetPlaces(connection, transaction).FirstOrDefault(item => item.Id == id);
+        return GetPois(connection, transaction).FirstOrDefault(item => item.Id == id);
     }
 
     private Translation? GetTranslationById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
             SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
-            FROM dbo.PlaceTranslations
+            FROM dbo.PoiTranslations
             WHERE Id = ?;
             """;
 
@@ -323,7 +322,7 @@ public sealed partial class AdminDataRepository
     {
         const string sql = """
             SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
-            FROM dbo.PlaceTranslations
+            FROM dbo.PoiTranslations
             WHERE EntityType = ? AND EntityId = ? AND LanguageCode = ?;
             """;
 

@@ -10,13 +10,13 @@ namespace VinhKhanh.BackendApi.Controllers;
 public sealed class FoodItemsController(AdminDataRepository repository) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<ApiResponse<IReadOnlyList<FoodItem>>> GetFoodItems([FromQuery] string? placeId)
+    public ActionResult<ApiResponse<IReadOnlyList<FoodItem>>> GetFoodItems([FromQuery] string? poiId)
     {
         IEnumerable<FoodItem> query = repository.GetFoodItems();
 
-        if (!string.IsNullOrWhiteSpace(placeId))
+        if (!string.IsNullOrWhiteSpace(poiId))
         {
-            query = query.Where(item => item.PlaceId == placeId);
+            query = query.Where(item => item.PoiId == poiId);
         }
 
         return Ok(ApiResponse<IReadOnlyList<FoodItem>>.Ok(query.ToList()));
@@ -25,9 +25,9 @@ public sealed class FoodItemsController(AdminDataRepository repository) : Contro
     [HttpPost]
     public ActionResult<ApiResponse<FoodItem>> CreateFoodItem([FromBody] FoodItemUpsertRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.PlaceId) || string.IsNullOrWhiteSpace(request.Name))
+        if (string.IsNullOrWhiteSpace(request.PoiId) || string.IsNullOrWhiteSpace(request.Name))
         {
-            return BadRequest(ApiResponse<FoodItem>.Fail("PlaceId va ten mon an la bat buoc."));
+            return BadRequest(ApiResponse<FoodItem>.Fail("PoiId va ten mon an la bat buoc."));
         }
 
         var saved = repository.SaveFoodItem(null, request);

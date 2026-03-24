@@ -88,8 +88,8 @@ public sealed partial class AdminDataRepository
         var password = !string.IsNullOrWhiteSpace(request.Password)
             ? request.Password
             : existing?.Password is { Length: > 0 } ? existing.Password : "Admin@123";
-        var managedPlaceId = string.Equals(request.Role, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase)
-            ? request.ManagedPlaceId
+        var managedPoiId = string.Equals(request.Role, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase)
+            ? request.ManagedPoiId
             : null;
 
         if (isNew)
@@ -99,7 +99,7 @@ public sealed partial class AdminDataRepository
                 transaction,
                 """
                 INSERT INTO dbo.AdminUsers (
-                    Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPlaceId
+                    Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
@@ -113,7 +113,7 @@ public sealed partial class AdminDataRepository
                 now,
                 null,
                 request.AvatarColor,
-                managedPlaceId);
+                managedPoiId);
         }
         else
         {
@@ -129,7 +129,7 @@ public sealed partial class AdminDataRepository
                     [Password] = ?,
                     [Status] = ?,
                     AvatarColor = ?,
-                    ManagedPlaceId = ?
+                    ManagedPoiId = ?
                 WHERE Id = ?;
                 """,
                 request.Name,
@@ -139,7 +139,7 @@ public sealed partial class AdminDataRepository
                 password,
                 request.Status,
                 request.AvatarColor,
-                managedPlaceId,
+                managedPoiId,
                 userId);
         }
 
@@ -158,15 +158,15 @@ public sealed partial class AdminDataRepository
         return saved;
     }
 
-    public Place SavePlace(string? id, PlaceUpsertRequest request)
+    public Poi SavePoi(string? id, PoiUpsertRequest request)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
         var now = DateTimeOffset.UtcNow;
-        var existing = !string.IsNullOrWhiteSpace(id) ? GetPlaceById(connection, transaction, id) : null;
+        var existing = !string.IsNullOrWhiteSpace(id) ? GetPoiById(connection, transaction, id) : null;
         var isNew = existing is null;
-        var placeId = existing?.Id ?? id ?? CreateId("place");
+        var poiId = existing?.Id ?? id ?? CreateId("poi");
         var createdAt = existing?.CreatedAt ?? now;
 
         if (isNew)
@@ -175,13 +175,13 @@ public sealed partial class AdminDataRepository
                 connection,
                 transaction,
                 """
-                INSERT INTO dbo.Places (
+                INSERT INTO dbo.Pois (
                     Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, DefaultLanguageCode,
                     District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
-                placeId,
+                poiId,
                 request.Slug,
                 request.Address,
                 request.Lat,
@@ -206,7 +206,7 @@ public sealed partial class AdminDataRepository
                 connection,
                 transaction,
                 """
-                UPDATE dbo.Places
+                UPDATE dbo.Pois
                 SET Slug = ?,
                     AddressLine = ?,
                     Latitude = ?,
@@ -241,55 +241,53 @@ public sealed partial class AdminDataRepository
                 request.OwnerUserId,
                 request.UpdatedBy,
                 now,
-                placeId);
+                poiId);
         }
 
-        ReplacePlaceTags(connection, transaction, placeId, request.Tags);
-        UpsertPlaceQr(connection, transaction, placeId, request.Slug, request.Status);
+        ReplacePoiTags(connection, transaction, poiId, request.Tags);
 
         AppendAuditLog(
             connection,
             transaction,
             request.UpdatedBy,
             "SYSTEM",
-            isNew ? "Tao dia diem" : "Cap nhat dia diem",
+            isNew ? "Tao POI" : "Cap nhat POI",
             request.Slug);
 
-        var saved = GetPlaceById(connection, transaction, placeId)
-            ?? throw new InvalidOperationException("Khong the doc lai dia diem sau khi luu.");
+        var saved = GetPoiById(connection, transaction, poiId)
+            ?? throw new InvalidOperationException("Khong the doc lai POI sau khi luu.");
 
         transaction.Commit();
         return saved;
     }
 
-    public bool DeletePlace(string id)
+    public bool DeletePoi(string id)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
-        var place = GetPlaceById(connection, transaction, id);
-        if (place is null)
+        var poi = GetPoiById(connection, transaction, id);
+        if (poi is null)
         {
             transaction.Rollback();
             return false;
         }
 
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.CustomerFavoritePlaces WHERE PlaceId = ?;", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.RouteStops WHERE PlaceId = ?;", id);
-        ExecuteNonQuery(connection, transaction, "UPDATE dbo.AdminUsers SET ManagedPlaceId = NULL WHERE ManagedPlaceId = ?;", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PlaceTags WHERE PlaceId = ?;", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PlaceTranslations WHERE EntityType = ? AND EntityId = ?;", "place", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioGuides WHERE EntityType = ? AND EntityId = ?;", "place", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.MediaAssets WHERE EntityType = ? AND EntityId = ?;", "place", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.FoodItems WHERE PlaceId = ?;", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Promotions WHERE PlaceId = ?;", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Reviews WHERE PlaceId = ?;", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.ViewLogs WHERE PlaceId = ?;", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioListenLogs WHERE PlaceId = ?;", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.QRCodes WHERE EntityType = ? AND EntityId = ?;", "place", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Places WHERE Id = ?;", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.CustomerFavoritePois WHERE PoiId = ?;", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.RouteStops WHERE PoiId = ?;", id);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.AdminUsers SET ManagedPoiId = NULL WHERE ManagedPoiId = ?;", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTags WHERE PoiId = ?;", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTranslations WHERE EntityType = ? AND EntityId = ?;", "poi", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioGuides WHERE EntityType = ? AND EntityId = ?;", "poi", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.MediaAssets WHERE EntityType = ? AND EntityId = ?;", "poi", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.FoodItems WHERE PoiId = ?;", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Promotions WHERE PoiId = ?;", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Reviews WHERE PoiId = ?;", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.ViewLogs WHERE PoiId = ?;", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioListenLogs WHERE PoiId = ?;", id);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Pois WHERE Id = ?;", id);
 
-        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa dia diem", place.Slug);
+        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa POI", poi.Slug);
 
         transaction.Commit();
         return true;
@@ -316,7 +314,7 @@ public sealed partial class AdminDataRepository
                 connection,
                 transaction,
                 """
-                INSERT INTO dbo.PlaceTranslations (
+                INSERT INTO dbo.PoiTranslations (
                     Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
@@ -340,7 +338,7 @@ public sealed partial class AdminDataRepository
                 connection,
                 transaction,
                 """
-                UPDATE dbo.PlaceTranslations
+                UPDATE dbo.PoiTranslations
                 SET EntityType = ?,
                     EntityId = ?,
                     LanguageCode = ?,
@@ -388,7 +386,7 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
-        var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PlaceTranslations WHERE Id = ?;", id) > 0;
+        var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTranslations WHERE Id = ?;", id) > 0;
         if (deleted)
         {
             AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa noi dung thuyet minh", id);

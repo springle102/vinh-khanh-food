@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdminDataState, AudioGuide } from "../../data/types";
-import { getPlaceTranslation } from "../../lib/selectors";
+import { getPoiTranslation } from "../../lib/selectors";
 
 type PreviewStatus = "idle" | "playing" | "error";
 type PreviewKind = "audio" | "tts" | null;
@@ -41,7 +41,7 @@ const resolveNarrationText = (
   entityId: string,
   languageCode: AudioGuide["languageCode"],
 ) => {
-  const translation = getPlaceTranslation(state, entityId, languageCode);
+  const translation = getPoiTranslation(state, entityId, languageCode);
 
   return translation?.fullText || translation?.shortText || "";
 };
@@ -171,7 +171,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
           audioGuideId: guide.id,
           status: "error",
           kind: "tts",
-          message: "Chưa có nội dung để đọc TTS cho điểm đến và ngôn ngữ này.",
+          message: "Chưa có nội dung để đọc TTS cho POI và ngôn ngữ này.",
         });
         return;
       }

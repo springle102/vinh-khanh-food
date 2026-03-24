@@ -10,7 +10,7 @@ import {
 import { Card } from "../../components/ui/Card";
 import { useAdminData } from "../../data/store";
 import { formatNumber, languageLabels } from "../../lib/utils";
-import { getPlaceTitle } from "../../lib/selectors";
+import { getPoiTitle } from "../../lib/selectors";
 
 export const AnalyticsPage = () => {
   const { state } = useAdminData();
@@ -25,10 +25,10 @@ export const AnalyticsPage = () => {
     value: state.audioListenLogs.filter((item) => item.languageCode === code).length,
   }));
 
-  const placeBreakdown = state.places
-    .map((place) => ({
-      name: getPlaceTitle(state, place.id),
-      value: state.viewLogs.filter((item) => item.placeId === place.id).length,
+  const poiBreakdown = state.pois
+    .map((poi) => ({
+      name: getPoiTitle(state, poi.id),
+      value: state.viewLogs.filter((item) => item.poiId === poi.id).length,
     }))
     .sort((left, right) => right.value - left.value)
     .slice(0, 6);
@@ -88,10 +88,10 @@ export const AnalyticsPage = () => {
       </section>
 
       <Card>
-        <h2 className="section-heading">Top điểm đến theo lượt xem</h2>
+        <h2 className="section-heading">Top POI theo lượt xem</h2>
         <div className="mt-6 h-80">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={placeBreakdown}>
+            <BarChart data={poiBreakdown}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" hide />
               <YAxis />
@@ -101,7 +101,7 @@ export const AnalyticsPage = () => {
           </ResponsiveContainer>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {placeBreakdown.map((item) => (
+          {poiBreakdown.map((item) => (
             <div key={item.name} className="rounded-2xl bg-sand-50 px-4 py-3">
               <p className="font-semibold text-ink-900">{item.name}</p>
               <p className="mt-1 text-sm text-ink-500">{formatNumber(item.value)} lượt xem</p>

@@ -18,8 +18,8 @@ public sealed class BootstrapController(AdminDataRepository repository) : Contro
         => Ok(ApiResponse<DashboardSummaryResponse>.Ok(repository.GetDashboardSummary()));
 
     [HttpGet("categories")]
-    public ActionResult<ApiResponse<IReadOnlyList<PlaceCategory>>> GetCategories()
-        => Ok(ApiResponse<IReadOnlyList<PlaceCategory>>.Ok(repository.GetCategories()));
+    public ActionResult<ApiResponse<IReadOnlyList<PoiCategory>>> GetCategories()
+        => Ok(ApiResponse<IReadOnlyList<PoiCategory>>.Ok(repository.GetCategories()));
 
     [HttpGet("customer-users")]
     public ActionResult<ApiResponse<IReadOnlyList<CustomerUser>>> GetCustomerUsers()

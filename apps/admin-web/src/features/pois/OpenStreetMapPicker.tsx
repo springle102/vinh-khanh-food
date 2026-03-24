@@ -6,11 +6,13 @@ const DEFAULT_CENTER = {
   lng: 106.7033,
 };
 
+const SELECTION_RADIUS_METERS = 180;
+
 const isValidCoordinate = (value: number) => Number.isFinite(value);
 
 const normalizeAddress = (value: string) => value.trim().replace(/\s+/g, " ");
 
-const createMarkerIcon = () =>
+const createEditableMarkerIcon = () =>
   L.divIcon({
     className: "vinh-khanh-map-marker",
     html: `
@@ -54,6 +56,64 @@ const createMarkerIcon = () =>
     iconAnchor: [14, 34],
   });
 
+const createPoiMarkerIcon = (selected: boolean, featured: boolean) => {
+  const color = selected ? "#0f766e" : featured ? "#f97316" : "#1f2937";
+  const halo = selected ? "rgba(15, 118, 110, 0.18)" : "rgba(31, 41, 55, 0.12)";
+
+  return L.divIcon({
+    className: "vinh-khanh-poi-marker",
+    html: `
+      <div style="position: relative; width: 22px; height: 22px;">
+        <span style="
+          position: absolute;
+          inset: 0;
+          border-radius: 9999px;
+          background: ${halo};
+          transform: scale(1.7);
+        "></span>
+        <span style="
+          position: absolute;
+          inset: 0;
+          border-radius: 9999px;
+          background: ${color};
+          border: 3px solid #ffffff;
+          box-shadow: 0 10px 18px rgba(15, 23, 42, 0.20);
+        "></span>
+      </div>
+    `,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+};
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const haversineDistanceInMeters = (
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+) => {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const earthRadius = 6_371_000;
+  const dLat = toRadians(lat2 - lat1);
+  const dLng = toRadians(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  return 2 * earthRadius * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
 type NominatimReverseResult = {
   display_name?: string;
   name?: string;
@@ -80,33 +140,55 @@ const formatReverseAddress = (result: NominatimReverseResult) => {
     .filter(Boolean);
 
   const dedupedParts = parts.filter(
-    (part, index) => parts.findIndex((candidate) => candidate.toLowerCase() === part.toLowerCase()) === index,
+    (part, index) =>
+      parts.findIndex((candidate) => candidate.toLowerCase() === part.toLowerCase()) === index,
   );
 
   return normalizeAddress(dedupedParts.join(", ") || result.display_name || "");
 };
 
-type OpenStreetMapPickerProps = {
+export type PoiMapItem = {
+  id: string;
+  title: string;
   address: string;
+  category: string;
+  status: string;
+  featured: boolean;
   lat: number;
   lng: number;
-  onChange: (lat: number, lng: number) => void;
-  onAddressResolved: (address: string) => void;
+};
+
+type OpenStreetMapPickerProps = {
+  address?: string;
+  lat: number;
+  lng: number;
+  onChange?: (lat: number, lng: number) => void;
+  onAddressResolved?: (address: string) => void;
+  editable?: boolean;
+  pois?: PoiMapItem[];
+  selectedPoiId?: string | null;
+  onPoiSelect?: (poiId: string) => void;
 };
 
 export const OpenStreetMapPicker = ({
-  address,
+  address = "",
   lat,
   lng,
   onChange,
   onAddressResolved,
+  editable = true,
+  pois = [],
+  selectedPoiId = null,
+  onPoiSelect,
 }: OpenStreetMapPickerProps) => {
   const mapElementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
   const markerHaloRef = useRef<L.CircleMarker | null>(null);
+  const poiLayerRef = useRef<L.LayerGroup | null>(null);
   const onChangeRef = useRef(onChange);
   const onAddressResolvedRef = useRef(onAddressResolved);
+  const onPoiSelectRef = useRef(onPoiSelect);
   const lastGeocodedAddressRef = useRef("");
   const skipNextAddressLookupRef = useRef(false);
   const reverseGeocodeAbortRef = useRef<AbortController | null>(null);
@@ -129,6 +211,11 @@ export const OpenStreetMapPicker = ({
     [lat, lng],
   );
 
+  const selectablePois = useMemo(
+    () => pois.filter((item) => isValidCoordinate(item.lat) && isValidCoordinate(item.lng)),
+    [pois],
+  );
+
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
@@ -136,6 +223,10 @@ export const OpenStreetMapPicker = ({
   useEffect(() => {
     onAddressResolvedRef.current = onAddressResolved;
   }, [onAddressResolved]);
+
+  useEffect(() => {
+    onPoiSelectRef.current = onPoiSelect;
+  }, [onPoiSelect]);
 
   const cancelPendingForwardGeocode = () => {
     forwardGeocodeAbortRef.current?.abort();
@@ -148,6 +239,10 @@ export const OpenStreetMapPicker = ({
   };
 
   const reverseGeocodePosition = async (nextLat: number, nextLng: number) => {
+    if (!editable) {
+      return;
+    }
+
     cancelPendingForwardGeocode();
     reverseGeocodeAbortRef.current?.abort();
 
@@ -179,35 +274,36 @@ export const OpenStreetMapPicker = ({
       }
 
       const resolvedAddress = formatReverseAddress(result);
-
       if (!resolvedAddress) {
         setGeocodeState("not-found");
         setGeocodeMessage(
-          "Không lấy được địa chỉ từ vị trí này. Bạn có thể nhập địa chỉ thủ công.",
+          "Không lấy được địa chỉ từ vị trí này. Bạn có thể nhập thủ công.",
         );
         return;
       }
 
       skipNextAddressLookupRef.current = true;
       lastGeocodedAddressRef.current = resolvedAddress;
-      onAddressResolvedRef.current(resolvedAddress);
+      onAddressResolvedRef.current?.(resolvedAddress);
       setGeocodeState("resolved");
-      setGeocodeMessage(
-        "Đã cập nhật địa chỉ theo điểm bạn vừa chọn trên bản đồ.",
-      );
-    } catch (error) {
+      setGeocodeMessage("Đã cập nhật địa chỉ theo điểm bạn vừa chọn.");
+    } catch {
       if (controller.signal.aborted) {
         return;
       }
 
       setGeocodeState("error");
       setGeocodeMessage(
-        "Không thể lấy địa chỉ từ vị trí đã chọn lúc này. Bạn có thể nhập địa chỉ thủ công.",
+        "Không thể lấy địa chỉ từ vị trí đã chọn lúc này. Bạn có thể nhập thủ công.",
       );
     }
   };
 
   useEffect(() => {
+    if (!editable) {
+      return;
+    }
+
     const normalizedAddress = normalizeAddress(address);
 
     if (skipNextAddressLookupRef.current) {
@@ -257,47 +353,37 @@ export const OpenStreetMapPicker = ({
           throw new Error(`Nominatim request failed with status ${response.status}`);
         }
 
-        const results = (await response.json()) as Array<{
-          lat: string;
-          lon: string;
-        }>;
-
+        const results = (await response.json()) as Array<{ lat: string; lon: string }>;
         if (lookupToken !== forwardLookupTokenRef.current) {
           return;
         }
 
         if (!results.length) {
           setGeocodeState("not-found");
-          setGeocodeMessage(
-            "Không tìm thấy vị trí phù hợp. Bạn có thể click trực tiếp lên bản đồ.",
-          );
+          setGeocodeMessage("Không tìm thấy vị trí phù hợp. Bạn có thể chọn trực tiếp trên bản đồ.");
           return;
         }
 
         const nextLat = Number(results[0].lat);
         const nextLng = Number(results[0].lon);
-
         if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
           throw new Error("Nominatim returned an invalid coordinate.");
         }
 
         lastGeocodedAddressRef.current = normalizedAddress;
         setGeocodeState("resolved");
-        setGeocodeMessage(
-          "Đã định vị theo địa chỉ. Bạn vẫn có thể kéo marker để tinh chỉnh.",
-        );
-        onChangeRef.current(nextLat, nextLng);
-      } catch (error) {
+        setGeocodeMessage("Đã định vị theo địa chỉ. Bạn vẫn có thể kéo marker để chỉnh.");
+        onChangeRef.current?.(nextLat, nextLng);
+      } catch {
         if (controller.signal.aborted) {
           return;
         }
 
         setGeocodeState("error");
-        setGeocodeMessage(
-          "Không thể định vị từ địa chỉ lúc này. Bạn có thể chọn thủ công trên bản đồ.",
-        );
+        setGeocodeMessage("Không thể định vị từ địa chỉ lúc này. Bạn có thể chọn thủ công trên bản đồ.");
       }
     }, 700);
+
     forwardGeocodeTimerRef.current = timer;
 
     return () => {
@@ -310,7 +396,7 @@ export const OpenStreetMapPicker = ({
         forwardGeocodeTimerRef.current = null;
       }
     };
-  }, [address]);
+  }, [address, editable]);
 
   useEffect(() => {
     if (!mapElementRef.current || mapRef.current) {
@@ -319,7 +405,7 @@ export const OpenStreetMapPicker = ({
 
     const map = L.map(mapElementRef.current, {
       center: selectedPosition,
-      zoom: 16,
+      zoom: editable ? 16 : 15,
       zoomControl: true,
       attributionControl: true,
     });
@@ -330,48 +416,68 @@ export const OpenStreetMapPicker = ({
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(map);
 
-    const marker = L.marker(selectedPosition, {
-      draggable: true,
-      icon: createMarkerIcon(),
-    }).addTo(map);
-    const markerHalo = L.circleMarker(selectedPosition, {
-      radius: 16,
-      color: "#f97316",
-      weight: 2,
-      fillColor: "#fb923c",
-      fillOpacity: 0.18,
-      interactive: false,
-    }).addTo(map);
+    if (editable) {
+      const marker = L.marker(selectedPosition, {
+        draggable: true,
+        icon: createEditableMarkerIcon(),
+      }).addTo(map);
 
-    marker.bindPopup("Vị trí đã chọn", {
-      autoClose: false,
-      closeButton: false,
-      className: "vinh-khanh-map-popup",
-      offset: [0, -18],
-    });
-    marker.openPopup();
+      const markerHalo = L.circleMarker(selectedPosition, {
+        radius: 16,
+        color: "#f97316",
+        weight: 2,
+        fillColor: "#fb923c",
+        fillOpacity: 0.18,
+        interactive: false,
+      }).addTo(map);
 
-    map.on("click", (event: L.LeafletMouseEvent) => {
-      const nextPosition = event.latlng;
-      marker.setLatLng(nextPosition);
-      markerHalo.setLatLng(nextPosition);
-      map.panTo(nextPosition);
+      marker.bindPopup("Vị trí POI đang chọn", {
+        autoClose: false,
+        closeButton: false,
+        className: "vinh-khanh-map-popup",
+        offset: [0, -18],
+      });
       marker.openPopup();
-      onChangeRef.current(nextPosition.lat, nextPosition.lng);
-      void reverseGeocodePosition(nextPosition.lat, nextPosition.lng);
-    });
 
-    marker.on("dragend", () => {
-      const nextPosition = marker.getLatLng();
-      markerHalo.setLatLng(nextPosition);
-      marker.openPopup();
-      onChangeRef.current(nextPosition.lat, nextPosition.lng);
-      void reverseGeocodePosition(nextPosition.lat, nextPosition.lng);
-    });
+      map.on("click", (event: L.LeafletMouseEvent) => {
+        const nextPosition = event.latlng;
+        marker.setLatLng(nextPosition);
+        markerHalo.setLatLng(nextPosition);
+        map.panTo(nextPosition);
+        marker.openPopup();
+        onChangeRef.current?.(nextPosition.lat, nextPosition.lng);
+        void reverseGeocodePosition(nextPosition.lat, nextPosition.lng);
+      });
+
+      marker.on("dragend", () => {
+        const nextPosition = marker.getLatLng();
+        markerHalo.setLatLng(nextPosition);
+        marker.openPopup();
+        onChangeRef.current?.(nextPosition.lat, nextPosition.lng);
+        void reverseGeocodePosition(nextPosition.lat, nextPosition.lng);
+      });
+
+      markerRef.current = marker;
+      markerHaloRef.current = markerHalo;
+    } else {
+      const poiLayer = L.layerGroup().addTo(map);
+      poiLayerRef.current = poiLayer;
+
+      map.on("click", (event: L.LeafletMouseEvent) => {
+        const nearestPoi = selectablePois
+          .map((poi) => ({
+            poi,
+            distance: haversineDistanceInMeters(event.latlng.lat, event.latlng.lng, poi.lat, poi.lng),
+          }))
+          .sort((left, right) => left.distance - right.distance)[0];
+
+        if (nearestPoi && nearestPoi.distance <= SELECTION_RADIUS_METERS) {
+          onPoiSelectRef.current?.(nearestPoi.poi.id);
+        }
+      });
+    }
 
     mapRef.current = map;
-    markerRef.current = marker;
-    markerHaloRef.current = markerHalo;
 
     requestAnimationFrame(() => {
       map.invalidateSize();
@@ -380,17 +486,19 @@ export const OpenStreetMapPicker = ({
     return () => {
       cancelPendingForwardGeocode();
       reverseGeocodeAbortRef.current?.abort();
-      markerHalo.remove();
-      marker.remove();
+      markerHaloRef.current?.remove();
+      markerRef.current?.remove();
+      poiLayerRef.current?.remove();
       map.remove();
       markerHaloRef.current = null;
       markerRef.current = null;
+      poiLayerRef.current = null;
       mapRef.current = null;
     };
-  }, [selectedPosition]);
+  }, [editable, selectablePois, selectedPosition]);
 
   useEffect(() => {
-    if (!mapRef.current || !markerRef.current || !markerHaloRef.current) {
+    if (!editable || !mapRef.current || !markerRef.current || !markerHaloRef.current) {
       return;
     }
 
@@ -404,17 +512,93 @@ export const OpenStreetMapPicker = ({
     requestAnimationFrame(() => {
       mapRef.current?.invalidateSize();
     });
-  }, [selectedPosition]);
+  }, [editable, selectedPosition]);
+
+  useEffect(() => {
+    if (editable || !mapRef.current || !poiLayerRef.current) {
+      return;
+    }
+
+    poiLayerRef.current.clearLayers();
+
+    selectablePois.forEach((poi) => {
+      const marker = L.marker([poi.lat, poi.lng], {
+        icon: createPoiMarkerIcon(poi.id === selectedPoiId, poi.featured),
+      }).addTo(poiLayerRef.current!);
+
+      marker.bindPopup(
+        `
+          <div style="min-width: 180px;">
+            <div style="font-weight: 700; color: #111827;">${escapeHtml(poi.title)}</div>
+            <div style="margin-top: 6px; font-size: 12px; color: #475569;">${escapeHtml(
+              poi.category,
+            )}</div>
+            <div style="margin-top: 6px; font-size: 12px; color: #64748b;">${escapeHtml(
+              poi.address,
+            )}</div>
+          </div>
+        `,
+        {
+          closeButton: false,
+          offset: [0, -10],
+        },
+      );
+
+      marker.on("click", () => {
+        onPoiSelectRef.current?.(poi.id);
+      });
+
+      if (poi.id === selectedPoiId) {
+        marker.openPopup();
+      }
+    });
+
+    if (selectedPoiId) {
+      const selectedPoi = selectablePois.find((item) => item.id === selectedPoiId);
+      if (selectedPoi) {
+        mapRef.current.setView([selectedPoi.lat, selectedPoi.lng], Math.max(mapRef.current.getZoom(), 16), {
+          animate: false,
+        });
+        return;
+      }
+    }
+
+    if (selectablePois.length === 1) {
+      mapRef.current.setView([selectablePois[0].lat, selectablePois[0].lng], 16, {
+        animate: false,
+      });
+      return;
+    }
+
+    if (selectablePois.length > 1) {
+      const bounds = L.latLngBounds(selectablePois.map((poi) => [poi.lat, poi.lng] as [number, number]));
+      mapRef.current.fitBounds(bounds.pad(0.12), {
+        maxZoom: 16,
+        animate: false,
+      });
+    }
+  }, [editable, selectablePois, selectedPoiId]);
+
+  const browseMessage = selectedPoiId
+    ? "Đã chọn POI từ bản đồ. Chạm điểm khác để xem nhanh thông tin POI gần nhất."
+    : selectablePois.length
+      ? "Chạm vào marker hoặc bất kỳ điểm nào gần POI trên bản đồ để xem toàn bộ thông tin."
+      : "Chưa có POI nào để hiển thị trên bản đồ.";
+
+  const message = editable ? geocodeMessage : browseMessage;
+  const messageTone = editable ? geocodeState : selectedPoiId ? "resolved" : "idle";
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-ink-900">
-            Chọn vị trí trên OpenStreetMap
+            {editable ? "Chọn vị trí POI trên OpenStreetMap" : "Bản đồ POI"}
           </p>
           <p className="mt-1 text-xs text-ink-500">
-            Nhập địa chỉ để tự động định vị hoặc click lên bản đồ, kéo marker để chỉnh sửa.
+            {editable
+              ? "Nhập địa chỉ để tự định vị hoặc click, kéo marker để chỉnh vị trí chính xác."
+              : "Hệ thống sẽ tự bật toàn bộ thông tin của POI được chọn từ marker hoặc từ điểm gần nhất bạn chạm."}
           </p>
         </div>
         <div className="rounded-2xl bg-sand-50 px-4 py-2 text-xs font-medium text-ink-600">
@@ -423,14 +607,15 @@ export const OpenStreetMapPicker = ({
       </div>
 
       <div
-        className={`rounded-2xl px-4 py-3 text-sm ${geocodeState === "error"
-          ? "bg-rose-50 text-rose-700"
-          : geocodeState === "resolved"
-            ? "bg-emerald-50 text-emerald-700"
-            : "bg-sand-50 text-ink-600"
-          }`}
+        className={`rounded-2xl px-4 py-3 text-sm ${
+          messageTone === "error"
+            ? "bg-rose-50 text-rose-700"
+            : messageTone === "resolved"
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-sand-50 text-ink-600"
+        }`}
       >
-        {geocodeMessage}
+        {message}
       </div>
 
       <div className="overflow-hidden rounded-3xl border border-sand-200 bg-sand-50">

@@ -14,7 +14,7 @@ import type {
   AudioGuide,
   FoodItem,
   MediaAsset,
-  Place,
+  Poi,
   Promotion,
   Review,
   SystemSetting,
@@ -25,12 +25,11 @@ const EMPTY_ADMIN_STATE: AdminDataState = {
   users: [],
   customerUsers: [],
   categories: [],
-  places: [],
+  pois: [],
   foodItems: [],
   translations: [],
   audioGuides: [],
   mediaAssets: [],
-  qrCodes: [],
   routes: [],
   promotions: [],
   reviews: [],
@@ -49,7 +48,6 @@ const EMPTY_ADMIN_STATE: AdminDataState = {
     storageProvider: "cloudinary",
     ttsProvider: "native",
     geofenceRadiusMeters: 0,
-    qrAutoPlay: false,
     guestReviewEnabled: false,
     analyticsRetentionDays: 0,
   },
@@ -61,12 +59,11 @@ const toState = (payload: Partial<AdminDataState>): AdminDataState => ({
   users: payload.users ?? [],
   customerUsers: payload.customerUsers ?? [],
   categories: payload.categories ?? [],
-  places: payload.places ?? [],
+  pois: payload.pois ?? [],
   foodItems: payload.foodItems ?? [],
   translations: payload.translations ?? [],
   audioGuides: payload.audioGuides ?? [],
   mediaAssets: payload.mediaAssets ?? [],
-  qrCodes: payload.qrCodes ?? [],
   routes: payload.routes ?? [],
   promotions: payload.promotions ?? [],
   reviews: payload.reviews ?? [],
@@ -76,7 +73,7 @@ const toState = (payload: Partial<AdminDataState>): AdminDataState => ({
   settings: payload.settings ?? EMPTY_ADMIN_STATE.settings,
 });
 
-type PlaceDraft = Omit<Place, "id" | "createdAt" | "updatedAt" | "updatedBy"> & {
+type PoiDraft = Omit<Poi, "id" | "createdAt" | "updatedAt" | "updatedBy"> & {
   id?: string;
   title: string;
   shortText: string;
@@ -91,7 +88,7 @@ type AdminDataContextValue = {
   isRefreshing: boolean;
   bootstrapError: string | null;
   refreshData: () => Promise<AdminDataState>;
-  savePlace: (draft: PlaceDraft, actor: AdminUser) => Promise<Place>;
+  savePoi: (draft: PoiDraft, actor: AdminUser) => Promise<Poi>;
   saveUser: (
     user: Omit<AdminUser, "id" | "createdAt" | "lastLoginAt"> & { id?: string },
     actor: AdminUser,
@@ -114,8 +111,6 @@ type AdminDataContextValue = {
     actor: AdminUser,
   ) => Promise<void>;
   saveSettings: (settings: SystemSetting, actor: AdminUser) => Promise<void>;
-  saveRouteQrState: (qrId: string, isActive: boolean, actor: AdminUser) => Promise<void>;
-  saveQrCodeImage: (qrId: string, qrImageUrl: string, actor: AdminUser) => Promise<void>;
   saveMediaAsset: (
     asset: Omit<MediaAsset, "id" | "createdAt"> & { id?: string },
     actor: AdminUser,
@@ -172,9 +167,9 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     [hasBootstrapped, loadBootstrap],
   );
 
-  const savePlace = useCallback(
-    async (draft: PlaceDraft, actor: AdminUser) => {
-      const savedPlace = await adminApi.savePlace({
+  const savePoi = useCallback(
+    async (draft: PoiDraft, actor: AdminUser) => {
+      const savedPoi = await adminApi.savePoi({
         id: draft.id,
         slug: draft.slug,
         address: draft.address,
@@ -193,15 +188,16 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
         ownerUserId: draft.ownerUserId,
         updatedBy: actor.name,
       });
+      let nextState = state;
 
       try {
         await adminApi.saveTranslation({
-          entityType: "place",
-          entityId: savedPlace.id,
+          entityType: "poi",
+          entityId: savedPoi.id,
           id: state.translations.find(
             (item) =>
-              item.entityType === "place" &&
-              item.entityId === savedPlace.id &&
+              item.entityType === "poi" &&
+              item.entityId === savedPoi.id &&
               item.languageCode === draft.defaultLanguageCode,
           )?.id,
           languageCode: draft.defaultLanguageCode,
@@ -214,12 +210,12 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
           updatedBy: actor.name,
         });
       } finally {
-        await refreshData();
+        nextState = await refreshData();
       }
 
-      return savedPlace;
+      return nextState.pois.find((item) => item.id === savedPoi.id) ?? savedPoi;
     },
-    [refreshData, state.settings.freeLanguages, state.translations],
+    [refreshData, state, state.settings.freeLanguages, state.translations],
   );
 
   const saveUser = useCallback(
@@ -236,7 +232,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
         status: user.status,
         avatarColor: user.avatarColor,
         password: user.password || null,
-        managedPlaceId: user.role === "PLACE_OWNER" ? user.managedPlaceId : null,
+        managedPoiId: user.role === "PLACE_OWNER" ? user.managedPoiId : null,
         actorName: actor.name,
         actorRole: actor.role,
       });
@@ -250,7 +246,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     async (promotion: Omit<Promotion, "id"> & { id?: string }, actor: AdminUser) => {
       await adminApi.savePromotion({
         id: promotion.id,
-        placeId: promotion.placeId,
+        poiId: promotion.poiId,
         title: promotion.title,
         description: promotion.description,
         startAt: promotion.startAt,
@@ -321,32 +317,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     [refreshData],
   );
 
-  const saveRouteQrState = useCallback(
-    async (qrId: string, isActive: boolean, actor: AdminUser) => {
-      await adminApi.saveQrCodeState(qrId, {
-        isActive,
-        actorName: actor.name,
-        actorRole: actor.role,
-      });
-
-      await refreshData();
-    },
-    [refreshData],
-  );
-
-  const saveQrCodeImage = useCallback(
-    async (qrId: string, qrImageUrl: string, actor: AdminUser) => {
-      await adminApi.saveQrCodeImage(qrId, {
-        qrImageUrl,
-        actorName: actor.name,
-        actorRole: actor.role,
-      });
-
-      await refreshData();
-    },
-    [refreshData],
-  );
-
   const saveMediaAsset = useCallback(
     async (
       asset: Omit<MediaAsset, "id" | "createdAt"> & { id?: string },
@@ -373,15 +343,13 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       isRefreshing,
       bootstrapError,
       refreshData,
-      savePlace,
+      savePoi,
       saveUser,
       savePromotion,
       saveAudioGuide,
       saveTranslation,
       saveReviewStatus,
       saveSettings,
-      saveQrCodeImage,
-      saveRouteQrState,
       saveMediaAsset,
       saveFoodItem,
     }),
@@ -393,11 +361,9 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       saveAudioGuide,
       saveFoodItem,
       saveMediaAsset,
-      savePlace,
+      savePoi,
       savePromotion,
-      saveQrCodeImage,
       saveReviewStatus,
-      saveRouteQrState,
       saveSettings,
       saveTranslation,
       saveUser,

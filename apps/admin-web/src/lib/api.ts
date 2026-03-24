@@ -4,9 +4,8 @@ import type {
   AudioGuide,
   FoodItem,
   MediaAsset,
-  Place,
+  Poi,
   Promotion,
-  QRCodeRecord,
   Review,
   SystemSetting,
   Translation,
@@ -110,16 +109,16 @@ export const adminApi = {
       body: formData,
     });
   },
-  savePlace: (place: {
+  savePoi: (poi: {
     id?: string;
     slug: string;
     address: string;
     lat: number;
     lng: number;
     categoryId: string;
-    status: Place["status"];
+    status: Poi["status"];
     featured: boolean;
-    defaultLanguageCode: Place["defaultLanguageCode"];
+    defaultLanguageCode: Poi["defaultLanguageCode"];
     district: string;
     ward: string;
     priceRange: string;
@@ -129,7 +128,7 @@ export const adminApi = {
     ownerUserId: string | null;
     updatedBy: string;
   }) =>
-    jsonRequest<Place>(place.id ? `/api/v1/places/${place.id}` : "/api/v1/places", place.id ? "PUT" : "POST", place),
+    jsonRequest<Poi>(poi.id ? `/api/v1/pois/${poi.id}` : "/api/v1/pois", poi.id ? "PUT" : "POST", poi),
   saveUser: (account: {
     id?: string;
     name: string;
@@ -139,14 +138,14 @@ export const adminApi = {
     status: AdminUser["status"];
     avatarColor: string;
     password: string | null;
-    managedPlaceId: string | null;
+    managedPoiId: string | null;
     actorName: string;
     actorRole: AdminUser["role"];
   }) =>
     jsonRequest<AdminUser>(account.id ? `/api/v1/users/${account.id}` : "/api/v1/users", account.id ? "PUT" : "POST", account),
   savePromotion: (promotion: {
     id?: string;
-    placeId: string;
+    poiId: string;
     title: string;
     description: string;
     startAt: string;
@@ -205,18 +204,6 @@ export const adminApi = {
     actorRole: AdminUser["role"];
   }) =>
     jsonRequest<SystemSetting>("/api/v1/settings", "PUT", settings),
-  saveQrCodeState: (qrId: string, payload: {
-    isActive: boolean;
-    actorName: string;
-    actorRole: AdminUser["role"];
-  }) =>
-    jsonRequest<QRCodeRecord>(`/api/v1/qr-codes/${qrId}/state`, "PATCH", payload),
-  saveQrCodeImage: (qrId: string, payload: {
-    qrImageUrl: string;
-    actorName: string;
-    actorRole: AdminUser["role"];
-  }) =>
-    jsonRequest<QRCodeRecord>(`/api/v1/qr-codes/${qrId}/image`, "PATCH", payload),
   saveMediaAsset: (asset: {
     id?: string;
     entityType: MediaAsset["entityType"];
@@ -232,7 +219,7 @@ export const adminApi = {
     ),
   saveFoodItem: (item: {
     id?: string;
-    placeId: string;
+    poiId: string;
     name: string;
     description: string;
     priceRange: string;

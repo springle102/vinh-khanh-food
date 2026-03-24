@@ -1,19 +1,19 @@
-import type { AdminDataState, LanguageCode, Place } from "../data/types";
+import type { AdminDataState, LanguageCode, Poi } from "../data/types";
 import { normalizeSearchText } from "./utils";
 
-export const getPlaceTranslation = (
+export const getPoiTranslation = (
   state: AdminDataState,
-  placeId: string,
+  poiId: string,
   preferredLanguage?: LanguageCode,
 ) => {
-  const place = state.places.find((item) => item.id === placeId);
-  if (!place) {
+  const poi = state.pois.find((item) => item.id === poiId);
+  if (!poi) {
     return null;
   }
 
   const languages = [
     preferredLanguage,
-    place.defaultLanguageCode,
+    poi.defaultLanguageCode,
     state.settings.defaultLanguage,
     state.settings.fallbackLanguage,
   ].filter(Boolean) as LanguageCode[];
@@ -21,7 +21,7 @@ export const getPlaceTranslation = (
   for (const language of languages) {
     const matched = state.translations.find(
       (item) =>
-        item.entityType === "place" && item.entityId === placeId && item.languageCode === language,
+        item.entityType === "poi" && item.entityId === poiId && item.languageCode === language,
     );
     if (matched) {
       return matched;
@@ -29,22 +29,22 @@ export const getPlaceTranslation = (
   }
 
   return (
-    state.translations.find((item) => item.entityType === "place" && item.entityId === placeId) ??
+    state.translations.find((item) => item.entityType === "poi" && item.entityId === poiId) ??
     null
   );
 };
 
-export const getPlaceTitle = (
+export const getPoiTitle = (
   state: AdminDataState,
-  placeId: string,
+  poiId: string,
   preferredLanguage?: LanguageCode,
-) => getPlaceTranslation(state, placeId, preferredLanguage)?.title ?? "Chưa có tiêu đề";
+) => getPoiTranslation(state, poiId, preferredLanguage)?.title ?? "Chưa có tiêu đề";
 
 export const getCategoryName = (state: AdminDataState, categoryId: string) =>
   state.categories.find((item) => item.id === categoryId)?.name ?? "Chưa phân loại";
 
-export const getPlaceById = (state: AdminDataState, placeId: string) =>
-  state.places.find((item) => item.id === placeId);
+export const getPoiById = (state: AdminDataState, poiId: string) =>
+  state.pois.find((item) => item.id === poiId);
 
 export const getOwnerName = (state: AdminDataState, ownerUserId: string | null) => {
   if (!ownerUserId) {
@@ -64,16 +64,16 @@ export const createDailyMetrics = (values: string[], getValue: (date: Date) => n
     };
   });
 
-export const searchPlaces = (places: Place[], state: AdminDataState, keyword: string) => {
+export const searchPois = (pois: Poi[], state: AdminDataState, keyword: string) => {
   const normalizedKeyword = normalizeSearchText(keyword);
   if (!normalizedKeyword) {
-    return places;
+    return pois;
   }
 
-  return places.filter((place) => {
-    const translation = getPlaceTranslation(state, place.id);
+  return pois.filter((poi) => {
+    const translation = getPoiTranslation(state, poi.id);
     const haystack = normalizeSearchText(
-      [translation?.title, place.address, place.slug, place.tags.join(" ")].join(" "),
+      [translation?.title, poi.address, poi.slug, poi.tags.join(" ")].join(" "),
     );
 
     return haystack.includes(normalizedKeyword);

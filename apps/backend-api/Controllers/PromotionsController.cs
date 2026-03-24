@@ -10,13 +10,13 @@ namespace VinhKhanh.BackendApi.Controllers;
 public sealed class PromotionsController(AdminDataRepository repository) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<ApiResponse<IReadOnlyList<Promotion>>> GetPromotions([FromQuery] string? placeId, [FromQuery] string? status)
+    public ActionResult<ApiResponse<IReadOnlyList<Promotion>>> GetPromotions([FromQuery] string? poiId, [FromQuery] string? status)
     {
         IEnumerable<Promotion> query = repository.GetPromotions();
 
-        if (!string.IsNullOrWhiteSpace(placeId))
+        if (!string.IsNullOrWhiteSpace(poiId))
         {
-            query = query.Where(item => item.PlaceId == placeId);
+            query = query.Where(item => item.PoiId == poiId);
         }
 
         if (!string.IsNullOrWhiteSpace(status))
@@ -30,9 +30,9 @@ public sealed class PromotionsController(AdminDataRepository repository) : Contr
     [HttpPost]
     public ActionResult<ApiResponse<Promotion>> CreatePromotion([FromBody] PromotionUpsertRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.PlaceId) || string.IsNullOrWhiteSpace(request.Title))
+        if (string.IsNullOrWhiteSpace(request.PoiId) || string.IsNullOrWhiteSpace(request.Title))
         {
-            return BadRequest(ApiResponse<Promotion>.Fail("PlaceId va tieu de uu dai la bat buoc."));
+            return BadRequest(ApiResponse<Promotion>.Fail("PoiId va tieu de uu dai la bat buoc."));
         }
 
         var saved = repository.SavePromotion(null, request);

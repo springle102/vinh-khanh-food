@@ -10,11 +10,11 @@ import { useAdminData } from "../../data/store";
 import { useAuth } from "../auth/AuthContext";
 import type { Promotion } from "../../data/types";
 import { formatDateTime } from "../../lib/utils";
-import { getPlaceTitle } from "../../lib/selectors";
+import { getPoiTitle } from "../../lib/selectors";
 
 type PromotionForm = {
   id?: string;
-  placeId: string;
+  poiId: string;
   title: string;
   description: string;
   startAt: string;
@@ -23,7 +23,7 @@ type PromotionForm = {
 };
 
 const defaultPromotionForm: PromotionForm = {
-  placeId: "",
+  poiId: "",
   title: "",
   description: "",
   startAt: "",
@@ -37,7 +37,7 @@ export const PromotionsPage = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<PromotionForm>({
     ...defaultPromotionForm,
-    placeId: state.places[0]?.id ?? "",
+    poiId: state.pois[0]?.id ?? "",
   });
 
   const openModal = (promotion?: Promotion) => {
@@ -45,7 +45,7 @@ export const PromotionsPage = () => {
       promotion
         ? {
           id: promotion.id,
-          placeId: promotion.placeId,
+          poiId: promotion.poiId,
           title: promotion.title,
           description: promotion.description,
           startAt: promotion.startAt.slice(0, 16),
@@ -54,7 +54,7 @@ export const PromotionsPage = () => {
         }
         : {
           ...defaultPromotionForm,
-          placeId: state.places[0]?.id ?? "",
+          poiId: state.pois[0]?.id ?? "",
         },
     );
     setModalOpen(true);
@@ -69,7 +69,7 @@ export const PromotionsPage = () => {
     savePromotion(
       {
         id: form.id,
-        placeId: form.placeId,
+        poiId: form.poiId,
         title: form.title,
         description: form.description,
         startAt: new Date(form.startAt).toISOString(),
@@ -93,9 +93,9 @@ export const PromotionsPage = () => {
       ),
     },
     {
-      key: "place",
-      header: "Địa điểm",
-      render: (item) => <p className="font-medium text-ink-800">{getPlaceTitle(state, item.placeId)}</p>,
+      key: "poi",
+      header: "POI",
+      render: (item) => <p className="font-medium text-ink-800">{getPoiTitle(state, item.poiId)}</p>,
     },
     {
       key: "window",
@@ -143,18 +143,18 @@ export const PromotionsPage = () => {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={form.id ? "Cập nhật ưu đãi" : "Tạo ưu đãi mới"}
-        description="Thông tin khuyến mãi có thể dùng cho banner, push notification và place detail."
+        description="Thông tin khuyến mãi có thể dùng cho banner, push notification và poi detail."
       >
         <form className="space-y-5" onSubmit={handleSubmit}>
           <div>
-            <label className="field-label">Địa điểm</label>
+            <label className="field-label">POI</label>
             <Select
-              value={form.placeId}
-              onChange={(event) => setForm((current) => ({ ...current, placeId: event.target.value }))}
+              value={form.poiId}
+              onChange={(event) => setForm((current) => ({ ...current, poiId: event.target.value }))}
             >
-              {state.places.map((place) => (
-                <option key={place.id} value={place.id}>
-                  {getPlaceTitle(state, place.id)}
+              {state.pois.map((poi) => (
+                <option key={poi.id} value={poi.id}>
+                  {getPoiTitle(state, poi.id)}
                 </option>
               ))}
             </Select>

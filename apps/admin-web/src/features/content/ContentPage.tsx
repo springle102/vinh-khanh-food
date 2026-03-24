@@ -10,12 +10,12 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import type { FoodItem } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
-import { getPlaceTitle } from "../../lib/selectors";
+import { getPoiTitle } from "../../lib/selectors";
 import { useAuth } from "../auth/AuthContext";
 
 type FoodForm = {
   id?: string;
-  placeId: string;
+  poiId: string;
   name: string;
   description: string;
   priceRange: string;
@@ -24,7 +24,7 @@ type FoodForm = {
 };
 
 const defaultFoodForm: FoodForm = {
-  placeId: "",
+  poiId: "",
   name: "",
   description: "",
   priceRange: "",
@@ -40,7 +40,7 @@ export const ContentPage = () => {
   const [formError, setFormError] = useState("");
   const [isSaving, setSaving] = useState(false);
 
-  const placesWithDishes = new Set(state.foodItems.map((item) => item.placeId)).size;
+  const poisWithDishes = new Set(state.foodItems.map((item) => item.poiId)).size;
   const hotDishes = state.foodItems.filter((item) => item.spicyLevel === "hot").length;
 
   const openFoodModal = (item?: FoodItem) => {
@@ -49,7 +49,7 @@ export const ContentPage = () => {
       item
         ? {
             id: item.id,
-            placeId: item.placeId,
+            poiId: item.poiId,
             name: item.name,
             description: item.description,
             priceRange: item.priceRange,
@@ -58,7 +58,7 @@ export const ContentPage = () => {
           }
         : {
             ...defaultFoodForm,
-            placeId: state.places[0]?.id ?? "",
+            poiId: state.pois[0]?.id ?? "",
           },
     );
     setFoodModalOpen(true);
@@ -77,7 +77,7 @@ export const ContentPage = () => {
       await saveFoodItem(
         {
           id: foodForm.id,
-          placeId: foodForm.placeId,
+          poiId: foodForm.poiId,
           name: foodForm.name,
           description: foodForm.description,
           priceRange: foodForm.priceRange,
@@ -110,12 +110,12 @@ export const ContentPage = () => {
       ),
     },
     {
-      key: "place",
-      header: "Địa điểm",
+      key: "poi",
+      header: "POI",
       widthClassName: "min-w-[220px]",
       render: (item) => (
         <div>
-          <p className="font-medium text-ink-800">{getPlaceTitle(state, item.placeId)}</p>
+          <p className="font-medium text-ink-800">{getPoiTitle(state, item.poiId)}</p>
           <p className="mt-1 text-xs text-ink-500">{item.priceRange}</p>
         </div>
       ),
@@ -150,7 +150,7 @@ export const ContentPage = () => {
       <section className="grid gap-4 md:grid-cols-3">
         {[
           ["Tổng món ăn", state.foodItems.length],
-          ["Địa điểm có món", placesWithDishes],
+          ["POI có món", poisWithDishes],
           ["Món cay", hotDishes],
         ].map(([label, value]) => (
           <Card key={label}>
@@ -175,16 +175,16 @@ export const ContentPage = () => {
       <Modal open={foodModalOpen} onClose={() => setFoodModalOpen(false)} title="Quản lý món ăn">
         <form className="space-y-5" onSubmit={handleFoodSubmit}>
           <div>
-            <label className="field-label">Địa điểm</label>
+            <label className="field-label">POI</label>
             <Select
-              value={foodForm.placeId}
+              value={foodForm.poiId}
               onChange={(event) =>
-                setFoodForm((current) => ({ ...current, placeId: event.target.value }))
+                setFoodForm((current) => ({ ...current, poiId: event.target.value }))
               }
             >
-              {state.places.map((place) => (
-                <option key={place.id} value={place.id}>
-                  {getPlaceTitle(state, place.id)}
+              {state.pois.map((poi) => (
+                <option key={poi.id} value={poi.id}>
+                  {getPoiTitle(state, poi.id)}
                 </option>
               ))}
             </Select>

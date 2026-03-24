@@ -10,13 +10,13 @@ namespace VinhKhanh.BackendApi.Controllers;
 public sealed class ReviewsController(AdminDataRepository repository) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<ApiResponse<IReadOnlyList<Review>>> GetReviews([FromQuery] string? placeId, [FromQuery] string? status)
+    public ActionResult<ApiResponse<IReadOnlyList<Review>>> GetReviews([FromQuery] string? poiId, [FromQuery] string? status)
     {
         IEnumerable<Review> query = repository.GetReviews();
 
-        if (!string.IsNullOrWhiteSpace(placeId))
+        if (!string.IsNullOrWhiteSpace(poiId))
         {
-            query = query.Where(item => item.PlaceId == placeId);
+            query = query.Where(item => item.PoiId == poiId);
         }
 
         if (!string.IsNullOrWhiteSpace(status))
@@ -30,9 +30,9 @@ public sealed class ReviewsController(AdminDataRepository repository) : Controll
     [HttpPost]
     public ActionResult<ApiResponse<Review>> CreateReview([FromBody] ReviewCreateRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.PlaceId) || string.IsNullOrWhiteSpace(request.Comment))
+        if (string.IsNullOrWhiteSpace(request.PoiId) || string.IsNullOrWhiteSpace(request.Comment))
         {
-            return BadRequest(ApiResponse<Review>.Fail("PlaceId va noi dung danh gia la bat buoc."));
+            return BadRequest(ApiResponse<Review>.Fail("PoiId va noi dung danh gia la bat buoc."));
         }
 
         if (request.Rating is < 1 or > 5)
@@ -40,10 +40,10 @@ public sealed class ReviewsController(AdminDataRepository repository) : Controll
             return BadRequest(ApiResponse<Review>.Fail("So sao danh gia phai tu 1 den 5."));
         }
 
-        var placeExists = repository.GetPlaces().Any(item => item.Id == request.PlaceId);
-        if (!placeExists)
+        var poiExists = repository.GetPois().Any(item => item.Id == request.PoiId);
+        if (!poiExists)
         {
-            return NotFound(ApiResponse<Review>.Fail("Khong tim thay dia diem de gui danh gia."));
+            return NotFound(ApiResponse<Review>.Fail("Khong tim thay POI de gui danh gia."));
         }
 
         var review = repository.CreateReview(request);

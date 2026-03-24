@@ -3,15 +3,14 @@ import { cn } from "../../lib/utils";
 import { Icon } from "../ui/Icons";
 
 const items = [
-  { to: "/", label: "Tổng quan", icon: "dashboard" as const },
-  { to: "/places", label: "Địa điểm", icon: "map" as const },
-  { to: "/content", label: "Món ăn", icon: "content" as const },
-  { to: "/qr-routes", label: "QR", icon: "qr" as const },
-  { to: "/users", label: "Tài khoản", icon: "users" as const },
-  { to: "/promotions", label: "Ưu đãi", icon: "gift" as const },
-  { to: "/reviews", label: "Đánh giá", icon: "star" as const },
-  { to: "/activity", label: "Nhật ký", icon: "activity" as const },
-  { to: "/settings", label: "Cài đặt", icon: "settings" as const },
+  { to: "/", label: "Tong quan", icon: "dashboard" as const },
+  { to: "/pois", label: "POI", icon: "map" as const },
+  { to: "/content", label: "Mon an", icon: "content" as const },
+  { to: "/users", label: "Tai khoan", icon: "users" as const },
+  { to: "/promotions", label: "Uu dai", icon: "gift" as const },
+  { to: "/reviews", label: "Danh gia", icon: "star" as const },
+  { to: "/activity", label: "Nhat ky", icon: "activity" as const },
+  { to: "/settings", label: "Cai dat", icon: "settings" as const },
 ];
 
 export const Sidebar = ({
@@ -40,7 +39,7 @@ export const Sidebar = ({
           <Icon name="dashboard" className="h-6 w-6" />
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary-600">Vĩnh Khánh</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary-600">Vinh Khanh</p>
           <h1 className="text-lg font-bold text-ink-900">Admin Console</h1>
         </div>
       </div>

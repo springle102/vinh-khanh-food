@@ -8,7 +8,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<AdminUser> GetUsers(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPlaceId
+            SELECT Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId
             FROM dbo.AdminUsers
             ORDER BY CreatedAt DESC, Id DESC;
             """;
@@ -33,9 +33,9 @@ public sealed partial class AdminDataRepository
             ORDER BY CreatedAt DESC, Id DESC;
             """;
         const string favoritesSql = """
-            SELECT CustomerUserId, PlaceId
-            FROM dbo.CustomerFavoritePlaces
-            ORDER BY CustomerUserId, PlaceId;
+            SELECT CustomerUserId, PoiId
+            FROM dbo.CustomerFavoritePois
+            ORDER BY CustomerUserId, PoiId;
             """;
 
         var favoriteMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -51,7 +51,7 @@ public sealed partial class AdminDataRepository
                     favoriteMap[customerUserId] = items;
                 }
 
-                items.Add(ReadString(favoritesReader, "PlaceId"));
+                items.Add(ReadString(favoritesReader, "PoiId"));
             }
         }
 
@@ -72,7 +72,7 @@ public sealed partial class AdminDataRepository
                     PreferredLanguage = ReadString(usersReader, "PreferredLanguage"),
                     IsPremium = ReadBool(usersReader, "IsPremium"),
                     TotalScans = ReadInt(usersReader, "TotalScans"),
-                    FavoritePlaceIds = favoriteMap.GetValueOrDefault(customerId, []),
+                    FavoritePoiIds = favoriteMap.GetValueOrDefault(customerId, []),
                     CreatedAt = ReadDateTimeOffset(usersReader, "CreatedAt"),
                     LastActiveAt = ReadNullableDateTimeOffset(usersReader, "LastActiveAt")
                 });
@@ -82,7 +82,7 @@ public sealed partial class AdminDataRepository
         return customers;
     }
 
-    private IReadOnlyList<PlaceCategory> GetCategories(SqlConnection connection, SqlTransaction? transaction)
+    private IReadOnlyList<PoiCategory> GetCategories(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
             SELECT Id, Name, Slug, Icon, Color
@@ -93,10 +93,10 @@ public sealed partial class AdminDataRepository
         using var command = CreateCommand(connection, transaction, sql);
         using var reader = command.ExecuteReader();
 
-        var items = new List<PlaceCategory>();
+        var items = new List<PoiCategory>();
         while (reader.Read())
         {
-            items.Add(new PlaceCategory
+            items.Add(new PoiCategory
             {
                 Id = ReadString(reader, "Id"),
                 Name = ReadString(reader, "Name"),
@@ -109,9 +109,9 @@ public sealed partial class AdminDataRepository
         return items;
     }
 
-    private IReadOnlyList<Place> GetPlaces(SqlConnection connection, SqlTransaction? transaction)
+    private IReadOnlyList<Poi> GetPois(SqlConnection connection, SqlTransaction? transaction)
     {
-        const string placesSql = """
+        const string poisSql = """
             SELECT
                 Id,
                 Slug,
@@ -131,13 +131,13 @@ public sealed partial class AdminDataRepository
                 UpdatedBy,
                 CreatedAt,
                 UpdatedAt
-            FROM dbo.Places
+            FROM dbo.Pois
             ORDER BY UpdatedAt DESC, CreatedAt DESC, Id DESC;
             """;
         const string tagsSql = """
-            SELECT PlaceId, TagValue
-            FROM dbo.PlaceTags
-            ORDER BY PlaceId, TagValue;
+            SELECT PoiId, TagValue
+            FROM dbo.PoiTags
+            ORDER BY PoiId, TagValue;
             """;
 
         var tagMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -146,57 +146,57 @@ public sealed partial class AdminDataRepository
         {
             while (tagsReader.Read())
             {
-                var placeId = ReadString(tagsReader, "PlaceId");
-                if (!tagMap.TryGetValue(placeId, out var items))
+                var poiId = ReadString(tagsReader, "PoiId");
+                if (!tagMap.TryGetValue(poiId, out var items))
                 {
                     items = [];
-                    tagMap[placeId] = items;
+                    tagMap[poiId] = items;
                 }
 
                 items.Add(ReadString(tagsReader, "TagValue"));
             }
         }
 
-        var places = new List<Place>();
-        using (var placesCommand = CreateCommand(connection, transaction, placesSql))
-        using (var placesReader = placesCommand.ExecuteReader())
+        var pois = new List<Poi>();
+        using (var poisCommand = CreateCommand(connection, transaction, poisSql))
+        using (var poisReader = poisCommand.ExecuteReader())
         {
-            while (placesReader.Read())
+            while (poisReader.Read())
             {
-                var placeId = ReadString(placesReader, "Id");
-                places.Add(new Place
+                var poiId = ReadString(poisReader, "Id");
+                pois.Add(new Poi
                 {
-                    Id = placeId,
-                    Slug = ReadString(placesReader, "Slug"),
-                    Address = ReadString(placesReader, "AddressLine"),
-                    Lat = ReadDouble(placesReader, "Latitude"),
-                    Lng = ReadDouble(placesReader, "Longitude"),
-                    CategoryId = ReadString(placesReader, "CategoryId"),
-                    Status = ReadString(placesReader, "Status"),
-                    Featured = ReadBool(placesReader, "IsFeatured"),
-                    DefaultLanguageCode = ReadString(placesReader, "DefaultLanguageCode"),
-                    District = ReadString(placesReader, "District"),
-                    Ward = ReadString(placesReader, "Ward"),
-                    PriceRange = ReadString(placesReader, "PriceRange"),
-                    AverageVisitDuration = ReadInt(placesReader, "AverageVisitDurationMinutes"),
-                    PopularityScore = ReadInt(placesReader, "PopularityScore"),
-                    Tags = tagMap.GetValueOrDefault(placeId, []),
-                    OwnerUserId = ReadNullableString(placesReader, "OwnerUserId"),
-                    UpdatedBy = ReadString(placesReader, "UpdatedBy"),
-                    CreatedAt = ReadDateTimeOffset(placesReader, "CreatedAt"),
-                    UpdatedAt = ReadDateTimeOffset(placesReader, "UpdatedAt")
+                    Id = poiId,
+                    Slug = ReadString(poisReader, "Slug"),
+                    Address = ReadString(poisReader, "AddressLine"),
+                    Lat = ReadDouble(poisReader, "Latitude"),
+                    Lng = ReadDouble(poisReader, "Longitude"),
+                    CategoryId = ReadString(poisReader, "CategoryId"),
+                    Status = ReadString(poisReader, "Status"),
+                    Featured = ReadBool(poisReader, "IsFeatured"),
+                    DefaultLanguageCode = ReadString(poisReader, "DefaultLanguageCode"),
+                    District = ReadString(poisReader, "District"),
+                    Ward = ReadString(poisReader, "Ward"),
+                    PriceRange = ReadString(poisReader, "PriceRange"),
+                    AverageVisitDuration = ReadInt(poisReader, "AverageVisitDurationMinutes"),
+                    PopularityScore = ReadInt(poisReader, "PopularityScore"),
+                    Tags = tagMap.GetValueOrDefault(poiId, []),
+                    OwnerUserId = ReadNullableString(poisReader, "OwnerUserId"),
+                    UpdatedBy = ReadString(poisReader, "UpdatedBy"),
+                    CreatedAt = ReadDateTimeOffset(poisReader, "CreatedAt"),
+                    UpdatedAt = ReadDateTimeOffset(poisReader, "UpdatedAt")
                 });
             }
         }
 
-        return places;
+        return pois;
     }
 
     private IReadOnlyList<Translation> GetTranslations(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
             SELECT Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
-            FROM dbo.PlaceTranslations
+            FROM dbo.PoiTranslations
             ORDER BY UpdatedAt DESC, Id DESC;
             """;
 
@@ -255,7 +255,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<FoodItem> GetFoodItems(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, PlaceId, Name, [Description], PriceRange, ImageUrl, SpicyLevel
+            SELECT Id, PoiId, Name, [Description], PriceRange, ImageUrl, SpicyLevel
             FROM dbo.FoodItems
             ORDER BY Name, Id;
             """;
@@ -272,23 +272,4 @@ public sealed partial class AdminDataRepository
         return items;
     }
 
-    private IReadOnlyList<QRCodeRecord> GetQrCodes(SqlConnection connection, SqlTransaction? transaction)
-    {
-        const string sql = """
-            SELECT Id, EntityType, EntityId, QrValue, QrImageUrl, IsActive, LastScanAt
-            FROM dbo.QRCodes
-            ORDER BY EntityId, Id;
-            """;
-
-        using var command = CreateCommand(connection, transaction, sql);
-        using var reader = command.ExecuteReader();
-
-        var items = new List<QRCodeRecord>();
-        while (reader.Read())
-        {
-            items.Add(MapQrCode(reader));
-        }
-
-        return items;
-    }
 }

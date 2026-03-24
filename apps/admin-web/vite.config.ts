@@ -13,7 +13,6 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             "react-vendor": ["react", "react-dom", "react-router-dom"],
             "chart-vendor": ["recharts"],
-            "qr-vendor": ["qrcode"],
           },
         },
       },

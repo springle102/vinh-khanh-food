@@ -4,7 +4,7 @@ export type Role = "SUPER_ADMIN" | "PLACE_OWNER";
 export type UserStatus = "active" | "locked";
 export type CustomerStatus = "active" | "blocked";
 export type ContentStatus = "draft" | "published" | "archived";
-export type EntityType = "place" | "food_item" | "route";
+export type EntityType = "poi" | "food_item" | "route";
 export type AudioSourceType = "uploaded" | "tts";
 export type AudioStatus = "ready" | "processing" | "missing";
 export type MediaType = "image" | "video";
@@ -23,7 +23,7 @@ export interface AdminUser {
   createdAt: string;
   lastLoginAt: string | null;
   avatarColor: string;
-  managedPlaceId: string | null;
+  managedPoiId: string | null;
 }
 
 export interface CustomerUser {
@@ -35,12 +35,12 @@ export interface CustomerUser {
   preferredLanguage: LanguageCode;
   isPremium: boolean;
   totalScans: number;
-  favoritePlaceIds: string[];
+  favoritePoiIds: string[];
   createdAt: string;
   lastActiveAt: string | null;
 }
 
-export interface PlaceCategory {
+export interface PoiCategory {
   id: string;
   name: string;
   slug: string;
@@ -48,7 +48,7 @@ export interface PlaceCategory {
   color: string;
 }
 
-export interface Place {
+export interface Poi {
   id: string;
   slug: string;
   address: string;
@@ -72,7 +72,7 @@ export interface Place {
 
 export interface FoodItem {
   id: string;
-  placeId: string;
+  poiId: string;
   name: string;
   description: string;
   priceRange: string;
@@ -118,29 +118,19 @@ export interface MediaAsset {
   createdAt: string;
 }
 
-export interface QRCodeRecord {
-  id: string;
-  entityType: EntityType;
-  entityId: string;
-  qrValue: string;
-  qrImageUrl: string;
-  isActive: boolean;
-  lastScanAt: string | null;
-}
-
 export interface TourRoute {
   id: string;
   name: string;
   description: string;
   durationMinutes: number;
   difficulty: "easy" | "balanced" | "foodie";
-  stopPlaceIds: string[];
+  stopPoiIds: string[];
   isFeatured: boolean;
 }
 
 export interface Promotion {
   id: string;
-  placeId: string;
+  poiId: string;
   title: string;
   description: string;
   startAt: string;
@@ -150,7 +140,7 @@ export interface Promotion {
 
 export interface Review {
   id: string;
-  placeId: string;
+  poiId: string;
   userName: string;
   rating: number;
   comment: string;
@@ -161,7 +151,7 @@ export interface Review {
 
 export interface ViewLog {
   id: string;
-  placeId: string;
+  poiId: string;
   languageCode: LanguageCode;
   deviceType: DeviceType;
   viewedAt: string;
@@ -169,7 +159,7 @@ export interface ViewLog {
 
 export interface AudioListenLog {
   id: string;
-  placeId: string;
+  poiId: string;
   languageCode: LanguageCode;
   listenedAt: string;
   durationInSeconds: number;
@@ -196,7 +186,6 @@ export interface SystemSetting {
   storageProvider: "cloudinary" | "s3";
   ttsProvider: "native" | "azure";
   geofenceRadiusMeters: number;
-  qrAutoPlay: boolean;
   guestReviewEnabled: boolean;
   analyticsRetentionDays: number;
 }
@@ -204,13 +193,12 @@ export interface SystemSetting {
 export interface AdminDataState {
   users: AdminUser[];
   customerUsers: CustomerUser[];
-  categories: PlaceCategory[];
-  places: Place[];
+  categories: PoiCategory[];
+  pois: Poi[];
   foodItems: FoodItem[];
   translations: Translation[];
   audioGuides: AudioGuide[];
   mediaAssets: MediaAsset[];
-  qrCodes: QRCodeRecord[];
   routes: TourRoute[];
   promotions: Promotion[];
   reviews: Review[];

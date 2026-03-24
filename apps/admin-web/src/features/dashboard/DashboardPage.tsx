@@ -16,7 +16,7 @@ import { Card } from "../../components/ui/Card";
 import { Icon } from "../../components/ui/Icons";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
-import { getCategoryName, getPlaceTitle, getPlaceTranslation } from "../../lib/selectors";
+import { getCategoryName, getPoiTitle, getPoiTranslation } from "../../lib/selectors";
 import { formatDateTime, formatNumber, languageLabels } from "../../lib/utils";
 
 const chartPalette = ["#f97316", "#de6245", "#d9a845", "#9a3412", "#475569"];
@@ -28,7 +28,7 @@ export const DashboardPage = () => {
 
   const totalViews = state.viewLogs.length;
   const totalListens = state.audioListenLogs.length;
-  const totalPublishedPlaces = state.places.filter((item) => item.status === "published").length;
+  const totalPublishedPois = state.pois.filter((item) => item.status === "published").length;
   const averageListenDuration = Math.round(
     state.audioListenLogs.reduce((sum, item) => sum + item.durationInSeconds, 0) /
       Math.max(state.audioListenLogs.length, 1),
@@ -54,20 +54,20 @@ export const DashboardPage = () => {
     }))
     .filter((item) => item.value > 0);
 
-  const topPlaces = state.places
-    .map((place) => ({
-      id: place.id,
-      title: getPlaceTitle(state, place.id),
-      category: getCategoryName(state, place.categoryId),
-      views: state.viewLogs.filter((item) => item.placeId === place.id).length,
-      listens: state.audioListenLogs.filter((item) => item.placeId === place.id).length,
-      status: place.status,
-      updatedAt: place.updatedAt,
+  const topPois = state.pois
+    .map((poi) => ({
+      id: poi.id,
+      title: getPoiTitle(state, poi.id),
+      category: getCategoryName(state, poi.categoryId),
+      views: state.viewLogs.filter((item) => item.poiId === poi.id).length,
+      listens: state.audioListenLogs.filter((item) => item.poiId === poi.id).length,
+      status: poi.status,
+      updatedAt: poi.updatedAt,
     }))
     .sort((left, right) => right.views + right.listens - (left.views + left.listens))
     .slice(0, 5);
 
-  const latestPublished = state.places
+  const latestPublished = state.pois
     .filter((item) => item.status === "published")
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, 4);
@@ -82,10 +82,10 @@ export const DashboardPage = () => {
     value: state.audioListenLogs.filter((item) => item.languageCode === code).length,
   }));
 
-  const topViewedPlaces = state.places
-    .map((place) => ({
-      name: getPlaceTitle(state, place.id),
-      value: state.viewLogs.filter((item) => item.placeId === place.id).length,
+  const topViewedPois = state.pois
+    .map((poi) => ({
+      name: getPoiTitle(state, poi.id),
+      value: state.viewLogs.filter((item) => item.poiId === poi.id).length,
     }))
     .sort((left, right) => right.value - left.value)
     .slice(0, 6);
@@ -103,7 +103,7 @@ export const DashboardPage = () => {
     },
     {
       label: "Điểm đã xuất bản",
-      value: formatNumber(totalPublishedPlaces),
+      value: formatNumber(totalPublishedPois),
       icon: "map" as const,
     },
     {
@@ -191,12 +191,12 @@ export const DashboardPage = () => {
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <Card>
           <div className="mb-6">
-            <h2 className="section-heading">Top những địa điểm được tương tác nhiều nhất</h2>
+            <h2 className="section-heading">Top POI được tương tác nhiều nhất</h2>
           </div>
           <div className="space-y-4">
-            {topPlaces.map((place, index) => (
+            {topPois.map((poi, index) => (
               <div
-                key={place.id}
+                key={poi.id}
                 className="grid gap-3 rounded-3xl border border-sand-100 bg-white px-4 py-4 md:grid-cols-[56px_minmax(0,1fr)_120px]"
               >
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-50 text-xl font-bold text-primary-600">
@@ -204,20 +204,20 @@ export const DashboardPage = () => {
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-3">
-                    <h3 className="truncate text-base font-semibold text-ink-900">{place.title}</h3>
-                    <StatusBadge status={place.status} />
+                    <h3 className="truncate text-base font-semibold text-ink-900">{poi.title}</h3>
+                    <StatusBadge status={poi.status} />
                   </div>
-                  <p className="mt-1 text-sm text-ink-500">{place.category}</p>
-                  <p className="mt-2 text-xs text-ink-400">Cập nhật {formatDateTime(place.updatedAt)}</p>
+                  <p className="mt-1 text-sm text-ink-500">{poi.category}</p>
+                  <p className="mt-2 text-xs text-ink-400">Cập nhật {formatDateTime(poi.updatedAt)}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 rounded-2xl bg-sand-50 p-3 text-center">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-ink-400">Views</p>
-                    <p className="mt-1 font-bold text-ink-900">{formatNumber(place.views)}</p>
+                    <p className="mt-1 font-bold text-ink-900">{formatNumber(poi.views)}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-wide text-ink-400">Audio</p>
-                    <p className="mt-1 font-bold text-ink-900">{formatNumber(place.listens)}</p>
+                    <p className="mt-1 font-bold text-ink-900">{formatNumber(poi.listens)}</p>
                   </div>
                 </div>
               </div>
@@ -230,24 +230,24 @@ export const DashboardPage = () => {
             <h2 className="section-heading">Điểm vừa cập nhật</h2>
           </div>
           <div className="space-y-4">
-            {latestPublished.map((place) => {
-              const translation = getPlaceTranslation(state, place.id);
+            {latestPublished.map((poi) => {
+              const translation = getPoiTranslation(state, poi.id);
 
               return (
-                <div key={place.id} className="rounded-3xl bg-sand-50 p-4">
+                <div key={poi.id} className="rounded-3xl bg-sand-50 p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-semibold text-ink-900">{translation?.title ?? place.slug}</h3>
-                    <StatusBadge status={place.status} />
+                    <h3 className="font-semibold text-ink-900">{translation?.title ?? poi.slug}</h3>
+                    <StatusBadge status={poi.status} />
                   </div>
                   <p className="mt-2 text-sm leading-6 text-ink-500">
                     {translation?.shortText ?? "Chưa có mô tả ngắn."}
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-ink-400">
-                    <span>{place.address}</span>
+                    <span>{poi.address}</span>
                     <span>|</span>
-                    <span>{getCategoryName(state, place.categoryId)}</span>
+                    <span>{getCategoryName(state, poi.categoryId)}</span>
                     <span>|</span>
-                    <span>{formatDateTime(place.updatedAt)}</span>
+                    <span>{formatDateTime(poi.updatedAt)}</span>
                   </div>
                 </div>
               );
@@ -294,11 +294,11 @@ export const DashboardPage = () => {
 
       <Card>
         <div className="mb-6">
-          <h2 className="section-heading">Top điểm đến theo lượt xem</h2>
+          <h2 className="section-heading">Top POI theo lượt xem</h2>
         </div>
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={topViewedPlaces}>
+            <BarChart data={topViewedPois}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" hide />
               <YAxis />
@@ -308,7 +308,7 @@ export const DashboardPage = () => {
           </ResponsiveContainer>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {topViewedPlaces.map((item) => (
+          {topViewedPois.map((item) => (
             <div key={item.name} className="rounded-2xl bg-sand-50 px-4 py-3">
               <p className="font-semibold text-ink-900">{item.name}</p>
               <p className="mt-1 text-sm text-ink-500">{formatNumber(item.value)} lượt xem</p>

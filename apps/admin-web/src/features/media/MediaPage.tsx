@@ -9,7 +9,7 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import type { AudioGuide } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
-import { getPlaceTitle, getPlaceTranslation } from "../../lib/selectors";
+import { getPoiTitle, getPoiTranslation } from "../../lib/selectors";
 import { cn, languageLabels } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
 import { useNarrationPreview } from "./useNarrationPreview";
@@ -76,7 +76,7 @@ export const MediaPage = () => {
 
     const existing = state.translations.find(
       (item) =>
-        item.entityType === "place" &&
+        item.entityType === "poi" &&
         item.entityId === entityId &&
         item.languageCode === languageCode,
     );
@@ -173,7 +173,7 @@ export const MediaPage = () => {
       await saveAudioGuide(
         {
           id: audioForm.id,
-          entityType: "place",
+          entityType: "poi",
           entityId: audioForm.entityId,
           languageCode: audioForm.languageCode,
           audioUrl: audioForm.audioUrl,
@@ -187,7 +187,7 @@ export const MediaPage = () => {
       await saveTranslation(
         {
           id: narrationForm.id,
-          entityType: "place",
+          entityType: "poi",
           entityId: audioForm.entityId,
           languageCode: audioForm.languageCode,
           title: narrationForm.title,
@@ -212,7 +212,7 @@ export const MediaPage = () => {
   const audioRecordsWithNarration = state.audioGuides.filter((item) =>
     state.translations.some(
       (translation) =>
-        translation.entityType === "place" &&
+        translation.entityType === "poi" &&
         translation.entityId === item.entityId &&
         translation.languageCode === item.languageCode &&
         Boolean(translation.fullText || translation.shortText),
@@ -222,7 +222,7 @@ export const MediaPage = () => {
   const previewNarrationText = narrationForm.fullText || narrationForm.shortText;
   const previewAudioDraft: AudioGuide & { previewText: string } = {
     id: audioForm.id ?? "__draft-audio__",
-    entityType: "place",
+    entityType: "poi",
     entityId: audioForm.entityId,
     languageCode: audioForm.languageCode,
     audioUrl: audioForm.audioUrl,
@@ -244,11 +244,11 @@ export const MediaPage = () => {
   const audioColumns: DataColumn<AudioGuide>[] = [
     {
       key: "entity",
-      header: "Điểm đến",
+      header: "POI",
       widthClassName: "min-w-[220px]",
       render: (item) => (
         <div>
-          <p className="font-semibold text-ink-900">{getPlaceTitle(state, item.entityId)}</p>
+          <p className="font-semibold text-ink-900">{getPoiTitle(state, item.entityId)}</p>
           <p className="mt-1 text-xs text-ink-500">{languageLabels[item.languageCode]}</p>
         </div>
       ),
@@ -258,7 +258,7 @@ export const MediaPage = () => {
       header: "Nội dung phát",
       widthClassName: "min-w-[320px]",
       render: (item) => {
-        const translation = getPlaceTranslation(state, item.entityId, item.languageCode);
+        const translation = getPoiTranslation(state, item.entityId, item.languageCode);
 
         return translation ? (
           <div>
@@ -392,7 +392,7 @@ export const MediaPage = () => {
             <div className="space-y-5">
               <div className="grid gap-5 md:grid-cols-2">
                 <div>
-                  <label className="field-label">Địa điểm</label>
+                  <label className="field-label">POI</label>
                   <Select
                     value={audioForm.entityId}
                     required
@@ -400,10 +400,10 @@ export const MediaPage = () => {
                       updateAudioSelection(event.target.value, audioForm.languageCode)
                     }
                   >
-                    <option value="">Chọn địa điểm</option>
-                    {state.places.map((place) => (
-                      <option key={place.id} value={place.id}>
-                        {getPlaceTitle(state, place.id)}
+                    <option value="">Chọn POI</option>
+                    {state.pois.map((poi) => (
+                      <option key={poi.id} value={poi.id}>
+                        {getPoiTitle(state, poi.id)}
                       </option>
                     ))}
                   </Select>

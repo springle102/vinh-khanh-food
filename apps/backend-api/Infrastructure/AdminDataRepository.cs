@@ -29,16 +29,16 @@ public sealed partial class AdminDataRepository
         return GetCustomerUsers(connection, null);
     }
 
-    public IReadOnlyList<PlaceCategory> GetCategories()
+    public IReadOnlyList<PoiCategory> GetCategories()
     {
         using var connection = OpenConnection();
         return GetCategories(connection, null);
     }
 
-    public IReadOnlyList<Place> GetPlaces()
+    public IReadOnlyList<Poi> GetPois()
     {
         using var connection = OpenConnection();
-        return GetPlaces(connection, null);
+        return GetPois(connection, null);
     }
 
     public IReadOnlyList<Translation> GetTranslations()
@@ -63,12 +63,6 @@ public sealed partial class AdminDataRepository
     {
         using var connection = OpenConnection();
         return GetFoodItems(connection, null);
-    }
-
-    public IReadOnlyList<QRCodeRecord> GetQrCodes()
-    {
-        using var connection = OpenConnection();
-        return GetQrCodes(connection, null);
     }
 
     public IReadOnlyList<TourRoute> GetRoutes()
@@ -121,12 +115,11 @@ public sealed partial class AdminDataRepository
             GetUsers(connection, null),
             GetCustomerUsers(connection, null),
             GetCategories(connection, null),
-            GetPlaces(connection, null),
+            GetPois(connection, null),
             GetTranslations(connection, null),
             GetAudioGuides(connection, null),
             GetMediaAssets(connection, null),
             GetFoodItems(connection, null),
-            GetQrCodes(connection, null),
             GetRoutes(connection, null),
             GetPromotions(connection, null),
             GetReviews(connection, null),
@@ -143,9 +136,9 @@ public sealed partial class AdminDataRepository
         return new DashboardSummaryResponse(
             ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.ViewLogs;"),
             ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.AudioListenLogs;"),
-            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.Places WHERE [Status] = ?;", "published"),
+            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.Pois WHERE [Status] = ?;", "published"),
+            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.Pois WHERE IsFeatured = ?;", true),
             ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.AudioGuides WHERE [Status] <> ?;", "ready"),
-            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.QRCodes WHERE IsActive = ?;", true),
             ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.Reviews WHERE [Status] = ?;", "pending"),
             ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.SystemSettingLanguages WHERE LanguageType = ?;", "premium"));
     }
@@ -177,7 +170,7 @@ public sealed partial class AdminDataRepository
     private bool HasCoreTables(SqlConnection connection)
     {
         return TableExists(connection, "AdminUsers") &&
-            TableExists(connection, "Places") &&
+            TableExists(connection, "Pois") &&
             TableExists(connection, "SystemSettings");
     }
 

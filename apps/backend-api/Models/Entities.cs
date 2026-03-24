@@ -12,7 +12,7 @@ public sealed class AdminUser
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastLoginAt { get; set; }
     public string AvatarColor { get; set; } = string.Empty;
-    public string? ManagedPlaceId { get; set; }
+    public string? ManagedPoiId { get; set; }
 }
 
 public sealed class CustomerUser
@@ -25,12 +25,12 @@ public sealed class CustomerUser
     public string PreferredLanguage { get; set; } = "vi";
     public bool IsPremium { get; set; }
     public int TotalScans { get; set; }
-    public List<string> FavoritePlaceIds { get; set; } = [];
+    public List<string> FavoritePoiIds { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastActiveAt { get; set; }
 }
 
-public sealed class PlaceCategory
+public sealed class PoiCategory
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
@@ -39,7 +39,7 @@ public sealed class PlaceCategory
     public string Color { get; set; } = string.Empty;
 }
 
-public sealed class Place
+public sealed class Poi
 {
     public string Id { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
@@ -65,7 +65,7 @@ public sealed class Place
 public sealed class Translation
 {
     public string Id { get; set; } = string.Empty;
-    public string EntityType { get; set; } = "place";
+    public string EntityType { get; set; } = "poi";
     public string EntityId { get; set; } = string.Empty;
     public string LanguageCode { get; set; } = "vi";
     public string Title { get; set; } = string.Empty;
@@ -81,7 +81,7 @@ public sealed class Translation
 public sealed class AudioGuide
 {
     public string Id { get; set; } = string.Empty;
-    public string EntityType { get; set; } = "place";
+    public string EntityType { get; set; } = "poi";
     public string EntityId { get; set; } = string.Empty;
     public string LanguageCode { get; set; } = "vi";
     public string AudioUrl { get; set; } = string.Empty;
@@ -95,7 +95,7 @@ public sealed class AudioGuide
 public sealed class MediaAsset
 {
     public string Id { get; set; } = string.Empty;
-    public string EntityType { get; set; } = "place";
+    public string EntityType { get; set; } = "poi";
     public string EntityId { get; set; } = string.Empty;
     public string Type { get; set; } = "image";
     public string Url { get; set; } = string.Empty;
@@ -106,7 +106,7 @@ public sealed class MediaAsset
 public sealed class FoodItem
 {
     public string Id { get; set; } = string.Empty;
-    public string PlaceId { get; set; } = string.Empty;
+    public string PoiId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string PriceRange { get; set; } = string.Empty;
@@ -117,7 +117,7 @@ public sealed class FoodItem
 public sealed class ViewLog
 {
     public string Id { get; set; } = string.Empty;
-    public string PlaceId { get; set; } = string.Empty;
+    public string PoiId { get; set; } = string.Empty;
     public string LanguageCode { get; set; } = "vi";
     public string DeviceType { get; set; } = "web";
     public DateTimeOffset ViewedAt { get; set; }
@@ -126,7 +126,7 @@ public sealed class ViewLog
 public sealed class AudioListenLog
 {
     public string Id { get; set; } = string.Empty;
-    public string PlaceId { get; set; } = string.Empty;
+    public string PoiId { get; set; } = string.Empty;
     public string LanguageCode { get; set; } = "vi";
     public DateTimeOffset ListenedAt { get; set; }
     public int DurationInSeconds { get; set; }
@@ -135,24 +135,13 @@ public sealed class AudioListenLog
 public sealed class Review
 {
     public string Id { get; set; } = string.Empty;
-    public string PlaceId { get; set; } = string.Empty;
+    public string PoiId { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
     public int Rating { get; set; }
     public string Comment { get; set; } = string.Empty;
     public string LanguageCode { get; set; } = "vi";
     public DateTimeOffset CreatedAt { get; set; }
     public string Status { get; set; } = "pending";
-}
-
-public sealed class QRCodeRecord
-{
-    public string Id { get; set; } = string.Empty;
-    public string EntityType { get; set; } = "place";
-    public string EntityId { get; set; } = string.Empty;
-    public string QrValue { get; set; } = string.Empty;
-    public string QrImageUrl { get; set; } = string.Empty;
-    public bool IsActive { get; set; }
-    public DateTimeOffset? LastScanAt { get; set; }
 }
 
 public sealed class TourRoute
@@ -162,14 +151,14 @@ public sealed class TourRoute
     public string Description { get; set; } = string.Empty;
     public int DurationMinutes { get; set; }
     public string Difficulty { get; set; } = "easy";
-    public List<string> StopPlaceIds { get; set; } = [];
+    public List<string> StopPoiIds { get; set; } = [];
     public bool IsFeatured { get; set; }
 }
 
 public sealed class Promotion
 {
     public string Id { get; set; } = string.Empty;
-    public string PlaceId { get; set; } = string.Empty;
+    public string PoiId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public DateTimeOffset StartAt { get; set; }
@@ -207,7 +196,6 @@ public sealed class SystemSetting
     public string StorageProvider { get; set; } = "cloudinary";
     public string TtsProvider { get; set; } = "native";
     public int GeofenceRadiusMeters { get; set; }
-    public bool QrAutoPlay { get; set; }
     public bool GuestReviewEnabled { get; set; }
     public int AnalyticsRetentionDays { get; set; }
 }

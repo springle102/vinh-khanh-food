@@ -22,7 +22,7 @@ public sealed record RefreshTokenRequest(string RefreshToken);
 
 public sealed record LogoutRequest(string RefreshToken);
 
-public sealed record PlaceUpsertRequest(
+public sealed record PoiUpsertRequest(
     string Slug,
     string Address,
     double Lat,
@@ -48,7 +48,7 @@ public sealed record AdminUserUpsertRequest(
     string Status,
     string AvatarColor,
     string? Password,
-    string? ManagedPlaceId,
+    string? ManagedPoiId,
     string ActorName,
     string ActorRole);
 
@@ -82,7 +82,7 @@ public sealed record MediaAssetUpsertRequest(
     string AltText);
 
 public sealed record FoodItemUpsertRequest(
-    string PlaceId,
+    string PoiId,
     string Name,
     string Description,
     string PriceRange,
@@ -94,13 +94,13 @@ public sealed record TourRouteUpsertRequest(
     string Description,
     int DurationMinutes,
     string Difficulty,
-    List<string> StopPlaceIds,
+    List<string> StopPoiIds,
     bool IsFeatured,
     string ActorName,
     string ActorRole);
 
 public sealed record PromotionUpsertRequest(
-    string PlaceId,
+    string PoiId,
     string Title,
     string Description,
     DateTimeOffset StartAt,
@@ -110,7 +110,7 @@ public sealed record PromotionUpsertRequest(
     string ActorRole);
 
 public sealed record ReviewCreateRequest(
-    string PlaceId,
+    string PoiId,
     string UserName,
     int Rating,
     string Comment,
@@ -118,16 +118,6 @@ public sealed record ReviewCreateRequest(
 
 public sealed record ReviewStatusRequest(
     string Status,
-    string ActorName,
-    string ActorRole);
-
-public sealed record QrCodeStateRequest(
-    bool IsActive,
-    string ActorName,
-    string ActorRole);
-
-public sealed record QrCodeImageRequest(
-    string QrImageUrl,
     string ActorName,
     string ActorRole);
 
@@ -143,7 +133,6 @@ public sealed record SystemSettingUpsertRequest(
     string StorageProvider,
     string TtsProvider,
     int GeofenceRadiusMeters,
-    bool QrAutoPlay,
     bool GuestReviewEnabled,
     int AnalyticsRetentionDays,
     string ActorName,
@@ -152,22 +141,21 @@ public sealed record SystemSettingUpsertRequest(
 public sealed record DashboardSummaryResponse(
     int TotalViews,
     int TotalListens,
-    int PublishedPlaces,
+    int PublishedPois,
+    int FeaturedPois,
     int MissingReadyAudio,
-    int ActiveQrCount,
     int PendingReviews,
     int PremiumLanguageCount);
 
 public sealed record AdminBootstrapResponse(
     IReadOnlyList<Models.AdminUser> Users,
     IReadOnlyList<Models.CustomerUser> CustomerUsers,
-    IReadOnlyList<Models.PlaceCategory> Categories,
-    IReadOnlyList<Models.Place> Places,
+    IReadOnlyList<Models.PoiCategory> Categories,
+    IReadOnlyList<Models.Poi> Pois,
     IReadOnlyList<Models.Translation> Translations,
     IReadOnlyList<Models.AudioGuide> AudioGuides,
     IReadOnlyList<Models.MediaAsset> MediaAssets,
     IReadOnlyList<Models.FoodItem> FoodItems,
-    IReadOnlyList<Models.QRCodeRecord> QrCodes,
     IReadOnlyList<Models.TourRoute> Routes,
     IReadOnlyList<Models.Promotion> Promotions,
     IReadOnlyList<Models.Review> Reviews,

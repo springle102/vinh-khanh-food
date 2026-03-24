@@ -6,7 +6,7 @@ import { useAdminData } from "../../data/store";
 import type { Review } from "../../data/types";
 import { useAuth } from "../auth/AuthContext";
 import { formatDateTime, languageLabels } from "../../lib/utils";
-import { getPlaceTitle } from "../../lib/selectors";
+import { getPoiTitle } from "../../lib/selectors";
 
 export const ReviewsPage = () => {
   const { state, saveReviewStatus } = useAdminData();
@@ -27,11 +27,11 @@ export const ReviewsPage = () => {
       ),
     },
     {
-      key: "place",
-      header: "Địa điểm",
+      key: "poi",
+      header: "POI",
       render: (item) => (
         <div>
-          <p className="font-medium text-ink-800">{getPlaceTitle(state, item.placeId)}</p>
+          <p className="font-medium text-ink-800">{getPoiTitle(state, item.poiId)}</p>
           <p className="mt-1 text-xs text-ink-500">{languageLabels[item.languageCode]}</p>
         </div>
       ),
