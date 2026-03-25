@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { DataTable, type DataColumn } from "../../components/ui/DataTable";
@@ -1027,25 +1027,21 @@ export const PoisPage = () => {
               lng={parseCoordinate(form.lng, DEFAULT_LNG)}
               addressSearchVersion={addressSearchVersion}
               onLocationResolved={(location) =>
-                startTransition(() =>
-                  setForm((current) => ({
-                    ...current,
-                    address: location.address || current.address,
-                    district: location.district || current.district,
-                    ward: location.ward || current.ward,
-                    lat: location.lat.toFixed(6),
-                    lng: location.lng.toFixed(6),
-                  })),
-                )
+                setForm((current) => ({
+                  ...current,
+                  address: location.address || current.address,
+                  district: location.district || current.district,
+                  ward: location.ward || current.ward,
+                  lat: location.lat.toFixed(6),
+                  lng: location.lng.toFixed(6),
+                }))
               }
               onChange={(latValue, lngValue) =>
-                startTransition(() =>
-                  setForm((current) => ({
-                    ...current,
-                    lat: latValue.toFixed(6),
-                    lng: lngValue.toFixed(6),
-                  })),
-                )
+                setForm((current) => ({
+                  ...current,
+                  lat: latValue.toFixed(6),
+                  lng: lngValue.toFixed(6),
+                }))
               }
             />
           </div>
