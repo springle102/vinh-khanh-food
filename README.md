@@ -13,10 +13,8 @@ Hệ thống phục vụ các bài toán chính:
 - tải tệp thật qua backend storage thay vì lưu dữ liệu demo trong trình duyệt
 
 ## Các tính năng cần cải thiện
-- thêm trang quản lý user
-- sửa lỗi định vị
 - thêm tính năng duyệt cho super admin
-- sửa lỗi tiếng việt không dấu thành tiếng việt có dấu
+- sửa lỗi khi nhấn vào poi phải phát đươc audio
 
 ## 2. Công nghệ được sử dụng
 
