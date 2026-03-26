@@ -453,6 +453,10 @@ export const OpenStreetMapPicker = ({
     [handleReverseGeocode],
   );
 
+  const handleVisiblePoiIdsChange = useCallback((poiIds: string[]) => {
+    onVisiblePoiIdsChangeRef.current?.(poiIds);
+  }, []);
+
   const handleAddressSearch = useCallback(async () => {
     if (!editable) {
       return;
@@ -627,7 +631,7 @@ export const OpenStreetMapPicker = ({
               <BrowseMapClickHandler pois={selectablePois} onPoiSelect={onPoiSelectRef.current} />
               <BrowseMapViewport
                 pois={selectablePois}
-                onVisiblePoiIdsChange={(poiIds) => onVisiblePoiIdsChangeRef.current?.(poiIds)}
+                onVisiblePoiIdsChange={handleVisiblePoiIdsChange}
               />
               {selectablePois.map((poi) => (
                 <Marker

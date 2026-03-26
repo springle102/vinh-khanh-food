@@ -391,10 +391,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
     try {
       const probeAudio = new Audio(SILENT_AUDIO_DATA_URI);
       probeAudio.muted = true;
-      void probeAudio.play().then(() => {
-        probeAudio.pause();
-        probeAudio.currentTime = 0;
-      }).catch(() => undefined);
+      void probeAudio.play().catch(() => undefined);
     } catch {
       // Ignore unlock probe errors. Real playback still attempts normally.
     }

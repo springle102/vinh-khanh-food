@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="androidx.lifecycle.lifecycle-common2">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/.dotnet-home/.nuget/packages/xamarin.androidx.lifecycle.common/2.8.7.2/jar/androidx.lifecycle.lifecycle-common.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

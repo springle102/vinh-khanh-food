@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "android": "powershell -ExecutionPolicy Bypass -File ./run-android.ps1",
     "dev": "npm --prefix apps/admin-web run dev",
     "dev:": "node scripts/dev-command.cjs",
     "dev:admin": "npm --prefix apps/admin-web run dev",

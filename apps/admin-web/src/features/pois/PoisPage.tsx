@@ -253,6 +253,15 @@ export const PoisPage = () => {
     [filteredPois, state],
   );
 
+  const handleVisiblePoiIdsChange = useCallback((nextVisiblePoiIds: string[]) => {
+    setVisiblePoiIds((current) =>
+      current.length === nextVisiblePoiIds.length &&
+      current.every((poiId, index) => poiId === nextVisiblePoiIds[index])
+        ? current
+        : nextVisiblePoiIds,
+    );
+  }, []);
+
   const getPOINarrationText = useCallback(
     (poi: Poi, language: LanguageCode) => resolvePOINarrationText(poi, language),
     [resolvePOINarrationText],
@@ -708,7 +717,7 @@ export const PoisPage = () => {
             onPoiHover={(poiId) => {
               void prefetchPoiNarration(poiId);
             }}
-            onVisiblePoiIdsChange={setVisiblePoiIds}
+            onVisiblePoiIdsChange={handleVisiblePoiIdsChange}
           />
         </Card>
 

@@ -84,6 +84,7 @@ export const DashboardPage = () => {
 
   const topViewedPois = state.pois
     .map((poi) => ({
+      id: poi.id,
       name: getPoiTitle(state, poi.id),
       value: state.viewLogs.filter((item) => item.poiId === poi.id).length,
     }))
@@ -309,7 +310,7 @@ export const DashboardPage = () => {
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {topViewedPois.map((item) => (
-            <div key={item.name} className="rounded-2xl bg-sand-50 px-4 py-3">
+            <div key={item.id} className="rounded-2xl bg-sand-50 px-4 py-3">
               <p className="font-semibold text-ink-900">{item.name}</p>
               <p className="mt-1 text-sm text-ink-500">{formatNumber(item.value)} lượt xem</p>
             </div>

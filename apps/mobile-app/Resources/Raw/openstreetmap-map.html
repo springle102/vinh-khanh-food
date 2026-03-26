@@ -1,0 +1,294 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>OpenStreetMap</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  >
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #eef3f9;
+      font-family: "Segoe UI", sans-serif;
+    }
+
+    .leaflet-container {
+      background: #eef3f9;
+    }
+
+    .map-badge {
+      position: absolute;
+      z-index: 500;
+      top: 12px;
+      left: 12px;
+      padding: 10px 12px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.88);
+      color: #4a5d78;
+      box-shadow: 0 12px 30px rgba(17, 37, 69, 0.14);
+      backdrop-filter: blur(8px);
+    }
+
+    .map-badge strong {
+      display: block;
+      font-size: 13px;
+      color: #102545;
+    }
+
+    .map-badge span {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+    }
+
+    .poi-marker {
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      border: 3px solid #ffffff;
+      box-shadow: 0 8px 20px rgba(74, 52, 40, 0.28);
+      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    }
+
+    .poi-marker.featured {
+      background: #ff5a0a;
+    }
+
+    .poi-marker.regular {
+      background: #102545;
+    }
+
+    .poi-marker.selected {
+      background: #ff5a0a;
+      transform: scale(1.22);
+      box-shadow: 0 0 0 8px rgba(255, 90, 10, 0.16), 0 10px 24px rgba(255, 90, 10, 0.24);
+    }
+
+    .current-location-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      background: #2563eb;
+      border: 3px solid rgba(255, 255, 255, 0.96);
+      box-shadow: 0 0 0 10px rgba(37, 99, 235, 0.12);
+    }
+
+    .leaflet-popup-content-wrapper {
+      border-radius: 16px;
+      box-shadow: 0 16px 40px rgba(74, 52, 40, 0.18);
+    }
+
+    .leaflet-popup-content {
+      margin: 12px 14px;
+      min-width: 180px;
+    }
+
+    .popup-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: #102545;
+    }
+
+    .popup-meta {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #7c8ca5;
+    }
+
+    .popup-description {
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #4a5d78;
+    }
+  </style>
+</head>
+<body>
+  <div class="map-badge">
+    <strong>OpenStreetMap</strong>
+    <span>Chạm vào địa điểm để xem chi tiết.</span>
+  </div>
+  <div id="map"></div>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+    const decodeBase64Json = (value) => {
+      const binary = window.atob(value);
+      return JSON.parse(decodeURIComponent(escape(binary)));
+    };
+
+    const state = decodeBase64Json("__MAP_STATE_BASE64__");
+    const defaultCenter = [10.7592, 106.7018];
+    const map = L.map("map", {
+      zoomControl: false,
+      preferCanvas: true
+    });
+
+    L.control.zoom({ position: "topright" }).addTo(map);
+
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const markers = new Map();
+    let currentLocationMarker = null;
+    let selectedPoiId = state.selectedPoiId ?? null;
+
+    const createPoiIcon = (poi, selected) => L.divIcon({
+      className: "",
+      html: `<div class="poi-marker ${poi.isFeatured ? "featured" : "regular"} ${selected ? "selected" : ""}"></div>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9]
+    });
+
+    const createCurrentLocationIcon = () => L.divIcon({
+      className: "",
+      html: '<div class="current-location-dot"></div>',
+      iconSize: [14, 14],
+      iconAnchor: [7, 7]
+    });
+
+    const buildPopupHtml = (poi) => `
+      <div>
+        <p class="popup-title">${poi.title}</p>
+        <div class="popup-meta">${poi.category || "Điểm tham quan ẩm thực"}</div>
+        <div class="popup-description">${poi.address || poi.description || ""}</div>
+      </div>
+    `;
+
+    const updateMarkerStyles = () => {
+      state.pois.forEach((poi) => {
+        const marker = markers.get(poi.id);
+        if (!marker) {
+          return;
+        }
+
+        marker.setIcon(createPoiIcon(poi, poi.id === selectedPoiId));
+      });
+    };
+
+    const flyToCoordinate = (latitude, longitude, zoom = null, animate = true) => {
+      if (latitude == null || longitude == null) {
+        return;
+      }
+
+      map.flyTo([latitude, longitude], zoom ?? Math.max(map.getZoom(), 16), {
+        animate,
+        duration: animate ? 0.35 : 0
+      });
+    };
+
+    const selectPoi = (poiId, shouldPan = true) => {
+      selectedPoiId = poiId;
+      updateMarkerStyles();
+
+      const marker = markers.get(poiId);
+      if (!marker) {
+        return;
+      }
+
+      marker.openPopup();
+      if (shouldPan) {
+        flyToCoordinate(marker.getLatLng().lat, marker.getLatLng().lng, Math.max(map.getZoom(), 16), true);
+      }
+    };
+
+    const updateCurrentLocation = (latitude, longitude) => {
+      if (latitude == null || longitude == null) {
+        if (currentLocationMarker) {
+          map.removeLayer(currentLocationMarker);
+          currentLocationMarker = null;
+        }
+        return;
+      }
+
+      const nextLatLng = [latitude, longitude];
+      if (!currentLocationMarker) {
+        currentLocationMarker = L.marker(nextLatLng, {
+          icon: createCurrentLocationIcon(),
+          keyboard: false
+        }).addTo(map);
+        currentLocationMarker.bindPopup("Vị trí hiện tại");
+        return;
+      }
+
+      currentLocationMarker.setLatLng(nextLatLng);
+    };
+
+    state.pois.forEach((poi) => {
+      const marker = L.marker([poi.latitude, poi.longitude], {
+        icon: createPoiIcon(poi, poi.id === selectedPoiId),
+        keyboard: false
+      }).addTo(map);
+
+      marker.bindPopup(buildPopupHtml(poi));
+      marker.on("click", () => {
+        selectPoi(poi.id, false);
+        window.location.href = `vkfood://select-poi/${encodeURIComponent(poi.id)}`;
+      });
+
+      markers.set(poi.id, marker);
+    });
+
+    updateCurrentLocation(
+      state.currentLocation?.latitude ?? null,
+      state.currentLocation?.longitude ?? null
+    );
+
+    const boundsPoints = state.pois.map((poi) => [poi.latitude, poi.longitude]);
+    if (state.currentLocation) {
+      boundsPoints.push([state.currentLocation.latitude, state.currentLocation.longitude]);
+    }
+
+    if (selectedPoiId && markers.has(selectedPoiId)) {
+      const marker = markers.get(selectedPoiId);
+      map.setView(marker.getLatLng(), 16, { animate: false });
+      marker.openPopup();
+    } else if (boundsPoints.length === 1) {
+      map.setView(boundsPoints[0], 16, { animate: false });
+    } else if (boundsPoints.length > 1) {
+      map.fitBounds(boundsPoints, {
+        padding: [36, 36],
+        maxZoom: 16,
+        animate: false
+      });
+    } else {
+      map.setView(defaultCenter, 15, { animate: false });
+    }
+
+    window.vkFoodMap = {
+      selectPoi: (poiId) => {
+        if (!poiId || !markers.has(poiId)) {
+          selectedPoiId = null;
+          updateMarkerStyles();
+          return;
+        }
+
+        selectPoi(poiId, true);
+      },
+      setCurrentLocation: (latitude, longitude) => {
+        updateCurrentLocation(latitude, longitude);
+      },
+      flyToCoordinate: (latitude, longitude, zoom, animate) => {
+        flyToCoordinate(latitude, longitude, zoom, animate !== false);
+      }
+    };
+  </script>
+</body>
+</html>

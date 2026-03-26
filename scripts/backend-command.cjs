@@ -1,16 +1,20 @@
-const { mkdirSync } = require("node:fs");
+﻿const { mkdirSync } = require("node:fs");
 const { join } = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const mode = (process.argv[2] || "").trim().toLowerCase();
 const project = "apps/backend-api/VinhKhanh.BackendApi.csproj";
 const dotnetHome = join(process.cwd(), ".dotnet-home");
+const appDataRoaming = join(dotnetHome, "AppData", "Roaming");
+const nugetPackages = join(dotnetHome, ".nuget", "packages");
+const nugetConfig = join(process.cwd(), "NuGet.Config");
 const buildOutput = join(process.cwd(), ".tmp-build", "backend-api", `${mode}-${Date.now()}`);
 const builtDll = join(buildOutput, "VinhKhanh.BackendApi.dll");
 const backendContentRoot = join(process.cwd(), "apps", "backend-api");
 const powershellExe = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 
 mkdirSync(dotnetHome, { recursive: true });
+mkdirSync(appDataRoaming, { recursive: true });
 mkdirSync(buildOutput, { recursive: true });
 
 const env = {
@@ -18,9 +22,10 @@ const env = {
   DOTNET_CLI_HOME: dotnetHome,
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1",
   DOTNET_NOLOGO: "1",
-  NUGET_PACKAGES: join(dotnetHome, ".nuget", "packages"),
+  APPDATA: appDataRoaming,
+  NUGET_PACKAGES: nugetPackages,
   ASPNETCORE_ENVIRONMENT: "Development",
-  ASPNETCORE_URLS: "http://localhost:5080",
+  ASPNETCORE_URLS: "http://0.0.0.0:5080",
 };
 
 const run = (args) => {
@@ -123,6 +128,14 @@ const stopListeningProcess = (port) => {
   }
 };
 
+const restoreBackend = () =>
+  run([
+    "restore",
+    project,
+    "--configfile",
+    nugetConfig,
+  ]);
+
 const buildBackend = () =>
   run([
     "build",
@@ -135,15 +148,18 @@ const buildBackend = () =>
 
 if (mode === "dev") {
   stopListeningProcess(5080);
+  restoreBackend();
   buildBackend();
   run([builtDll, "--contentRoot", backendContentRoot]);
   process.exit(0);
 }
 
 if (mode === "build") {
+  restoreBackend();
   buildBackend();
   process.exit(0);
 }
 
 console.error("Unsupported backend command. Use: dev or build");
 process.exit(1);
+

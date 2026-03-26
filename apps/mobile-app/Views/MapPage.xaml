@@ -1,0 +1,67 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:VinhKhanh.MobileApp.Controls"
+             x:Class="VinhKhanh.MobileApp.MapPage"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="{StaticResource BrandCanvas}">
+    <Grid RowDefinitions="*,Auto">
+        <Grid Grid.Row="0">
+            <WebView x:Name="MapWebView"
+                     Navigating="OnMapNavigating"
+                     Navigated="OnMapNavigated" />
+
+            <Border HorizontalOptions="End"
+                    VerticalOptions="Start"
+                    Margin="20,24,20,0"
+                    Padding="14"
+                    BackgroundColor="White"
+                    StrokeThickness="0"
+                    StrokeShape="RoundRectangle 18">
+                <Border.Shadow>
+                    <Shadow Brush="#140F24" Offset="0,10" Opacity="0.12" Radius="20" />
+                </Border.Shadow>
+                <Grid WidthRequest="22" HeightRequest="22">
+                    <Path Data="M 2 10 L 20 2 L 14 20 L 11 12 Z"
+                          Stroke="{StaticResource BrandInkSoft}"
+                          Fill="Transparent"
+                          StrokeThickness="2"
+                          StrokeLineJoin="Round"
+                          StrokeLineCap="Round" />
+                </Grid>
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnLocateTapped" />
+                </Border.GestureRecognizers>
+            </Border>
+
+            <Border VerticalOptions="End"
+                    Margin="20,0,20,104"
+                    Padding="18"
+                    BackgroundColor="#FDFDFE"
+                    StrokeThickness="0"
+                    StrokeShape="RoundRectangle 24">
+                <Border.Shadow>
+                    <Shadow Brush="#140F24" Offset="0,16" Opacity="0.14" Radius="24" />
+                </Border.Shadow>
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="{Binding SelectedTitle}" FontSize="22" FontAttributes="Bold" />
+                    <Label Text="{Binding SelectedDescription}" FontSize="14" TextColor="{StaticResource BrandInkSoft}" />
+                    <HorizontalStackLayout Spacing="10">
+                        <Button Text="Chi tiết" Command="{Binding OpenDetailCommand}" />
+                        <Button Text="Chỉ đường"
+                                Command="{Binding OpenDirectionsCommand}"
+                                BackgroundColor="{StaticResource BrandOrangePale}"
+                                TextColor="{StaticResource BrandOrange}" />
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Border>
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center" />
+        </Grid>
+
+        <controls:AppBottomBar Grid.Row="1" CurrentRoute="MapPage" />
+    </Grid>
+</ContentPage>
