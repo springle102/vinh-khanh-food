@@ -297,6 +297,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
   const currentAudioGuideIdRef = useRef<string | null>(null);
   const requestIdRef = useRef(0);
   const hasUnlockedPlaybackRef = useRef(false);
+  const playbackStatusRef = useRef<PlaybackStatus>(DEFAULT_PLAYBACK_STATE.status);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -314,6 +315,10 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
       window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
     };
   }, []);
+
+  useEffect(() => {
+    playbackStatusRef.current = playbackState.status;
+  }, [playbackState.status]);
 
   const resetPlaybackRefs = useCallback(() => {
     currentPlaybackKeyRef.current = null;
@@ -735,10 +740,12 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         return false;
       }
 
+      const playbackStatus = playbackStatusRef.current;
+
       // UX choice: clicking the same POI again pauses/resumes instead of restarting.
       // This keeps the narration position and feels more natural while the user explores the map.
       if (currentKindRef.current === "audio" && audioRef.current) {
-        if (playbackState.status === "playing") {
+        if (playbackStatus === "playing") {
           audioRef.current.pause();
           setPlaybackState((current) => ({
             ...current,
@@ -749,7 +756,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           return true;
         }
 
-        if (playbackState.status === "paused") {
+        if (playbackStatus === "paused") {
           try {
             await audioRef.current.play();
             return true;
@@ -772,7 +779,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         typeof window !== "undefined" &&
         "speechSynthesis" in window
       ) {
-        if (playbackState.status === "playing") {
+        if (playbackStatus === "playing") {
           window.speechSynthesis.pause();
           setPlaybackState((current) => ({
             ...current,
@@ -783,7 +790,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           return true;
         }
 
-        if (playbackState.status === "paused") {
+        if (playbackStatus === "paused") {
           window.speechSynthesis.resume();
           setPlaybackState((current) => ({
             ...current,
@@ -797,7 +804,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
 
       return false;
     },
-    [playbackState.status],
+    [],
   );
 
   const playPoiNarration = useCallback(

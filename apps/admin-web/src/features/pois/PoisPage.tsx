@@ -179,6 +179,7 @@ export const PoisPage = () => {
   });
   const poiDetailCacheRef = useRef(new Map<string, PoiDetail>());
   const poiDetailAbortRef = useRef<AbortController | null>(null);
+  const lastHandledPlaybackIntentTokenRef = useRef(0);
   const lastNarrationSelectionRef = useRef<{
     poiId: string | null;
     language: LanguageCode;
@@ -490,11 +491,18 @@ export const PoisPage = () => {
       return;
     }
 
+    if (lastHandledPlaybackIntentTokenRef.current === playbackIntent.token) {
+      return;
+    }
+
     const fallbackPoi = state.pois.find((item) => item.id === playbackIntent.poiId);
     const effectivePoi = playbackIntent.detail?.poi ?? fallbackPoi;
     if (!effectivePoi) {
       return;
     }
+
+    // Each intent token should trigger playback once, even if callback identities change later.
+    lastHandledPlaybackIntentTokenRef.current = playbackIntent.token;
 
     void playPoiNarration({
       poi: effectivePoi,

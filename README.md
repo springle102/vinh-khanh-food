@@ -304,6 +304,7 @@ npm run dev:admin
 Frontend mặc định chạy tại:
 
 - `http://localhost:5173`
+- nếu chạy `npm run preview`, Docker hoặc deploy frontend tĩnh tách riêng backend, hãy tạo `apps/admin-web/.env` với `VITE_API_BASE_URL=http://localhost:5080/api/v1`
 
 ### Chạy backend
 

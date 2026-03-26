@@ -50,6 +50,35 @@ export class ApiError extends Error
   }
 }
 
+const ABSOLUTE_URL_PATTERN = /^[a-z]+:\/\//i;
+const INVALID_RESPONSE_MESSAGE = "Backend tra ve phan hoi khong hop le.";
+
+const normalizeConfiguredBaseUrl = (value: string | undefined) => {
+  const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
+  if (!trimmed) {
+    return "";
+  }
+
+  return ABSOLUTE_URL_PATTERN.test(trimmed) || trimmed.startsWith("/")
+    ? trimmed
+    : `/${trimmed}`;
+};
+
+const resolveConfiguredBasePath = (baseUrl: string) => {
+  if (!baseUrl) {
+    return "";
+  }
+
+  try {
+    return new URL(baseUrl, "http://localhost").pathname.replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+};
+
+const API_BASE_URL = normalizeConfiguredBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const API_BASE_PATH = resolveConfiguredBasePath(API_BASE_URL);
+
 const buildHeaders = (headers?: HeadersInit) => {
   const nextHeaders = new Headers(headers);
   if (!nextHeaders.has("Accept")) {
@@ -59,17 +88,37 @@ const buildHeaders = (headers?: HeadersInit) => {
   return nextHeaders;
 };
 
+const resolveRequestUrl = (path: string) => {
+  if (!API_BASE_URL || ABSOLUTE_URL_PATTERN.test(path)) {
+    return path;
+  }
+
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const nextPath = API_BASE_PATH &&
+    (normalizedPath === API_BASE_PATH || normalizedPath.startsWith(`${API_BASE_PATH}/`))
+    ? normalizedPath.slice(API_BASE_PATH.length)
+    : normalizedPath;
+
+  return `${API_BASE_URL}${nextPath || "/"}`;
+};
+
 const parseResponse = async <T>(response: Response) => {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
     if (!response.ok) {
-      throw new ApiError("Backend trả về phản hồi không hợp lệ.", response.status);
+      throw new ApiError(INVALID_RESPONSE_MESSAGE, response.status);
     }
 
     return null as T;
   }
 
-  const payload = (await response.json()) as ApiEnvelope<T>;
+  let payload: ApiEnvelope<T>;
+
+  try {
+    payload = (await response.json()) as ApiEnvelope<T>;
+  } catch {
+    throw new ApiError("Backend tráº£ vá» pháº£n há»“i khÃ´ng há»£p lá»‡.", response.status);
+  }
   if (!response.ok || !payload.success || payload.data === null) {
     throw new ApiError(payload.message ?? "Yêu cầu đến backend thất bại.", response.status);
   }
@@ -78,7 +127,7 @@ const parseResponse = async <T>(response: Response) => {
 };
 
 const request = async <T>(path: string, init?: RequestInit) => {
-  const response = await fetch(path, {
+  const response = await fetch(resolveRequestUrl(path), {
     ...init,
     headers: buildHeaders(init?.headers),
   });
