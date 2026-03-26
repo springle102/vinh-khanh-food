@@ -15,6 +15,7 @@ Hệ thống phục vụ các bài toán chính:
 ## Các tính năng cần cải thiện
 - thêm tính năng duyệt cho super admin
 - sửa lỗi khi nhấn vào poi phải phát đươc audio
+- thêm tính năng quản lý tour
 
 ## 2. Công nghệ được sử dụng
 
