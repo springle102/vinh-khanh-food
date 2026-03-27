@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
@@ -21,6 +22,8 @@ import type {
   SystemSetting,
   Translation,
 } from "./types";
+
+const SESSION_KEY = "vinh-khanh-admin-web:session";
 
 const EMPTY_ADMIN_STATE: AdminDataState = {
   users: [],
@@ -73,6 +76,115 @@ const toState = (payload: Partial<AdminDataState>): AdminDataState => ({
   auditLogs: payload.auditLogs ?? [],
   settings: payload.settings ?? EMPTY_ADMIN_STATE.settings,
 });
+
+const readScopeParams = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const rawValue = localStorage.getItem(SESSION_KEY);
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<{ userId: string; role: AdminUser["role"] }>;
+    if (!parsed.userId || !parsed.role) {
+      return null;
+    }
+
+    return {
+      userId: parsed.userId,
+      role: parsed.role,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const applyOwnerScope = (nextState: AdminDataState) => {
+  const scope = readScopeParams();
+  if (!scope || scope.role !== "PLACE_OWNER") {
+    return nextState;
+  }
+
+  const owner = nextState.users.find(
+    (item) => item.id === scope.userId && item.role === "PLACE_OWNER",
+  );
+  if (!owner) {
+    return nextState;
+  }
+
+  const ownerPoiIds = new Set(
+    nextState.pois
+      .filter(
+        (poi) =>
+          poi.ownerUserId === scope.userId ||
+          (!!owner.managedPoiId && poi.id === owner.managedPoiId),
+      )
+      .map((poi) => poi.id),
+  );
+
+  if (owner.managedPoiId) {
+    ownerPoiIds.add(owner.managedPoiId);
+  }
+
+  const pois = nextState.pois.filter((poi) => ownerPoiIds.has(poi.id));
+  const foodItems = nextState.foodItems.filter((item) => ownerPoiIds.has(item.poiId));
+  const promotions = nextState.promotions.filter((item) => ownerPoiIds.has(item.poiId));
+  const reviews = nextState.reviews.filter((item) => ownerPoiIds.has(item.poiId));
+  const viewLogs = nextState.viewLogs.filter((item) => ownerPoiIds.has(item.poiId));
+  const audioListenLogs = nextState.audioListenLogs.filter((item) => ownerPoiIds.has(item.poiId));
+  const categories = nextState.categories.filter((category) =>
+    pois.some((poi) => poi.categoryId === category.id),
+  );
+  const foodItemIds = new Set(foodItems.map((item) => item.id));
+  const routeIds = new Set(
+    nextState.routes
+      .filter((route) => route.stopPoiIds.some((poiId) => ownerPoiIds.has(poiId)))
+      .map((route) => route.id),
+  );
+  const routes = nextState.routes.filter((route) => routeIds.has(route.id));
+  const translations = nextState.translations.filter(
+    (item) =>
+      (item.entityType === "poi" && ownerPoiIds.has(item.entityId)) ||
+      (item.entityType === "food_item" && foodItemIds.has(item.entityId)) ||
+      (item.entityType === "route" && routeIds.has(item.entityId)),
+  );
+  const audioGuides = nextState.audioGuides.filter(
+    (item) =>
+      (item.entityType === "poi" && ownerPoiIds.has(item.entityId)) ||
+      (item.entityType === "food_item" && foodItemIds.has(item.entityId)) ||
+      (item.entityType === "route" && routeIds.has(item.entityId)),
+  );
+  const mediaAssets = nextState.mediaAssets.filter(
+    (item) =>
+      (item.entityType === "poi" && ownerPoiIds.has(item.entityId)) ||
+      (item.entityType === "food_item" && foodItemIds.has(item.entityId)) ||
+      (item.entityType === "route" && routeIds.has(item.entityId)),
+  );
+  const users = nextState.users.filter((item) => item.id === scope.userId);
+  const customerUsers = nextState.customerUsers.filter((customer) =>
+    customer.favoritePoiIds.some((poiId) => ownerPoiIds.has(poiId)),
+  );
+
+  return {
+    ...nextState,
+    users,
+    customerUsers,
+    categories,
+    pois,
+    foodItems,
+    translations,
+    audioGuides,
+    mediaAssets,
+    routes,
+    promotions,
+    reviews,
+    viewLogs,
+    audioListenLogs,
+  };
+};
 
 type PoiDraft = Omit<Poi, "id" | "createdAt" | "updatedAt" | "updatedBy"> & {
   id?: string;
@@ -135,8 +247,12 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
   const [isBootstrapping, setBootstrapping] = useState(true);
   const [isRefreshing, setRefreshing] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const bootstrapRequestIdRef = useRef(0);
 
   const loadBootstrap = useCallback(async (mode: "initial" | "refresh") => {
+    const requestId = bootstrapRequestIdRef.current + 1;
+    bootstrapRequestIdRef.current = requestId;
+
     if (mode === "initial") {
       setBootstrapping(true);
       setBootstrapError(null);
@@ -145,21 +261,26 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     }
 
     try {
-      const nextState = toState(await adminApi.getBootstrap());
-      setState(nextState);
-      setHasBootstrapped(true);
+      const nextState = applyOwnerScope(toState(await adminApi.getBootstrap()));
+      if (requestId === bootstrapRequestIdRef.current) {
+        setState(nextState);
+        setHasBootstrapped(true);
+      }
+
       return nextState;
     } catch (error) {
-      if (mode === "initial") {
+      if (mode === "initial" && requestId === bootstrapRequestIdRef.current) {
         setBootstrapError(error instanceof Error ? error.message : "Khong the tai bootstrap.");
       }
 
       throw error;
     } finally {
-      if (mode === "initial") {
-        setBootstrapping(false);
-      } else {
-        setRefreshing(false);
+      if (requestId === bootstrapRequestIdRef.current) {
+        if (mode === "initial") {
+          setBootstrapping(false);
+        } else {
+          setRefreshing(false);
+        }
       }
     }
   }, []);
@@ -193,6 +314,8 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
         tags: draft.tags,
         ownerUserId: draft.ownerUserId,
         updatedBy: actor.name,
+        actorRole: actor.role,
+        actorUserId: actor.id,
       });
       let nextState = state;
 

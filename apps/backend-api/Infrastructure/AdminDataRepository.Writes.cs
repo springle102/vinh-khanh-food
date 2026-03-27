@@ -5,13 +5,13 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed partial class AdminDataRepository
 {
-    public AuthTokensResponse? Login(string email, string password)
+    public AuthTokensResponse? Login(string email, string password, string? portal)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
         var user = GetUserByCredentials(connection, transaction, email, password);
-        if (user is null)
+        if (user is null || !CanAccessPortal(user.Role, portal))
         {
             transaction.Rollback();
             return null;
@@ -31,6 +31,26 @@ public sealed partial class AdminDataRepository
 
         transaction.Commit();
         return session;
+    }
+
+    private static bool CanAccessPortal(string role, string? portal)
+    {
+        if (string.IsNullOrWhiteSpace(portal))
+        {
+            return true;
+        }
+
+        if (string.Equals(portal, "admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(role, "SUPER_ADMIN", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (string.Equals(portal, "restaurant", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(role, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     public AuthTokensResponse? Refresh(string refreshToken)
@@ -168,6 +188,30 @@ public sealed partial class AdminDataRepository
         var isNew = existing is null;
         var poiId = existing?.Id ?? id ?? CreateId("poi");
         var createdAt = existing?.CreatedAt ?? now;
+        var actorRole = request.ActorRole?.Trim() ?? string.Empty;
+        var isOwnerActor = string.Equals(actorRole, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase);
+        var actorUserId = request.ActorUserId?.Trim() ?? string.Empty;
+        var actorUser = !string.IsNullOrWhiteSpace(actorUserId)
+            ? GetUserById(connection, transaction, actorUserId)
+            : null;
+
+        if (isOwnerActor)
+        {
+            if (actorUser is null || !string.Equals(actorUser.Role, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Khong xac dinh duoc chu quan thuc hien thao tac POI.");
+            }
+
+            var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actorUser.Id);
+            if (!isNew && !ownerPoiIds.Contains(poiId))
+            {
+                throw new InvalidOperationException("Chu quan chi duoc cap nhat POI cua chinh minh.");
+            }
+        }
+
+        var nextStatus = NormalizePoiStatus(request.Status, isOwnerActor);
+        var nextFeatured = isOwnerActor ? false : request.Featured;
+        var nextOwnerUserId = isOwnerActor ? actorUserId : request.OwnerUserId;
 
         if (isNew)
         {
@@ -187,15 +231,15 @@ public sealed partial class AdminDataRepository
                 request.Lat,
                 request.Lng,
                 request.CategoryId,
-                request.Status,
-                request.Featured,
+                nextStatus,
+                nextFeatured,
                 request.DefaultLanguageCode,
                 request.District,
                 request.Ward,
                 request.PriceRange,
                 request.AverageVisitDuration,
                 request.PopularityScore,
-                request.OwnerUserId,
+                nextOwnerUserId,
                 request.UpdatedBy,
                 createdAt,
                 now);
@@ -230,15 +274,15 @@ public sealed partial class AdminDataRepository
                 request.Lat,
                 request.Lng,
                 request.CategoryId,
-                request.Status,
-                request.Featured,
+                nextStatus,
+                nextFeatured,
                 request.DefaultLanguageCode,
                 request.District,
                 request.Ward,
                 request.PriceRange,
                 request.AverageVisitDuration,
                 request.PopularityScore,
-                request.OwnerUserId,
+                nextOwnerUserId,
                 request.UpdatedBy,
                 now,
                 poiId);
@@ -250,8 +294,8 @@ public sealed partial class AdminDataRepository
             connection,
             transaction,
             request.UpdatedBy,
-            "SYSTEM",
-            isNew ? "Tao POI" : "Cap nhat POI",
+            actorRole,
+            ResolvePoiAuditAction(existing, nextStatus, isOwnerActor),
             request.Slug);
 
         var saved = GetPoiById(connection, transaction, poiId)
@@ -259,6 +303,39 @@ public sealed partial class AdminDataRepository
 
         transaction.Commit();
         return saved;
+    }
+
+    private static string NormalizePoiStatus(string requestedStatus, bool isOwnerActor)
+    {
+        if (isOwnerActor)
+        {
+            return "pending";
+        }
+
+        return requestedStatus?.Trim().ToLowerInvariant() switch
+        {
+            "draft" => "draft",
+            "pending" => "pending",
+            "published" => "published",
+            "archived" => "archived",
+            _ => "draft",
+        };
+    }
+
+    private static string ResolvePoiAuditAction(Poi? existing, string nextStatus, bool isOwnerActor)
+    {
+        if (isOwnerActor)
+        {
+            return existing is null ? "Gui duyet POI moi" : "Cap nhat POI cho duyet";
+        }
+
+        if (!string.Equals(existing?.Status, "published", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(nextStatus, "published", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Duyet POI";
+        }
+
+        return existing is null ? "Tao POI" : "Cap nhat POI";
     }
 
     public bool DeletePoi(string id)

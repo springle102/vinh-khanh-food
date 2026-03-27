@@ -16,7 +16,7 @@ public sealed record AuthTokensResponse(
     string RefreshToken,
     DateTimeOffset ExpiresAt);
 
-public sealed record LoginRequest(string Email, string Password);
+public sealed record LoginRequest(string Email, string Password, string? Portal);
 
 public sealed record RefreshTokenRequest(string RefreshToken);
 
@@ -38,7 +38,9 @@ public sealed record PoiUpsertRequest(
     int PopularityScore,
     List<string> Tags,
     string? OwnerUserId,
-    string UpdatedBy);
+    string UpdatedBy,
+    string ActorRole,
+    string ActorUserId);
 
 public sealed record AdminUserUpsertRequest(
     string Name,

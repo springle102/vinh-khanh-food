@@ -2,7 +2,6 @@ import type {
   AdminDataState,
   AdminUser,
   AudioGuide,
-  CustomerUser,
   EndUserPoiVisit,
   EndUserProfile,
   FoodItem,
@@ -15,6 +14,7 @@ import type {
   SystemSetting,
   Translation,
 } from "../data/types";
+import type { AuthPortal } from "../features/auth/auth-routing";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -39,8 +39,7 @@ export type StoredFileResponse = {
   size: number;
 };
 
-export class ApiError extends Error
-{
+export class ApiError extends Error {
   status: number;
 
   constructor(message: string, status: number) {
@@ -51,7 +50,8 @@ export class ApiError extends Error
 }
 
 const ABSOLUTE_URL_PATTERN = /^[a-z]+:\/\//i;
-const INVALID_RESPONSE_MESSAGE = "Backend tra ve phan hoi khong hop le.";
+const INVALID_RESPONSE_MESSAGE = "Backend trả về phản hồi không hợp lệ.";
+const SESSION_KEY = "vinh-khanh-admin-web:session";
 
 const normalizeConfiguredBaseUrl = (value: string | undefined) => {
   const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
@@ -79,6 +79,43 @@ const resolveConfiguredBasePath = (baseUrl: string) => {
 const API_BASE_URL = normalizeConfiguredBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const API_BASE_PATH = resolveConfiguredBasePath(API_BASE_URL);
 
+const readScopeParams = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const rawValue = localStorage.getItem(SESSION_KEY);
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<{ userId: string; role: AdminUser["role"] }>;
+    if (!parsed.userId || !parsed.role) {
+      return null;
+    }
+
+    return {
+      userId: parsed.userId,
+      role: parsed.role,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const appendScopeParams = (path: string) => {
+  const scope = readScopeParams();
+  if (!scope || ABSOLUTE_URL_PATTERN.test(path)) {
+    return path;
+  }
+
+  const url = new URL(path.startsWith("/") ? path : `/${path}`, "http://localhost");
+  url.searchParams.set("userId", scope.userId);
+  url.searchParams.set("role", scope.role);
+  return `${url.pathname}${url.search}`;
+};
+
 const buildHeaders = (headers?: HeadersInit) => {
   const nextHeaders = new Headers(headers);
   if (!nextHeaders.has("Accept")) {
@@ -94,10 +131,11 @@ const resolveRequestUrl = (path: string) => {
   }
 
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const nextPath = API_BASE_PATH &&
+  const nextPath =
+    API_BASE_PATH &&
     (normalizedPath === API_BASE_PATH || normalizedPath.startsWith(`${API_BASE_PATH}/`))
-    ? normalizedPath.slice(API_BASE_PATH.length)
-    : normalizedPath;
+      ? normalizedPath.slice(API_BASE_PATH.length)
+      : normalizedPath;
 
   return `${API_BASE_URL}${nextPath || "/"}`;
 };
@@ -117,8 +155,9 @@ const parseResponse = async <T>(response: Response) => {
   try {
     payload = (await response.json()) as ApiEnvelope<T>;
   } catch {
-    throw new ApiError("Backend tráº£ vá» pháº£n há»“i khÃ´ng há»£p lá»‡.", response.status);
+    throw new ApiError("Backend trả về phản hồi không hợp lệ.", response.status);
   }
+
   if (!response.ok || !payload.success || payload.data === null) {
     throw new ApiError(payload.message ?? "Yêu cầu đến backend thất bại.", response.status);
   }
@@ -148,9 +187,11 @@ export const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Yêu cầu đến backend thất bại.";
 
 export const adminApi = {
-  getBootstrap: () => request<AdminDataState>("/api/v1/bootstrap"),
-  login: (email: string, password: string) =>
-    jsonRequest<AuthSessionResponse>("/api/v1/auth/login", "POST", { email, password }),
+  getBootstrap: () => request<AdminDataState>(appendScopeParams("/api/v1/bootstrap")),
+  login: (email: string, password: string, portal?: AuthPortal) =>
+    jsonRequest<AuthSessionResponse>("/api/v1/auth/login", "POST", { email, password, portal }),
+  refresh: (refreshToken: string) =>
+    jsonRequest<AuthSessionResponse>("/api/v1/auth/refresh", "POST", { refreshToken }),
   logout: (refreshToken: string) =>
     jsonRequest<string>("/api/v1/auth/logout", "POST", { refreshToken }),
   uploadFile: async (file: File, folder: string) => {
@@ -164,13 +205,16 @@ export const adminApi = {
     });
   },
   reverseGeocode: (lat: number, lng: number, signal?: AbortSignal) =>
-    request<GeocodingLocation>(`/api/v1/geocoding/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`, { signal }),
+    request<GeocodingLocation>(
+      `/api/v1/geocoding/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`,
+      { signal },
+    ),
   forwardGeocode: (query: string, signal?: AbortSignal) =>
     request<GeocodingLocation>(`/api/v1/geocoding/search?q=${encodeURIComponent(query)}`, { signal }),
   getPoiById: (poiId: string, signal?: AbortSignal) =>
-    request<Poi>(`/api/v1/pois/${poiId}`, { signal }),
+    request<Poi>(appendScopeParams(`/api/v1/pois/${poiId}`), { signal }),
   getPoiDetail: (poiId: string, signal?: AbortSignal) =>
-    request<PoiDetail>(`/api/v1/pois/${poiId}/detail`, { signal }),
+    request<PoiDetail>(appendScopeParams(`/api/v1/pois/${poiId}/detail`), { signal }),
   savePoi: (poi: {
     id?: string;
     slug: string;
@@ -189,6 +233,8 @@ export const adminApi = {
     tags: string[];
     ownerUserId: string | null;
     updatedBy: string;
+    actorRole: AdminUser["role"];
+    actorUserId: string;
   }) =>
     jsonRequest<Poi>(poi.id ? `/api/v1/pois/${poi.id}` : "/api/v1/pois", poi.id ? "PUT" : "POST", poi),
   saveUser: (account: {
@@ -204,15 +250,23 @@ export const adminApi = {
     actorName: string;
     actorRole: AdminUser["role"];
   }) =>
-    jsonRequest<AdminUser>(account.id ? `/api/v1/admin-users/${account.id}` : "/api/v1/admin-users", account.id ? "PUT" : "POST", account),
-  getEndUser: (userId: string) => request<EndUserProfile>(`/api/v1/users/${userId}`),
-  getEndUserHistory: (userId: string) => request<EndUserPoiVisit[]>(`/api/v1/users/${userId}/history`),
-  saveEndUserStatus: (userId: string, payload: {
-    isBanned: boolean;
-    actorName: string;
-    actorRole: AdminUser["role"];
-  }) =>
-    jsonRequest<EndUserProfile>(`/api/v1/users/${userId}/status`, "PATCH", payload),
+    jsonRequest<AdminUser>(
+      account.id ? `/api/v1/admin-users/${account.id}` : "/api/v1/admin-users",
+      account.id ? "PUT" : "POST",
+      account,
+    ),
+  getEndUser: (userId: string) =>
+    request<EndUserProfile>(appendScopeParams(`/api/v1/users/${userId}`)),
+  getEndUserHistory: (userId: string) =>
+    request<EndUserPoiVisit[]>(appendScopeParams(`/api/v1/users/${userId}/history`)),
+  saveEndUserStatus: (
+    userId: string,
+    payload: {
+      isBanned: boolean;
+      actorName: string;
+      actorRole: AdminUser["role"];
+    },
+  ) => jsonRequest<EndUserProfile>(`/api/v1/users/${userId}/status`, "PATCH", payload),
   savePromotion: (promotion: {
     id?: string;
     poiId: string;
@@ -263,17 +317,20 @@ export const adminApi = {
       translation.id ? "PUT" : "POST",
       translation,
     ),
-  saveReviewStatus: (reviewId: string, payload: {
-    status: Review["status"];
-    actorName: string;
-    actorRole: AdminUser["role"];
-  }) =>
-    jsonRequest<Review>(`/api/v1/reviews/${reviewId}/status`, "PATCH", payload),
-  saveSettings: (settings: SystemSetting & {
-    actorName: string;
-    actorRole: AdminUser["role"];
-  }) =>
-    jsonRequest<SystemSetting>("/api/v1/settings", "PUT", settings),
+  saveReviewStatus: (
+    reviewId: string,
+    payload: {
+      status: Review["status"];
+      actorName: string;
+      actorRole: AdminUser["role"];
+    },
+  ) => jsonRequest<Review>(`/api/v1/reviews/${reviewId}/status`, "PATCH", payload),
+  saveSettings: (
+    settings: SystemSetting & {
+      actorName: string;
+      actorRole: AdminUser["role"];
+    },
+  ) => jsonRequest<SystemSetting>("/api/v1/settings", "PUT", settings),
   saveMediaAsset: (asset: {
     id?: string;
     entityType: MediaAsset["entityType"];

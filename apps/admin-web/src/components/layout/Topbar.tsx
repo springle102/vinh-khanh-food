@@ -3,11 +3,13 @@ import { getInitials, roleLabels } from "../../lib/utils";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icons";
 
-export const Topbar = ({
-  onMenuClick,
-}: {
+type TopbarProps = {
+  headerEyebrow: string;
+  headerTitle: string;
   onMenuClick: () => void;
-}) => {
+};
+
+export const Topbar = ({ headerEyebrow, headerTitle, onMenuClick }: TopbarProps) => {
   const { user, logout } = useAuth();
 
   return (
@@ -18,8 +20,8 @@ export const Topbar = ({
             <Icon name="menu" className="h-5 w-5" />
           </Button>
           <div>
-            <p className="text-sm font-medium text-ink-500">Bảng điều khiển quản trị</p>
-            <h2 className="text-2xl font-bold text-ink-900">Phố ẩm thực Vĩnh Khánh</h2>
+            <p className="text-sm font-medium text-ink-500">{headerEyebrow}</p>
+            <h2 className="text-2xl font-bold text-ink-900">{headerTitle}</h2>
           </div>
         </div>
 

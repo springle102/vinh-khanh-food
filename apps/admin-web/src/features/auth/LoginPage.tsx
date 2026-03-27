@@ -5,6 +5,7 @@ import { Card } from "../../components/ui/Card";
 import { Icon } from "../../components/ui/Icons";
 import { Input } from "../../components/ui/Input";
 import { useAuth } from "./AuthContext";
+import { getHomePathForRole, isPathAllowedForRole } from "./auth-routing";
 
 const demoAccounts = [
   {
@@ -13,7 +14,7 @@ const demoAccounts = [
     password: "Admin@123",
   },
   {
-    label: "Chủ quán",
+    label: "Chủ quán demo",
     email: "bbq@vinhkhanh.vn",
     password: "Admin@123",
   },
@@ -33,9 +34,8 @@ export const LoginPage = () => {
       return;
     }
 
-    const nextPath = (location.state as { from?: string } | null)?.from ?? "/";
-    navigate(nextPath, { replace: true });
-  }, [location.state, navigate, user]);
+    navigate(getHomePathForRole(user.role), { replace: true });
+  }, [navigate, user]);
 
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -50,8 +50,13 @@ export const LoginPage = () => {
       return;
     }
 
-    const nextPath = (location.state as { from?: string } | null)?.from ?? "/";
-    navigate(nextPath, { replace: true });
+    const requestedPath = (location.state as { from?: string } | null)?.from;
+    const redirectTo =
+      result.role && requestedPath && isPathAllowedForRole(result.role, requestedPath)
+        ? requestedPath
+        : result.redirectTo;
+
+    navigate(redirectTo ?? "/dashboard", { replace: true });
   };
 
   const handleSelectDemoAccount = (selectedEmail: string, selectedPassword: string) => {
@@ -62,7 +67,7 @@ export const LoginPage = () => {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-sand-50 bg-hero-warm px-4 py-10 text-ink-900">
-      <div className="w-full max-w-[520px]">
+      <div className="w-full max-w-[540px]">
         <Card className="p-8 sm:p-10">
           <div className="mb-8 flex items-center gap-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-primary-500 text-white">
@@ -70,9 +75,9 @@ export const LoginPage = () => {
             </div>
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary-600">
-                Admin Sign In
+                Login Portal
               </p>
-              <h2 className="text-2xl font-bold">Đăng nhập với tư cách quản trị viên</h2>
+              <h1 className="text-2xl font-bold">Đăng nhập hệ thống nhà hàng</h1>
             </div>
           </div>
 
@@ -83,7 +88,7 @@ export const LoginPage = () => {
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="Email..."
+                placeholder="Nhập email"
               />
             </div>
             <div>
@@ -92,7 +97,7 @@ export const LoginPage = () => {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Mật khẩu"
+                placeholder="Nhập mật khẩu"
               />
             </div>
 

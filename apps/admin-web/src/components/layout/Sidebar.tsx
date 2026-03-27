@@ -1,26 +1,23 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { Icon } from "../ui/Icons";
+import type { AppShellNavItem } from "./AppShell";
 
-const items = [
-  { to: "/", label: "Tổng quan", icon: "dashboard" as const },
-  { to: "/pois", label: "POI", icon: "map" as const },
-  { to: "/content", label: "Món ăn", icon: "content" as const },
-  { to: "/users", label: "Chủ quán", icon: "users" as const },
-  { to: "/end-users", label: "Người dùng", icon: "users" as const },
-  { to: "/promotions", label: "Ưu đãi", icon: "gift" as const },
-  { to: "/reviews", label: "Đánh giá", icon: "star" as const },
-  { to: "/activity", label: "Nhật ký", icon: "activity" as const },
-  { to: "/settings", label: "Cài đặt", icon: "settings" as const },
-];
-
-export const Sidebar = ({
-  open,
-  onClose,
-}: {
+type SidebarProps = {
+  brandKicker: string;
+  brandTitle: string;
+  navigationItems: AppShellNavItem[];
   open: boolean;
   onClose: () => void;
-}) => (
+};
+
+export const Sidebar = ({
+  brandKicker,
+  brandTitle,
+  navigationItems,
+  open,
+  onClose,
+}: SidebarProps) => (
   <>
     <div
       className={cn(
@@ -40,13 +37,13 @@ export const Sidebar = ({
           <Icon name="dashboard" className="h-6 w-6" />
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary-600">Vinh Khanh</p>
-          <h1 className="text-lg font-bold text-ink-900">Bảng điều khiển</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary-600">{brandKicker}</p>
+          <h1 className="text-lg font-bold text-ink-900">{brandTitle}</h1>
         </div>
       </div>
 
       <nav className="space-y-2">
-        {items.map((item) => (
+        {navigationItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

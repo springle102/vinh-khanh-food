@@ -19,6 +19,7 @@ export const SettingsPage = () => {
   const [feedbackTone, setFeedbackTone] = useState<"success" | "error">("success");
   const [isSaving, setSaving] = useState(false);
   const [isRefreshing, setRefreshing] = useState(false);
+  const canManageSettings = user?.role === "SUPER_ADMIN";
 
   useEffect(() => {
     setForm(state.settings);
@@ -31,7 +32,7 @@ export const SettingsPage = () => {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!user) {
+    if (!user || !canManageSettings) {
       return;
     }
 
@@ -73,6 +74,15 @@ export const SettingsPage = () => {
         <h1 className="mt-3 text-3xl font-bold text-ink-900">Cấu hình hệ thống và quy tắc vận hành</h1>
       </Card>
 
+      {!canManageSettings ? (
+        <Card className="border border-amber-100 bg-amber-50">
+          <p className="font-semibold text-amber-800">Tài khoản hiện tại chỉ có quyền xem cấu hình.</p>
+          <p className="mt-2 text-sm text-amber-700">
+            Đăng nhập bằng Super Admin để cập nhật cài đặt hệ thống.
+          </p>
+        </Card>
+      ) : null}
+
       <form className="space-y-6" onSubmit={handleSubmit}>
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <Card>
@@ -83,6 +93,7 @@ export const SettingsPage = () => {
                 <Input
                   value={form.appName}
                   onChange={(event) => setForm((current) => ({ ...current, appName: event.target.value }))}
+                  disabled={!canManageSettings}
                 />
               </div>
               <div>
@@ -91,6 +102,7 @@ export const SettingsPage = () => {
                   type="email"
                   value={form.supportEmail}
                   onChange={(event) => setForm((current) => ({ ...current, supportEmail: event.target.value }))}
+                  disabled={!canManageSettings}
                 />
               </div>
               <div>
@@ -100,6 +112,7 @@ export const SettingsPage = () => {
                   onChange={(event) =>
                     setForm((current) => ({ ...current, defaultLanguage: event.target.value as LanguageCode }))
                   }
+                  disabled={!canManageSettings}
                 >
                   {allLanguages.map((language) => (
                     <option key={language} value={language}>
@@ -115,6 +128,7 @@ export const SettingsPage = () => {
                   onChange={(event) =>
                     setForm((current) => ({ ...current, fallbackLanguage: event.target.value as LanguageCode }))
                   }
+                  disabled={!canManageSettings}
                 >
                   {allLanguages.map((language) => (
                     <option key={language} value={language}>
@@ -139,6 +153,7 @@ export const SettingsPage = () => {
                       mapProvider: event.target.value as SystemSetting["mapProvider"],
                     }))
                   }
+                  disabled={!canManageSettings}
                 >
                   <option value="openstreetmap">OpenStreetMap</option>
                   <option value="google">Google Maps</option>
@@ -155,6 +170,7 @@ export const SettingsPage = () => {
                       storageProvider: event.target.value as SystemSetting["storageProvider"],
                     }))
                   }
+                  disabled={!canManageSettings}
                 >
                   <option value="cloudinary">Cloudinary</option>
                   <option value="s3">S3 Compatible</option>
@@ -170,6 +186,7 @@ export const SettingsPage = () => {
                       ttsProvider: event.target.value as SystemSetting["ttsProvider"],
                     }))
                   }
+                  disabled={!canManageSettings}
                 >
                   <option value="azure">Azure Cognitive Services</option>
                   <option value="native">Native device TTS</option>
@@ -194,6 +211,7 @@ export const SettingsPage = () => {
                       <input
                         type="checkbox"
                         checked={form.freeLanguages.includes(language)}
+                        disabled={!canManageSettings}
                         onChange={(event) =>
                           setForm((current) => ({
                             ...current,
@@ -219,6 +237,7 @@ export const SettingsPage = () => {
                       <input
                         type="checkbox"
                         checked={form.premiumLanguages.includes(language)}
+                        disabled={!canManageSettings}
                         onChange={(event) =>
                           setForm((current) => ({
                             ...current,
@@ -243,6 +262,7 @@ export const SettingsPage = () => {
                         premiumUnlockPriceUsd: Number(event.target.value),
                       }))
                     }
+                    disabled={!canManageSettings}
                   />
                 </div>
               </div>
@@ -263,6 +283,7 @@ export const SettingsPage = () => {
                       geofenceRadiusMeters: Number(event.target.value),
                     }))
                   }
+                  disabled={!canManageSettings}
                 />
               </div>
               <div>
@@ -276,12 +297,14 @@ export const SettingsPage = () => {
                       analyticsRetentionDays: Number(event.target.value),
                     }))
                   }
+                  disabled={!canManageSettings}
                 />
               </div>
               <label className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm text-ink-700">
                 <input
                   type="checkbox"
                   checked={form.guestReviewEnabled}
+                  disabled={!canManageSettings}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, guestReviewEnabled: event.target.checked }))
                   }
@@ -305,8 +328,8 @@ export const SettingsPage = () => {
         ) : null}
 
         <section className="flex flex-wrap justify-between gap-4">
-          <Button type="submit" disabled={isSaving}>
-            {isSaving ? "Đang lưu..." : "Lưu cấu hình hệ thống"}
+          <Button type="submit" disabled={isSaving || !canManageSettings}>
+            {canManageSettings ? (isSaving ? "Đang lưu..." : "Lưu cấu hình hệ thống") : "Không có quyền cập nhật"}
           </Button>
           <Button
             type="button"

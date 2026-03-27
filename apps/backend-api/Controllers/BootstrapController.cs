@@ -10,8 +10,10 @@ namespace VinhKhanh.BackendApi.Controllers;
 public sealed class BootstrapController(AdminDataRepository repository) : ControllerBase
 {
     [HttpGet("bootstrap")]
-    public ActionResult<ApiResponse<AdminBootstrapResponse>> GetBootstrap()
-        => Ok(ApiResponse<AdminBootstrapResponse>.Ok(repository.GetBootstrap()));
+    public ActionResult<ApiResponse<AdminBootstrapResponse>> GetBootstrap(
+        [FromQuery] string? userId,
+        [FromQuery] string? role)
+        => Ok(ApiResponse<AdminBootstrapResponse>.Ok(repository.GetBootstrap(userId, role)));
 
     [HttpGet("dashboard/summary")]
     public ActionResult<ApiResponse<DashboardSummaryResponse>> GetDashboardSummary()

@@ -1,4 +1,5 @@
 using Microsoft.Data.SqlClient;
+using System.Linq;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
 
@@ -29,21 +30,48 @@ public sealed partial class AdminDataRepository
         return GetCustomerUsers(connection, null);
     }
 
-    public IReadOnlyList<EndUser> GetEndUsers()
+    public IReadOnlyList<EndUser> GetEndUsers(string? scopeUserId = null, string? scopeRole = null)
     {
         using var connection = OpenConnection();
-        return GetEndUsers(connection, null);
+        var items = GetEndUsers(connection, null);
+        if (!IsOwnerScopeRequest(scopeUserId, scopeRole))
+        {
+            return items;
+        }
+
+        var ownerPoiIds = GetOwnerPoiIds(connection, null, scopeUserId);
+        var allowedUserIds = GetUserPoiVisitLinks(connection, null)
+            .Where((link) => ownerPoiIds.Contains(link.PoiId))
+            .Select((link) => link.UserId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return items
+            .Where((item) => allowedUserIds.Contains(item.Id))
+            .ToList();
     }
 
-    public EndUser? GetEndUserById(string id)
+    public EndUser? GetEndUserById(string id, string? scopeUserId = null, string? scopeRole = null)
     {
         using var connection = OpenConnection();
+        if (IsOwnerScopeRequest(scopeUserId, scopeRole) && !CanOwnerAccessEndUser(connection, null, scopeUserId, id))
+        {
+            return null;
+        }
+
         return GetEndUserById(connection, null, id);
     }
 
-    public IReadOnlyList<EndUserPoiVisit> GetEndUserHistory(string id)
+    public IReadOnlyList<EndUserPoiVisit> GetEndUserHistory(string id, string? scopeUserId = null, string? scopeRole = null)
     {
         using var connection = OpenConnection();
+        if (IsOwnerScopeRequest(scopeUserId, scopeRole))
+        {
+            var ownerPoiIds = GetOwnerPoiIds(connection, null, scopeUserId);
+            return GetEndUserHistory(connection, null, id)
+                .Where((item) => ownerPoiIds.Contains(item.PoiId, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+        }
+
         return GetEndUserHistory(connection, null, id);
     }
 
@@ -53,10 +81,19 @@ public sealed partial class AdminDataRepository
         return GetCategories(connection, null);
     }
 
-    public IReadOnlyList<Poi> GetPois()
+    public IReadOnlyList<Poi> GetPois(string? scopeUserId = null, string? scopeRole = null)
     {
         using var connection = OpenConnection();
-        return GetPois(connection, null);
+        var items = GetPois(connection, null);
+        if (!IsOwnerScopeRequest(scopeUserId, scopeRole))
+        {
+            return items;
+        }
+
+        var ownerPoiIds = GetOwnerPoiIds(connection, null, scopeUserId);
+        return items
+            .Where((item) => ownerPoiIds.Contains(item.Id))
+            .ToList();
     }
 
     public IReadOnlyList<Translation> GetTranslations()
@@ -125,26 +162,123 @@ public sealed partial class AdminDataRepository
         return GetSettings(connection, null);
     }
 
-    public AdminBootstrapResponse GetBootstrap()
+    public AdminBootstrapResponse GetBootstrap(string? scopeUserId = null, string? scopeRole = null)
     {
         using var connection = OpenConnection();
 
+        var users = GetUsers(connection, null);
+        var customerUsers = GetCustomerUsers(connection, null);
+        var categories = GetCategories(connection, null);
+        var pois = GetPois(connection, null);
+        var translations = GetTranslations(connection, null);
+        var audioGuides = GetAudioGuides(connection, null);
+        var mediaAssets = GetMediaAssets(connection, null);
+        var foodItems = GetFoodItems(connection, null);
+        var routes = GetRoutes(connection, null);
+        var promotions = GetPromotions(connection, null);
+        var reviews = GetReviews(connection, null);
+        var viewLogs = GetViewLogs(connection, null);
+        var audioListenLogs = GetAudioListenLogs(connection, null);
+        var auditLogs = GetAuditLogs(connection, null);
+        var settings = GetSettings(connection, null);
+
+        if (IsOwnerScopeRequest(scopeUserId, scopeRole))
+        {
+            var ownerPoiIds = GetOwnerPoiIds(connection, null, scopeUserId);
+            var ownerPoiIdSet = ownerPoiIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var routePoiSet = routes
+                .Where((route) => route.StopPoiIds.Any(ownerPoiIdSet.Contains))
+                .Select((route) => route.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            pois = pois.Where((poi) => ownerPoiIdSet.Contains(poi.Id)).ToList();
+            users = users.Where((user) => string.Equals(user.Id, scopeUserId, StringComparison.OrdinalIgnoreCase)).ToList();
+            categories = categories.Where((category) => pois.Any((poi) => poi.CategoryId == category.Id)).ToList();
+            foodItems = foodItems.Where((item) => ownerPoiIdSet.Contains(item.PoiId)).ToList();
+
+            var foodItemIdSet = foodItems.Select((item) => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var customerPoiLinks = GetUserPoiVisitLinks(connection, null);
+            var allowedCustomerIds = customerPoiLinks
+                .Where((link) => ownerPoiIdSet.Contains(link.PoiId))
+                .Select((link) => link.UserId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            customerUsers = customerUsers
+                .Where((customer) =>
+                    customer.FavoritePoiIds.Any(ownerPoiIdSet.Contains) ||
+                    allowedCustomerIds.Contains(customer.Id))
+                .ToList();
+
+            routes = routes.Where((route) => route.StopPoiIds.Any(ownerPoiIdSet.Contains)).ToList();
+            promotions = promotions.Where((promotion) => ownerPoiIdSet.Contains(promotion.PoiId)).ToList();
+            reviews = reviews.Where((review) => ownerPoiIdSet.Contains(review.PoiId)).ToList();
+            viewLogs = viewLogs.Where((log) => ownerPoiIdSet.Contains(log.PoiId)).ToList();
+            audioListenLogs = audioListenLogs.Where((log) => ownerPoiIdSet.Contains(log.PoiId)).ToList();
+
+            translations = translations
+                .Where((translation) =>
+                    (string.Equals(translation.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                     ownerPoiIdSet.Contains(translation.EntityId)) ||
+                    (string.Equals(translation.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                     foodItemIdSet.Contains(translation.EntityId)) ||
+                    (string.Equals(translation.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                     routePoiSet.Contains(translation.EntityId)))
+                .ToList();
+
+            audioGuides = audioGuides
+                .Where((audioGuide) =>
+                    (string.Equals(audioGuide.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                     ownerPoiIdSet.Contains(audioGuide.EntityId)) ||
+                    (string.Equals(audioGuide.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                     foodItemIdSet.Contains(audioGuide.EntityId)) ||
+                    (string.Equals(audioGuide.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                     routePoiSet.Contains(audioGuide.EntityId)))
+                .ToList();
+
+            mediaAssets = mediaAssets
+                .Where((asset) =>
+                    (string.Equals(asset.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                     ownerPoiIdSet.Contains(asset.EntityId)) ||
+                    (string.Equals(asset.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                     foodItemIdSet.Contains(asset.EntityId)) ||
+                    (string.Equals(asset.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                     routePoiSet.Contains(asset.EntityId)))
+                .ToList();
+
+            var auditTargets = pois
+                .SelectMany((poi) => new[] { poi.Id, poi.Slug })
+                .Concat(foodItems.Select((item) => item.Id))
+                .Concat(routes.Select((route) => route.Id))
+                .Concat(promotions.Select((promotion) => promotion.Id))
+                .Concat(reviews.Select((review) => review.Id))
+                .Append(scopeUserId ?? string.Empty)
+                .Where((value) => !string.IsNullOrWhiteSpace(value))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            auditLogs = auditLogs
+                .Where((log) =>
+                    auditTargets.Any((target) =>
+                        string.Equals(log.Target, target, StringComparison.OrdinalIgnoreCase) ||
+                        log.Target.Contains(target, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+
         return new AdminBootstrapResponse(
-            GetUsers(connection, null),
-            GetCustomerUsers(connection, null),
-            GetCategories(connection, null),
-            GetPois(connection, null),
-            GetTranslations(connection, null),
-            GetAudioGuides(connection, null),
-            GetMediaAssets(connection, null),
-            GetFoodItems(connection, null),
-            GetRoutes(connection, null),
-            GetPromotions(connection, null),
-            GetReviews(connection, null),
-            GetViewLogs(connection, null),
-            GetAudioListenLogs(connection, null),
-            GetAuditLogs(connection, null),
-            GetSettings(connection, null));
+            users,
+            customerUsers,
+            categories,
+            pois,
+            translations,
+            audioGuides,
+            mediaAssets,
+            foodItems,
+            routes,
+            promotions,
+            reviews,
+            viewLogs,
+            audioListenLogs,
+            auditLogs,
+            settings);
     }
 
     public DashboardSummaryResponse GetDashboardSummary()
@@ -423,5 +557,83 @@ public sealed partial class AdminDataRepository
                 ON dbo.UserPoiVisits (UserId, VisitedAt DESC);
             END;
             """);
+    }
+
+    private static bool IsOwnerScopeRequest(string? scopeUserId, string? scopeRole) =>
+        !string.IsNullOrWhiteSpace(scopeUserId) &&
+        string.Equals(scopeRole, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase);
+
+    private HashSet<string> GetOwnerPoiIds(SqlConnection connection, SqlTransaction? transaction, string? ownerUserId)
+    {
+        if (string.IsNullOrWhiteSpace(ownerUserId))
+        {
+            return [];
+        }
+
+        var owner = GetUserById(connection, transaction, ownerUserId);
+        if (owner is null)
+        {
+            return [];
+        }
+
+        var poiIds = GetPois(connection, transaction)
+            .Where((poi) =>
+                string.Equals(poi.OwnerUserId, ownerUserId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(poi.Id, owner.ManagedPoiId, StringComparison.OrdinalIgnoreCase))
+            .Select((poi) => poi.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(owner.ManagedPoiId))
+        {
+            poiIds.Add(owner.ManagedPoiId);
+        }
+
+        return poiIds;
+    }
+
+    private IReadOnlyList<(string UserId, string PoiId)> GetUserPoiVisitLinks(
+        SqlConnection connection,
+        SqlTransaction? transaction)
+    {
+        const string sql = """
+            SELECT UserId, PoiId
+            FROM dbo.UserPoiVisits;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql);
+        using var reader = command.ExecuteReader();
+
+        var items = new List<(string UserId, string PoiId)>();
+        while (reader.Read())
+        {
+            items.Add((ReadString(reader, "UserId"), ReadString(reader, "PoiId")));
+        }
+
+        return items;
+    }
+
+    private bool CanOwnerAccessEndUser(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string? ownerUserId,
+        string endUserId)
+    {
+        var ownerPoiIds = GetOwnerPoiIds(connection, transaction, ownerUserId);
+        if (ownerPoiIds.Count == 0)
+        {
+            return false;
+        }
+
+        var customer = GetCustomerUsers(connection, transaction)
+            .FirstOrDefault((item) => string.Equals(item.Id, endUserId, StringComparison.OrdinalIgnoreCase));
+        if (customer is not null && customer.FavoritePoiIds.Any(ownerPoiIds.Contains))
+        {
+            return true;
+        }
+
+        return GetUserPoiVisitLinks(connection, transaction)
+            .Any((link) =>
+                string.Equals(link.UserId, endUserId, StringComparison.OrdinalIgnoreCase) &&
+                ownerPoiIds.Contains(link.PoiId));
     }
 }

@@ -14,9 +14,11 @@ public sealed class PoisController(AdminDataRepository repository) : ControllerB
         [FromQuery] string? status,
         [FromQuery] string? categoryId,
         [FromQuery] bool? featured,
-        [FromQuery] string? search)
+        [FromQuery] string? search,
+        [FromQuery] string? userId,
+        [FromQuery] string? role)
     {
-        IEnumerable<Poi> query = repository.GetPois();
+        IEnumerable<Poi> query = repository.GetPois(userId, role);
 
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -45,18 +47,24 @@ public sealed class PoisController(AdminDataRepository repository) : ControllerB
     }
 
     [HttpGet("{id}")]
-    public ActionResult<ApiResponse<Poi>> GetPoiById(string id)
+    public ActionResult<ApiResponse<Poi>> GetPoiById(
+        string id,
+        [FromQuery] string? userId,
+        [FromQuery] string? role)
     {
-        var poi = repository.GetPois().FirstOrDefault(item => item.Id == id);
+        var poi = repository.GetPois(userId, role).FirstOrDefault(item => item.Id == id);
         return poi is null
             ? NotFound(ApiResponse<Poi>.Fail("Khong tim thay POI."))
             : Ok(ApiResponse<Poi>.Ok(poi));
     }
 
     [HttpGet("{id}/detail")]
-    public ActionResult<ApiResponse<PoiDetailResponse>> GetPoiDetailById(string id)
+    public ActionResult<ApiResponse<PoiDetailResponse>> GetPoiDetailById(
+        string id,
+        [FromQuery] string? userId,
+        [FromQuery] string? role)
     {
-        var poi = repository.GetPois().FirstOrDefault(item => item.Id == id);
+        var poi = repository.GetPois(userId, role).FirstOrDefault(item => item.Id == id);
         if (poi is null)
         {
             return NotFound(ApiResponse<PoiDetailResponse>.Fail("Khong tim thay POI."));

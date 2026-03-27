@@ -51,14 +51,14 @@ type PoiFormState = {
   audioStatus: AudioGuide["status"];
 };
 
-const createDefaultForm = (categoryId: string): PoiFormState => ({
+const createDefaultForm = (categoryId: string, status: Poi["status"] = "draft"): PoiFormState => ({
   title: "",
   slug: "",
   address: "",
   lat: DEFAULT_LAT.toFixed(6),
   lng: DEFAULT_LNG.toFixed(6),
   categoryId,
-  status: "draft",
+  status,
   featured: false,
   defaultLanguageCode: "vi",
   district: "Quận 4",
@@ -135,9 +135,14 @@ const getPoiNarrationLanguagesFromDetail = (detail: PoiDetail) => {
   return [...languages];
 };
 
+const getSubmissionStatus = (role: "SUPER_ADMIN" | "PLACE_OWNER" | undefined, status: Poi["status"]) =>
+  role === "PLACE_OWNER" ? "pending" : status;
+
 export const PoisPage = () => {
   const { state, saveAudioGuide, savePoi } = useAdminData();
   const { user } = useAuth();
+  const isOwner = user?.role === "PLACE_OWNER";
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const {
     playbackState,
     stopCurrentAudio,
@@ -163,7 +168,9 @@ export const PoisPage = () => {
   const [isFetchingPoiDetail, setFetchingPoiDetail] = useState(false);
   const [visiblePoiIds, setVisiblePoiIds] = useState<string[]>([]);
   const [hasSlugBeenManuallyEdited, setHasSlugBeenManuallyEdited] = useState(false);
-  const [form, setForm] = useState<PoiFormState>(() => createDefaultForm(state.categories[0]?.id ?? ""));
+  const [form, setForm] = useState<PoiFormState>(() =>
+    createDefaultForm(state.categories[0]?.id ?? "", getSubmissionStatus(user?.role, "draft")),
+  );
   const [playbackIntent, setPlaybackIntent] = useState<{
     token: number;
     poiId: string | null;
@@ -194,6 +201,10 @@ export const PoisPage = () => {
     const searched = searchPois(state.pois, state, keyword);
     return statusFilter === "all" ? searched : searched.filter((item) => item.status === statusFilter);
   }, [keyword, state, statusFilter]);
+  const pendingPois = useMemo(
+    () => state.pois.filter((item) => item.status === "pending"),
+    [state.pois],
+  );
 
   useEffect(() => {
     if (!filteredPois.length) {
@@ -379,7 +390,13 @@ export const PoisPage = () => {
     setHasSlugBeenManuallyEdited(false);
     setFormError("");
     setAddressSearchVersion(0);
-    setForm(createDefaultForm(state.categories[0]?.id ?? ""));
+    setForm({
+      ...createDefaultForm(
+        state.categories[0]?.id ?? "",
+        getSubmissionStatus(user?.role, "draft"),
+      ),
+      ownerUserId: isOwner ? user?.id ?? "" : "",
+    });
     setModalOpen(true);
   };
 
@@ -400,8 +417,8 @@ export const PoisPage = () => {
       lat: poi.lat.toString(),
       lng: poi.lng.toString(),
       categoryId: poi.categoryId,
-      status: poi.status,
-      featured: poi.featured,
+      status: getSubmissionStatus(user?.role, poi.status),
+      featured: isOwner ? false : poi.featured,
       defaultLanguageCode: poi.defaultLanguageCode,
       district: poi.district,
       ward: poi.ward,
@@ -409,7 +426,7 @@ export const PoisPage = () => {
       averageVisitDuration: poi.averageVisitDuration.toString(),
       popularityScore: poi.popularityScore.toString(),
       tags: poi.tags.join(", "),
-      ownerUserId: poi.ownerUserId ?? "",
+      ownerUserId: isOwner ? user?.id ?? "" : poi.ownerUserId ?? "",
       shortText: translation?.shortText ?? "",
       fullText: translation?.fullText ?? "",
       audioUrl: audioGuide?.audioUrl ?? "",
@@ -575,8 +592,8 @@ export const PoisPage = () => {
           lat: parseCoordinate(form.lat, DEFAULT_LAT),
           lng: parseCoordinate(form.lng, DEFAULT_LNG),
           categoryId: form.categoryId,
-          status: form.status,
-          featured: form.featured,
+          status: getSubmissionStatus(user.role, form.status),
+          featured: isOwner ? false : form.featured,
           defaultLanguageCode: form.defaultLanguageCode,
           district: form.district,
           ward: form.ward,
@@ -584,7 +601,7 @@ export const PoisPage = () => {
           averageVisitDuration: Number(form.averageVisitDuration),
           popularityScore: Number(form.popularityScore),
           tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
-          ownerUserId: form.ownerUserId || null,
+          ownerUserId: (isOwner ? user.id : form.ownerUserId) || null,
           title: form.title,
           shortText: form.shortText,
           fullText: form.fullText,
@@ -610,7 +627,13 @@ export const PoisPage = () => {
         );
       }
 
+      poiDetailCacheRef.current.delete(savedPoi.id);
+      setSelectedPoiDetail((current) => (current?.poi.id === savedPoi.id ? null : current));
       setSelectedPoiId(savedPoi.id);
+      void fetchPOIDetail(savedPoi.id, {
+        useCache: false,
+        updateSelected: true,
+      }).catch(() => undefined);
       setModalOpen(false);
     } catch (error) {
       setFormError(getErrorMessage(error));
@@ -618,6 +641,76 @@ export const PoisPage = () => {
       setSaving(false);
     }
   };
+
+  const buildPoiSaveDraft = useCallback(
+    (poi: Poi) => {
+      const detail = selectedPoiDetail?.poi.id === poi.id
+        ? selectedPoiDetail
+        : poiDetailCacheRef.current.get(poi.id);
+      const translation =
+        detail?.translations.find((item) => item.languageCode === poi.defaultLanguageCode) ??
+        getPoiTranslation(state, poi.id, poi.defaultLanguageCode);
+
+      return {
+        id: poi.id,
+        slug: poi.slug,
+        address: poi.address,
+        lat: poi.lat,
+        lng: poi.lng,
+        categoryId: poi.categoryId,
+        status: poi.status,
+        featured: poi.featured,
+        defaultLanguageCode: poi.defaultLanguageCode,
+        district: poi.district,
+        ward: poi.ward,
+        priceRange: poi.priceRange,
+        averageVisitDuration: poi.averageVisitDuration,
+        popularityScore: poi.popularityScore,
+        tags: poi.tags,
+        ownerUserId: poi.ownerUserId,
+        title: translation?.title ?? poi.slug,
+        shortText: translation?.shortText ?? "",
+        fullText: translation?.fullText ?? "",
+        seoTitle: translation?.seoTitle ?? translation?.title ?? poi.slug,
+        seoDescription: translation?.seoDescription ?? translation?.shortText ?? translation?.title ?? poi.slug,
+      };
+    },
+    [selectedPoiDetail, state],
+  );
+
+  const handleApprovePoi = useCallback(
+    async (poi: Poi) => {
+      if (!user || !isSuperAdmin) {
+        return;
+      }
+
+      setSaving(true);
+      setFormError("");
+
+      try {
+        const savedPoi = await savePoi(
+          {
+            ...buildPoiSaveDraft(poi),
+            status: "published",
+          },
+          user,
+        );
+
+        poiDetailCacheRef.current.delete(savedPoi.id);
+        setSelectedPoiDetail((current) => (current?.poi.id === savedPoi.id ? null : current));
+        setSelectedPoiId(savedPoi.id);
+        void fetchPOIDetail(savedPoi.id, {
+          useCache: false,
+          updateSelected: true,
+        }).catch(() => undefined);
+      } catch (error) {
+        setFormError(getErrorMessage(error));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [buildPoiSaveDraft, fetchPOIDetail, isSuperAdmin, savePoi, user],
+  );
 
   const columns: DataColumn<Poi>[] = [
     {
@@ -658,6 +751,16 @@ export const PoisPage = () => {
           <Button variant="ghost" onClick={() => handlePoiSelect(poi.id)}>
             Xem
           </Button>
+          {isSuperAdmin && poi.status === "pending" ? (
+            <Button
+              onClick={() => {
+                void handleApprovePoi(poi);
+              }}
+              disabled={isSaving}
+            >
+              Duyệt
+            </Button>
+          ) : null}
           <Button variant="secondary" onClick={() => openEditModal(poi)}>
             Sửa
           </Button>
@@ -677,15 +780,29 @@ export const PoisPage = () => {
               Khi chạm bất kỳ điểm nào gần marker trên bản đồ, hệ thống sẽ tự chọn POI gần nhất, hiện thông tin chi tiết và tự động phát thuyết minh của POI đó.
             </p>
           </div>
-          <Button onClick={openCreateModal}>Tạo POI</Button>
+          {isOwner ? (
+            <Button onClick={openCreateModal}>Tạo POI</Button>
+          ) : (
+            <Button
+              disabled={!pendingPois.length}
+              onClick={() => {
+                setStatusFilter("pending");
+                if (pendingPois[0]) {
+                  handlePoiSelect(pendingPois[0].id);
+                }
+              }}
+            >
+              {pendingPois.length ? `Duyệt ${pendingPois.length} POI` : "Không có POI chờ duyệt"}
+            </Button>
+          )}
         </div>
       </Card>
 
       <section className="grid gap-4 md:grid-cols-4">
         {[
           ["Tổng POI", formatNumber(state.pois.length)],
+          ["Chờ duyệt", formatNumber(pendingPois.length)],
           ["Published", formatNumber(state.pois.filter((item) => item.status === "published").length)],
-          ["Featured", formatNumber(state.pois.filter((item) => item.featured).length)],
           ["Có audio", formatNumber(state.audioGuides.filter((item) => item.entityType === "poi").length)],
         ].map(([label, value]) => (
           <Card key={label}>
@@ -702,6 +819,7 @@ export const PoisPage = () => {
             <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as Poi["status"] | "all")}>
               <option value="all">Tất cả trạng thái</option>
               <option value="draft">Draft</option>
+              <option value="pending">Chờ duyệt</option>
               <option value="published">Published</option>
               <option value="archived">Archived</option>
             </Select>
@@ -823,6 +941,16 @@ export const PoisPage = () => {
                 <Button variant="ghost" onClick={() => stopCurrentAudio("Đã dừng thuyết minh.")}>
                   Dừng
                 </Button>
+                {isSuperAdmin && selectedPoi.status === "pending" ? (
+                  <Button
+                    onClick={() => {
+                      void handleApprovePoi(selectedPoi);
+                    }}
+                    disabled={isSaving}
+                  >
+                    Duyệt POI này
+                  </Button>
+                ) : null}
                 <Button variant="secondary" onClick={() => openEditModal(selectedPoi)}>
                   Sửa POI này
                 </Button>
@@ -855,8 +983,8 @@ export const PoisPage = () => {
       <Modal
         open={isModalOpen}
         onClose={() => setModalOpen(false)}
-        title={form.id ? "Cập nhật POI" : "Tạo POI"}
-        description="Điền thông tin POI, chỉnh vị trí trên bản đồ và lưu nội dung thuyết minh mặc định."
+        title={isOwner ? (form.id ? "Cập nhật POI để gửi duyệt" : "Tạo POI để gửi duyệt") : form.id ? "Cập nhật POI" : "Tạo POI"}
+        description={isOwner ? "Điền thông tin POI và gửi cho super admin duyệt trước khi xuất bản." : "Điền thông tin POI, chỉnh vị trí trên bản đồ và lưu nội dung thuyết minh mặc định."}
         maxWidthClassName="max-w-5xl"
       >
         <form className="space-y-6" onSubmit={handleSubmit}>
@@ -903,11 +1031,17 @@ export const PoisPage = () => {
                 </div>
                 <div>
                   <label className="field-label">Trạng thái</label>
-                  <Select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as Poi["status"] }))}>
-                    <option value="draft">Draft</option>
-                    <option value="published">Published</option>
+                  <Select
+                    value={form.status}
+                    onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as Poi["status"] }))}
+                    disabled={isOwner}
+                  >
+                    {!isOwner ? <option value="draft">Draft</option> : null}
+                    <option value="pending">Chờ duyệt</option>
+                    {!isOwner ? <option value="published">Published</option> : null}
                     <option value="archived">Archived</option>
                   </Select>
+                  {isOwner ? <p className="mt-2 text-xs text-ink-500">Chủ quán gửi POI lên để super admin duyệt trước khi xuất bản.</p> : null}
                 </div>
                 <div>
                   <label className="field-label">Ngôn ngữ</label>
@@ -966,8 +1100,8 @@ export const PoisPage = () => {
                 </div>
                 <div className="flex items-end">
                   <label className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
-                    <input type="checkbox" checked={form.featured} onChange={(event) => setForm((current) => ({ ...current, featured: event.target.checked }))} />
-                    Featured
+                    <input type="checkbox" checked={form.featured} onChange={(event) => setForm((current) => ({ ...current, featured: event.target.checked }))} disabled={isOwner} />
+                    {isOwner ? "Featured (chỉ super admin)" : "Featured"}
                   </label>
                 </div>
               </div>
@@ -975,7 +1109,7 @@ export const PoisPage = () => {
               <div className="grid gap-5 md:grid-cols-2">
                 <div>
                   <label className="field-label">Người quản lý</label>
-                  <Select value={form.ownerUserId} onChange={(event) => setForm((current) => ({ ...current, ownerUserId: event.target.value }))}>
+                  <Select value={form.ownerUserId} onChange={(event) => setForm((current) => ({ ...current, ownerUserId: event.target.value }))} disabled={isOwner}>
                     <option value="">Chưa gán</option>
                     {state.users.filter((account) => account.role === "PLACE_OWNER").map((account) => (
                       <option key={account.id} value={account.id}>
@@ -1070,7 +1204,7 @@ export const PoisPage = () => {
               Hủy
             </Button>
             <Button type="submit" disabled={isSaving || isUploadingAudio}>
-              {isSaving ? "Đang lưu..." : form.id ? "Lưu cập nhật POI" : "Tạo POI"}
+              {isSaving ? "Đang lưu..." : isOwner ? (form.id ? "Gửi cập nhật để duyệt lại" : "Gửi duyệt POI") : form.id ? "Lưu cập nhật POI" : "Tạo POI"}
             </Button>
           </div>
         </form>
@@ -1078,3 +1212,9 @@ export const PoisPage = () => {
     </div>
   );
 };
+
+
+
+
+
+

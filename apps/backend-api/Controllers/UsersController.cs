@@ -10,28 +10,36 @@ namespace VinhKhanh.BackendApi.Controllers;
 public sealed class UsersController(AdminDataRepository repository) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<ApiResponse<IReadOnlyList<EndUser>>> GetUsers()
-        => Ok(ApiResponse<IReadOnlyList<EndUser>>.Ok(repository.GetEndUsers()));
+    public ActionResult<ApiResponse<IReadOnlyList<EndUser>>> GetUsers(
+        [FromQuery] string? userId,
+        [FromQuery] string? role)
+        => Ok(ApiResponse<IReadOnlyList<EndUser>>.Ok(repository.GetEndUsers(userId, role)));
 
     [HttpGet("{id}")]
-    public ActionResult<ApiResponse<EndUser>> GetUserById(string id)
+    public ActionResult<ApiResponse<EndUser>> GetUserById(
+        string id,
+        [FromQuery] string? userId,
+        [FromQuery] string? role)
     {
-        var user = repository.GetEndUserById(id);
+        var user = repository.GetEndUserById(id, userId, role);
         return user is null
             ? NotFound(ApiResponse<EndUser>.Fail("Khong tim thay nguoi dung cuoi."))
             : Ok(ApiResponse<EndUser>.Ok(user));
     }
 
     [HttpGet("{id}/history")]
-    public ActionResult<ApiResponse<IReadOnlyList<EndUserPoiVisit>>> GetUserHistory(string id)
+    public ActionResult<ApiResponse<IReadOnlyList<EndUserPoiVisit>>> GetUserHistory(
+        string id,
+        [FromQuery] string? userId,
+        [FromQuery] string? role)
     {
-        var user = repository.GetEndUserById(id);
+        var user = repository.GetEndUserById(id, userId, role);
         if (user is null)
         {
             return NotFound(ApiResponse<IReadOnlyList<EndUserPoiVisit>>.Fail("Khong tim thay nguoi dung cuoi."));
         }
 
-        return Ok(ApiResponse<IReadOnlyList<EndUserPoiVisit>>.Ok(repository.GetEndUserHistory(id)));
+        return Ok(ApiResponse<IReadOnlyList<EndUserPoiVisit>>.Ok(repository.GetEndUserHistory(id, userId, role)));
     }
 
     [HttpPatch("{id}/status")]

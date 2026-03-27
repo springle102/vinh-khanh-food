@@ -16,7 +16,8 @@ public sealed class AuthController(AdminDataRepository repository) : ControllerB
             return BadRequest(ApiResponse<AuthTokensResponse>.Fail("Email va mat khau la bat buoc."));
         }
 
-        var result = repository.Login(request.Email, request.Password);
+        var portal = string.IsNullOrWhiteSpace(request.Portal) ? null : request.Portal.Trim().ToLowerInvariant();
+        var result = repository.Login(request.Email, request.Password, portal);
         return result is null
             ? Unauthorized(ApiResponse<AuthTokensResponse>.Fail("Thong tin dang nhap khong hop le."))
             : Ok(ApiResponse<AuthTokensResponse>.Ok(result, "Dang nhap thanh cong."));
