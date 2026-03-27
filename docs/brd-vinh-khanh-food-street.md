@@ -7,25 +7,26 @@
 | Loại tài liệu | Business Requirements Document |
 | Phiên bản | 1.0 |
 | Ngày biên soạn | 21/03/2026 |
-| Frontend | React + Vite Admin Web |
+| Frontend | React + Vite Admin Web + .NET MAUI Mobile App |
 | Backend | ASP.NET Core Web API |
-| Phạm vi áp dụng | Admin Web + Backend API + lớp dữ liệu phục vụ QR/audio/content |
+| Phạm vi áp dụng | Admin Web + Backend API + Mobile App + lớp dữ liệu phục vụ QR/audio/content/analytics |
 | Căn cứ biên soạn | Hiện trạng source tại workspace `Playground 2` |
 
 ## Project Snapshot
 
 ### Phạm vi release hiện tại
 
-Nền tảng quản trị tập trung cho địa điểm, món ăn, bản dịch, audio guide, QR code, route, review, promotion, user và cấu hình vận hành.
+Nền tảng quản trị và trải nghiệm guide đa kênh cho POI, món ăn, bản dịch, audio guide, QR, route, review, analytics và cấu hình vận hành, chạy trên `admin-web`, `backend-api` và `mobile-app`.
 
 ### Chỉ số nhanh
 
 | Chỉ số | Giá trị |
 |---|---|
-| Màn hình nghiệp vụ admin | `12+` |
+| Khối ứng dụng chính | `3` |
+| Namespace API chính | `2` |
 | Ngôn ngữ cấu hình sẵn | `5` |
 | Vai trò admin chính | `2` |
-| Nhóm endpoint backend | `14+` |
+| Nhóm trải nghiệm chính | `admin + guide mobile/public` |
 
 ### Giá trị cốt lõi
 
@@ -70,6 +71,7 @@ Khu phố ẩm thực có nhiều quán, món đặc trưng và nhu cầu tiếp
 - Quản lý nội dung đa ngôn ngữ và audio.
 - Chuẩn hóa dữ liệu backend làm nguồn chuẩn duy nhất.
 - Cho phép quản lý địa điểm, bản dịch, audio, QR, lộ trình, món ăn, khuyến mãi, đánh giá và cấu hình từ một hệ thống thống nhất.
+- Phục vụ trải nghiệm du khách qua mobile app với map, QR, POI detail và narration từ cùng nguồn dữ liệu.
 - Hỗ trợ tối thiểu 5 ngôn ngữ: `vi`, `en`, `zh-CN`, `ko`, `ja`.
 
 ### 1.6 Chỉ số thành công đề xuất
@@ -83,41 +85,50 @@ Khu phố ẩm thực có nhiều quán, món đặc trưng và nhu cầu tiếp
 
 ### 1.7 Ghi chú phạm vi giai đoạn
 
-Trọng tâm của giai đoạn hiện tại là lớp quản trị và backend phục vụ trải nghiệm QR/audio. Phần ứng dụng public cho du khách có thể mở rộng ở giai đoạn tiếp theo.
+Giai đoạn hiện tại đã có đủ `admin-web`, `backend-api` và `mobile-app` để vận hành nội dung và phục vụ trải nghiệm du khách. Tuy vậy, hai nhánh API `api/v1/*` và `api/guide/v1/*` vẫn đang chạy song song, và một số hạng mục như duyệt nội dung, quản lý tour đầy đủ và hardening production vẫn cần hoàn thiện thêm.
 
 ## 2. Kiến trúc tổng quan
 
 ### 2.1 Cấu trúc hệ thống dựa trên đồ án hiện tại
 
-Phần này mô tả trung thực kiến trúc source đang có: một `admin-web` React/Vite ở phía frontend và một `backend-api` ASP.NET Core ở phía server.
+Phần này mô tả trung thực kiến trúc source đang có: một `admin-web` React/Vite cho vận hành, một `backend-api` ASP.NET Core ở phía server và một `mobile-app` .NET MAUI cho trải nghiệm du khách.
 
 Lưu ý quan trọng:
 
 - Đồ án hiện tại **không tách thành microservice**.
-- Backend là **một API duy nhất**.
-- Backend được chia thành **6 nhóm nghiệp vụ REST** rõ ràng.
-- Toàn bộ nhóm nghiệp vụ dùng chung `AdminDataRepository` và `StorageService`.
-- Dữ liệu vận hành hiện đang persist trực tiếp về SQL Server.
+- Backend là **một ứng dụng ASP.NET Core duy nhất**, nhưng đang phục vụ **2 namespace API**:
+  - `api/v1/*` cho admin web hiện hữu
+  - `api/guide/v1/*` cho mobile/public guide và guide admin API
+- Nhánh admin hiện hữu chủ yếu đi qua `AdminDataRepository` và `StorageService`.
+- Nhánh guide mới đi qua `DbContext`, repositories và services riêng, nhưng vẫn dùng cùng database `VinhKhanhFoodAdmin`.
+- Dữ liệu nghiệp vụ và dữ liệu guide đang dùng chung `SQL Server`.
 - File upload nằm dưới `/wwwroot/storage`.
-
-Hai nhóm cuối trong bảng dưới đây là hướng mở rộng hợp lý cho giai đoạn sau.
 
 ### 2.2 Các nhóm kiến trúc chính
 
-| Nhóm | Trạng thái | Vai trò chính |
+| Thành phần | Trạng thái | Vai trò chính |
 |---|---|---|
-| `content` | Active | Places, translations, food items, media assets, SEO, publish status |
-| `media_audio` | Active | Audio guides, upload MP3/image, StorageService, static file URL dưới `/storage` |
-| `admin_security` | Active | Đăng nhập, RBAC, admin user CRUD, session, `managedPlaceId` và kiểm soát quyền |
-| `bootstrap_dashboard` | Active | `GET /bootstrap`, dashboard summary, hydrate state ban đầu và refresh toàn cục |
-| `qr_routes` | Active | QR image/state, route CRUD, featured path và điểm vào cho trải nghiệm quét mã |
-| `operations` | Active | Promotions, review moderation, settings, activity log và tham số vận hành |
-| `data_platform` | Reserved | EF Core, SQL Server, migration, backup và tách repository dữ liệu khi mở rộng |
-| `public_experience` | Reserved | Public landing/app cho du khách, scan flow hoàn chỉnh, favorites và premium unlock |
+| `admin-web` | Active | Giao diện vận hành cho `SUPER_ADMIN` và `PLACE_OWNER`, gồm dashboard, POI, content, users, promotions, reviews, activity, settings |
+| `backend admin API` | Active | Phục vụ `api/v1/*`, bootstrap admin state, auth, CRUD và upload media cho admin web |
+| `backend guide API` | Active | Phục vụ `api/guide/v1/*`, gồm mobile settings, POI list/detail, QR lookup, routes, analytics và guide admin API |
+| `mobile-app` | Active | Ứng dụng `.NET MAUI` cho splash, chọn ngôn ngữ, home, map, list, POI detail, QR scanner, settings và auto narration |
+| `sql-server + storage` | Active | Lưu dữ liệu dùng chung, phục vụ URL media/audio và persist analytics |
 
 ### 2.3 Luồng kiến trúc hiện tại
 
-`admin-web (React + Vite) -> REST Controllers -> AdminDataRepository + StorageService -> SQL Server + /wwwroot/storage`
+```text
+Admin Web
+-> /api/v1/*
+-> Controllers + AdminDataRepository + StorageService
+-> SQL Server + /wwwroot/storage
+
+Mobile App
+-> /api/guide/v1/*
+-> Controllers + Services + Repositories + DbContext
+-> SQL Server + /wwwroot/storage
+```
+
+Hai luồng trên dùng chung dữ liệu nghiệp vụ, nên thay đổi từ admin có thể được mobile/public app đọc lại ngay từ cùng một nguồn backend.
 
 ## 3. Phạm vi dự án
 
@@ -125,20 +136,22 @@ Hai nhóm cuối trong bảng dưới đây là hướng mở rộng hợp lý c
 
 - Admin web cho quản trị tập trung
 - Đăng nhập và phân quyền quản trị
-- Quản lý địa điểm, món ăn và bản dịch
+- Quản lý POI, món ăn, bản dịch và audio guide
 - Quản lý audio guide và upload media
 - Quản lý QR code và route tham quan
 - Khuyến mãi, review moderation, audit log
 - Cấu hình ngôn ngữ, premium, map, storage, TTS
 - Dashboard tổng quan
+- Mobile app cho khách du lịch với map, list, QR, POI detail, settings và narration
+- Public/mobile guide API cho settings, POI, routes và analytics
 
 ### 3.2 Ngoài phạm vi
 
-- Ứng dụng mobile native riêng cho khách du lịch
 - Cổng thanh toán online cho nội dung premium
 - Tích hợp CRM, ERP hoặc POS của từng quán
 - AI tự động sinh nội dung hoàn chỉnh trong production
-- Kiến trúc DB quan hệ nâng cao hơn nếu cần mở rộng sâu hơn trong giai đoạn sau
+- Tách hệ thống thành microservice độc lập
+- Hardening production hoàn chỉnh như certificate pinning, rate limit nâng cao và release store
 
 ## 4. Stakeholder và người dùng
 
@@ -163,87 +176,103 @@ Hai nhóm cuối trong bảng dưới đây là hướng mở rộng hợp lý c
 
 | Luồng | Mô tả |
 |---|---|
-| Khởi tạo và đăng nhập | Admin web tải bootstrap từ backend, người dùng đăng nhập bằng email/password, hệ thống trả session và nạp dữ liệu theo quyền truy cập |
-| Quản lý nội dung điểm đến | Quản trị viên tạo hoặc cập nhật địa điểm, mô tả ngắn, mô tả dài, SEO, ngôn ngữ mặc định và trạng thái xuất bản |
-| Upload media và audio | Ảnh, MP3 và ảnh QR được upload qua backend storage, sau đó URL được gắn vào entity tương ứng thay vì lưu dữ liệu nhị phân trong frontend |
-| Vận hành, review và audit | Review được duyệt hoặc ẩn từ giao diện quản trị; thao tác quan trọng như đăng nhập và cập nhật dữ liệu được lưu vào audit log |
+| Khởi tạo và đăng nhập quản trị | Admin web khởi tạo session, chuyển hướng theo vai trò và gọi backend để lấy dữ liệu quản trị |
+| Quản trị nội dung theo vai trò | `SUPER_ADMIN` và `PLACE_OWNER` thao tác trên các màn hình khác nhau nhưng dùng cùng nguồn dữ liệu backend |
+| Upload media và audio | Ảnh và audio được upload qua backend storage, trả URL để gắn lại vào entity |
+| Khám phá trên mobile app | Mobile app tải settings, ngôn ngữ, danh sách POI, route và chi tiết nội dung từ `api/guide/v1/*` |
+| QR, geofence và analytics | Du khách có thể mở nội dung bằng QR, chọn POI trên map hoặc auto trigger theo geofence; hệ thống ghi view/audio analytics |
 
 ### 6.2 Luồng khởi tạo và đăng nhập quản trị
 
 1. Người quản trị truy cập admin web.
-2. Hệ thống tải bootstrap data từ backend.
+2. `router.tsx` kiểm tra session và dùng `RootRedirect` để chuyển tới `/login`, `/admin/*` hoặc `/restaurant/*`.
 3. Người dùng đăng nhập bằng email và mật khẩu.
-4. Hệ thống xác thực, trả session/token và nạp lại dữ liệu phù hợp.
+4. Backend xác thực và trả session/token theo role.
+5. Frontend điều hướng:
+   - `SUPER_ADMIN` vào `/admin/dashboard`
+   - `PLACE_OWNER` vào `/restaurant/dashboard`
+6. Các màn hình sau đó gọi API để nạp dữ liệu theo quyền truy cập.
 
-### 6.3 Luồng quản lý nội dung địa điểm
+### 6.3 Luồng quản trị nội dung theo vai trò
 
-1. Quản trị viên chọn địa điểm hoặc tạo mới địa điểm.
-2. Cập nhật thông tin cơ bản, danh mục, tọa độ, trạng thái và tag.
-3. Nhập bản dịch theo từng ngôn ngữ.
-4. Lưu nội dung và đồng bộ lại bootstrap state.
+1. Người dùng truy cập các màn hình `dashboard`, `pois`, `content`, `users`, `end-users`, `promotions`, `reviews`, `activity`, `settings`.
+2. `SUPER_ADMIN` có thể thao tác toàn cục; `PLACE_OWNER` chỉ thao tác trong phạm vi POI được gán.
+3. Người vận hành tạo hoặc cập nhật POI, món ăn, bản dịch, audio, khuyến mãi và các cấu hình liên quan.
+4. Backend ghi dữ liệu vào SQL Server và áp dụng rule phân quyền ở controller/service.
+5. Frontend đồng bộ lại state hoặc nạp lại danh sách theo response mới nhất từ backend.
 
 ### 6.4 Luồng quản lý audio và media
 
 1. Người dùng upload ảnh hoặc MP3 qua backend storage.
 2. Hệ thống lưu file vào storage và trả URL.
 3. URL được gắn vào thực thể nội dung/audio tương ứng.
-4. Audio và media được dùng lại trong giao diện phục vụ khách.
+4. Mobile app và guide API đọc lại URL này để phát audio chuẩn bị sẵn hoặc hiển thị ảnh.
+5. Nếu không có audio sẵn, mobile app có thể fallback sang TTS theo cấu hình hiện tại.
 
-### 6.5 Luồng QR và lộ trình tham quan
+### 6.5 Luồng mobile app và public guide
 
-1. Hệ thống tạo hoặc cập nhật QR theo thực thể.
-2. Quản trị viên bật/tắt QR và thay đổi ảnh QR nếu cần.
-3. Quản trị viên cấu hình route gồm các điểm dừng, thời lượng và độ khó.
-4. Du khách quét QR để truy cập nội dung tương ứng.
+1. Khi mở app, `SplashViewModel` tải `mobile settings` và ngôn ngữ đã lưu.
+2. Người dùng chọn ngôn ngữ hoặc vào thẳng `HomePage` nếu đã có cấu hình trước đó.
+3. App gọi `api/guide/v1/settings/mobile`, `api/guide/v1/pois`, `api/guide/v1/pois/routes`.
+4. Người dùng khám phá bằng `map`, `list`, `QR scanner` hoặc `POI detail`.
+5. Khi mở chi tiết POI, app gọi `TrackView` để ghi nhận analytics.
 
-### 6.6 Luồng vận hành và kiểm soát chất lượng
+### 6.6 Luồng QR, geofence và route
 
-1. Review mới được đưa về trạng thái chờ duyệt.
-2. Quản trị viên duyệt hoặc ẩn review.
-3. Audit log ghi lại các thay đổi quan trọng.
-4. Dashboard tổng hợp số liệu để phục vụ theo dõi vận hành.
+1. Du khách quét QR hoặc nhập mã thủ công trong mobile app.
+2. App gọi `GET /api/guide/v1/pois/qr/{qrCode}` để mở đúng nội dung POI.
+3. Trên map, người dùng có thể chạm marker để mở detail và phát narration.
+4. Nếu bật auto narration, `LocationTrackerService` theo dõi vị trí, kiểm tra bán kính geofence và tự phát nội dung khi đến gần POI.
+5. App gọi `GET /api/guide/v1/pois/routes` để tải các route nổi bật và hiển thị danh sách điểm dừng.
+
+### 6.7 Luồng analytics và kiểm soát vận hành
+
+1. Khi người dùng xem POI, app gọi `POST /api/guide/v1/pois/{id}/events/view`.
+2. Khi phát narration, app gọi `POST /api/guide/v1/pois/{id}/events/audio`.
+3. Backend lưu `ViewLogs`, `AudioListenLogs` và cung cấp `GET /api/guide/v1/admin/analytics/overview`.
+4. Song song đó, admin web vẫn duy trì `review moderation`, `activity log` và các cấu hình vận hành ở lớp quản trị.
 
 ## 7. Các nhóm chức năng chính trong sản phẩm
 
-### 7.1 Dashboard
+### 7.1 Admin Dashboard
 
-- Tổng hợp số liệu vận hành, nội dung, QR, review và trạng thái dữ liệu.
+- Tổng hợp số liệu vận hành, nội dung, review, activity và trạng thái dữ liệu.
 - Tag: `Analytics`, `Summary`
 
-### 7.2 Places & Content
+### 7.2 POI & Content Management
 
-- Quản lý địa điểm, bản dịch, mô tả SEO và cấu trúc nội dung đa ngôn ngữ.
-- Tag: `Place CRUD`, `Translations`
+- Quản lý POI, bản dịch, mô tả SEO, tag, QR code, giờ mở cửa và cấu trúc nội dung đa ngôn ngữ.
+- Tag: `POI CRUD`, `Translations`
 
-### 7.3 Food & Promotion
+### 7.3 Food, Promotion & Reviews
 
-- Quản lý món ăn nổi bật, giá tham khảo và chương trình ưu đãi theo quán.
-- Tag: `Food Items`, `Promotions`
+- Quản lý món ăn nổi bật, chương trình ưu đãi và phản hồi khách hàng.
+- Tag: `Food Items`, `Moderation`
 
-### 7.4 Audio & Media
+### 7.4 Audio, Media & Storage
 
-- Upload MP3, quản lý audio guide, ảnh đại diện và tài nguyên truyền thông.
-- Tag: `Uploaded`, `TTS-ready`
+- Upload MP3, quản lý audio guide, media asset và phục vụ file qua `/storage/...`.
+- Tag: `Uploaded`, `Narration`
 
-### 7.5 QR & Routes
+### 7.5 Users, Roles & Admin Routing
 
-- Cấu hình mã QR, ảnh QR, trạng thái hoạt động và lộ trình trải nghiệm ẩm thực.
-- Tag: `QR State`, `Featured Routes`
+- Quản lý tài khoản admin, phân quyền `SUPER_ADMIN` và `PLACE_OWNER`, điều hướng `/admin/*` và `/restaurant/*`.
+- Tag: `RBAC`, `Managed POI`
 
-### 7.6 Reviews
+### 7.6 Guide Public API
 
-- Duyệt, ẩn hoặc theo dõi phản hồi khách hàng để duy trì chất lượng hiển thị.
-- Tag: `Moderation`, `Guest Feedback`
+- Phục vụ mobile settings, danh sách POI, nearby, detail, QR lookup, routes và tracking analytics.
+- Tag: `api/guide/v1`, `Public Experience`
 
-### 7.7 Users & Roles
+### 7.7 Mobile Experience
 
-- Quản lý tài khoản admin, khóa mở, vai trò và điểm/quán được phân công.
-- Tag: `Super Admin`, `Place Owner`
+- Cung cấp `Splash`, chọn ngôn ngữ, `Home`, `Map`, `List`, `POI detail`, `QR scanner`, `Settings` và offline cache.
+- Tag: `MAUI`, `QR + Geofence`
 
-### 7.8 Settings & Audit
+### 7.8 Settings, Audit & Analytics
 
-- Cấu hình ngôn ngữ, premium, provider vận hành và ghi nhận lịch sử thao tác.
-- Tag: `System Config`, `Audit Trail`
+- Cấu hình ngôn ngữ, premium, map/TTS provider, geofence và ghi nhận activity log cùng view/audio analytics.
+- Tag: `System Config`, `Tracking`
 
 ## 8. Danh mục yêu cầu chức năng
 

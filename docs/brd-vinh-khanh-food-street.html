@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PID - Hệ thống thuyết minh đa ngôn ngữ Phố Ẩm thực Vĩnh Khánh</title>
+    <title>BRD - Hệ thống thuyết minh đa ngôn ngữ Phố Ẩm thực Vĩnh Khánh</title>
     <style>
         :root {
             --bg: #fff8f1;
@@ -748,13 +748,14 @@
                     <h1>Hệ thống thuyết minh tự động đa ngôn ngữ cho Phố Ẩm thực Vĩnh Khánh</h1>
                     <p>
                         Tài liệu BRD này được biên soạn theo hiện trạng source của đồ án tại ngày
-                        <strong>21/03/2026</strong>, tập trung vào lớp quản trị nội dung, backend API,
-                        QR/audio, dữ liệu đa ngôn ngữ và vận hành số cho khu phố ẩm thực.
+                        <strong>21/03/2026</strong>, phản ánh đúng cấu trúc đang có gồm
+                        <strong>admin-web</strong>, <strong>backend-api</strong> và
+                        <strong>mobile-app</strong> cho trải nghiệm guide đa ngôn ngữ.
                     </p>
                     <div class="badge-row">
                         <span class="badge">React + Vite Admin</span>
                         <span class="badge">ASP.NET Core API</span>
-                        <span class="badge">QR + Audio + Content</span>
+                        <span class="badge">.NET MAUI Guide App</span>
                     </div>
                     <div class="hero-actions">
                         <button class="button button-primary" type="button" onclick="window.print()">In hoặc xuất
@@ -768,14 +769,18 @@
                         <div class="eyebrow">Project Snapshot</div>
                         <h3>Phạm vi release hiện tại</h3>
                         <p>
-                            Nền tảng quản trị tập trung cho địa điểm, món ăn, bản dịch, audio guide,
-                            QR code, route, review, promotion, user và cấu hình vận hành.
+                            Nền tảng quản trị và trải nghiệm guide đa kênh cho POI, món ăn, bản dịch,
+                            audio guide, QR, route, review, analytics và cấu hình vận hành.
                         </p>
                     </div>
                     <div class="stats-grid">
                         <div class="stat">
-                            <strong>12+</strong>
-                            <span>Màn hình nghiệp vụ admin</span>
+                            <strong>3</strong>
+                            <span>Khối ứng dụng chính</span>
+                        </div>
+                        <div class="stat">
+                            <strong>2</strong>
+                            <span>Namespace API chính</span>
                         </div>
                         <div class="stat">
                             <strong>5</strong>
@@ -784,10 +789,6 @@
                         <div class="stat">
                             <strong>2</strong>
                             <span>Vai trò admin chính</span>
-                        </div>
-                        <div class="stat">
-                            <strong>14+</strong>
-                            <span>Nhóm endpoint backend</span>
                         </div>
                     </div>
                     <div class="side-card">
@@ -854,8 +855,9 @@
                     </div>
                 </div>
                 <div class="callout">
-                    Trọng tâm của giai đoạn hiện tại là lớp quản trị và backend phục vụ trải nghiệm QR/audio. Phần ứng
-                    dụng public cho du khách có thể mở rộng ở giai đoạn tiếp theo.
+                    Giai đoạn hiện tại đã có đủ admin web, backend API và mobile app cho trải nghiệm du khách. Tuy
+                    vậy, hai nhánh <strong>api/v1</strong> và <strong>api/guide/v1</strong> vẫn đang chạy song song,
+                    và các hạng mục như duyệt nội dung, quản lý tour đầy đủ và hardening production còn cần hoàn thiện.
                 </div>
             </div>
         </section>
@@ -866,76 +868,66 @@
                     <div>
                         <div class="eyebrow">Kiến trúc tổng quan</div>
                         <h2>Cấu trúc hệ thống dựa trên đồ án hiện tại</h2>
-                        <p>Phần này mô tả trung thực kiến trúc source đang có: một `admin-web` React/Vite ở phía
-                            frontend và một `backend-api` ASP.NET Core ở phía server.</p>
+                        <p>Phần này mô tả trung thực kiến trúc source đang có: một <code>admin-web</code> React/Vite
+                            cho vận hành, một <code>backend-api</code> ASP.NET Core ở phía server và một
+                            <code>mobile-app</code> .NET MAUI cho trải nghiệm du khách.</p>
                     </div>
                     <div class="section-chip">ARC</div>
                 </div>
 
                 <div class="arch-toolbar">
                     <div class="arch-pill">Kiến trúc hệ thống</div>
-                    <div class="arch-pill secondary">Dòng dữ liệu admin</div>
+                    <div class="arch-pill secondary">Admin + Guide Mobile/Public</div>
                 </div>
 
                 <p class="arch-intro">
                     Đồ án hiện tại <strong>không tách thành microservice</strong>. Backend là <strong>một API duy
-                        nhất</strong>,
-                    nhưng đã được chia thành <strong>6 nhóm nghiệp vụ REST</strong> rõ ràng, dùng chung
-                    <code>AdminDataRepository</code> và <code>StorageService</code>. Dữ liệu vận hành hiện đang
-                    persist trực tiếp về <code>SQL Server</code> và file upload nằm dưới <code>/wwwroot/storage</code>.
-                    Hai card cuối là hướng mở rộng hợp lý cho giai đoạn sau.
+                        nhất</strong>, nhưng đang phục vụ song song
+                    <strong>api/v1</strong> cho admin web và <strong>api/guide/v1</strong> cho mobile/public guide.
+                    Nhánh admin hiện hữu đi qua <code>AdminDataRepository</code> và <code>StorageService</code>, còn
+                    nhánh guide mới đi qua <code>DbContext</code>, repositories và services riêng nhưng vẫn dùng chung
+                    <code>SQL Server</code> và <code>/wwwroot/storage</code>.
                 </p>
 
                 <div class="arch-grid">
                     <article class="arch-card focus">
-                        <div class="arch-icon">CONT</div>
-                        <h3>content</h3>
-                        <p>Places, translations, food items, media assets, SEO, publish status.</p>
+                        <div class="arch-icon">ADM</div>
+                        <h3>admin-web</h3>
+                        <p>Giao diện vận hành cho <code>SUPER_ADMIN</code> và <code>PLACE_OWNER</code>, gồm dashboard,
+                            POI, content, users, promotions, reviews, activity và settings.</p>
                     </article>
                     <article class="arch-card">
-                        <div class="arch-icon">MED</div>
-                        <h3>media_audio</h3>
-                        <p>Audio guides, upload MP3/image, StorageService, static file URL dưới <code>/storage</code>.
-                        </p>
+                        <div class="arch-icon">API</div>
+                        <h3>backend admin API</h3>
+                        <p>Phục vụ <code>api/v1/*</code>, bootstrap admin state, auth, CRUD và upload media cho admin
+                            web.</p>
                     </article>
                     <article class="arch-card">
-                        <div class="arch-icon">AUTH</div>
-                        <h3>admin_security</h3>
-                        <p>Đăng nhập, RBAC, admin user CRUD, session, managedPlaceId và kiểm soát quyền.</p>
+                        <div class="arch-icon">GDE</div>
+                        <h3>backend guide API</h3>
+                        <p>Phục vụ <code>api/guide/v1/*</code>, gồm mobile settings, POI list/detail, QR lookup,
+                            routes, analytics và guide admin API.</p>
                     </article>
                     <article class="arch-card">
-                        <div class="arch-icon">BOOT</div>
-                        <h3>bootstrap_dashboard</h3>
-                        <p><code>GET /bootstrap</code>, dashboard summary, hydrate state ban đầu và refresh toàn cục.
-                        </p>
-                    </article>
-                    <article class="arch-card">
-                        <div class="arch-icon">QR</div>
-                        <h3>qr_routes</h3>
-                        <p>QR image/state, route CRUD, featured path và điểm vào cho trải nghiệm quét mã.</p>
-                    </article>
-                    <article class="arch-card">
-                        <div class="arch-icon">OPS</div>
-                        <h3>operations</h3>
-                        <p>Promotions, review moderation, settings, activity log và tham số vận hành.</p>
-                    </article>
-                    <article class="arch-card reserved">
-                        <div class="arch-icon">DB</div>
-                        <h3>data_platform (reserved)</h3>
-                        <p>EF Core, SQL Server, migration, backup và tách repository dữ liệu khi mở rộng.</p>
-                    </article>
-                    <article class="arch-card reserved">
                         <div class="arch-icon">APP</div>
-                        <h3>public_experience (reserved)</h3>
-                        <p>Public landing/app cho du khách, scan flow hoàn chỉnh, favorites và premium unlock.</p>
+                        <h3>mobile-app</h3>
+                        <p>Ứng dụng .NET MAUI cho splash, chọn ngôn ngữ, home, map, list, POI detail, QR scanner,
+                            settings và auto narration.</p>
+                    </article>
+                    <article class="arch-card">
+                        <div class="arch-icon">DB</div>
+                        <h3>sql-server + storage</h3>
+                        <p>Lưu dữ liệu dùng chung, phục vụ URL media/audio và persist các bản ghi analytics, route,
+                            translation, POI và settings.</p>
                     </article>
                 </div>
 
                 <div class="arch-flow">
                     <strong>Luồng kiến trúc hiện tại</strong>
-                    <span><code>admin-web (React + Vite)</code> → <code>REST Controllers</code> →
-                        <code>AdminDataRepository + StorageService</code> → <code>SQL Server +
-                            /wwwroot/storage</code></span>
+                    <span><code>admin-web</code> → <code>/api/v1/*</code> → <code>AdminDataRepository + StorageService</code>
+                        → <code>SQL Server + /wwwroot/storage</code><br><code>mobile-app</code> →
+                        <code>/api/guide/v1/*</code> → <code>Controllers + Services + Repositories + DbContext</code> →
+                        <code>SQL Server + /wwwroot/storage</code></span>
                 </div>
             </div>
         </section>
@@ -957,21 +949,23 @@
                         <ul>
                             <li>Admin web cho quản trị tập trung</li>
                             <li>Đăng nhập và phân quyền quản trị</li>
-                            <li>Quản lý địa điểm, món ăn và bản dịch</li>
+                            <li>Quản lý POI, món ăn, bản dịch và audio guide</li>
                             <li>Quản lý audio guide và upload media</li>
                             <li>Quản lý QR code và route tham quan</li>
                             <li>Khuyến mãi, review moderation, audit log</li>
                             <li>Cấu hình ngôn ngữ, premium, map, storage, TTS</li>
+                            <li>Mobile app cho map, list, QR, settings và narration</li>
+                            <li>Guide API cho mobile settings, POI, routes và analytics</li>
                         </ul>
                     </div>
                     <div class="list-card">
                         <h3>Ngoài phạm vi</h3>
                         <ul>
-                            <li>Ứng dụng mobile native riêng cho khách du lịch</li>
                             <li>Cổng thanh toán online cho nội dung premium</li>
                             <li>Tích hợp CRM, ERP hoặc POS của từng quán</li>
                             <li>AI tự động sinh nội dung hoàn chỉnh trong production</li>
-                            <li>Kiến trúc DB quan hệ hoàn chỉnh nếu chưa thay seed SQL hiện tại</li>
+                            <li>Tách hệ thống thành microservice độc lập</li>
+                            <li>Hardening production hoàn chỉnh và phát hành store đầy đủ</li>
                         </ul>
                     </div>
                 </div>
@@ -1042,35 +1036,41 @@
                     <div>
                         <div class="eyebrow">04 • Luồng nghiệp vụ</div>
                         <h2>Những hành trình chính hệ thống phải hỗ trợ</h2>
-                        <p>Các luồng dưới đây phản ánh trực tiếp cách source hiện tại đang tổ chức bootstrap, auth,
-                            CRUD, upload và moderation.</p>
+                        <p>Các luồng dưới đây phản ánh trực tiếp cách source hiện tại đang tổ chức auth, role routing,
+                            CRUD, mobile guide, QR, geofence và analytics.</p>
                     </div>
                     <div class="section-chip">04</div>
                 </div>
                 <div class="flow-grid">
                     <article class="flow-card">
                         <div class="flow-step">01</div>
-                        <h3>Khởi tạo và đăng nhập</h3>
-                        <p>Admin web tải bootstrap từ backend, người dùng đăng nhập bằng email/password, hệ thống trả
-                            session và nạp dữ liệu theo quyền truy cập.</p>
+                        <h3>Khởi tạo và đăng nhập quản trị</h3>
+                        <p>Admin web kiểm tra session, chuyển hướng theo vai trò và cho người dùng đăng nhập để vào
+                            <code>/admin/*</code> hoặc <code>/restaurant/*</code>.</p>
                     </article>
                     <article class="flow-card">
                         <div class="flow-step">02</div>
-                        <h3>Quản lý nội dung điểm đến</h3>
-                        <p>Quản trị viên tạo hoặc cập nhật địa điểm, mô tả ngắn, mô tả dài, SEO, ngôn ngữ mặc định và
-                            trạng thái xuất bản.</p>
+                        <h3>Quản trị nội dung theo vai trò</h3>
+                        <p><code>SUPER_ADMIN</code> và <code>PLACE_OWNER</code> cùng thao tác trên POI, content,
+                            promotion, review và settings nhưng bị giới hạn theo quyền ở frontend và backend.</p>
                     </article>
                     <article class="flow-card">
                         <div class="flow-step">03</div>
                         <h3>Upload media và audio</h3>
-                        <p>Ảnh, MP3 và ảnh QR được upload qua backend storage, sau đó URL được gắn vào entity tương ứng
-                            thay vì lưu dữ liệu nhị phân trong frontend.</p>
+                        <p>Ảnh và audio được upload qua backend storage, trả URL để gắn vào entity; mobile app đọc lại
+                            URL này để hiển thị hoặc phát audio.</p>
                     </article>
                     <article class="flow-card">
                         <div class="flow-step">04</div>
-                        <h3>Vận hành, review và audit</h3>
-                        <p>Review được duyệt hoặc ẩn từ giao diện quản trị; thao tác quan trọng như đăng nhập và cập
-                            nhật dữ liệu được lưu vào audit log.</p>
+                        <h3>Khám phá trên mobile app</h3>
+                        <p>Mobile app tải mobile settings, ngôn ngữ, POI list, route và detail từ
+                            <code>api/guide/v1/*</code> để phục vụ home, map, list, QR scanner và POI detail.</p>
+                    </article>
+                    <article class="flow-card">
+                        <div class="flow-step">05</div>
+                        <h3>QR, geofence và analytics</h3>
+                        <p>Du khách có thể mở nội dung bằng QR, chọn POI trên map hoặc auto trigger theo geofence; hệ
+                            thống ghi view/audio analytics cho vận hành.</p>
                     </article>
                 </div>
             </div>
@@ -1083,55 +1083,60 @@
                         <div class="eyebrow">05 • Module</div>
                         <h2>Các nhóm chức năng chính trong sản phẩm</h2>
                         <p>Đây là tập hợp các module nghiệp vụ phản ánh trực tiếp những gì đang hiện diện trong admin
-                            web và backend API của đồ án.</p>
+                            web, backend API và mobile app của đồ án.</p>
                     </div>
                     <div class="section-chip">05</div>
                 </div>
                 <div class="module-grid">
                     <article class="module">
-                        <h3>Dashboard</h3>
-                        <p>Tổng hợp số liệu vận hành, nội dung, QR, review và trạng thái dữ liệu.</p>
+                        <h3>Admin Dashboard</h3>
+                        <p>Tổng hợp số liệu vận hành, nội dung, review, activity và trạng thái dữ liệu.</p>
                         <div class="tag-row"><span class="tag">Analytics</span><span class="tag">Summary</span></div>
                     </article>
                     <article class="module">
-                        <h3>Places &amp; Content</h3>
-                        <p>Quản lý địa điểm, bản dịch, mô tả SEO và cấu trúc nội dung đa ngôn ngữ.</p>
-                        <div class="tag-row"><span class="tag">Place CRUD</span><span class="tag">Translations</span>
+                        <h3>POI &amp; Content Management</h3>
+                        <p>Quản lý POI, bản dịch, mô tả SEO, tag, QR code, giờ mở cửa và nội dung đa ngôn ngữ.</p>
+                        <div class="tag-row"><span class="tag">POI CRUD</span><span class="tag">Translations</span>
                         </div>
                     </article>
                     <article class="module">
-                        <h3>Food &amp; Promotion</h3>
-                        <p>Quản lý món ăn nổi bật, giá tham khảo và chương trình ưu đãi theo quán.</p>
-                        <div class="tag-row"><span class="tag">Food Items</span><span class="tag">Promotions</span>
+                        <h3>Food, Promotion &amp; Reviews</h3>
+                        <p>Quản lý món ăn nổi bật, chương trình ưu đãi và phản hồi khách hàng trong vận hành.</p>
+                        <div class="tag-row"><span class="tag">Food Items</span><span class="tag">Moderation</span>
                         </div>
                     </article>
                     <article class="module">
-                        <h3>Audio &amp; Media</h3>
-                        <p>Upload MP3, quản lý audio guide, ảnh đại diện và tài nguyên truyền thông.</p>
-                        <div class="tag-row"><span class="tag">Uploaded</span><span class="tag">TTS-ready</span></div>
+                        <h3>Audio, Media &amp; Storage</h3>
+                        <p>Upload MP3, quản lý audio guide, media asset và phục vụ file qua
+                            <code>/storage/...</code>.</p>
+                        <div class="tag-row"><span class="tag">Uploaded</span><span class="tag">Narration</span></div>
                     </article>
                     <article class="module">
-                        <h3>QR &amp; Routes</h3>
-                        <p>Cấu hình mã QR, ảnh QR, trạng thái hoạt động và lộ trình trải nghiệm ẩm thực.</p>
-                        <div class="tag-row"><span class="tag">QR State</span><span class="tag">Featured Routes</span>
+                        <h3>Users, Roles &amp; Admin Routing</h3>
+                        <p>Quản lý tài khoản admin, phân quyền <code>SUPER_ADMIN</code> và <code>PLACE_OWNER</code>,
+                            điều hướng <code>/admin/*</code> và <code>/restaurant/*</code>.</p>
+                        <div class="tag-row"><span class="tag">RBAC</span><span class="tag">Managed POI</span>
                         </div>
                     </article>
                     <article class="module">
-                        <h3>Reviews</h3>
-                        <p>Duyệt, ẩn hoặc theo dõi phản hồi khách hàng để duy trì chất lượng hiển thị.</p>
-                        <div class="tag-row"><span class="tag">Moderation</span><span class="tag">Guest Feedback</span>
+                        <h3>Guide Public API</h3>
+                        <p>Phục vụ mobile settings, danh sách POI, nearby, detail, QR lookup, routes và tracking
+                            analytics.</p>
+                        <div class="tag-row"><span class="tag">api/guide/v1</span><span class="tag">Public Experience</span>
                         </div>
                     </article>
                     <article class="module">
-                        <h3>Users &amp; Roles</h3>
-                        <p>Quản lý tài khoản admin, khóa mở, vai trò và điểm/quán được phân công.</p>
-                        <div class="tag-row"><span class="tag">Super Admin</span><span class="tag">Place Owner</span>
+                        <h3>Mobile Experience</h3>
+                        <p>Cung cấp Splash, chọn ngôn ngữ, Home, Map, List, POI detail, QR scanner, Settings và
+                            offline cache.</p>
+                        <div class="tag-row"><span class="tag">MAUI</span><span class="tag">QR + Geofence</span>
                         </div>
                     </article>
                     <article class="module">
-                        <h3>Settings &amp; Audit</h3>
-                        <p>Cấu hình ngôn ngữ, premium, provider vận hành và ghi nhận lịch sử thao tác.</p>
-                        <div class="tag-row"><span class="tag">System Config</span><span class="tag">Audit Trail</span>
+                        <h3>Settings, Audit &amp; Analytics</h3>
+                        <p>Cấu hình ngôn ngữ, premium, map/TTS provider, geofence và ghi nhận activity log cùng
+                            view/audio analytics.</p>
+                        <div class="tag-row"><span class="tag">System Config</span><span class="tag">Tracking</span>
                         </div>
                     </article>
                 </div>
