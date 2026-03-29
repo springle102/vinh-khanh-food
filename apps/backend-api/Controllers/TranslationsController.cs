@@ -7,7 +7,9 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/translations")]
-public sealed class TranslationsController(AdminDataRepository repository) : ControllerBase
+public sealed class TranslationsController(
+    AdminDataRepository repository,
+    TranslationProxyService translationProxyService) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<Translation>>> GetTranslations(
@@ -67,5 +69,24 @@ public sealed class TranslationsController(AdminDataRepository repository) : Con
         return deleted
             ? Ok(ApiResponse<string>.Ok(id, "Xoa noi dung thuyet minh thanh cong."))
             : NotFound(ApiResponse<string>.Fail("Khong tim thay noi dung thuyet minh."));
+    }
+
+    [HttpPost("translate")]
+    public async Task<ActionResult<ApiResponse<TextTranslationResponse>>> TranslateTexts(
+        [FromBody] TextTranslationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Texts is null || request.Texts.Count == 0)
+        {
+            return BadRequest(ApiResponse<TextTranslationResponse>.Fail("Can it nhat mot doan text de dich."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.TargetLanguageCode))
+        {
+            return BadRequest(ApiResponse<TextTranslationResponse>.Fail("TargetLanguageCode la bat buoc."));
+        }
+
+        var translated = await translationProxyService.TranslateAsync(request, cancellationToken);
+        return Ok(ApiResponse<TextTranslationResponse>.Ok(translated));
     }
 }

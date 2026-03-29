@@ -1,16 +1,14 @@
 {
-  "name": "vinh-khanh-platform",
+  "name": "vinh-khanh-admin-web-workspace",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "android": "powershell -ExecutionPolicy Bypass -File ./run-android.ps1",
     "dev": "npm --prefix apps/admin-web run dev",
-    "dev:": "node scripts/dev-command.cjs",
     "dev:admin": "npm --prefix apps/admin-web run dev",
-    "dev:backend": "node scripts/backend-command.cjs dev",
+    "dev:backend": "node ./scripts/run-backend.cjs dev",
     "build": "npm --prefix apps/admin-web run build",
     "build:admin": "npm --prefix apps/admin-web run build",
-    "build:backend": "node scripts/backend-command.cjs build",
+    "build:backend": "node ./scripts/run-backend.cjs build",
     "preview": "npm --prefix apps/admin-web run preview",
     "lint": "npm --prefix apps/admin-web run lint",
     "install:admin": "node -r ./scripts/npm-dns-override.cjs ./scripts/install-admin.cjs"

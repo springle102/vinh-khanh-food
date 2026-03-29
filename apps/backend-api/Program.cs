@@ -1,15 +1,8 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi.Models;
-using VinhKhanh.BackendApi.Authentication;
-using VinhKhanh.BackendApi.Application.Interfaces;
-using VinhKhanh.BackendApi.Application.Services;
+using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Infrastructure;
-using VinhKhanh.BackendApi.Infrastructure.Persistence;
 using VinhKhanh.BackendApi.Middlewares;
-using VinhKhanh.BackendApi.Repositories;
-using VinhKhanh.BackendApi.Repositories.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,43 +12,38 @@ builder.Logging.AddDebug();
 
 builder.Services.AddSingleton<AdminDataRepository>();
 builder.Services.AddSingleton<StorageService>();
+builder.Services.AddScoped<PoiNarrationService>();
 builder.Services.AddHttpClient<GeocodingProxyService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(8);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("VinhKhanhAdmin/1.0");
     client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 });
+builder.Services.AddHttpClient<TranslationProxyService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(12);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("VinhKhanhAdmin/1.0");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+});
 builder.Services.AddHttpClient();
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var response = ApiResponse<string>.Fail(ApiResponseHttpWriter.BuildValidationMessage(context));
+            return new BadRequestObjectResult(response);
+        };
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "VinhKhanhFoodGuide API",
+        Title = "VinhKhanh Admin API",
         Version = "v1",
-        Description = "Backend API cho admin web va mobile app thuyet minh tu dong pho am thuc Vinh Khanh."
-    });
-
-    var securityScheme = new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        Description = "Nhap JWT access token theo dang Bearer {token}.",
-        Reference = new OpenApiReference
-        {
-            Type = ReferenceType.SecurityScheme,
-            Id = JwtBearerDefaults.AuthenticationScheme
-        }
-    };
-
-    options.AddSecurityDefinition(securityScheme.Reference.Id, securityScheme);
-    options.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        { securityScheme, Array.Empty<string>() }
+        Description = "Backend API cho web admin quan ly noi dung, nguoi dung, tep va du lieu SQL Server."
     });
 });
 
@@ -72,59 +60,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
-builder.Services.AddSingleton(TimeProvider.System);
-
-var connectionString = builder.Configuration.GetConnectionString("GuideSqlServer")
-    ?? builder.Configuration.GetConnectionString("AdminSqlServer")
-    ?? throw new InvalidOperationException("Khong tim thay connection string GuideSqlServer/AdminSqlServer.");
-
-builder.Services.AddDbContext<VinhKhanhFoodGuideDbContext>(options =>
-{
-    options.UseSqlServer(connectionString, sql =>
-    {
-        sql.EnableRetryOnFailure(3, TimeSpan.FromSeconds(2), null);
-    });
-});
-
-builder.Services.AddScoped<FoodGuideDatabaseInitializer>();
-builder.Services.AddScoped<IAuthRepository, AuthRepository>();
-builder.Services.AddScoped<IPoiRepository, PoiRepository>();
-builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IPoiService, PoiService>();
-builder.Services.AddScoped<ISettingsService, SettingsService>();
-builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
-
-var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
-var signingKey = new SymmetricSecurityKey(jwtOptions.GetSigningKeyBytes());
-
-builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateIssuerSigningKey = true,
-            ValidateLifetime = true,
-            ValidIssuer = jwtOptions.Issuer,
-            ValidAudience = jwtOptions.Audience,
-            IssuerSigningKey = signingKey,
-            ClockSkew = TimeSpan.FromSeconds(30)
-        };
-    });
-
-builder.Services.AddAuthorization();
-
 var app = builder.Build();
-
-using (var scope = app.Services.CreateScope())
-{
-    var initializer = scope.ServiceProvider.GetRequiredService<FoodGuideDatabaseInitializer>();
-    await initializer.EnsureSchemaAsync();
-}
 
 app.UseMiddleware<ApiExceptionMiddleware>();
 
@@ -137,13 +73,35 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseCors("AdminWeb");
-app.UseAuthentication();
-app.UseAuthorization();
+app.UseStatusCodePages(async statusCodeContext =>
+{
+    var context = statusCodeContext.HttpContext;
+    if (!context.Request.Path.StartsWithSegments("/api"))
+    {
+        return;
+    }
+
+    if (context.Response.StatusCode < StatusCodes.Status400BadRequest || context.Response.HasStarted)
+    {
+        return;
+    }
+
+    var contentType = context.Response.ContentType;
+    if (!string.IsNullOrWhiteSpace(contentType))
+    {
+        return;
+    }
+
+    await ApiResponseHttpWriter.WriteFailureAsync(
+        context,
+        context.Response.StatusCode,
+        ApiResponseHttpWriter.GetDefaultMessage(context.Response.StatusCode));
+});
 app.MapControllers();
 
 app.MapGet("/", () => Results.Ok(new
 {
-    service = "VinhKhanhFoodGuide Backend API",
+    service = "VinhKhanh Admin API",
     version = "v1",
     framework = ".NET 10 / ASP.NET Core",
     swagger = "/swagger"

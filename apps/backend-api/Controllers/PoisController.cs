@@ -7,7 +7,9 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/pois")]
-public sealed class PoisController(AdminDataRepository repository) : ControllerBase
+public sealed class PoisController(
+    AdminDataRepository repository,
+    PoiNarrationService poiNarrationService) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<Poi>>> GetPois(
@@ -83,6 +85,32 @@ public sealed class PoisController(AdminDataRepository repository) : ControllerB
             poi,
             translations,
             audioGuides)));
+    }
+
+    [HttpGet("{id}/narration")]
+    public async Task<ActionResult<ApiResponse<PoiNarrationResponse>>> GetPoiNarration(
+        string id,
+        [FromQuery] string? languageCode,
+        [FromQuery] string? voiceType,
+        [FromQuery] string? userId,
+        [FromQuery] string? role,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(languageCode))
+        {
+            return BadRequest(ApiResponse<PoiNarrationResponse>.Fail("LanguageCode la bat buoc."));
+        }
+
+        var narration = await poiNarrationService.ResolveAsync(
+            id,
+            languageCode,
+            voiceType,
+            userId,
+            role,
+            cancellationToken);
+        return narration is null
+            ? NotFound(ApiResponse<PoiNarrationResponse>.Fail("Khong tim thay POI."))
+            : Ok(ApiResponse<PoiNarrationResponse>.Ok(narration));
     }
 
     [HttpPost]

@@ -14,12 +14,14 @@ public sealed class ApiExceptionMiddleware(RequestDelegate next, ILogger<ApiExce
         {
             logger.LogError(exception, "Unhandled exception while processing {Path}", context.Request.Path);
 
-            context.Response.StatusCode = exception is InvalidOperationException
+            var statusCode = exception is InvalidOperationException
                 ? StatusCodes.Status400BadRequest
                 : StatusCodes.Status500InternalServerError;
-            context.Response.ContentType = "application/json; charset=utf-8";
+            var message = string.IsNullOrWhiteSpace(exception.Message)
+                ? ApiResponseHttpWriter.GetDefaultMessage(statusCode)
+                : exception.Message;
 
-            await context.Response.WriteAsJsonAsync(ApiResponse<string>.Fail(exception.Message));
+            await ApiResponseHttpWriter.WriteFailureAsync(context, statusCode, message);
         }
     }
 }

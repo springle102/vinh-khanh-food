@@ -1,31 +1,36 @@
 # Vinh Khanh Admin Web
 
-Admin dashboard cho hệ thống thuyết minh tự động đa ngôn ngữ Phố Ẩm Thực Vĩnh Khánh.
+Admin dashboard for Vinh Khanh operations.
 
 ## Stack
 
 - React 19 + TypeScript + Vite
 - Tailwind CSS
-- Recharts cho dashboard analytics
-- Mock data layer bằng localStorage để chạy độc lập trước khi nối ASP.NET Core API
+- Recharts
+- Leaflet / OpenStreetMap
 
-## Chạy local
+## Local development
 
 ```bash
 npm install
 npm run dev
+npm run build
 ```
 
-## Google Maps
+The Vite dev server proxies `/api` and `/storage` to `http://localhost:5080` by default.
 
-Form quản lý địa điểm dùng OpenStreetMap thông qua Leaflet và không cần API key.
+If you deploy the frontend separately from the API, set:
 
-## Tài khoản demo
+```bash
+VITE_API_BASE_URL=http://localhost:5080/api/v1
+```
+
+## Demo accounts
 
 - `superadmin@vinhkhanh.vn` / `Admin@123`
 - `content@vinhkhanh.vn` / `Admin@123`
 
-## Triển khai Docker
+## Docker
 
 ```bash
 docker build -t vinh-khanh-admin .

@@ -153,6 +153,30 @@ export interface PoiDetail {
   audioGuides: AudioGuide[];
 }
 
+export type NarrationResolutionStatus =
+  | "stored"
+  | "auto_translated"
+  | "fallback_source";
+
+export interface ResolvedPoiNarration {
+  poiId: string;
+  requestedLanguageCode: LanguageCode;
+  sourceLanguageCode: LanguageCode | null;
+  effectiveLanguageCode: LanguageCode;
+  selectedVoice: RegionVoice;
+  displayTitle: string;
+  displayText: string;
+  ttsInputText: string;
+  sourceText: string;
+  translatedText: string | null;
+  translationStatus: NarrationResolutionStatus;
+  fallbackMessage: string | null;
+  audioGuide: AudioGuide | null;
+  uiPlaybackKey: string;
+  audioCacheKey: string;
+  ttsLocale: string;
+}
+
 export interface MediaAsset {
   id: string;
   entityType: EntityType;

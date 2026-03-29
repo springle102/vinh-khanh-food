@@ -6,10 +6,13 @@ import type {
   EndUserProfile,
   FoodItem,
   GeocodingLocation,
+  LanguageCode,
   MediaAsset,
   Poi,
   PoiDetail,
   Promotion,
+  RegionVoice,
+  ResolvedPoiNarration,
   Review,
   SystemSetting,
   Translation,
@@ -37,6 +40,13 @@ export type StoredFileResponse = {
   fileName: string;
   contentType: string;
   size: number;
+};
+
+export type TextTranslationResponse = {
+  targetLanguageCode: string;
+  sourceLanguageCode: string | null;
+  texts: string[];
+  provider: string;
 };
 
 export class ApiError extends Error {
@@ -174,8 +184,14 @@ const request = async <T>(path: string, init?: RequestInit) => {
   return parseResponse<T>(response);
 };
 
-const jsonRequest = async <T>(path: string, method: string, body?: unknown) =>
+const jsonRequest = async <T>(
+  path: string,
+  method: string,
+  body?: unknown,
+  init?: Omit<RequestInit, "body" | "headers" | "method">,
+) =>
   request<T>(path, {
+    ...init,
     method,
     body: body === undefined ? undefined : JSON.stringify(body),
     headers: {
@@ -215,6 +231,22 @@ export const adminApi = {
     request<Poi>(appendScopeParams(`/api/v1/pois/${poiId}`), { signal }),
   getPoiDetail: (poiId: string, signal?: AbortSignal) =>
     request<PoiDetail>(appendScopeParams(`/api/v1/pois/${poiId}/detail`), { signal }),
+  getPoiNarration: (
+    poiId: string,
+    languageCode: LanguageCode,
+    voiceType: RegionVoice,
+    signal?: AbortSignal,
+  ) => {
+    const query = new URLSearchParams({
+      languageCode,
+      voiceType,
+    });
+
+    return request<ResolvedPoiNarration>(
+      appendScopeParams(`/api/v1/pois/${poiId}/narration?${query.toString()}`),
+      { signal },
+    );
+  },
   savePoi: (poi: {
     id?: string;
     slug: string;
@@ -316,6 +348,20 @@ export const adminApi = {
       translation.id ? `/api/v1/translations/${translation.id}` : "/api/v1/translations",
       translation.id ? "PUT" : "POST",
       translation,
+    ),
+  translateTexts: (
+    payload: {
+      targetLanguageCode: Translation["languageCode"];
+      sourceLanguageCode?: Translation["languageCode"];
+      texts: string[];
+    },
+    signal?: AbortSignal,
+  ) =>
+    jsonRequest<TextTranslationResponse>(
+      "/api/v1/translations/translate",
+      "POST",
+      payload,
+      { signal },
     ),
   saveReviewStatus: (
     reviewId: string,

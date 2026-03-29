@@ -15,6 +15,10 @@ import { formatDateTime, formatNumber, languageLabels, slugify } from "../../lib
 import { useAuth } from "../auth/AuthContext";
 import { OpenStreetMapPicker, type PoiMapItem } from "./OpenStreetMapPicker";
 import { usePoiNarrationPlayback } from "./usePoiNarrationPlayback";
+import {
+  supportedNarrationLanguages,
+  type ResolvedPoiNarration,
+} from "../../lib/narration";
 
 const DEFAULT_LAT = 10.7578;
 const DEFAULT_LNG = 106.7033;
@@ -101,40 +105,6 @@ const findPoiAudioGuide = (
   ) ??
   null;
 
-const getPoiNarrationLanguages = (state: ReturnType<typeof useAdminData>["state"], poi: Poi) => {
-  const languages = new Set<LanguageCode>([poi.defaultLanguageCode]);
-
-  state.translations.forEach((item) => {
-    if (item.entityType === "poi" && item.entityId === poi.id && (item.fullText || item.shortText)) {
-      languages.add(item.languageCode);
-    }
-  });
-
-  state.audioGuides.forEach((item) => {
-    if (item.entityType === "poi" && item.entityId === poi.id) {
-      languages.add(item.languageCode);
-    }
-  });
-
-  return [...languages];
-};
-
-const getPoiNarrationLanguagesFromDetail = (detail: PoiDetail) => {
-  const languages = new Set<LanguageCode>([detail.poi.defaultLanguageCode]);
-
-  detail.translations.forEach((item) => {
-    if (item.fullText || item.shortText) {
-      languages.add(item.languageCode);
-    }
-  });
-
-  detail.audioGuides.forEach((item) => {
-    languages.add(item.languageCode);
-  });
-
-  return [...languages];
-};
-
 const getSubmissionStatus = (role: "SUPER_ADMIN" | "PLACE_OWNER" | undefined, status: Poi["status"]) =>
   role === "PLACE_OWNER" ? "pending" : status;
 
@@ -147,9 +117,7 @@ export const PoisPage = () => {
     playbackState,
     stopCurrentAudio,
     primePlayback,
-    getPOINarrationText: resolvePOINarrationText,
-    getPOIAudio: resolvePOIAudio,
-    playPOIAudio: startPOIAudio,
+    resolvePoiNarration,
     playPoiNarration,
     buildPlaybackKey,
   } = usePoiNarrationPlayback(state);
@@ -168,6 +136,8 @@ export const PoisPage = () => {
   const [isFetchingPoiDetail, setFetchingPoiDetail] = useState(false);
   const [visiblePoiIds, setVisiblePoiIds] = useState<string[]>([]);
   const [hasSlugBeenManuallyEdited, setHasSlugBeenManuallyEdited] = useState(false);
+  const [selectedNarration, setSelectedNarration] = useState<ResolvedPoiNarration | null>(null);
+  const [isResolvingNarration, setResolvingNarration] = useState(false);
   const [form, setForm] = useState<PoiFormState>(() =>
     createDefaultForm(state.categories[0]?.id ?? "", getSubmissionStatus(user?.role, "draft")),
   );
@@ -186,7 +156,9 @@ export const PoisPage = () => {
   });
   const poiDetailCacheRef = useRef(new Map<string, PoiDetail>());
   const poiDetailAbortRef = useRef<AbortController | null>(null);
+  const narrationAbortRef = useRef<AbortController | null>(null);
   const lastHandledPlaybackIntentTokenRef = useRef(0);
+  const selectedNarrationRequestRef = useRef(0);
   const lastNarrationSelectionRef = useRef<{
     poiId: string | null;
     language: LanguageCode;
@@ -219,29 +191,13 @@ export const PoisPage = () => {
 
   const selectedPoi = selectedPoiDetail?.poi ?? state.pois.find((item) => item.id === selectedPoiId) ?? null;
   const availableNarrationLanguages = useMemo(
-    () =>
-      selectedPoiDetail
-        ? getPoiNarrationLanguagesFromDetail(selectedPoiDetail)
-        : selectedPoi
-          ? getPoiNarrationLanguages(state, selectedPoi)
-          : [],
-    [selectedPoi, selectedPoiDetail, state],
+    () => (selectedPoi ? supportedNarrationLanguages : []),
+    [selectedPoi],
   );
   const selectedPlaybackKey = selectedPoi
     ? buildPlaybackKey(selectedPoi.id, selectedNarrationLanguage, selectedVoice)
     : null;
-  const selectedTranslation = selectedPoi
-    ? selectedPoiDetail?.translations.find((item) => item.languageCode === selectedNarrationLanguage) ??
-      getPoiTranslation(state, selectedPoi.id, selectedNarrationLanguage)
-    : null;
-  const selectedAudio = selectedPoi
-    ? findPoiAudioGuide(
-        selectedPoiDetail?.audioGuides ?? state.audioGuides,
-        selectedPoi.id,
-        selectedNarrationLanguage,
-        selectedVoice,
-      )
-    : null;
+  const selectedAudio = selectedNarration?.audioGuide ?? null;
   const isSelectedPoiNarrationPlaying =
     selectedPlaybackKey === playbackState.playbackKey &&
     playbackState.status === "playing";
@@ -272,22 +228,6 @@ export const PoisPage = () => {
         : nextVisiblePoiIds,
     );
   }, []);
-
-  const getPOINarrationText = useCallback(
-    (poi: Poi, language: LanguageCode) => resolvePOINarrationText(poi, language),
-    [resolvePOINarrationText],
-  );
-
-  const getPOIAudio = useCallback(
-    (poi: Poi, language: LanguageCode, voice: RegionVoice, detail?: PoiDetail | null) =>
-      resolvePOIAudio(poi, language, voice, detail),
-    [resolvePOIAudio],
-  );
-
-  const playPOIAudio = useCallback(
-    (audioSource: Awaited<ReturnType<typeof resolvePOIAudio>>) => startPOIAudio(audioSource),
-    [startPOIAudio],
-  );
 
   const fetchPOIDetail = useCallback(
     async (poiId: string, options?: { useCache?: boolean; updateSelected?: boolean }) => {
@@ -331,23 +271,13 @@ export const PoisPage = () => {
 
   const prefetchPoiNarration = useCallback(
     async (poiId: string) => {
-      const fallbackPoi = state.pois.find((item) => item.id === poiId);
-      if (!fallbackPoi) {
+      if (!state.pois.some((item) => item.id === poiId)) {
         return;
       }
 
-      const detail = await fetchPOIDetail(poiId, { useCache: true, updateSelected: false }).catch(
-        () => null,
-      );
-      const effectivePoi = detail?.poi ?? fallbackPoi;
-      await getPOIAudio(
-        effectivePoi,
-        selectedNarrationLanguage,
-        selectedVoice,
-        detail,
-      ).catch(() => null);
+      await fetchPOIDetail(poiId, { useCache: true, updateSelected: false }).catch(() => null);
     },
-    [fetchPOIDetail, getPOIAudio, selectedNarrationLanguage, selectedVoice, state.pois],
+    [fetchPOIDetail, state.pois],
   );
 
   const handlePoiSelect = useCallback(
@@ -360,12 +290,7 @@ export const PoisPage = () => {
       }
 
       const cachedDetail = poiDetailCacheRef.current.get(poiId);
-      const supportedLanguages = cachedDetail
-        ? getPoiNarrationLanguagesFromDetail(cachedDetail)
-        : getPoiNarrationLanguages(state, poi);
-      const nextLanguage = supportedLanguages.includes(selectedNarrationLanguage)
-        ? selectedNarrationLanguage
-        : poi.defaultLanguageCode;
+      const nextLanguage = selectedNarrationLanguage;
 
       // Marker click only updates the selected POI and queues one playback intent.
       // The actual narration is started inside useEffect below so the flow stays:
@@ -382,7 +307,7 @@ export const PoisPage = () => {
         detail: cachedDetail ?? null,
       }));
     },
-    [primePlayback, selectedNarrationLanguage, selectedVoice, state],
+    [primePlayback, selectedNarrationLanguage, selectedVoice, state.pois],
   );
 
   const openCreateModal = () => {
@@ -455,8 +380,11 @@ export const PoisPage = () => {
   useEffect(() => {
     if (!selectedPoiId) {
       poiDetailAbortRef.current?.abort();
+      narrationAbortRef.current?.abort();
       setSelectedPoiDetail(null);
+      setSelectedNarration(null);
       setFetchingPoiDetail(false);
+      setResolvingNarration(false);
       stopCurrentAudio();
     }
   }, [selectedPoiId, stopCurrentAudio]);
@@ -473,14 +401,62 @@ export const PoisPage = () => {
   }, [fetchPOIDetail, selectedPoiId]);
 
   useEffect(() => {
-    if (!selectedPoi || !availableNarrationLanguages.length) {
+    narrationAbortRef.current?.abort();
+
+    if (!selectedPoi) {
+      setSelectedNarration(null);
+      setResolvingNarration(false);
       return;
     }
 
-    if (!availableNarrationLanguages.includes(selectedNarrationLanguage)) {
-      setSelectedNarrationLanguage(selectedPoi.defaultLanguageCode);
-    }
-  }, [availableNarrationLanguages, selectedNarrationLanguage, selectedPoi]);
+    const controller = new AbortController();
+    narrationAbortRef.current = controller;
+    const requestId = selectedNarrationRequestRef.current + 1;
+    selectedNarrationRequestRef.current = requestId;
+    setResolvingNarration(true);
+
+    void resolvePoiNarration(
+      selectedPoi,
+      selectedNarrationLanguage,
+      selectedVoice,
+      undefined,
+      controller.signal,
+    )
+      .then((resolved) => {
+        if (selectedNarrationRequestRef.current !== requestId) {
+          return;
+        }
+
+        setSelectedNarration(resolved);
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        if (selectedNarrationRequestRef.current === requestId) {
+          setSelectedNarration(null);
+        }
+      })
+      .finally(() => {
+        if (narrationAbortRef.current === controller) {
+          narrationAbortRef.current = null;
+        }
+
+        if (selectedNarrationRequestRef.current === requestId) {
+          setResolvingNarration(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    resolvePoiNarration,
+    selectedNarrationLanguage,
+    selectedPoi,
+    selectedVoice,
+  ]);
 
   useEffect(() => {
     const previousSelection = lastNarrationSelectionRef.current;
@@ -844,7 +820,9 @@ export const PoisPage = () => {
           {selectedPoi ? (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xl font-semibold text-ink-900">{selectedTranslation?.title ?? selectedPoi.slug}</p>
+                <p className="text-xl font-semibold text-ink-900">
+                  {selectedNarration?.displayTitle ?? selectedPoi.slug}
+                </p>
                 <StatusBadge status={selectedPoi.status} />
               </div>
               <p className="text-sm text-ink-600">{selectedPoi.address}</p>
@@ -896,10 +874,23 @@ export const PoisPage = () => {
               <div className="rounded-3xl border border-sand-100 bg-sand-50 p-4">
                 <p className="text-sm font-semibold text-ink-900">Mô tả POI</p>
                 <p className="mt-3 text-sm leading-6 text-ink-600">
-                  {getPOINarrationText(selectedPoi, selectedNarrationLanguage) || "Chưa có thuyết minh cho POI này."}
+                  {selectedNarration?.displayText || "Chưa có thuyết minh cho POI này."}
                 </p>
                 <p className="mt-3 text-xs text-ink-500">
                   Audio: {selectedAudio ? `${selectedAudio.sourceType} / ${selectedAudio.status}` : "Chưa có"}
+                </p>
+                {selectedNarration?.fallbackMessage ? (
+                  <p className="mt-2 text-xs text-amber-700">{selectedNarration.fallbackMessage}</p>
+                ) : null}
+                <p className="mt-2 text-xs text-ink-500">
+                  {isResolvingNarration
+                    ? "Dang dong bo text va TTS theo ngon ngu da chon..."
+                    : `TTS input: ${selectedNarration?.ttsInputText ? "san sang" : "chua co"}`}
+                </p>
+                <p className="mt-2 text-xs text-ink-500">
+                  {selectedNarration
+                    ? `Voice/locale: ${selectedVoice} / ${selectedNarration.ttsLocale}`
+                    : `Voice/locale: ${selectedVoice}`}
                 </p>
                 <p
                   className={`mt-3 text-xs ${

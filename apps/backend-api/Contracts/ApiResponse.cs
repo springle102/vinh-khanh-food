@@ -66,6 +66,17 @@ public sealed record GeocodingLocationResponse(
     double Lat,
     double Lng);
 
+public sealed record TextTranslationRequest(
+    string TargetLanguageCode,
+    string? SourceLanguageCode,
+    IReadOnlyList<string> Texts);
+
+public sealed record TextTranslationResponse(
+    string TargetLanguageCode,
+    string? SourceLanguageCode,
+    IReadOnlyList<string> Texts,
+    string Provider);
+
 public sealed record TranslationUpsertRequest(
     string EntityType,
     string EntityId,
@@ -182,6 +193,24 @@ public sealed record PoiDetailResponse(
     Models.Poi Poi,
     IReadOnlyList<Models.Translation> Translations,
     IReadOnlyList<Models.AudioGuide> AudioGuides);
+
+public sealed record PoiNarrationResponse(
+    string PoiId,
+    string RequestedLanguageCode,
+    string? SourceLanguageCode,
+    string EffectiveLanguageCode,
+    string SelectedVoice,
+    string DisplayTitle,
+    string DisplayText,
+    string TtsInputText,
+    string SourceText,
+    string? TranslatedText,
+    string TranslationStatus,
+    string? FallbackMessage,
+    Models.AudioGuide? AudioGuide,
+    string UiPlaybackKey,
+    string AudioCacheKey,
+    string TtsLocale);
 
 public sealed record StoredFileResponse(
     string Url,
