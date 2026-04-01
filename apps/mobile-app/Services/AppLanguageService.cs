@@ -268,9 +268,14 @@ public sealed class AppLanguageService : IAppLanguageService
         };
 
     private readonly WeakEventManager _eventManager = new();
-    private Dictionary<string, string> _texts = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> _texts = CreateBuiltInTextDictionary(DefaultLanguage);
 
     public string CurrentLanguage { get; private set; } = DefaultLanguage;
+
+    public AppLanguageService()
+    {
+        _texts = CreateBuiltInTextDictionary(DefaultLanguage);
+    }
 
     public event EventHandler? LanguageChanged
     {
@@ -287,15 +292,7 @@ public sealed class AppLanguageService : IAppLanguageService
     public async Task SetLanguageAsync(string languageCode)
     {
         var normalizedCode = NormalizeLanguageCode(languageCode);
-        var mergedTexts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        if (BuiltInTexts.TryGetValue(normalizedCode, out var builtIn))
-        {
-            foreach (var pair in builtIn)
-            {
-                mergedTexts[pair.Key] = pair.Value;
-            }
-        }
+        var mergedTexts = CreateBuiltInTextDictionary(normalizedCode);
 
         var fileDictionary = await LoadFromFileAsync(normalizedCode);
         foreach (var pair in fileDictionary)
@@ -334,6 +331,24 @@ public sealed class AppLanguageService : IAppLanguageService
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
+    }
+
+    private static Dictionary<string, string> CreateBuiltInTextDictionary(string languageCode)
+    {
+        var normalizedCode = NormalizeLanguageCode(languageCode);
+        var texts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!BuiltInTexts.TryGetValue(normalizedCode, out var builtIn))
+        {
+            return texts;
+        }
+
+        foreach (var pair in builtIn)
+        {
+            texts[pair.Key] = pair.Value;
+        }
+
+        return texts;
     }
 
     private static string NormalizeLanguageCode(string? languageCode)
