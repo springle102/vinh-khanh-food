@@ -8,9 +8,9 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<TourRoute> GetRoutes(SqlConnection connection, SqlTransaction? transaction)
     {
         const string routesSql = """
-            SELECT Id, Name, [Description], DurationMinutes, Difficulty, IsFeatured
+            SELECT Id, Name, Theme, [Description], DurationMinutes, CoverImageUrl, IsActive, UpdatedBy, UpdatedAt
             FROM dbo.Routes
-            ORDER BY Name, Id;
+            ORDER BY IsActive DESC, UpdatedAt DESC, Name, Id;
             """;
         const string stopsSql = """
             SELECT RouteId, StopOrder, PoiId
@@ -46,11 +46,14 @@ public sealed partial class AdminDataRepository
                 {
                     Id = routeId,
                     Name = ReadString(routesReader, "Name"),
+                    Theme = ReadString(routesReader, "Theme"),
                     Description = ReadString(routesReader, "Description"),
                     DurationMinutes = ReadInt(routesReader, "DurationMinutes"),
-                    Difficulty = ReadString(routesReader, "Difficulty"),
+                    CoverImageUrl = ReadString(routesReader, "CoverImageUrl"),
                     StopPoiIds = stopMap.GetValueOrDefault(routeId, []),
-                    IsFeatured = ReadBool(routesReader, "IsFeatured")
+                    IsActive = ReadBool(routesReader, "IsActive"),
+                    UpdatedBy = ReadString(routesReader, "UpdatedBy"),
+                    UpdatedAt = ReadDateTimeOffset(routesReader, "UpdatedAt")
                 });
             }
         }

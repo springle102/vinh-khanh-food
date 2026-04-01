@@ -5,6 +5,27 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed partial class AdminDataRepository
 {
+    public IReadOnlyList<LoginAccountOptionResponse> GetLoginAccountOptions(string? portal)
+    {
+        using var connection = OpenConnection();
+        var normalizedPortal = string.IsNullOrWhiteSpace(portal) ? null : portal.Trim().ToLowerInvariant();
+
+        return GetUsers(connection, null)
+            .Where(user =>
+                string.Equals(user.Status, "active", StringComparison.OrdinalIgnoreCase) &&
+                CanAccessPortal(user.Role, normalizedPortal))
+            .OrderByDescending(user => string.Equals(user.Role, "SUPER_ADMIN", StringComparison.OrdinalIgnoreCase))
+            .ThenBy(user => user.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(user => new LoginAccountOptionResponse(
+                user.Id,
+                user.Name,
+                user.Email,
+                user.Role,
+                user.Status,
+                user.ManagedPoiId))
+            .ToList();
+    }
+
     public AuthTokensResponse? Login(string email, string password, string? portal)
     {
         using var connection = OpenConnection();

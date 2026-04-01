@@ -12,11 +12,13 @@ import { PoisPage } from "../features/pois/PoisPage";
 import { PromotionsPage } from "../features/promotions/PromotionsPage";
 import { ReviewsPage } from "../features/reviews/ReviewsPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
+import { ToursPage } from "../features/tours/ToursPage";
 import { UsersPage } from "../features/users/UsersPage";
 
 const adminNavigationItems: AppShellNavItem[] = [
   { to: "/admin/dashboard", label: "Tổng quan", icon: "dashboard" },
   { to: "/admin/pois", label: "POI", icon: "map" },
+  { to: "/admin/tours", label: "Tuyến tham quan", icon: "route" },
   { to: "/admin/content", label: "Món ăn", icon: "content" },
   { to: "/admin/users", label: "Chủ quán", icon: "users" },
   { to: "/admin/end-users", label: "Người dùng", icon: "users" },
@@ -92,6 +94,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="dashboard" replace /> },
           { path: "dashboard", element: <DashboardPage /> },
           { path: "pois", element: <PoisPage /> },
+          { path: "tours", element: <ToursPage /> },
           { path: "content", element: <ContentPage /> },
           { path: "media", element: <Navigate to="/admin/pois" replace /> },
           { path: "users", element: <UsersPage /> },
@@ -115,6 +118,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="dashboard" replace /> },
           { path: "dashboard", element: <DashboardPage /> },
           { path: "pois", element: <PoisPage /> },
+          { path: "tours", element: <ToursPage /> },
           { path: "content", element: <ContentPage /> },
           { path: "media", element: <Navigate to="/restaurant/pois" replace /> },
           { path: "users", element: <UsersPage /> },

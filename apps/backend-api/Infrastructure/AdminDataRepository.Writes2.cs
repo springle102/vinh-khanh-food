@@ -200,9 +200,70 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        var name = (request.Name ?? string.Empty).Trim();
+        var theme = string.IsNullOrWhiteSpace(request.Theme) ? "Tổng hợp" : request.Theme.Trim();
+        var description = (request.Description ?? string.Empty).Trim();
+        var coverImageUrl = (request.CoverImageUrl ?? string.Empty).Trim();
         var existing = !string.IsNullOrWhiteSpace(id) ? GetRouteById(connection, transaction, id) : null;
         var isNew = existing is null;
         var routeId = existing?.Id ?? id ?? CreateId("route");
+        var actorName = request.ActorName?.Trim() ?? "SYSTEM";
+        var actorRole = request.ActorRole?.Trim() ?? string.Empty;
+        var isOwnerActor = string.Equals(actorRole, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase);
+        var actorUserId = request.ActorUserId?.Trim() ?? string.Empty;
+        var actorUser = !string.IsNullOrWhiteSpace(actorUserId)
+            ? GetUserById(connection, transaction, actorUserId)
+            : null;
+        var normalizedStopPoiIds = NormalizeList(request.StopPoiIds, distinct: false).ToList();
+        var availablePoiIds = GetPois(connection, transaction)
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidOperationException("Tên tour là bắt buộc.");
+        }
+
+        if (request.DurationMinutes <= 0)
+        {
+            throw new InvalidOperationException("Thời lượng tour phải lớn hơn 0 phút.");
+        }
+
+        if (normalizedStopPoiIds.Count == 0)
+        {
+            throw new InvalidOperationException("Tour phải có ít nhất một điểm đến.");
+        }
+
+        var missingPoiIds = normalizedStopPoiIds
+            .Where(stopPoiId => !availablePoiIds.Contains(stopPoiId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (missingPoiIds.Count > 0)
+        {
+            throw new InvalidOperationException("Tour chứa POI không tồn tại hoặc đã bị xóa.");
+        }
+
+        if (isOwnerActor)
+        {
+            if (actorUser is null || !string.Equals(actorUser.Role, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Không xác định được chủ quán thực hiện thao tác tour.");
+            }
+
+            var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actorUser.Id);
+            if (!isNew && existing is not null && !existing.StopPoiIds.Any(ownerPoiIds.Contains))
+            {
+                throw new InvalidOperationException("Chủ quán chỉ được cập nhật tour có điểm đến của chính mình.");
+            }
+
+            if (normalizedStopPoiIds.Any(stopPoiId => !ownerPoiIds.Contains(stopPoiId)))
+            {
+                throw new InvalidOperationException("Chủ quán chỉ được tạo hoặc cập nhật tour bằng các POI của chính mình.");
+            }
+        }
+
+        var now = DateTimeOffset.UtcNow;
 
         if (isNew)
         {
@@ -210,15 +271,23 @@ public sealed partial class AdminDataRepository
                 connection,
                 transaction,
                 """
-                INSERT INTO dbo.Routes (Id, Name, [Description], DurationMinutes, Difficulty, IsFeatured)
-                VALUES (?, ?, ?, ?, ?, ?);
+                INSERT INTO dbo.Routes (
+                    Id, Name, Theme, [Description], DurationMinutes, CoverImageUrl,
+                    Difficulty, IsFeatured, IsActive, UpdatedBy, UpdatedAt
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 routeId,
-                request.Name,
-                request.Description,
+                name,
+                theme,
+                description,
                 request.DurationMinutes,
-                request.Difficulty,
-                request.IsFeatured);
+                coverImageUrl,
+                "custom",
+                false,
+                request.IsActive,
+                actorName,
+                now);
         }
         else
         {
@@ -228,32 +297,42 @@ public sealed partial class AdminDataRepository
                 """
                 UPDATE dbo.Routes
                 SET Name = ?,
+                    Theme = ?,
                     [Description] = ?,
                     DurationMinutes = ?,
+                    CoverImageUrl = ?,
                     Difficulty = ?,
-                    IsFeatured = ?
+                    IsFeatured = ?,
+                    IsActive = ?,
+                    UpdatedBy = ?,
+                    UpdatedAt = ?
                 WHERE Id = ?;
                 """,
-                request.Name,
-                request.Description,
+                name,
+                theme,
+                description,
                 request.DurationMinutes,
-                request.Difficulty,
-                request.IsFeatured,
+                coverImageUrl,
+                "custom",
+                false,
+                request.IsActive,
+                actorName,
+                now,
                 routeId);
         }
 
-        ReplaceRouteStops(connection, transaction, routeId, request.StopPoiIds);
+        ReplaceRouteStops(connection, transaction, routeId, normalizedStopPoiIds);
 
         AppendAuditLog(
             connection,
             transaction,
-            request.ActorName,
-            request.ActorRole,
-            isNew ? "Tao tuyen tham quan" : "Cap nhat tuyen tham quan",
-            request.Name);
+            actorName,
+            actorRole,
+            isNew ? "Tạo tour" : "Cập nhật tour",
+            name);
 
         var saved = GetRouteById(connection, transaction, routeId)
-            ?? throw new InvalidOperationException("Khong the doc lai tuyen tham quan sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại tuyến tham quan sau khi lưu.");
 
         transaction.Commit();
         return saved;
@@ -272,7 +351,7 @@ public sealed partial class AdminDataRepository
             return false;
         }
 
-        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa tuyen tham quan", id);
+        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa tour", id);
 
         transaction.Commit();
         return true;

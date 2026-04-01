@@ -25,10 +25,11 @@ If you deploy the frontend separately from the API, set:
 VITE_API_BASE_URL=http://localhost:5080/api/v1
 ```
 
-## Demo accounts
+## Seed accounts in database
 
 - `superadmin@vinhkhanh.vn` / `Admin@123`
-- `content@vinhkhanh.vn` / `Admin@123`
+- `bbq@vinhkhanh.vn` / `Admin@123`
+- `oc@vinhkhanh.vn` / `Admin@123`
 
 ## Docker
 

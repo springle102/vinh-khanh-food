@@ -1,0 +1,14 @@
+{
+  "home_title": "ヴィンカイン フードストリートを巡る",
+  "home_description": "地図、スポット一覧、QRスキャン、多言語の自動音声ガイドをスマホで利用できます。",
+  "nav_map": "地図を見る",
+  "nav_list": "スポット一覧",
+  "nav_auto": "自動ガイド",
+  "nav_settings": "言語設定",
+  "nav_qr": "QRを読む",
+  "list_search": "場所、料理、エリアで検索",
+  "map_select_poi": "地図上のスポットを選択してください",
+  "map_hint": "マーカーをタップするとすぐに音声ガイドが始まります",
+  "detail_play": "再生",
+  "detail_pause": "一時停止"
+}

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    <Color x:Key="BrandPrimary">#F48A22</Color>
+    <Color x:Key="BrandPrimaryDark">#E96E1B</Color>
+    <Color x:Key="BrandPrimarySoft">#FFF1E4</Color>
+    <Color x:Key="BrandPrimaryPale">#FFF8F1</Color>
+    <Color x:Key="BrandGold">#F7C64F</Color>
+    <Color x:Key="BrandHeaderStart">#F8CC55</Color>
+    <Color x:Key="BrandHeaderEnd">#F4A52B</Color>
+    <Color x:Key="BrandSurface">#FFFFFF</Color>
+    <Color x:Key="BrandBackground">#FFF9F4</Color>
+    <Color x:Key="BrandTextPrimary">#2B2B2B</Color>
+    <Color x:Key="BrandTextSecondary">#747474</Color>
+    <Color x:Key="BrandTextMuted">#A2A2A2</Color>
+    <Color x:Key="BrandStroke">#EEE5D9</Color>
+    <Color x:Key="BrandStrokeStrong">#E8CBA7</Color>
+    <Color x:Key="BrandShadow">#16000000</Color>
+    <Color x:Key="BrandNightTop">#0D2C58</Color>
+    <Color x:Key="BrandNightBottom">#152138</Color>
+    <Color x:Key="BrandSuccess">#42B96D</Color>
+    <Color x:Key="BrandMapWater">#DCECF6</Color>
+    <Color x:Key="BrandBottomActive">#FFF4E7</Color>
+    <Color x:Key="BrandBottomStroke">#EAB06D</Color>
+
+    <SolidColorBrush x:Key="BrandPrimaryBrush" Color="{StaticResource BrandPrimary}" />
+    <SolidColorBrush x:Key="BrandSurfaceBrush" Color="{StaticResource BrandSurface}" />
+    <SolidColorBrush x:Key="BrandBackgroundBrush" Color="{StaticResource BrandBackground}" />
+</ResourceDictionary>

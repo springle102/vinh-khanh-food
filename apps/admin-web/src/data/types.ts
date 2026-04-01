@@ -190,11 +190,14 @@ export interface MediaAsset {
 export interface TourRoute {
   id: string;
   name: string;
+  theme: string;
   description: string;
   durationMinutes: number;
-  difficulty: "easy" | "balanced" | "foodie";
+  coverImageUrl: string;
   stopPoiIds: string[];
-  isFeatured: boolean;
+  isActive: boolean;
+  updatedBy: string;
+  updatedAt: string;
 }
 
 export interface Promotion {

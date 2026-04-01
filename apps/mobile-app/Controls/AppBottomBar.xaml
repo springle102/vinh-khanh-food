@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="VinhKhanh.MobileApp.Controls.AppBottomBar"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <Grid HeightRequest="94" Padding="18,6,18,14">
+        <Border
+            BackgroundColor="White"
+            Padding="8,8"
+            StrokeThickness="0"
+            StrokeShape="RoundRectangle 22">
+            <Border.Shadow>
+                <Shadow Brush="{StaticResource BrandShadow}" Offset="0,6" Radius="18" Opacity="0.12" />
+            </Border.Shadow>
+
+            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="4">
+                <Border x:Name="QrTab" Grid.Column="0" Padding="6,8,6,6" BackgroundColor="Transparent" StrokeThickness="0" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
+                        <Grid WidthRequest="22" HeightRequest="22">
+                            <Path x:Name="QrPath1" Data="M 2 2 H 9 V 9 H 2 Z M 13 2 H 20 V 9 H 13 Z M 2 13 H 9 V 20 H 2 Z" StrokeThickness="1.8" StrokeLineJoin="Round" />
+                            <Path x:Name="QrPath2" Data="M 5.5 5.5 H 5.7 M 16.5 5.5 H 16.7 M 5.5 16.5 H 5.7 M 13 13 H 17 M 17 17 H 20 M 17 20 H 20 M 13 17 H 13.2 M 13 20 H 13.2 M 20 13 H 20.2" StrokeThickness="2.8" StrokeLineCap="Round" />
+                        </Grid>
+                        <Label x:Name="QrLabel" FontSize="10" HorizontalTextAlignment="Center" Text="Quét QR" />
+                    </VerticalStackLayout>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnQrTapped" />
+                    </Border.GestureRecognizers>
+                </Border>
+
+                <Border x:Name="SettingsTab" Grid.Column="1" Padding="6,8,6,6" BackgroundColor="Transparent" StrokeThickness="0" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
+                        <Grid WidthRequest="22" HeightRequest="22">
+                            <Path x:Name="SettingsPath1" Data="M 11 7.4 A 3.6 3.6 0 1 1 10.99 7.4 Z" StrokeThickness="1.8" StrokeLineJoin="Round" />
+                            <Path x:Name="SettingsPath2" Data="M 11 1.8 V 4 M 11 17.8 V 20 M 3.6 6.1 L 5.4 7.2 M 16.6 13.8 L 18.4 14.9 M 3.6 14.9 L 5.4 13.8 M 16.6 7.2 L 18.4 6.1 M 1.8 11 H 4 M 18 11 H 20.2" StrokeThickness="1.8" StrokeLineCap="Round" />
+                        </Grid>
+                        <Label x:Name="SettingsLabel" FontSize="10" HorizontalTextAlignment="Center" Text="Cài Đặt" />
+                    </VerticalStackLayout>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnSettingsTapped" />
+                    </Border.GestureRecognizers>
+                </Border>
+
+                <Border x:Name="PoiTab" Grid.Column="2" Padding="6,8,6,6" BackgroundColor="Transparent" StrokeThickness="0" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
+                        <Grid WidthRequest="22" HeightRequest="22">
+                            <Path x:Name="PoiPath1" Data="M 9.4 16.6 C 5.8 13.4 4 11.2 4 8.6 A 6.6 6.6 0 1 1 17.2 8.6 C 17.2 11.2 15.3 13.4 11.8 16.6 L 10.6 17.8 Z" StrokeThickness="1.8" StrokeLineJoin="Round" />
+                            <Path x:Name="PoiPath2" Data="M 16.5 16.5 L 20 20" StrokeThickness="1.8" StrokeLineCap="Round" />
+                            <Path x:Name="PoiPath3" Data="M 10.6 8.7 A 2.1 2.1 0 1 1 10.59 8.7 Z" StrokeThickness="1.8" StrokeLineJoin="Round" />
+                        </Grid>
+                        <Label x:Name="PoiLabel" FontSize="10" HorizontalTextAlignment="Center" Text="Tìm POI" />
+                    </VerticalStackLayout>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnPoiTapped" />
+                    </Border.GestureRecognizers>
+                </Border>
+
+                <Border x:Name="TourTab" Grid.Column="3" Padding="6,8,6,6" BackgroundColor="Transparent" StrokeThickness="0" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
+                        <Grid WidthRequest="22" HeightRequest="22">
+                            <Path x:Name="TourPath1" Data="M 6 5 A 2 2 0 1 1 5.99 5 Z M 16 17 A 2 2 0 1 1 15.99 17 Z M 6 7 V 10.2 C 6 11.6 7.2 12.8 8.6 12.8 H 13.2 C 14.8 12.8 16 14 16 15.6 V 15" StrokeThickness="1.8" StrokeLineCap="Round" StrokeLineJoin="Round" />
+                            <Path x:Name="TourPath2" Data="M 9.8 3 H 18 M 13.8 19 H 4" StrokeThickness="1.8" StrokeLineCap="Round" />
+                        </Grid>
+                        <Label x:Name="TourLabel" FontSize="10" HorizontalTextAlignment="Center" Text="Tour Của Tôi" />
+                    </VerticalStackLayout>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnTourTapped" />
+                    </Border.GestureRecognizers>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</ContentView>

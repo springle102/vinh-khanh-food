@@ -251,10 +251,15 @@ GO
 CREATE TABLE dbo.Routes (
     Id NVARCHAR(50) NOT NULL PRIMARY KEY,
     Name NVARCHAR(150) NOT NULL,
+    Theme NVARCHAR(100) NOT NULL,
     [Description] NVARCHAR(MAX) NOT NULL,
     DurationMinutes INT NOT NULL,
     Difficulty NVARCHAR(30) NOT NULL,
-    IsFeatured BIT NOT NULL
+    CoverImageUrl NVARCHAR(500) NOT NULL,
+    IsFeatured BIT NOT NULL,
+    IsActive BIT NOT NULL,
+    UpdatedBy NVARCHAR(120) NOT NULL,
+    UpdatedAt DATETIMEOFFSET(7) NOT NULL
 );
 GO
 
@@ -418,8 +423,8 @@ GO
 INSERT INTO dbo.MediaAssets (Id, EntityType, EntityId, MediaType, Url, AltText, CreatedAt) VALUES (N'media-1', N'poi', N'poi-bbq-night', N'image', N'https://images.unsplash.com/photo-1520201163981-8cc95007dd2e?auto=format&fit=crop&w=1200&q=80', N'Không khí phố ẩm thực Vĩnh Khánh về đêm', CAST(N'2026-03-04T02:00:00+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.MediaAssets (Id, EntityType, EntityId, MediaType, Url, AltText, CreatedAt) VALUES (N'media-2', N'poi', N'poi-snail-signature', N'image', N'https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1200&q=80', N'Đĩa ốc xào phục vụ tại quán', CAST(N'2026-03-03T02:00:00+00:00' AS datetimeoffset(7)));
 GO
-INSERT INTO dbo.Routes (Id, Name, [Description], DurationMinutes, Difficulty, IsFeatured) VALUES (N'route-1', N'Khởi đầu 45 phút', N'Lộ trình ngắn cho khách mới đến, ưu tiên các POI nổi bật và phần giới thiệu mở đầu.', 45, N'easy', 1);
-INSERT INTO dbo.Routes (Id, Name, [Description], DurationMinutes, Difficulty, IsFeatured) VALUES (N'route-2', N'Hải sản buổi tối', N'Tuyến ăn tối thiên về món nướng, ốc và không khí đường phố về đêm.', 70, N'foodie', 1);
+INSERT INTO dbo.Routes (Id, Name, Theme, [Description], DurationMinutes, Difficulty, CoverImageUrl, IsFeatured, IsActive, UpdatedBy, UpdatedAt) VALUES (N'route-1', N'Khởi đầu 45 phút', N'Ăn vặt', N'Tour ngắn cho khách mới đến, ưu tiên các POI nổi bật và những món dễ tiếp cận.', 45, N'custom', N'', 1, 1, N'Minh Ánh', CAST(N'2026-03-21T08:00:00+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.Routes (Id, Name, Theme, [Description], DurationMinutes, Difficulty, CoverImageUrl, IsFeatured, IsActive, UpdatedBy, UpdatedAt) VALUES (N'route-2', N'Hải sản buổi tối', N'Hải sản', N'Tour buổi tối tập trung vào món nướng, ốc và không khí phố ẩm thực về đêm.', 70, N'custom', N'', 1, 1, N'Minh Ánh', CAST(N'2026-03-22T10:30:00+00:00' AS datetimeoffset(7)));
 GO
 INSERT INTO dbo.RouteStops (RouteId, StopOrder, PoiId) VALUES (N'route-1', 1, N'poi-snail-signature');
 INSERT INTO dbo.RouteStops (RouteId, StopOrder, PoiId) VALUES (N'route-2', 1, N'poi-bbq-night');
@@ -472,7 +477,7 @@ INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, Crea
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-23a11658', N'Minh Ánh', N'PLACE_OWNER', N'Cap nhat trang thai danh gia', N'review-1', CAST(N'2026-03-21T02:21:49.9912229+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-44134089', N'Minh Ánh', N'PLACE_OWNER', N'Cap nhat trang thai danh gia', N'review-1', CAST(N'2026-03-21T02:21:49.1313145+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-a20b6180', N'Minh Ánh', N'PLACE_OWNER', N'Cap nhat trang thai danh gia', N'review-1', CAST(N'2026-03-21T02:21:47.0998968+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-10d614bd', N'Minh Ánh', N'PLACE_OWNER', N'Dang nhap admin', N'content@vinhkhanh.vn', CAST(N'2026-03-21T02:19:14.7087424+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-10d614bd', N'Minh Ánh', N'PLACE_OWNER', N'Dang nhap admin', N'bbq@vinhkhanh.vn', CAST(N'2026-03-21T02:19:14.7087424+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-e5f07e84', N'Ánh Xuân', N'SYSTEM', N'Cap nhat noi dung thuyet minh', N'poi:vi:poi-bbq-night', CAST(N'2026-03-21T01:12:11.7750195+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-10db7490', N'Ánh Xuân', N'SYSTEM', N'Cap nhat audio guide', N'poi:vi:poi-bbq-night', CAST(N'2026-03-21T01:12:11.7270186+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-55ebf34f', N'Ánh Xuân', N'SUPER_ADMIN', N'Dang nhap admin', N'superadmin@vinhkhanh.vn', CAST(N'2026-03-21T01:01:32.6315235+00:00' AS datetimeoffset(7)));

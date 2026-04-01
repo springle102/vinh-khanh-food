@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { adminApi, getErrorMessage, type LoginAccountOption } from "../../lib/api";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Icon } from "../../components/ui/Icons";
@@ -7,23 +8,16 @@ import { Input } from "../../components/ui/Input";
 import { useAuth } from "./AuthContext";
 import { getHomePathForRole, isPathAllowedForRole } from "./auth-routing";
 
-const demoAccounts = [
-  {
-    label: "Super Admin",
-    email: "superadmin@vinhkhanh.vn",
-    password: "Admin@123",
-  },
-  {
-    label: "Chủ quán demo",
-    email: "bbq@vinhkhanh.vn",
-    password: "Admin@123",
-  },
-];
+const getAccountRoleLabel = (role: LoginAccountOption["role"]) =>
+  role === "SUPER_ADMIN" ? "Super Admin" : "Chu quan";
 
 export const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isInitializing, login, user } = useAuth();
+  const [loginAccounts, setLoginAccounts] = useState<LoginAccountOption[]>([]);
+  const [isLoadingAccounts, setLoadingAccounts] = useState(true);
+  const [accountsError, setAccountsError] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -37,6 +31,41 @@ export const LoginPage = () => {
     navigate(getHomePathForRole(user.role), { replace: true });
   }, [navigate, user]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLoginAccounts = async () => {
+      setLoadingAccounts(true);
+      setAccountsError("");
+
+      try {
+        const nextAccounts = await adminApi.getLoginOptions();
+        if (!isMounted) {
+          return;
+        }
+
+        setLoginAccounts(nextAccounts);
+        setEmail((currentEmail) => currentEmail || nextAccounts[0]?.email || "");
+      } catch (nextError) {
+        if (!isMounted) {
+          return;
+        }
+
+        setAccountsError(getErrorMessage(nextError));
+      } finally {
+        if (isMounted) {
+          setLoadingAccounts(false);
+        }
+      }
+    };
+
+    void loadLoginAccounts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSubmitting(true);
@@ -46,7 +75,7 @@ export const LoginPage = () => {
     setSubmitting(false);
 
     if (!result.ok) {
-      setError(result.message ?? "Đăng nhập không thành công.");
+      setError(result.message ?? "Dang nhap khong thanh cong.");
       return;
     }
 
@@ -59,9 +88,8 @@ export const LoginPage = () => {
     navigate(redirectTo ?? "/dashboard", { replace: true });
   };
 
-  const handleSelectDemoAccount = (selectedEmail: string, selectedPassword: string) => {
+  const handleSelectDatabaseAccount = (selectedEmail: string) => {
     setEmail(selectedEmail);
-    setPassword(selectedPassword);
     setError("");
   };
 
@@ -77,7 +105,7 @@ export const LoginPage = () => {
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary-600">
                 Login Portal
               </p>
-              <h1 className="text-2xl font-bold">Đăng nhập hệ thống nhà hàng</h1>
+              <h1 className="text-2xl font-bold">Dang nhap he thong nha hang</h1>
             </div>
           </div>
 
@@ -88,16 +116,16 @@ export const LoginPage = () => {
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="Nhập email"
+                placeholder="Nhap email"
               />
             </div>
             <div>
-              <label className="field-label">Mật khẩu</label>
+              <label className="field-label">Mat khau</label>
               <Input
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Nhập mật khẩu"
+                placeholder="Nhap mat khau"
               />
             </div>
 
@@ -106,24 +134,48 @@ export const LoginPage = () => {
             ) : null}
 
             <Button type="submit" className="w-full" disabled={submitting || isInitializing}>
-              {submitting || isInitializing ? "Đang đăng nhập..." : "Đăng nhập"}
+              {submitting || isInitializing ? "Dang dang nhap..." : "Dang nhap"}
             </Button>
           </form>
 
           <div className="mt-6 rounded-3xl bg-sand-50 p-4 text-sm text-ink-500">
-            <p className="font-semibold text-ink-700">Tài khoản demo</p>
+            <p className="font-semibold text-ink-700">Tai khoan trong database</p>
+            <p className="mt-1 text-xs text-ink-500">
+              Danh sach nay duoc lay tu bang AdminUsers. Nhan vao de dien email dang nhap.
+            </p>
+
+            {accountsError ? (
+              <div className="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {accountsError}
+              </div>
+            ) : null}
+
             <div className="mt-3 grid gap-3">
-              {demoAccounts.map((account) => {
-                const isSelected = email === account.email && password === account.password;
+              {isLoadingAccounts ? (
+                <div className="rounded-2xl border border-dashed border-sand-200 px-4 py-3 text-sm text-ink-500">
+                  Dang tai tai khoan tu database...
+                </div>
+              ) : null}
+
+              {!isLoadingAccounts && !accountsError && loginAccounts.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-sand-200 px-4 py-3 text-sm text-ink-500">
+                  Chua co tai khoan active trong database.
+                </div>
+              ) : null}
+
+              {loginAccounts.map((account) => {
+                const isSelected = email === account.email;
 
                 return (
                   <Button
-                    key={account.email}
+                    key={account.userId}
                     variant={isSelected ? "primary" : "secondary"}
                     className="w-full justify-between text-left"
-                    onClick={() => handleSelectDemoAccount(account.email, account.password)}
+                    onClick={() => handleSelectDatabaseAccount(account.email)}
                   >
-                    <span>{account.label}</span>
+                    <span>
+                      {account.name} • {getAccountRoleLabel(account.role)}
+                    </span>
                     <span className="text-xs font-medium opacity-90">{account.email}</span>
                   </Button>
                 );

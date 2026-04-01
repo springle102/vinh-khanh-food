@@ -8,6 +8,14 @@ namespace VinhKhanh.BackendApi.Controllers;
 [Route("api/v1/auth")]
 public sealed class AuthController(AdminDataRepository repository) : ControllerBase
 {
+    [HttpGet("login-options")]
+    public ActionResult<ApiResponse<IReadOnlyList<LoginAccountOptionResponse>>> GetLoginOptions([FromQuery] string? portal)
+    {
+        var normalizedPortal = string.IsNullOrWhiteSpace(portal) ? null : portal.Trim().ToLowerInvariant();
+        var options = repository.GetLoginAccountOptions(normalizedPortal);
+        return Ok(ApiResponse<IReadOnlyList<LoginAccountOptionResponse>>.Ok(options));
+    }
+
     [HttpPost("login")]
     public ActionResult<ApiResponse<AuthTokensResponse>> Login([FromBody] LoginRequest request)
     {

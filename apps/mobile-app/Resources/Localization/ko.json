@@ -1,0 +1,14 @@
+{
+  "home_title": "빈카인 음식 거리 탐험",
+  "home_description": "휴대폰에서 지도, 맛집 목록, QR 스캔, 다국어 자동 해설을 이용해 보세요.",
+  "nav_map": "지도 보기",
+  "nav_list": "장소 목록",
+  "nav_auto": "자동 해설",
+  "nav_settings": "언어 설정",
+  "nav_qr": "QR 스캔",
+  "list_search": "장소, 음식, 지역으로 검색",
+  "map_select_poi": "지도에서 장소를 선택하세요",
+  "map_hint": "마커를 누르면 바로 해설이 재생됩니다",
+  "detail_play": "재생",
+  "detail_pause": "일시정지"
+}

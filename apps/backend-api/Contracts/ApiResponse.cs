@@ -18,6 +18,14 @@ public sealed record AuthTokensResponse(
 
 public sealed record LoginRequest(string Email, string Password, string? Portal);
 
+public sealed record LoginAccountOptionResponse(
+    string UserId,
+    string Name,
+    string Email,
+    string Role,
+    string Status,
+    string? ManagedPoiId);
+
 public sealed record RefreshTokenRequest(string RefreshToken);
 
 public sealed record LogoutRequest(string RefreshToken);
@@ -116,13 +124,15 @@ public sealed record FoodItemUpsertRequest(
 
 public sealed record TourRouteUpsertRequest(
     string Name,
+    string Theme,
     string Description,
     int DurationMinutes,
-    string Difficulty,
+    string CoverImageUrl,
     List<string> StopPoiIds,
-    bool IsFeatured,
+    bool IsActive,
     string ActorName,
-    string ActorRole);
+    string ActorRole,
+    string ActorUserId);
 
 public sealed record PromotionUpsertRequest(
     string PoiId,

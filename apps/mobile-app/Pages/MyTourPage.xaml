@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="VinhKhanh.MobileApp.Pages.MyTourPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:VinhKhanh.MobileApp.Controls"
+    xmlns:models="clr-namespace:VinhKhanh.MobileApp.Models"
+    xmlns:viewModels="clr-namespace:VinhKhanh.MobileApp.ViewModels"
+    x:DataType="viewModels:MyTourViewModel"
+    Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="*,Auto">
+        <Grid>
+            <Border HeightRequest="190" StrokeThickness="0">
+                <Border.Background>
+                    <LinearGradientBrush EndPoint="1,1">
+                        <GradientStop Color="{StaticResource BrandGold}" Offset="0.0" />
+                        <GradientStop Color="{StaticResource BrandPrimary}" Offset="1.0" />
+                    </LinearGradientBrush>
+                </Border.Background>
+            </Border>
+
+            <ScrollView>
+                <VerticalStackLayout Padding="24,26,24,130" Spacing="16">
+                    <Label HorizontalTextAlignment="Center" Text="{Binding HeaderTitleText}" FontFamily="OpenSansSemibold" FontSize="24" />
+                    <Button Margin="0,6,0,10" HorizontalOptions="Fill" Text="{Binding CreateTourText}" />
+
+                    <Border Margin="0,-4,0,0" Style="{StaticResource CardBorderStyle}">
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Stops}" Spacing="10">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="models:TourStop">
+                                    <Grid ColumnDefinitions="58,*,Auto" ColumnSpacing="12">
+                                        <Border BackgroundColor="{StaticResource BrandPrimaryPale}" Padding="0" StrokeThickness="0" StrokeShape="RoundRectangle 14" WidthRequest="58" HeightRequest="58">
+                                            <Image Aspect="AspectFill" Source="{Binding ThumbnailUrl}" />
+                                        </Border>
+                                        <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                            <Label FontFamily="OpenSansSemibold" FontSize="15" Text="{Binding Title}" />
+                                            <Label FontSize="12" Text="{Binding Description}" TextColor="{StaticResource BrandTextSecondary}" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="2" FontSize="24" Text="›" TextColor="{StaticResource BrandTextMuted}" VerticalOptions="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <HorizontalStackLayout HorizontalOptions="Center" Spacing="6">
+                        <Border WidthRequest="18" HeightRequest="6" BackgroundColor="{StaticResource BrandPrimary}" StrokeThickness="0" StrokeShape="RoundRectangle 3" />
+                        <Border WidthRequest="6" HeightRequest="6" BackgroundColor="#EBC9B1" StrokeThickness="0" StrokeShape="RoundRectangle 3" />
+                        <Border WidthRequest="6" HeightRequest="6" BackgroundColor="#EBC9B1" StrokeThickness="0" StrokeShape="RoundRectangle 3" />
+                    </HorizontalStackLayout>
+
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <VerticalStackLayout Spacing="12">
+                            <Label FontFamily="OpenSansSemibold" FontSize="18" Text="{Binding Tour.Theme}" />
+                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding SummaryText}" />
+                            <ProgressBar Progress="{Binding ProgressValue}" ProgressColor="{StaticResource BrandPrimary}" BackgroundColor="#F1E4D9" />
+                            <Label FontFamily="OpenSansSemibold" Text="{Binding ProgressText}" TextColor="{StaticResource BrandPrimary}" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <VerticalStackLayout Spacing="14">
+                            <Label FontFamily="OpenSansSemibold" FontSize="18" Text="{Binding CheckpointTitleText}" />
+
+                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding Checkpoints}" Spacing="12">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate x:DataType="models:TourCheckpoint">
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                            <Border WidthRequest="26" HeightRequest="26" Padding="0" BackgroundColor="{StaticResource BrandPrimarySoft}" StrokeThickness="0" StrokeShape="RoundRectangle 13">
+                                                <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding Order}" TextColor="{StaticResource BrandPrimary}" />
+                                            </Border>
+                                            <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                                <Label FontFamily="OpenSansSemibold" Text="{Binding Title}" />
+                                                <Label FontSize="12" Text="{Binding DistanceText}" TextColor="{StaticResource BrandTextSecondary}" />
+                                            </VerticalStackLayout>
+                                            <Label Grid.Column="2" FontSize="20" Text="✓" TextColor="{StaticResource BrandSuccess}" VerticalOptions="Center">
+                                                <Label.Triggers>
+                                                    <DataTrigger TargetType="Label" Binding="{Binding IsCompleted}" Value="False">
+                                                        <Setter Property="TextColor" Value="{StaticResource BrandTextMuted}" />
+                                                        <Setter Property="Text" Value="•" />
+                                                    </DataTrigger>
+                                                </Label.Triggers>
+                                            </Label>
+                                        </Grid>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+                    </Border>
+                </VerticalStackLayout>
+            </ScrollView>
+        </Grid>
+
+        <controls:AppBottomBar Grid.Row="1" CurrentRoute="MyTourPage" />
+    </Grid>
+</ContentPage>

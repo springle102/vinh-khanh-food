@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="VinhKhanh.MobileApp.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:VinhKhanh.MobileApp.Controls"
+    xmlns:models="clr-namespace:VinhKhanh.MobileApp.Models"
+    xmlns:viewModels="clr-namespace:VinhKhanh.MobileApp.ViewModels"
+    x:DataType="viewModels:SettingsViewModel"
+    Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="*,Auto" BackgroundColor="{StaticResource BrandBackground}">
+        <Grid>
+            <Border HeightRequest="126" StrokeThickness="0">
+                <Border.Background>
+                    <LinearGradientBrush EndPoint="1,1">
+                        <GradientStop Color="{StaticResource BrandHeaderStart}" Offset="0.0" />
+                        <GradientStop Color="{StaticResource BrandHeaderEnd}" Offset="1.0" />
+                    </LinearGradientBrush>
+                </Border.Background>
+            </Border>
+
+            <ScrollView>
+                <VerticalStackLayout Padding="22,18,22,124" Spacing="14">
+                    <Grid ColumnDefinitions="32,*,32" HeightRequest="34" VerticalOptions="Center">
+                        <Label FontSize="22" HorizontalTextAlignment="Center" Text="‹" VerticalTextAlignment="Center" />
+                        <Label Grid.Column="1" HorizontalTextAlignment="Center" Text="{Binding HeaderTitleText}" FontFamily="OpenSansSemibold" FontSize="22" VerticalTextAlignment="Center" />
+                        <Label Grid.Column="2" Opacity="0" Text="‹" />
+                    </Grid>
+
+                    <Border
+                        Margin="0,10,0,0"
+                        Padding="16"
+                        BackgroundColor="White"
+                        Stroke="#EFE5D8"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 22">
+                        <Border.Shadow>
+                            <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
+                        </Border.Shadow>
+
+                        <VerticalStackLayout Spacing="14">
+                            <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding AccountTitleText}" />
+
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+                                <Grid WidthRequest="76" HeightRequest="76">
+                                    <Border BackgroundColor="#F6DFC0" Padding="0" StrokeThickness="0" StrokeShape="RoundRectangle 38">
+                                        <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="22" Text="{Binding Profile.AvatarInitials}" TextColor="#4B4B4B" />
+                                    </Border>
+                                    <Border
+                                        WidthRequest="30"
+                                        HeightRequest="30"
+                                        Padding="0"
+                                        BackgroundColor="White"
+                                        HorizontalOptions="End"
+                                        Stroke="#EDE2D6"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 15"
+                                        VerticalOptions="End">
+                                        <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="13" Text="✎" TextColor="{StaticResource BrandPrimary}" />
+                                    </Border>
+                                </Grid>
+
+                                <VerticalStackLayout Grid.Column="1" Spacing="10" VerticalOptions="Center">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <VerticalStackLayout Spacing="1">
+                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding UserNameLabelText}" />
+                                            <Label FontFamily="OpenSansSemibold" FontSize="18" Text="{Binding Profile.FullName}" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="1" FontSize="14" Text="✎" TextColor="{StaticResource BrandPrimary}" VerticalOptions="Center" />
+                                    </Grid>
+
+                                    <BoxView HeightRequest="1" Color="#F0E8DE" />
+
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <VerticalStackLayout Spacing="1">
+                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding ContactLabelText}" />
+                                            <Label FontFamily="OpenSansSemibold" FontSize="15" Text="{Binding Profile.Email}" />
+                                            <Label FontFamily="OpenSansSemibold" FontSize="15" Text="{Binding Profile.Phone}" />
+                                            <Label FontSize="12" Text="{Binding Profile.MetaLine}" TextColor="{StaticResource BrandTextMuted}" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="1" FontSize="14" Text="✎" TextColor="{StaticResource BrandPrimary}" VerticalOptions="Center" />
+                                    </Grid>
+                                </VerticalStackLayout>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border
+                        Padding="0"
+                        BackgroundColor="White"
+                        Stroke="#EFE5D8"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 22">
+                        <Border.Shadow>
+                            <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
+                        </Border.Shadow>
+
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding MenuItems}" Spacing="0">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="models:SettingsMenuItem">
+                                    <Grid RowDefinitions="Auto,1">
+                                        <Grid Padding="16,14" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                            <Label FontSize="19" Text="{Binding Icon}" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
+                                            <Label Grid.Column="1" FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding Title}" VerticalOptions="Center" />
+                                            <Label Grid.Column="2" FontSize="22" Text="›" TextColor="{StaticResource BrandTextMuted}" VerticalOptions="Center" />
+                                        </Grid>
+                                        <BoxView Grid.Row="1" Margin="16,0" HeightRequest="1" Color="#F2ECE4" />
+                                    </Grid>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Button
+                        Margin="0,4,0,0"
+                        Command="{Binding LogoutCommand}"
+                        CornerRadius="20"
+                        FontSize="16"
+                        Text="{Binding LogoutText}" />
+                </VerticalStackLayout>
+            </ScrollView>
+        </Grid>
+
+        <controls:AppBottomBar Grid.Row="1" CurrentRoute="SettingsPage" />
+    </Grid>
+</ContentPage>

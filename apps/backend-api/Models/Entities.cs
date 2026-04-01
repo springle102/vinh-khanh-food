@@ -180,11 +180,14 @@ public sealed class TourRoute
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string Theme { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public int DurationMinutes { get; set; }
-    public string Difficulty { get; set; } = "easy";
+    public string CoverImageUrl { get; set; } = string.Empty;
     public List<string> StopPoiIds { get; set; } = [];
-    public bool IsFeatured { get; set; }
+    public bool IsActive { get; set; }
+    public string UpdatedBy { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 public sealed class Promotion

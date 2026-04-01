@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="VinhKhanh.MobileApp.Pages.LoginPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:viewModels="clr-namespace:VinhKhanh.MobileApp.ViewModels"
+    x:DataType="viewModels:LoginViewModel"
+    Shell.NavBarIsVisible="False">
+
+    <Grid>
+        <Image
+            Aspect="AspectFill"
+            Source="https://scootersaigonadventure.com/wp-content/uploads/2019/06/vinh-khanh-snail-street-saigon-after-dark-tour-by-motorbike.jpg" />
+
+        <Border StrokeThickness="0">
+            <Border.Background>
+                <LinearGradientBrush EndPoint="0,1">
+                    <GradientStop Color="#B20E2A52" Offset="0.0" />
+                    <GradientStop Color="#8A162843" Offset="0.32" />
+                    <GradientStop Color="#F5FFF9F4" Offset="1.0" />
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
+
+        <ScrollView>
+            <VerticalStackLayout Padding="28,34,28,42" Spacing="16">
+                <VerticalStackLayout Spacing="6" HorizontalOptions="Center">
+                    <Label
+                        HorizontalTextAlignment="Center"
+                        Text="Vinh Khanh&#10;Food Street"
+                        TextColor="White"
+                        FontFamily="OpenSansSemibold"
+                        FontSize="24" />
+                    <Label
+                        HorizontalTextAlignment="Center"
+                        Text="{Binding PortalSubtitleText}"
+                        TextColor="#FDF2E2"
+                        FontFamily="OpenSansSemibold"
+                        FontSize="16" />
+                </VerticalStackLayout>
+
+                <Border
+                    Margin="0,54,0,0"
+                    Padding="22"
+                    BackgroundColor="White"
+                    HorizontalOptions="Center"
+                    MaximumWidthRequest="430"
+                    Stroke="#EEDFCB"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 28">
+                    <Border.Shadow>
+                        <Shadow Brush="#18000000" Offset="0,8" Radius="18" Opacity="0.10" />
+                    </Border.Shadow>
+
+                    <VerticalStackLayout Spacing="18">
+                        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,3">
+                            <VerticalStackLayout Grid.Column="0" Spacing="8">
+                                <Label HorizontalTextAlignment="Center" FontFamily="OpenSansSemibold" Text="{Binding LoginTabText}">
+                                    <Label.Triggers>
+                                        <DataTrigger TargetType="Label" Binding="{Binding IsLoginMode}" Value="False">
+                                            <Setter Property="TextColor" Value="{StaticResource BrandTextMuted}" />
+                                        </DataTrigger>
+                                    </Label.Triggers>
+                                </Label>
+                                <VerticalStackLayout.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SwitchModeCommand}" CommandParameter="login" />
+                                </VerticalStackLayout.GestureRecognizers>
+                            </VerticalStackLayout>
+
+                            <VerticalStackLayout Grid.Column="1" Spacing="8">
+                                <Label HorizontalTextAlignment="Center" FontFamily="OpenSansSemibold" Text="{Binding SignUpTabText}">
+                                    <Label.Triggers>
+                                        <DataTrigger TargetType="Label" Binding="{Binding IsSignUpMode}" Value="False">
+                                            <Setter Property="TextColor" Value="{StaticResource BrandTextMuted}" />
+                                        </DataTrigger>
+                                    </Label.Triggers>
+                                </Label>
+                                <VerticalStackLayout.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SwitchModeCommand}" CommandParameter="signup" />
+                                </VerticalStackLayout.GestureRecognizers>
+                            </VerticalStackLayout>
+
+                            <BoxView Grid.Row="1" Grid.Column="0" HeightRequest="3" HorizontalOptions="Fill" Color="{StaticResource BrandPrimary}">
+                                <BoxView.Triggers>
+                                    <DataTrigger TargetType="BoxView" Binding="{Binding IsLoginMode}" Value="False">
+                                        <Setter Property="Opacity" Value="0" />
+                                    </DataTrigger>
+                                </BoxView.Triggers>
+                            </BoxView>
+                            <BoxView Grid.Row="1" Grid.Column="1" HeightRequest="3" HorizontalOptions="Fill" Color="{StaticResource BrandPrimary}">
+                                <BoxView.Triggers>
+                                    <DataTrigger TargetType="BoxView" Binding="{Binding IsSignUpMode}" Value="False">
+                                        <Setter Property="Opacity" Value="0" />
+                                    </DataTrigger>
+                                </BoxView.Triggers>
+                            </BoxView>
+                        </Grid>
+
+                        <Border Style="{StaticResource InputContainerStyle}">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                <Label FontSize="17" Text="@" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
+                                <Entry Grid.Column="1" Placeholder="{Binding IdentifierPlaceholderText}" Text="{Binding Identifier}" />
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource InputContainerStyle}">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                <Label FontSize="17" Text="*" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
+                                <Entry Grid.Column="1" IsPassword="True" Placeholder="{Binding PasswordPlaceholderText}" Text="{Binding Password}" />
+                                <Label Grid.Column="2" FontSize="16" Text="o" VerticalOptions="Center" TextColor="{StaticResource BrandTextMuted}" />
+                            </Grid>
+                        </Border>
+
+                        <Label
+                            HorizontalTextAlignment="End"
+                            Text="{Binding ForgotPasswordText}"
+                            TextColor="{StaticResource BrandPrimary}"
+                            FontFamily="OpenSansSemibold"
+                            FontSize="13" />
+
+                        <Button Command="{Binding LoginCommand}" FontSize="16" Text="{Binding PrimaryButtonText}" />
+
+                        <VerticalStackLayout Spacing="12">
+                            <Button Command="{Binding SocialLoginCommand}" CommandParameter="google" Style="{StaticResource SecondaryButtonStyle}" Text="{Binding GoogleLoginText}" />
+                            <Button Command="{Binding SocialLoginCommand}" CommandParameter="facebook" Style="{StaticResource SecondaryButtonStyle}" Text="{Binding FacebookLoginText}" />
+                            <Button Command="{Binding SocialLoginCommand}" CommandParameter="apple" Style="{StaticResource SecondaryButtonStyle}" Text="{Binding AppleLoginText}" />
+                        </VerticalStackLayout>
+
+                        <Label
+                            HorizontalTextAlignment="Center"
+                            Text="{Binding CreateAccountText}"
+                            TextColor="{StaticResource BrandPrimary}"
+                            FontFamily="OpenSansSemibold"
+                            TextDecorations="Underline">
+                            <Label.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding OpenCreateAccountCommand}" />
+                            </Label.GestureRecognizers>
+                        </Label>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

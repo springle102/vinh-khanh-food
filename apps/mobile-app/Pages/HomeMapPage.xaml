@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="VinhKhanh.MobileApp.Pages.HomeMapPage"
+    x:Name="PageRoot"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:VinhKhanh.MobileApp.Controls"
+    xmlns:viewModels="clr-namespace:VinhKhanh.MobileApp.ViewModels"
+    x:DataType="viewModels:HomeMapViewModel"
+    Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="*,Auto" BackgroundColor="#F4EFE8">
+        <Grid>
+            <WebView
+                x:Name="MapWebView"
+                Navigated="OnMapNavigated"
+                Navigating="OnMapNavigating" />
+
+            <VerticalStackLayout Margin="16,16,16,0" Spacing="10" VerticalOptions="Start">
+                <Border Padding="14,12" BackgroundColor="White" Stroke="#EEE6DA" StrokeThickness="1" StrokeShape="RoundRectangle 16">
+                    <Border.Shadow>
+                        <Shadow Brush="#16000000" Offset="0,5" Radius="14" Opacity="0.10" />
+                    </Border.Shadow>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <Label FontSize="18" Text="⌕" VerticalOptions="Center" TextColor="{StaticResource BrandTextMuted}" />
+                        <Entry Placeholder="{Binding SearchPlaceholderText}" Text="{Binding SearchText}" />
+                    </Grid>
+                </Border>
+
+                <Border Padding="10,7" BackgroundColor="White" HorizontalOptions="Start" Stroke="#EEE6DA" StrokeThickness="1" StrokeShape="RoundRectangle 16">
+                    <Border.Shadow>
+                        <Shadow Brush="#14000000" Offset="0,4" Radius="10" Opacity="0.08" />
+                    </Border.Shadow>
+                    <HorizontalStackLayout Spacing="6">
+                        <Label FontSize="15" Text="📍" />
+                        <Label FontFamily="OpenSansSemibold" Text="{Binding PoiChipText}" />
+                    </HorizontalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <VerticalStackLayout Margin="0,102,16,0" HorizontalOptions="End" Spacing="10" VerticalOptions="Start">
+                <Border WidthRequest="46" HeightRequest="46" Padding="0" BackgroundColor="White" Stroke="#EEE6DA" StrokeThickness="1" StrokeShape="RoundRectangle 23">
+                    <Border.Shadow>
+                        <Shadow Brush="#16000000" Offset="0,5" Radius="12" Opacity="0.10" />
+                    </Border.Shadow>
+                    <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding LayerButtonText}" />
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnToggleHeatmapTapped" />
+                    </Border.GestureRecognizers>
+                </Border>
+
+                <Border WidthRequest="46" HeightRequest="46" Padding="0" BackgroundColor="White" Stroke="#EEE6DA" StrokeThickness="1" StrokeShape="RoundRectangle 23">
+                    <Border.Shadow>
+                        <Shadow Brush="#16000000" Offset="0,5" Radius="12" Opacity="0.10" />
+                    </Border.Shadow>
+                    <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="17" Text="◎" TextColor="{StaticResource BrandTextSecondary}" />
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnCenterTapped" />
+                    </Border.GestureRecognizers>
+                </Border>
+
+                <Border WidthRequest="46" HeightRequest="46" Padding="0" BackgroundColor="White" Stroke="#EEE6DA" StrokeThickness="1" StrokeShape="RoundRectangle 23">
+                    <Border.Shadow>
+                        <Shadow Brush="#16000000" Offset="0,5" Radius="12" Opacity="0.10" />
+                    </Border.Shadow>
+                    <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="18" Text="➤" TextColor="{StaticResource BrandPrimary}" />
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnNextPoiTapped" />
+                    </Border.GestureRecognizers>
+                </Border>
+            </VerticalStackLayout>
+
+            <Border
+                Margin="0,0,18,122"
+                Padding="18,11"
+                BackgroundColor="{StaticResource BrandPrimary}"
+                HorizontalOptions="End"
+                StrokeThickness="0"
+                StrokeShape="RoundRectangle 22"
+                VerticalOptions="End">
+                <Border.Shadow>
+                    <Shadow Brush="#36F48A22" Offset="0,8" Radius="18" Opacity="0.26" />
+                </Border.Shadow>
+                <HorizontalStackLayout Spacing="8">
+                    <Label Text="⌕" TextColor="White" FontSize="18" />
+                    <Label Text="{Binding PoiActionText}" TextColor="White" FontFamily="OpenSansSemibold" />
+                </HorizontalStackLayout>
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnNextPoiTapped" />
+                </Border.GestureRecognizers>
+            </Border>
+
+        </Grid>
+
+        <controls:AppBottomBar Grid.Row="1" CurrentRoute="HomeMapPage" />
+    </Grid>
+</ContentPage>

@@ -1,0 +1,121 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:VinhKhanh.MobileApp.Controls"
+             x:Class="VinhKhanh.MobileApp.SettingsPage"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="{StaticResource BrandCanvas}">
+    <Grid RowDefinitions="*,Auto">
+        <ScrollView Grid.Row="0">
+            <VerticalStackLayout Padding="22,24,22,130" Spacing="18">
+                <Label Text="Cài đặt" FontSize="30" FontAttributes="Bold" />
+
+                <Label Text="NGÔN NGỮ" FontSize="13" FontAttributes="Bold" TextColor="{StaticResource BrandMuted}" CharacterSpacing="2" />
+                <Border Padding="8" BackgroundColor="White" Stroke="{StaticResource BrandStroke}" StrokeShape="RoundRectangle 28">
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Languages}" Spacing="0">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="12,16" ColumnDefinitions="Auto,*,Auto">
+                                    <Label Text="{Binding BadgeCode}" FontSize="18" FontAttributes="Bold" VerticalTextAlignment="Center" />
+                                    <Label Grid.Column="1" Margin="14,0,0,0" Text="{Binding DisplayName}" FontSize="18">
+                                        <Label.Triggers>
+                                            <DataTrigger TargetType="Label" Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="TextColor" Value="{StaticResource BrandOrange}" />
+                                                <Setter Property="FontAttributes" Value="Bold" />
+                                            </DataTrigger>
+                                        </Label.Triggers>
+                                    </Label>
+                                    <BoxView Grid.Column="2"
+                                             WidthRequest="8"
+                                             HeightRequest="8"
+                                             CornerRadius="4"
+                                             Color="{StaticResource BrandOrange}"
+                                             IsVisible="{Binding IsSelected}"
+                                             VerticalOptions="Center" />
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.SelectLanguageCommand}"
+                                                              CommandParameter="{Binding .}" />
+                                    </Grid.GestureRecognizers>
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Label Text="ÂM THANH &amp; THUYẾT MINH" FontSize="13" FontAttributes="Bold" TextColor="{StaticResource BrandMuted}" CharacterSpacing="2" />
+                <Border Padding="18" BackgroundColor="White" Stroke="{StaticResource BrandStroke}" StrokeShape="RoundRectangle 26">
+                    <VerticalStackLayout Spacing="18">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="Nghe tự động" FontSize="16" FontAttributes="Bold" />
+                                <Label Text="Tự động phát âm thanh khi mở địa điểm" FontSize="12" TextColor="{StaticResource BrandInkSoft}" />
+                            </VerticalStackLayout>
+                            <Switch x:Name="AutoNarrationSwitch" Grid.Column="1" Toggled="OnAutoNarrationToggled" />
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="Ưu tiên audio có sẵn" FontSize="16" FontAttributes="Bold" />
+                                <Label Text="Nếu có file thu âm sẵn sẽ phát trước TTS" FontSize="12" TextColor="{StaticResource BrandInkSoft}" />
+                            </VerticalStackLayout>
+                            <Switch x:Name="PreparedAudioSwitch" Grid.Column="1" Toggled="OnPreparedAudioToggled" />
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="Giọng đọc" FontSize="16" FontAttributes="Bold" />
+                                <Label Text="Chọn giọng đọc yêu thích" FontSize="12" TextColor="{StaticResource BrandInkSoft}" />
+                            </VerticalStackLayout>
+                            <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="Center">
+                                <Label Text="{Binding SelectedVoiceName}" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource BrandOrange}" />
+                                <Label Text="›" FontSize="22" TextColor="{StaticResource BrandOrange}" />
+                            </HorizontalStackLayout>
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnVoiceTapped" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Label Text="KHÁC" FontSize="13" FontAttributes="Bold" TextColor="{StaticResource BrandMuted}" CharacterSpacing="2" />
+                <Border Padding="12" BackgroundColor="White" Stroke="{StaticResource BrandStroke}" StrokeShape="RoundRectangle 26">
+                    <VerticalStackLayout Spacing="6">
+                        <Grid Padding="8,12" ColumnDefinitions="Auto,*,Auto">
+                            <Label Text="☾" FontSize="18" TextColor="{StaticResource BrandInkSoft}" />
+                            <Label Grid.Column="1" Margin="12,0,0,0" Text="Chế độ tối (Dark Mode)" FontSize="16" FontAttributes="Bold" />
+                            <Label Grid.Column="2" Text="›" FontSize="24" TextColor="{StaticResource BrandMuted}" />
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnPlaceholderTapped" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
+                        <Grid Padding="8,12" ColumnDefinitions="Auto,*,Auto">
+                            <Label Text="🛡" FontSize="18" TextColor="{StaticResource BrandInkSoft}" />
+                            <Label Grid.Column="1" Margin="12,0,0,0" Text="Quyền riêng tư" FontSize="16" FontAttributes="Bold" />
+                            <Label Grid.Column="2" Text="›" FontSize="24" TextColor="{StaticResource BrandMuted}" />
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnPlaceholderTapped" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
+                        <Grid Padding="8,12" ColumnDefinitions="Auto,*,Auto">
+                            <Label Text="ⓘ" FontSize="18" TextColor="{StaticResource BrandInkSoft}" />
+                            <Label Grid.Column="1" Margin="12,0,0,0" Text="Về ứng dụng" FontSize="16" FontAttributes="Bold" />
+                            <Label Grid.Column="2" Text="›" FontSize="24" TextColor="{StaticResource BrandMuted}" />
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnAboutTapped" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Label Text="VERSION 1.0.0 • MADE WITH ♥ IN HCMC"
+                       HorizontalTextAlignment="Center"
+                       FontSize="11"
+                       FontAttributes="Bold"
+                       CharacterSpacing="1"
+                       TextColor="#C3CAD6" />
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <controls:AppBottomBar Grid.Row="1" CurrentRoute="SettingsPage" />
+    </Grid>
+</ContentPage>

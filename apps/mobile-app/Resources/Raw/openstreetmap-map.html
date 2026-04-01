@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>OpenStreetMap</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  >
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #f0ece6;
+    }
+
+    .leaflet-container {
+      background: #f0ece6;
+    }
+
+    .leaflet-control-zoom,
+    .leaflet-control-attribution {
+      display: none;
+    }
+
+    .leaflet-tile {
+      filter: saturate(0.82) brightness(1.03);
+    }
+
+    .poi-marker {
+      position: relative;
+      width: 22px;
+      height: 22px;
+    }
+
+    .poi-marker__halo {
+      position: absolute;
+      inset: 0;
+      border-radius: 9999px;
+      transform: scale(1.7);
+      transition: transform 120ms ease, opacity 120ms ease;
+    }
+
+    .poi-marker__dot {
+      position: absolute;
+      inset: 0;
+      border-radius: 9999px;
+      border: 3px solid #ffffff;
+      box-shadow: 0 10px 18px rgba(15, 23, 42, 0.20);
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+
+    .poi-marker.selected .poi-marker__halo {
+      transform: scale(1.95);
+    }
+
+    .poi-marker.selected .poi-marker__dot {
+      transform: scale(1.1);
+      box-shadow: 0 12px 22px rgba(15, 23, 42, 0.24);
+    }
+
+    .heat-point {
+      width: 124px;
+      height: 124px;
+      margin-left: -62px;
+      margin-top: -62px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(244, 88, 34, 0.60) 0%, rgba(255, 177, 56, 0.34) 30%, rgba(255, 200, 76, 0.16) 54%, rgba(255, 200, 76, 0) 74%);
+      filter: blur(1.6px);
+      pointer-events: none;
+    }
+
+    .leaflet-popup-content-wrapper {
+      border-radius: 16px;
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .leaflet-popup-content {
+      margin: 12px 14px;
+      min-width: 180px;
+    }
+
+    .popup-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: #262626;
+    }
+
+    .popup-meta {
+      margin-top: 4px;
+      font-size: 11px;
+      color: #8b8b8b;
+    }
+
+    .popup-description {
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #5f5f5f;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+    const decodeBase64Json = (value) => {
+      const binary = window.atob(value);
+      return JSON.parse(decodeURIComponent(escape(binary)));
+    };
+
+    const DEFAULT_CENTER = [10.7578, 106.7033];
+    const DEFAULT_BROWSE_ZOOM = 15;
+    const SELECTION_RADIUS_METERS = 180;
+    const state = decodeBase64Json("__MAP_STATE_BASE64__");
+    const map = L.map("map", {
+      zoomControl: false,
+      preferCanvas: true,
+      attributionControl: false
+    }).setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM);
+
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      subdomains: "abcd",
+      maxZoom: 20,
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+    }).addTo(map);
+
+    const poiMarkers = new Map();
+    const heatLayers = [];
+    let selectedPoiId = state.selectedPoiId ?? null;
+
+    const haversineDistanceInMeters = (lat1, lng1, lat2, lng2) => {
+      const toRadians = (value) => (value * Math.PI) / 180;
+      const earthRadius = 6371000;
+      const dLat = toRadians(lat2 - lat1);
+      const dLng = toRadians(lng2 - lng1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRadians(lat1)) *
+          Math.cos(toRadians(lat2)) *
+          Math.sin(dLng / 2) *
+          Math.sin(dLng / 2);
+
+      return 2 * earthRadius * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
+
+    const createPoiIcon = (poi, selected) => {
+      const color = selected ? "#0f766e" : poi.isFeatured ? "#f97316" : "#1f2937";
+      const halo = selected ? "rgba(15, 118, 110, 0.18)" : "rgba(31, 41, 55, 0.12)";
+
+      return L.divIcon({
+        className: "",
+        html: `
+          <div class="poi-marker ${selected ? "selected" : ""}">
+            <span class="poi-marker__halo" style="background:${halo};"></span>
+            <span class="poi-marker__dot" style="background:${color};"></span>
+          </div>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
+      });
+    };
+
+    const createHeatIcon = (intensity) => L.divIcon({
+      className: "",
+      html: `<div class="heat-point" style="opacity:${Math.min(1, Math.max(0.32, intensity))}; transform: scale(${0.76 + intensity * 0.52});"></div>`,
+      iconSize: [124, 124],
+      iconAnchor: [62, 62]
+    });
+
+    const buildPopupHtml = (poi) => `
+      <div>
+        <p class="popup-title">${poi.title}</p>
+        <div class="popup-meta">${poi.category}${poi.isFeatured ? " • Nổi bật" : ""}</div>
+        <div class="popup-description">${poi.address}</div>
+      </div>`;
+
+    const setSelectedMarker = (poiId, openPopup) => {
+      selectedPoiId = poiId;
+      state.pois.forEach((poi) => {
+        const marker = poiMarkers.get(poi.id);
+        if (!marker) {
+          return;
+        }
+
+        marker.setIcon(createPoiIcon(poi, poi.id === poiId));
+        if (poi.id === poiId && openPopup) {
+          marker.openPopup();
+        }
+      });
+    };
+
+    const notifyPoiSelected = (poiId, openPopup) => {
+      if (!poiId || !poiMarkers.has(poiId)) {
+        return;
+      }
+
+      setSelectedMarker(poiId, openPopup);
+      window.location.href = `vkfood://select-poi/${encodeURIComponent(poiId)}`;
+    };
+
+    state.heatPoints.forEach((point) => {
+      const heat = L.marker([point.latitude, point.longitude], {
+        icon: createHeatIcon(point.intensity),
+        interactive: false,
+        keyboard: false
+      }).addTo(map);
+
+      heatLayers.push(heat);
+    });
+
+    state.pois.forEach((poi) => {
+      const marker = L.marker([poi.latitude, poi.longitude], {
+        icon: createPoiIcon(poi, poi.id === selectedPoiId),
+        keyboard: false
+      }).addTo(map);
+
+      marker.bindPopup(buildPopupHtml(poi));
+      marker.on("click", () => {
+        notifyPoiSelected(poi.id, true);
+      });
+
+      poiMarkers.set(poi.id, marker);
+    });
+
+    const fitMap = () => {
+      if (!state.pois.length) {
+        map.setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM, { animate: false });
+        return;
+      }
+
+      if (state.pois.length === 1) {
+        map.setView([state.pois[0].latitude, state.pois[0].longitude], 16, { animate: false });
+        return;
+      }
+
+      const bounds = L.latLngBounds(state.pois.map((poi) => [poi.latitude, poi.longitude]));
+      if (bounds.isValid()) {
+        map.fitBounds(bounds.pad(0.12), {
+          paddingTopLeft: [22, 92],
+          paddingBottomRight: [22, 150],
+          maxZoom: 16,
+          animate: false
+        });
+      }
+    };
+
+    map.on("click", (event) => {
+      const nearestPoi = state.pois
+        .map((poi) => ({
+          poi,
+          distance: haversineDistanceInMeters(event.latlng.lat, event.latlng.lng, poi.latitude, poi.longitude)
+        }))
+        .sort((left, right) => left.distance - right.distance)[0];
+
+      if (nearestPoi && nearestPoi.distance <= SELECTION_RADIUS_METERS) {
+        notifyPoiSelected(nearestPoi.poi.id, true);
+      }
+    });
+
+    fitMap();
+    if (selectedPoiId) {
+      setSelectedMarker(selectedPoiId, true);
+    }
+
+    window.vkFoodMap = {
+      selectPoi: (poiId) => {
+        if (!poiId || !poiMarkers.has(poiId)) {
+          return;
+        }
+
+        setSelectedMarker(poiId, true);
+      },
+      setHeatmapVisible: (isVisible) => {
+        heatLayers.forEach((heat) => {
+          const element = heat.getElement();
+          if (element) {
+            element.style.display = isVisible ? "block" : "none";
+          }
+        });
+      },
+      flyToCoordinate: (latitude, longitude, zoom, animate) => {
+        if (latitude == null || longitude == null) {
+          return;
+        }
+
+        map.flyTo([latitude, longitude], zoom || 17, {
+          animate: animate !== false,
+          duration: 0.35
+        });
+      }
+    };
+
+    window.vkFoodMap.setHeatmapVisible(state.isHeatmapVisible !== false);
+  </script>
+</body>
+</html>

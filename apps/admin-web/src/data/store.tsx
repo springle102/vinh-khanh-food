@@ -20,6 +20,7 @@ import type {
   Promotion,
   Review,
   SystemSetting,
+  TourRoute,
   Translation,
 } from "./types";
 
@@ -210,6 +211,10 @@ type AdminDataContextValue = {
     promotion: Omit<Promotion, "id"> & { id?: string },
     actor: AdminUser,
   ) => Promise<void>;
+  saveRoute: (
+    route: Omit<TourRoute, "id" | "updatedBy" | "updatedAt"> & { id?: string },
+    actor: AdminUser,
+  ) => Promise<void>;
   saveAudioGuide: (
     audioGuide: Omit<AudioGuide, "id" | "updatedAt" | "updatedBy"> & { id?: string },
     actor: AdminUser,
@@ -390,6 +395,30 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     [refreshData],
   );
 
+  const saveRoute = useCallback(
+    async (
+      route: Omit<TourRoute, "id" | "updatedBy" | "updatedAt"> & { id?: string },
+      actor: AdminUser,
+    ) => {
+      await adminApi.saveRoute({
+        id: route.id,
+        name: route.name,
+        theme: route.theme,
+        description: route.description,
+        durationMinutes: route.durationMinutes,
+        coverImageUrl: route.coverImageUrl,
+        stopPoiIds: route.stopPoiIds,
+        isActive: route.isActive,
+        actorName: actor.name,
+        actorRole: actor.role,
+        actorUserId: actor.id,
+      });
+
+      await refreshData();
+    },
+    [refreshData],
+  );
+
   const saveAudioGuide = useCallback(
     async (
       audioGuide: Omit<AudioGuide, "id" | "updatedAt" | "updatedBy"> & { id?: string },
@@ -488,6 +517,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       savePoi,
       saveUser,
       savePromotion,
+      saveRoute,
       saveAudioGuide,
       saveTranslation,
       saveReviewStatus,
@@ -506,6 +536,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       saveMediaAsset,
       savePoi,
       savePromotion,
+      saveRoute,
       saveCustomerUserStatus,
       saveReviewStatus,
       saveSettings,

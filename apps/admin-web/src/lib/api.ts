@@ -15,6 +15,7 @@ import type {
   ResolvedPoiNarration,
   Review,
   SystemSetting,
+  TourRoute,
   Translation,
 } from "../data/types";
 import type { AuthPortal } from "../features/auth/auth-routing";
@@ -33,6 +34,15 @@ export type AuthSessionResponse = {
   accessToken: string;
   refreshToken: string;
   expiresAt: string;
+};
+
+export type LoginAccountOption = {
+  userId: string;
+  name: string;
+  email: string;
+  role: AdminUser["role"];
+  status: "active" | "locked";
+  managedPoiId: string | null;
 };
 
 export type StoredFileResponse = {
@@ -204,6 +214,10 @@ export const getErrorMessage = (error: unknown) =>
 
 export const adminApi = {
   getBootstrap: () => request<AdminDataState>(appendScopeParams("/api/v1/bootstrap")),
+  getLoginOptions: (portal?: AuthPortal) => {
+    const query = portal ? `?portal=${encodeURIComponent(portal)}` : "";
+    return request<LoginAccountOption[]>(`/api/v1/auth/login-options${query}`);
+  },
   login: (email: string, password: string, portal?: AuthPortal) =>
     jsonRequest<AuthSessionResponse>("/api/v1/auth/login", "POST", { email, password, portal }),
   refresh: (refreshToken: string) =>
@@ -314,6 +328,24 @@ export const adminApi = {
       promotion.id ? `/api/v1/promotions/${promotion.id}` : "/api/v1/promotions",
       promotion.id ? "PUT" : "POST",
       promotion,
+    ),
+  saveRoute: (route: {
+    id?: string;
+    name: string;
+    theme: string;
+    description: string;
+    durationMinutes: number;
+    coverImageUrl: string;
+    stopPoiIds: string[];
+    isActive: boolean;
+    actorName: string;
+    actorRole: AdminUser["role"];
+    actorUserId: string;
+  }) =>
+    jsonRequest<TourRoute>(
+      route.id ? `/api/v1/tours/${route.id}` : "/api/v1/tours",
+      route.id ? "PUT" : "POST",
+      route,
     ),
   saveAudioGuide: (audioGuide: {
     id?: string;

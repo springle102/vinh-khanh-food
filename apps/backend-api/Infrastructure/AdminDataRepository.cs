@@ -311,6 +311,7 @@ public sealed partial class AdminDataRepository
             using var verifiedConnection = OpenConnection();
             EnsureRefreshSessionsTable(verifiedConnection);
             EnsureEndUserManagementSchema(verifiedConnection);
+            EnsureTourManagementSchema(verifiedConnection);
         }
         catch (SqlException exception)
         {
@@ -555,6 +556,207 @@ public sealed partial class AdminDataRepository
             BEGIN
                 CREATE INDEX IX_UserPoiVisits_UserId_VisitedAt
                 ON dbo.UserPoiVisits (UserId, VisitedAt DESC);
+            END;
+            """);
+    }
+
+    private void EnsureTourManagementSchema(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.Routes', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.Routes (
+                    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
+                    Name NVARCHAR(150) NOT NULL,
+                    Theme NVARCHAR(100) NOT NULL,
+                    [Description] NVARCHAR(MAX) NOT NULL,
+                    DurationMinutes INT NOT NULL,
+                    CoverImageUrl NVARCHAR(500) NOT NULL,
+                    Difficulty NVARCHAR(30) NOT NULL,
+                    IsFeatured BIT NOT NULL,
+                    IsActive BIT NOT NULL,
+                    UpdatedBy NVARCHAR(120) NOT NULL,
+                    UpdatedAt DATETIMEOFFSET(7) NOT NULL
+                );
+            END;
+
+            IF COL_LENGTH(N'dbo.Routes', N'Theme') IS NULL
+                ALTER TABLE dbo.Routes ADD Theme NVARCHAR(100) NULL;
+
+            IF COL_LENGTH(N'dbo.Routes', N'CoverImageUrl') IS NULL
+                ALTER TABLE dbo.Routes ADD CoverImageUrl NVARCHAR(500) NULL;
+
+            IF COL_LENGTH(N'dbo.Routes', N'Difficulty') IS NULL
+                ALTER TABLE dbo.Routes ADD Difficulty NVARCHAR(30) NULL;
+
+            IF COL_LENGTH(N'dbo.Routes', N'IsFeatured') IS NULL
+                ALTER TABLE dbo.Routes ADD IsFeatured BIT NULL;
+
+            IF COL_LENGTH(N'dbo.Routes', N'IsActive') IS NULL
+                ALTER TABLE dbo.Routes ADD IsActive BIT NULL;
+
+            IF COL_LENGTH(N'dbo.Routes', N'UpdatedBy') IS NULL
+                ALTER TABLE dbo.Routes ADD UpdatedBy NVARCHAR(120) NULL;
+
+            IF COL_LENGTH(N'dbo.Routes', N'UpdatedAt') IS NULL
+                ALTER TABLE dbo.Routes ADD UpdatedAt DATETIMEOFFSET(7) NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE dbo.Routes
+            SET Name = CASE NULLIF(LTRIM(RTRIM(Name)), N'')
+                    WHEN N'Khoi dau 45 phut' THEN N'Khởi đầu 45 phút'
+                    WHEN N'Hai san buoi toi' THEN N'Hải sản buổi tối'
+                    ELSE Name
+                END,
+                Theme = CASE
+                    WHEN NULLIF(LTRIM(RTRIM(Theme)), N'') = N'An vat' THEN N'Ăn vặt'
+                    WHEN NULLIF(LTRIM(RTRIM(Theme)), N'') = N'Hai san' THEN N'Hải sản'
+                    WHEN NULLIF(LTRIM(RTRIM(Theme)), N'') = N'Buoi toi' THEN N'Buổi tối'
+                    WHEN NULLIF(LTRIM(RTRIM(Theme)), N'') = N'Khach quoc te' THEN N'Khách quốc tế'
+                    WHEN NULLIF(LTRIM(RTRIM(Theme)), N'') = N'Gia dinh' THEN N'Gia đình'
+                    WHEN NULLIF(LTRIM(RTRIM(Theme)), N'') = N'Tong hop' THEN N'Tổng hợp'
+                    ELSE COALESCE(
+                        NULLIF(LTRIM(RTRIM(Theme)), N''),
+                        CASE
+                            WHEN LOWER(COALESCE(Difficulty, N'')) = N'foodie' THEN N'Hải sản'
+                            WHEN LOWER(COALESCE(Difficulty, N'')) = N'easy' THEN N'Tổng hợp'
+                            ELSE N'Tổng hợp'
+                        END)
+                END,
+                [Description] = CASE NULLIF(LTRIM(RTRIM([Description])), N'')
+                    WHEN N'Tour ngan cho khach moi den, uu tien cac POI noi bat va nhung mon de tiep can.'
+                        THEN N'Tour ngắn cho khách mới đến, ưu tiên các POI nổi bật và những món dễ tiếp cận.'
+                    WHEN N'Tour buoi toi tap trung vao mon nuong, oc va khong khi pho am thuc ve dem.'
+                        THEN N'Tour buổi tối tập trung vào món nướng, ốc và không khí phố ẩm thực về đêm.'
+                    ELSE [Description]
+                END,
+                CoverImageUrl = COALESCE(NULLIF(LTRIM(RTRIM(CoverImageUrl)), N''), N''),
+                Difficulty = COALESCE(NULLIF(LTRIM(RTRIM(Difficulty)), N''), N'custom'),
+                IsFeatured = COALESCE(IsFeatured, CAST(0 AS bit)),
+                IsActive = COALESCE(IsActive, CAST(1 AS bit)),
+                UpdatedBy = CASE
+                    WHEN NULLIF(LTRIM(RTRIM(UpdatedBy)), N'') = N'Minh Anh' THEN N'Minh Ánh'
+                    ELSE COALESCE(NULLIF(LTRIM(RTRIM(UpdatedBy)), N''), N'SYSTEM')
+                END,
+                UpdatedAt = COALESCE(UpdatedAt, SYSDATETIMEOFFSET());
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Routes')
+                    AND name = N'Theme'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Routes ALTER COLUMN Theme NVARCHAR(100) NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Routes')
+                    AND name = N'CoverImageUrl'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Routes ALTER COLUMN CoverImageUrl NVARCHAR(500) NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Routes')
+                    AND name = N'Difficulty'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Routes ALTER COLUMN Difficulty NVARCHAR(30) NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Routes')
+                    AND name = N'IsFeatured'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Routes ALTER COLUMN IsFeatured BIT NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Routes')
+                    AND name = N'IsActive'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Routes ALTER COLUMN IsActive BIT NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Routes')
+                    AND name = N'UpdatedBy'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Routes ALTER COLUMN UpdatedBy NVARCHAR(120) NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Routes')
+                    AND name = N'UpdatedAt'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Routes ALTER COLUMN UpdatedAt DATETIMEOFFSET(7) NOT NULL;
+            END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.RouteStops', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.RouteStops (
+                    RouteId NVARCHAR(50) NOT NULL,
+                    StopOrder INT NOT NULL,
+                    PoiId NVARCHAR(50) NOT NULL,
+                    PRIMARY KEY (RouteId, StopOrder)
+                );
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.foreign_keys
+                WHERE name = N'FK_RouteStops_Routes'
+            )
+            BEGIN
+                ALTER TABLE dbo.RouteStops
+                ADD CONSTRAINT FK_RouteStops_Routes FOREIGN KEY (RouteId) REFERENCES dbo.Routes(Id);
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.foreign_keys
+                WHERE name = N'FK_RouteStops_Pois'
+            )
+            BEGIN
+                ALTER TABLE dbo.RouteStops
+                ADD CONSTRAINT FK_RouteStops_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id);
             END;
             """);
     }
