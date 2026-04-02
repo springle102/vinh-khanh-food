@@ -75,6 +75,7 @@
                 Padding="18,11"
                 BackgroundColor="{StaticResource BrandPrimary}"
                 HorizontalOptions="End"
+                IsVisible="{Binding IsFloatingPoiActionVisible}"
                 StrokeThickness="0"
                 StrokeShape="RoundRectangle 22"
                 VerticalOptions="End">
@@ -89,6 +90,10 @@
                     <TapGestureRecognizer Tapped="OnNextPoiTapped" />
                 </Border.GestureRecognizers>
             </Border>
+
+            <controls:POIDetailBottomSheet
+                x:Name="PoiDetailBottomSheet"
+                CloseCommand="{Binding CloseBottomSheetCommand}" />
 
         </Grid>
 

@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="VinhKhanh.MobileApp.Controls.POIDetailBottomSheet"
+    x:Name="SheetRoot"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:viewModels="clr-namespace:VinhKhanh.MobileApp.ViewModels"
+    x:DataType="viewModels:HomeMapViewModel"
+    IsVisible="False"
+    SizeChanged="OnRootSizeChanged">
+
+    <Grid Padding="12,0,12,12" CascadeInputTransparent="False" InputTransparent="True">
+        <Border
+            x:Name="SheetBorder"
+            BackgroundColor="White"
+            InputTransparent="False"
+            MaximumHeightRequest="520"
+            Opacity="0"
+            Padding="0"
+            Stroke="#EEDFD0"
+            StrokeShape="RoundRectangle 26"
+            TranslationY="48"
+            VerticalOptions="End">
+            <Border.Shadow>
+                <Shadow Brush="#22000000" Offset="0,-4" Radius="24" Opacity="0.22" />
+            </Border.Shadow>
+            <Border.GestureRecognizers>
+                <PanGestureRecognizer PanUpdated="OnSheetPanUpdated" />
+            </Border.GestureRecognizers>
+
+            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                <Grid Padding="0,10,0,4">
+                    <Border
+                        BackgroundColor="#E8DFD4"
+                        HeightRequest="5"
+                        HorizontalOptions="Center"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 3"
+                        WidthRequest="54" />
+                </Grid>
+
+                <Grid Grid.Row="1" HeightRequest="196">
+                    <CarouselView
+                        x:Name="ImageCarousel"
+                        IndicatorView="{x:Reference SheetIndicator}"
+                        ItemsSource="{Binding DetailImages}">
+                        <CarouselView.ItemTemplate>
+                            <DataTemplate x:DataType="{x:Null}">
+                                <Grid>
+                                    <Image Aspect="AspectFill" Source="{Binding .}" />
+                                    <Grid>
+                                        <Grid.Background>
+                                            <LinearGradientBrush EndPoint="0,1">
+                                                <GradientStop Color="#05000000" Offset="0.0" />
+                                                <GradientStop Color="#26000000" Offset="0.8" />
+                                                <GradientStop Color="#3F000000" Offset="1.0" />
+                                            </LinearGradientBrush>
+                                        </Grid.Background>
+                                    </Grid>
+                                </Grid>
+                            </DataTemplate>
+                        </CarouselView.ItemTemplate>
+                    </CarouselView>
+
+                    <Border
+                        BackgroundColor="#FDF2E2"
+                        HorizontalOptions="Start"
+                        IsVisible="{Binding IsFeaturedPoi}"
+                        Margin="14,14,0,0"
+                        Padding="10,6"
+                        Stroke="#F0C48F"
+                        StrokeShape="RoundRectangle 14"
+                        VerticalOptions="Start">
+                        <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding FeaturedBadgeText}" TextColor="#A85D10" />
+                    </Border>
+
+                    <Border
+                        BackgroundColor="#B2111720"
+                        HorizontalOptions="End"
+                        IsVisible="{Binding IsPoiDetailLoading}"
+                        Margin="0,0,14,14"
+                        Padding="10,6"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 14"
+                        VerticalOptions="End">
+                        <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding DetailLoadingText}" TextColor="White" />
+                    </Border>
+
+                    <IndicatorView
+                        x:Name="SheetIndicator"
+                        HorizontalOptions="Center"
+                        IndicatorColor="#D6C3AE"
+                        Margin="0,0,0,14"
+                        SelectedIndicatorColor="White"
+                        VerticalOptions="End" />
+                </Grid>
+
+                <ScrollView Grid.Row="2">
+                    <VerticalStackLayout x:Name="SheetContent" Padding="18,18,18,0" Spacing="14">
+                        <VerticalStackLayout Spacing="8">
+                            <Label
+                                FontFamily="OpenSansSemibold"
+                                FontSize="26"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding SelectedPoiTitle}" />
+
+                            <HorizontalStackLayout Spacing="10">
+                                <Border
+                                    BackgroundColor="#FFF2E3"
+                                    Padding="10,6"
+                                    Stroke="#F1D2AE"
+                                    StrokeShape="RoundRectangle 14">
+                                    <HorizontalStackLayout Spacing="6">
+                                        <Label FontFamily="OpenSansSemibold" FontSize="12" Text="★" TextColor="#D97706" />
+                                        <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding SelectedPoiRatingText}" TextColor="#8A4B0D" />
+                                    </HorizontalStackLayout>
+                                </Border>
+
+                                <Border
+                                    BackgroundColor="#F7F4F0"
+                                    Padding="10,6"
+                                    Stroke="#E8DFD4"
+                                    StrokeShape="RoundRectangle 14">
+                                    <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding SelectedPoiCategory}" TextColor="{StaticResource BrandTextPrimary}" />
+                                </Border>
+
+                                <Border
+                                    BackgroundColor="#F7F4F0"
+                                    IsVisible="{Binding HasReviewSummary}"
+                                    Padding="10,6"
+                                    Stroke="#E8DFD4"
+                                    StrokeShape="RoundRectangle 14">
+                                    <Label FontSize="12" Text="{Binding SelectedPoiReviewText}" TextColor="{StaticResource BrandTextSecondary}" />
+                                </Border>
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+
+                        <Border
+                            BackgroundColor="#FBF8F3"
+                            Padding="12,10"
+                            Stroke="#EEE2D6"
+                            StrokeShape="RoundRectangle 18">
+                            <VerticalStackLayout Spacing="6">
+                                <Label FontFamily="OpenSansSemibold" FontSize="13" Text="{Binding AddressLabelText}" TextColor="{StaticResource BrandTextMuted}" />
+                                <Label LineBreakMode="WordWrap" Text="{Binding SelectedPoiAddress}" />
+                            </VerticalStackLayout>
+                        </Border>
+
+                        <VerticalStackLayout Spacing="8">
+                            <Label
+                                FontSize="15"
+                                LineBreakMode="TailTruncation"
+                                MaxLines="2"
+                                Text="{Binding SelectedPoiSummary}"
+                                TextColor="{StaticResource BrandTextSecondary}" />
+                            <Label
+                                FontSize="14"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding SelectedPoiDescription}"
+                                TextColor="{StaticResource BrandTextPrimary}" />
+                        </VerticalStackLayout>
+
+                        <Border
+                            BackgroundColor="#F8F3EC"
+                            IsVisible="{Binding IsPoiDetailLoading}"
+                            Padding="14"
+                            Stroke="#EADFD3"
+                            StrokeShape="RoundRectangle 18">
+                            <VerticalStackLayout Spacing="10">
+                                <BoxView Color="#E6DDD1" CornerRadius="8" HeightRequest="14" WidthRequest="170" />
+                                <BoxView Color="#EEE5DA" CornerRadius="8" HeightRequest="12" />
+                                <BoxView Color="#EEE5DA" CornerRadius="8" HeightRequest="12" WidthRequest="240" />
+                            </VerticalStackLayout>
+                        </Border>
+                    </VerticalStackLayout>
+                </ScrollView>
+
+                <Grid Grid.Row="3" Padding="18,16,18,18" ColumnDefinitions="*,*,*">
+                    <Border
+                        BackgroundColor="{StaticResource BrandPrimary}"
+                        Grid.Column="0"
+                        Margin="0,0,8,0"
+                        Padding="10,12"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 18">
+                        <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
+                            <Label FontSize="17" HorizontalTextAlignment="Center" Text="▶" TextColor="White" />
+                            <Label FontFamily="OpenSansSemibold" FontSize="11" HorizontalTextAlignment="Center" Text="{Binding ListenActionText}" TextColor="White" />
+                        </VerticalStackLayout>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding PlayNarrationCommand}" />
+                        </Border.GestureRecognizers>
+                    </Border>
+
+                    <Border
+                        BackgroundColor="#FAF6F0"
+                        Grid.Column="1"
+                        Margin="4,0"
+                        Padding="10,12"
+                        Stroke="#E6D9CA"
+                        StrokeShape="RoundRectangle 18">
+                        <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
+                            <Label FontSize="17" HorizontalTextAlignment="Center" Text="↗" TextColor="{StaticResource BrandPrimary}" />
+                            <Label FontFamily="OpenSansSemibold" FontSize="11" HorizontalTextAlignment="Center" Text="{Binding DirectionsActionText}" TextColor="{StaticResource BrandTextPrimary}" />
+                        </VerticalStackLayout>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding OpenDirectionsCommand}" />
+                        </Border.GestureRecognizers>
+                    </Border>
+
+                    <Border
+                        BackgroundColor="#FFF1EE"
+                        Grid.Column="2"
+                        Margin="8,0,0,0"
+                        Padding="10,12"
+                        Stroke="#F2D5CF"
+                        StrokeShape="RoundRectangle 18">
+                        <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
+                            <Label FontSize="17" HorizontalTextAlignment="Center" Text="♥" TextColor="#D15A3C" />
+                            <Label FontFamily="OpenSansSemibold" FontSize="11" HorizontalTextAlignment="Center" Text="{Binding SaveActionText}" TextColor="{StaticResource BrandTextPrimary}" />
+                        </VerticalStackLayout>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding ToggleSaveToTourCommand}" />
+                        </Border.GestureRecognizers>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</ContentView>

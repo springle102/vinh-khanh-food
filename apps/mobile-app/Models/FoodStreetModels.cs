@@ -17,6 +17,23 @@ public sealed class LanguageOption : ObservableObject
     }
 }
 
+public sealed class LocalizedTextSet
+{
+    private readonly Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyDictionary<string, string> Values => _values;
+
+    public void Set(string languageCode, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(languageCode) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        _values[languageCode.Trim()] = value.Trim();
+    }
+}
+
 public sealed class PoiLocation
 {
     public string Id { get; set; } = string.Empty;
@@ -31,6 +48,23 @@ public sealed class PoiLocation
     public bool IsFeatured { get; set; }
     public double HeatIntensity { get; set; }
     public string DistanceText { get; set; } = string.Empty;
+}
+
+public sealed class PoiExperienceDetail
+{
+    public string Id { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string Address { get; set; } = string.Empty;
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public double Rating { get; set; }
+    public int ReviewCount { get; set; }
+    public bool IsFeatured { get; set; }
+    public LocalizedTextSet Name { get; } = new();
+    public LocalizedTextSet Summary { get; } = new();
+    public LocalizedTextSet Description { get; } = new();
+    public LocalizedTextSet AudioUrls { get; } = new();
+    public List<string> Images { get; set; } = [];
 }
 
 public sealed class MapHeatPoint

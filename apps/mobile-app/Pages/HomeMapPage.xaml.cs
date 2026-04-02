@@ -30,6 +30,7 @@ public partial class HomeMapPage : ContentPage
         base.OnAppearing();
         await _viewModel.LoadAsync();
         await RenderMapAsync();
+        await PoiDetailBottomSheet.SetPresentedAsync(_viewModel.IsBottomSheetVisible);
     }
 
     private async void OnMapNavigated(object? sender, WebNavigatedEventArgs e)
@@ -46,13 +47,24 @@ public partial class HomeMapPage : ContentPage
     private async void OnMapNavigating(object? sender, WebNavigatingEventArgs e)
     {
         if (!Uri.TryCreate(e.Url, UriKind.Absolute, out var uri) ||
-            !string.Equals(uri.Scheme, "vkfood", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(uri.Host, "select-poi", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(uri.Scheme, "vkfood", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         e.Cancel = true;
+
+        if (string.Equals(uri.Host, "dismiss-detail", StringComparison.OrdinalIgnoreCase))
+        {
+            await _viewModel.CloseBottomSheetCommand.ExecuteAsync();
+            return;
+        }
+
+        if (!string.Equals(uri.Host, "select-poi", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         var poiId = Uri.UnescapeDataString(uri.AbsolutePath.Trim('/'));
         if (!string.IsNullOrWhiteSpace(poiId))
         {
@@ -87,6 +99,7 @@ public partial class HomeMapPage : ContentPage
 
         var payload = new
         {
+            featuredLabel = _viewModel.FeaturedBadgeText,
             selectedPoiId = _viewModel.SelectedPoi?.Id,
             isHeatmapVisible = _viewModel.IsHeatmapVisible,
             pois = _viewModel.Pois.Select(poi => new
@@ -120,9 +133,38 @@ public partial class HomeMapPage : ContentPage
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(HomeMapViewModel.SelectedPoi) or nameof(HomeMapViewModel.IsHeatmapVisible) or "")
+        switch (e.PropertyName)
         {
-            MainThread.BeginInvokeOnMainThread(() => _ = RefreshMapStateAsync());
+            case nameof(HomeMapViewModel.MapDataVersion):
+                MainThread.BeginInvokeOnMainThread(() => _ = RenderMapAsync());
+                break;
+
+            case nameof(HomeMapViewModel.SelectedPoi):
+                MainThread.BeginInvokeOnMainThread(async () =>
+                {
+                    await RefreshMapStateAsync();
+                    if (_viewModel.SelectedPoi is not null)
+                    {
+                        await FlyToCoordinateAsync(_viewModel.SelectedPoi.Latitude, _viewModel.SelectedPoi.Longitude, 17);
+                    }
+                });
+                break;
+
+            case nameof(HomeMapViewModel.IsHeatmapVisible):
+                MainThread.BeginInvokeOnMainThread(() => _ = RefreshMapStateAsync());
+                break;
+
+            case nameof(HomeMapViewModel.IsBottomSheetVisible):
+                MainThread.BeginInvokeOnMainThread(() => _ = PoiDetailBottomSheet.SetPresentedAsync(_viewModel.IsBottomSheetVisible));
+                break;
+
+            case nameof(HomeMapViewModel.SelectedPoiDetail):
+                MainThread.BeginInvokeOnMainThread(() => _ = PoiDetailBottomSheet.AnimateContentRefreshAsync());
+                break;
+
+            case "":
+                MainThread.BeginInvokeOnMainThread(() => _ = RefreshMapStateAsync());
+                break;
         }
     }
 

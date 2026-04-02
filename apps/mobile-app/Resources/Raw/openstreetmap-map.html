@@ -50,6 +50,23 @@
       transition: transform 120ms ease, opacity 120ms ease;
     }
 
+    @keyframes selected-marker-pulse {
+      0% {
+        transform: scale(1.78);
+        opacity: 0.88;
+      }
+
+      50% {
+        transform: scale(2.06);
+        opacity: 0.38;
+      }
+
+      100% {
+        transform: scale(1.78);
+        opacity: 0.88;
+      }
+    }
+
     .poi-marker__dot {
       position: absolute;
       inset: 0;
@@ -61,6 +78,7 @@
 
     .poi-marker.selected .poi-marker__halo {
       transform: scale(1.95);
+      animation: selected-marker-pulse 1.8s ease-in-out infinite;
     }
 
     .poi-marker.selected .poi-marker__dot {
@@ -134,7 +152,7 @@
       attributionControl: false
     }).setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM);
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
       subdomains: "abcd",
       maxZoom: 20,
       attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
@@ -182,12 +200,15 @@
       iconAnchor: [62, 62]
     });
 
-    const buildPopupHtml = (poi) => `
+    const buildPopupHtml = (poi) => {
+      const featuredText = poi.isFeatured && state.featuredLabel ? ` • ${state.featuredLabel}` : "";
+      return `
       <div>
         <p class="popup-title">${poi.title}</p>
-        <div class="popup-meta">${poi.category}${poi.isFeatured ? " • Nổi bật" : ""}</div>
+        <div class="popup-meta">${poi.category}${featuredText}</div>
         <div class="popup-description">${poi.address}</div>
       </div>`;
+    };
 
     const setSelectedMarker = (poiId, openPopup) => {
       selectedPoiId = poiId;
@@ -200,7 +221,10 @@
         marker.setIcon(createPoiIcon(poi, poi.id === poiId));
         if (poi.id === poiId && openPopup) {
           marker.openPopup();
+          return;
         }
+
+        marker.closePopup();
       });
     };
 
@@ -269,6 +293,9 @@
 
       if (nearestPoi && nearestPoi.distance <= SELECTION_RADIUS_METERS) {
         notifyPoiSelected(nearestPoi.poi.id, true);
+      } else if (selectedPoiId) {
+        setSelectedMarker(null, false);
+        window.location.href = "vkfood://dismiss-detail";
       }
     });
 
@@ -279,7 +306,12 @@
 
     window.vkFoodMap = {
       selectPoi: (poiId) => {
-        if (!poiId || !poiMarkers.has(poiId)) {
+        if (!poiId) {
+          setSelectedMarker(null, false);
+          return;
+        }
+
+        if (!poiMarkers.has(poiId)) {
           return;
         }
 

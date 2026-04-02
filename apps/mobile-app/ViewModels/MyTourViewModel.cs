@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Microsoft.Maui.ApplicationModel;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 using VinhKhanh.MobileApp.Services;
@@ -18,7 +19,7 @@ public sealed class MyTourViewModel : BaseViewModel
     {
         _dataService = dataService;
         _languageService = languageService;
-        _languageService.LanguageChanged += (_, _) => RefreshLocalizedTexts();
+        _languageService.LanguageChanged += OnLanguageChanged;
     }
 
     public ObservableCollection<TourStop> Stops { get; } = [];
@@ -64,5 +65,20 @@ public sealed class MyTourViewModel : BaseViewModel
         OnPropertyChanged(nameof(HeaderTitleText));
         OnPropertyChanged(nameof(CreateTourText));
         OnPropertyChanged(nameof(CheckpointTitleText));
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            try
+            {
+                await LoadAsync();
+            }
+            catch
+            {
+                RefreshLocalizedTexts();
+            }
+        });
     }
 }

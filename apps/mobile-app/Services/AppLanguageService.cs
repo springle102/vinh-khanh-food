@@ -14,7 +14,7 @@ public interface IAppLanguageService
 
 public sealed class AppLanguageService : IAppLanguageService
 {
-    private const string PreferenceKey = "vkfood.language";
+    private const string PreferenceFileName = "vkfood.language.txt";
     private const string DefaultLanguage = "vi";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -63,7 +63,16 @@ public sealed class AppLanguageService : IAppLanguageService
                 ["bottom_qr"] = "Quét QR",
                 ["bottom_settings"] = "Cài Đặt",
                 ["bottom_poi"] = "Tìm POI",
-                ["bottom_tour"] = "Tour Của Tôi"
+                ["bottom_tour"] = "Tour Của Tôi",
+                ["poi_detail_listen"] = "Nghe thuyết minh",
+                ["poi_detail_directions"] = "Chỉ đường",
+                ["poi_detail_save"] = "Lưu vào tour",
+                ["poi_detail_saved"] = "Đã lưu",
+                ["poi_detail_loading"] = "Đang tải thông tin...",
+                ["poi_detail_featured"] = "Nổi bật",
+                ["poi_detail_reviews"] = "đánh giá",
+                ["poi_detail_no_selection"] = "Chọn một địa điểm trên bản đồ",
+                ["poi_detail_address"] = "Địa chỉ"
             },
             ["en"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -103,7 +112,16 @@ public sealed class AppLanguageService : IAppLanguageService
                 ["bottom_qr"] = "Scan QR",
                 ["bottom_settings"] = "Settings",
                 ["bottom_poi"] = "Find POI",
-                ["bottom_tour"] = "My Tour"
+                ["bottom_tour"] = "My Tour",
+                ["poi_detail_listen"] = "Listen",
+                ["poi_detail_directions"] = "Directions",
+                ["poi_detail_save"] = "Save to tour",
+                ["poi_detail_saved"] = "Saved",
+                ["poi_detail_loading"] = "Loading details...",
+                ["poi_detail_featured"] = "Featured",
+                ["poi_detail_reviews"] = "reviews",
+                ["poi_detail_no_selection"] = "Select a place on the map",
+                ["poi_detail_address"] = "Address"
             },
             ["zh-CN"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -143,7 +161,16 @@ public sealed class AppLanguageService : IAppLanguageService
                 ["bottom_qr"] = "扫码",
                 ["bottom_settings"] = "设置",
                 ["bottom_poi"] = "找 POI",
-                ["bottom_tour"] = "我的行程"
+                ["bottom_tour"] = "我的行程",
+                ["poi_detail_listen"] = "收听讲解",
+                ["poi_detail_directions"] = "路线",
+                ["poi_detail_save"] = "保存到行程",
+                ["poi_detail_saved"] = "已保存",
+                ["poi_detail_loading"] = "正在加载详情...",
+                ["poi_detail_featured"] = "精选",
+                ["poi_detail_reviews"] = "条评价",
+                ["poi_detail_no_selection"] = "请在地图上选择地点",
+                ["poi_detail_address"] = "地址"
             },
             ["ko"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -183,7 +210,16 @@ public sealed class AppLanguageService : IAppLanguageService
                 ["bottom_qr"] = "QR 스캔",
                 ["bottom_settings"] = "설정",
                 ["bottom_poi"] = "POI 찾기",
-                ["bottom_tour"] = "내 투어"
+                ["bottom_tour"] = "내 투어",
+                ["poi_detail_listen"] = "오디오 가이드",
+                ["poi_detail_directions"] = "길찾기",
+                ["poi_detail_save"] = "투어에 저장",
+                ["poi_detail_saved"] = "저장됨",
+                ["poi_detail_loading"] = "정보를 불러오는 중...",
+                ["poi_detail_featured"] = "추천",
+                ["poi_detail_reviews"] = "개 후기",
+                ["poi_detail_no_selection"] = "지도에서 장소를 선택하세요",
+                ["poi_detail_address"] = "주소"
             },
             ["ja"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -223,7 +259,16 @@ public sealed class AppLanguageService : IAppLanguageService
                 ["bottom_qr"] = "QR",
                 ["bottom_settings"] = "設定",
                 ["bottom_poi"] = "POI検索",
-                ["bottom_tour"] = "マイツアー"
+                ["bottom_tour"] = "マイツアー",
+                ["poi_detail_listen"] = "音声ガイド",
+                ["poi_detail_directions"] = "経路",
+                ["poi_detail_save"] = "ツアーに保存",
+                ["poi_detail_saved"] = "保存済み",
+                ["poi_detail_loading"] = "詳細を読み込み中...",
+                ["poi_detail_featured"] = "注目",
+                ["poi_detail_reviews"] = "件のレビュー",
+                ["poi_detail_no_selection"] = "地図でスポットを選択してください",
+                ["poi_detail_address"] = "住所"
             },
             ["fr"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -263,7 +308,16 @@ public sealed class AppLanguageService : IAppLanguageService
                 ["bottom_qr"] = "QR",
                 ["bottom_settings"] = "Réglages",
                 ["bottom_poi"] = "Trouver POI",
-                ["bottom_tour"] = "Mon Tour"
+                ["bottom_tour"] = "Mon Tour",
+                ["poi_detail_listen"] = "Écouter",
+                ["poi_detail_directions"] = "Itinéraire",
+                ["poi_detail_save"] = "Enregistrer",
+                ["poi_detail_saved"] = "Enregistré",
+                ["poi_detail_loading"] = "Chargement des détails...",
+                ["poi_detail_featured"] = "À la une",
+                ["poi_detail_reviews"] = "avis",
+                ["poi_detail_no_selection"] = "Sélectionnez un lieu sur la carte",
+                ["poi_detail_address"] = "Adresse"
             }
         };
 
@@ -285,7 +339,7 @@ public sealed class AppLanguageService : IAppLanguageService
 
     public async Task InitializeAsync()
     {
-        var languageCode = Preferences.Default.Get(PreferenceKey, DefaultLanguage);
+        var languageCode = await LoadSavedLanguageAsync() ?? DefaultLanguage;
         await SetLanguageAsync(languageCode);
     }
 
@@ -308,7 +362,7 @@ public sealed class AppLanguageService : IAppLanguageService
 
         CurrentLanguage = normalizedCode;
         _texts = mergedTexts;
-        Preferences.Default.Set(PreferenceKey, normalizedCode);
+        await SaveLanguageAsync(normalizedCode);
         _eventManager.HandleEvent(this, EventArgs.Empty, nameof(LanguageChanged));
     }
 
@@ -351,6 +405,46 @@ public sealed class AppLanguageService : IAppLanguageService
         return texts;
     }
 
+    private static async Task<string?> LoadSavedLanguageAsync()
+    {
+        try
+        {
+            var path = GetPreferenceFilePath();
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            var value = (await File.ReadAllTextAsync(path)).Trim();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task SaveLanguageAsync(string languageCode)
+    {
+        try
+        {
+            var path = GetPreferenceFilePath();
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await File.WriteAllTextAsync(path, languageCode);
+        }
+        catch
+        {
+            // Best effort persistence only.
+        }
+    }
+
+    private static string GetPreferenceFilePath()
+        => Path.Combine(FileSystem.Current.AppDataDirectory, PreferenceFileName);
     private static string NormalizeLanguageCode(string? languageCode)
     {
         if (string.IsNullOrWhiteSpace(languageCode))

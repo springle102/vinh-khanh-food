@@ -19,6 +19,8 @@ public static class MauiProgram
 
         builder.Services.AddSingleton<IAppLanguageService, AppLanguageService>();
         builder.Services.AddSingleton<IFoodStreetDataService, FoodStreetMockDataService>();
+        builder.Services.AddSingleton<IPoiNarrationService, PoiNarrationService>();
+        builder.Services.AddSingleton<IPoiTourStoreService, PoiTourStoreService>();
 
         builder.Services.AddTransient<QRSuccessLanguageViewModel>();
         builder.Services.AddTransient<LoginViewModel>();

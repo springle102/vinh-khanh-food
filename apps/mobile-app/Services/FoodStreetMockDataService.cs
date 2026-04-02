@@ -12,6 +12,7 @@ public interface IFoodStreetDataService
     Task<IReadOnlyList<LanguageOption>> GetLanguagesAsync();
     Task<IReadOnlyList<PoiLocation>> GetPoisAsync();
     Task<IReadOnlyList<MapHeatPoint>> GetHeatPointsAsync();
+    Task<PoiExperienceDetail?> GetPoiDetailAsync(string poiId);
     Task<TourPlan> GetTourPlanAsync();
     Task<UserProfileCard> GetUserProfileAsync();
     Task<IReadOnlyList<SettingsMenuItem>> GetSettingsMenuAsync();
@@ -118,7 +119,11 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
     public FoodStreetMockDataService(IAppLanguageService languageService)
     {
         _languageService = languageService;
-        _languageService.LanguageChanged += (_, _) => _bootstrapSnapshot = null;
+        _languageService.LanguageChanged += (_, _) =>
+        {
+            _bootstrapSnapshot = null;
+            _detailCache.Clear();
+        };
     }
 
     public Task<IReadOnlyList<LanguageOption>> GetLanguagesAsync()
@@ -133,7 +138,7 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
     public async Task<IReadOnlyList<PoiLocation>> GetPoisAsync()
     {
         var snapshot = await GetBootstrapSnapshotAsync();
-        return snapshot?.Pois.Count > 0 ? snapshot.Pois : FallbackPois;
+        return snapshot?.Pois.Count > 0 ? snapshot.Pois : BuildLocalizedFallbackPois();
     }
 
     public async Task<IReadOnlyList<MapHeatPoint>> GetHeatPointsAsync()
@@ -142,29 +147,60 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
         return snapshot?.HeatPoints.Count > 0 ? snapshot.HeatPoints : FallbackHeatPoints;
     }
 
+    public async Task<PoiExperienceDetail?> GetPoiDetailAsync(string poiId)
+    {
+        if (string.IsNullOrWhiteSpace(poiId))
+        {
+            return null;
+        }
+
+        if (_detailCache.TryGetValue(poiId, out var cachedDetail))
+        {
+            return cachedDetail;
+        }
+
+        var snapshot = await GetBootstrapSnapshotAsync();
+        if (snapshot?.PoiDetails.TryGetValue(poiId, out var detail) == true)
+        {
+            _detailCache[poiId] = detail;
+            return detail;
+        }
+
+        var fallbackDetail = BuildFallbackPoiDetail(poiId);
+        if (fallbackDetail is not null)
+        {
+            _detailCache[poiId] = fallbackDetail;
+        }
+
+        return fallbackDetail;
+    }
+
     public async Task<TourPlan> GetTourPlanAsync()
     {
         var poiLookup = (await GetPoisAsync()).ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
+        var stops = new List<TourStop>
+        {
+            CreateTourStop(poiLookup, "poi-snail-signature", 1),
+            CreateTourStop(poiLookup, "poi-bbq-night", 2),
+            CreateTourStop(poiLookup, "poi-sweet-lane", 3)
+        };
+        var checkpoints = new List<TourCheckpoint>
+        {
+            CreateCheckpoint(poiLookup, "poi-snail-signature", 1, "150 m", true),
+            CreateCheckpoint(poiLookup, "poi-bbq-night", 2, "2,50 km", true),
+            CreateCheckpoint(poiLookup, "poi-sweet-lane", 3, "2,70 km", false)
+        };
+
         return new TourPlan
         {
-            Title = "Hành Trình Ăn Vặt",
-            Theme = "Hành Trình Ăn Vặt",
-            Description = "Tour ngắn ưu tiên các POI đang được quản lý trong admin và fallback mock khi backend chưa bật.",
+            Title = GetTourThemeText(),
+            Theme = GetTourThemeText(),
+            Description = GetTourDescriptionText(),
             ProgressValue = 0.66,
-            ProgressText = "2 / 3 điểm đã đi",
-            SummaryText = "Lộ trình nhẹ, nhiều món signature và kết thúc bằng món ngọt.",
-            Stops =
-            [
-                CreateTourStop(poiLookup, "poi-snail-signature", 1),
-                CreateTourStop(poiLookup, "poi-bbq-night", 2),
-                CreateTourStop(poiLookup, "poi-sweet-lane", 3)
-            ],
-            Checkpoints =
-            [
-                CreateCheckpoint(poiLookup, "poi-snail-signature", 1, "150 m", true),
-                CreateCheckpoint(poiLookup, "poi-bbq-night", 2, "2,50 km", true),
-                CreateCheckpoint(poiLookup, "poi-sweet-lane", 3, "2,70 km", false)
-            ]
+            ProgressText = FormatTourProgressText(checkpoints.Count(item => item.IsCompleted), checkpoints.Count),
+            SummaryText = GetTourSummaryText(),
+            Stops = stops,
+            Checkpoints = checkpoints
         };
     }
 
@@ -182,7 +218,7 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
             Email = "baovy@gmail.com",
             Phone = "0911 000 111",
             AvatarInitials = "BV",
-            MetaLine = "ID customer-1 • android • vi"
+            MetaLine = $"ID customer-1 • android • {_languageService.CurrentLanguage}"
         };
     }
 
@@ -308,7 +344,7 @@ public sealed partial class FoodStreetMockDataService
         return _runtimeSettings;
     }
 
-    private BootstrapSnapshot CreateSnapshot(AdminBootstrapDto bootstrap)
+    private BootstrapSnapshot CreateLegacySnapshot(AdminBootstrapDto bootstrap)
     {
         var categoriesById = bootstrap.Categories
             .Where(item => !string.IsNullOrWhiteSpace(item.Id))
@@ -344,21 +380,28 @@ public sealed partial class FoodStreetMockDataService
             translationsByPoiId.TryGetValue(poi.Id, out var poiTranslations);
             var translation = SelectTranslation(poi, poiTranslations, _languageService.CurrentLanguage);
             var title = FirstNonEmpty(translation?.Title, CreateTitleFromSlug(poi.Slug), poi.Id);
+            var category = LocalizeCategory(GetCategoryName(categoriesById, poi.CategoryId));
+            var shortDescription = FirstNonEmpty(translation?.ShortText, translation?.FullText);
+
+            if (string.IsNullOrWhiteSpace(shortDescription))
+            {
+                shortDescription = $"{title} • {category}";
+            }
 
             return new PoiLocation
             {
                 Id = poi.Id,
                 Title = title,
-                ShortDescription = FirstNonEmpty(translation?.ShortText, translation?.FullText, $"{title} • {GetCategoryName(categoriesById, poi.CategoryId)}"),
-                Address = poi.Address,
-                Category = GetCategoryName(categoriesById, poi.CategoryId),
+                ShortDescription = shortDescription,
+                Address = LocalizeAddress(poi.Address),
+                Category = category,
                 PriceRange = poi.PriceRange,
                 ThumbnailUrl = ResolvePoiImageUrl(poi.Id, poiImages, foodImages),
                 Latitude = poi.Lat,
                 Longitude = poi.Lng,
                 IsFeatured = poi.Featured,
                 HeatIntensity = ResolveHeatIntensity(poi, bootstrap.ViewLogs, bootstrap.AudioListenLogs),
-                DistanceText = $"{Math.Max(10, poi.AverageVisitDuration)} phút"
+                DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))
             };
         }).ToList();
 
@@ -366,7 +409,95 @@ public sealed partial class FoodStreetMockDataService
             poiLocations,
             BuildHeatPoints(orderedPois, bootstrap.ViewLogs, bootstrap.AudioListenLogs),
             ResolveBackdropImageUrl(poiLocations, poiImages),
-            ResolveUserProfile(bootstrap.CustomerUsers));
+            ResolveUserProfile(bootstrap.CustomerUsers),
+            new Dictionary<string, PoiExperienceDetail>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private BootstrapSnapshot CreateSnapshot(AdminBootstrapDto bootstrap)
+    {
+        var categoriesById = bootstrap.Categories
+            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+            .ToDictionary(item => item.Id, item => item.Name, StringComparer.OrdinalIgnoreCase);
+
+        var translationsByPoiId = bootstrap.Translations
+            .Where(item => string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var poiImages = bootstrap.MediaAssets
+            .Where(item =>
+                string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.Type, "image", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(item.Url))
+            .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group
+                    .OrderByDescending(item => item.CreatedAt)
+                    .Select(item => item.Url)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var foodImages = bootstrap.FoodItems
+            .Where(item => !string.IsNullOrWhiteSpace(item.PoiId) && !string.IsNullOrWhiteSpace(item.ImageUrl))
+            .GroupBy(item => item.PoiId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group
+                    .Select(item => item.ImageUrl)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var audioGuidesByPoiId = bootstrap.AudioGuides
+            .Where(item =>
+                string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(item.AudioUrl))
+            .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var reviewsByPoiId = bootstrap.Reviews
+            .Where(item =>
+                string.Equals(item.Status, "approved", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(item.Status, "published", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(item => item.PoiId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var orderedPois = bootstrap.Pois
+            .Where(item => IsValidCoordinate(item.Lat) && IsValidCoordinate(item.Lng))
+            .OrderByDescending(item => item.Featured)
+            .ThenByDescending(item => item.PopularityScore)
+            .ThenBy(item => item.Slug, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var poiDetails = orderedPois.ToDictionary(poi => poi.Id, poi =>
+        {
+            translationsByPoiId.TryGetValue(poi.Id, out var poiTranslations);
+            audioGuidesByPoiId.TryGetValue(poi.Id, out var poiAudioGuides);
+            reviewsByPoiId.TryGetValue(poi.Id, out var poiReviews);
+
+            return BuildPoiDetail(
+                poi,
+                GetCategoryName(categoriesById, poi.CategoryId),
+                poiTranslations,
+                poiAudioGuides,
+                poiReviews,
+                poiImages,
+                foodImages);
+        }, StringComparer.OrdinalIgnoreCase);
+
+        var poiLocations = orderedPois
+            .Select(poi => CreatePoiLocation(poi, poiDetails[poi.Id]))
+            .ToList();
+
+        return new BootstrapSnapshot(
+            poiLocations,
+            BuildHeatPoints(orderedPois, bootstrap.ViewLogs, bootstrap.AudioListenLogs),
+            ResolveBackdropImageUrl(poiDetails),
+            ResolveUserProfile(bootstrap.CustomerUsers),
+            poiDetails);
     }
 
     private static IReadOnlyList<MapHeatPoint> BuildHeatPoints(
@@ -416,48 +547,51 @@ public sealed partial class FoodStreetMockDataService
         return Clamp((popularityScore * 0.72) + activityBoost + featuredBoost, 0.38, 1.0);
     }
 
-    private static TourStop CreateTourStop(IReadOnlyDictionary<string, PoiLocation> poiLookup, string poiId, int order)
+    private TourStop CreateTourStop(IReadOnlyDictionary<string, PoiLocation> poiLookup, string poiId, int order)
     {
-        if (poiLookup.TryGetValue(poiId, out var poi))
+        if (poiLookup.TryGetValue(poiId, out var localizedPoi))
         {
             return new TourStop
             {
                 PoiId = poiId,
-                Title = $"{order}. {poi.Title}",
-                Description = $"Tạo Tour - {poi.DistanceText}",
-                ThumbnailUrl = poi.ThumbnailUrl,
-                DistanceText = poi.DistanceText
+                Title = $"{order}. {localizedPoi.Title}",
+                Description = GetTourStopDescription(localizedPoi.DistanceText),
+                ThumbnailUrl = localizedPoi.ThumbnailUrl,
+                DistanceText = localizedPoi.DistanceText
             };
         }
 
         return new TourStop
         {
             PoiId = poiId,
-            Title = $"{order}. Điểm dừng",
-            Description = "Tạo Tour - 100 m",
+            Title = $"{order}. {GetFallbackStopTitle()}",
+            Description = GetTourStopDescription("100 m"),
             ThumbnailUrl = DefaultBackdropImageUrl,
             DistanceText = "100 m"
         };
     }
 
-    private static TourCheckpoint CreateCheckpoint(
+    private TourCheckpoint CreateCheckpoint(
         IReadOnlyDictionary<string, PoiLocation> poiLookup,
         string poiId,
         int order,
         string distanceText,
         bool isCompleted)
     {
-        var title = poiLookup.TryGetValue(poiId, out var poi) ? poi.Title : $"Điểm dừng {order}";
+        var localizedTitle = poiLookup.TryGetValue(poiId, out var localizedPoi)
+            ? localizedPoi.Title
+            : $"{GetFallbackStopTitle()} {order}";
+
         return new TourCheckpoint
         {
             Order = order,
-            Title = title,
-            DistanceText = distanceText,
+            Title = localizedTitle,
+            DistanceText = LocalizeDistanceText(distanceText),
             IsCompleted = isCompleted
         };
     }
 
-    private static UserProfileCard ResolveUserProfile(IReadOnlyList<CustomerUserDto> customerUsers)
+    private UserProfileCard ResolveUserProfile(IReadOnlyList<CustomerUserDto> customerUsers)
     {
         var customer = customerUsers
             .Where(item => item.IsActive && !item.IsBanned)
@@ -478,7 +612,7 @@ public sealed partial class FoodStreetMockDataService
                 Email = "baovy@gmail.com",
                 Phone = "0911 000 111",
                 AvatarInitials = "BV",
-                MetaLine = "ID customer-1 • android • vi"
+                MetaLine = $"ID customer-1 • android • {_languageService.CurrentLanguage}"
             };
         }
 
@@ -488,7 +622,7 @@ public sealed partial class FoodStreetMockDataService
             Email = customer.Email,
             Phone = customer.Phone,
             AvatarInitials = BuildInitials(customer.Name, customer.Username, customer.Email),
-            MetaLine = $"ID {customer.Id} • {customer.DeviceType} • {customer.PreferredLanguage}"
+            MetaLine = $"ID {customer.Id} • {customer.DeviceType} • {_languageService.CurrentLanguage}"
         };
     }
 
@@ -620,7 +754,8 @@ public sealed partial class FoodStreetMockDataService
         IReadOnlyList<PoiLocation> Pois,
         IReadOnlyList<MapHeatPoint> HeatPoints,
         string BackdropImageUrl,
-        UserProfileCard UserProfile);
+        UserProfileCard UserProfile,
+        IReadOnlyDictionary<string, PoiExperienceDetail> PoiDetails);
 
     private sealed class MobileRuntimeAppSettings
     {
@@ -636,8 +771,10 @@ public sealed partial class FoodStreetMockDataService
         public List<CustomerUserDto> CustomerUsers { get; set; } = [];
         public List<PoiDto> Pois { get; set; } = [];
         public List<TranslationDto> Translations { get; set; } = [];
+        public List<AudioGuideDto> AudioGuides { get; set; } = [];
         public List<MediaAssetDto> MediaAssets { get; set; } = [];
         public List<FoodItemDto> FoodItems { get; set; } = [];
+        public List<ReviewDto> Reviews { get; set; } = [];
         public List<ViewLogDto> ViewLogs { get; set; } = [];
         public List<AudioListenLogDto> AudioListenLogs { get; set; } = [];
     }
@@ -696,13 +833,39 @@ public sealed partial class FoodStreetMockDataService
         public string EntityId { get; set; } = string.Empty;
         public string Type { get; set; } = string.Empty;
         public string Url { get; set; } = string.Empty;
+        public string AltText { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; }
     }
 
     private sealed class FoodItemDto
     {
+        public string Id { get; set; } = string.Empty;
         public string PoiId { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string PriceRange { get; set; } = string.Empty;
         public string ImageUrl { get; set; } = string.Empty;
+    }
+
+    private sealed class AudioGuideDto
+    {
+        public string EntityType { get; set; } = string.Empty;
+        public string EntityId { get; set; } = string.Empty;
+        public string LanguageCode { get; set; } = string.Empty;
+        public string AudioUrl { get; set; } = string.Empty;
+        public string VoiceType { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTimeOffset UpdatedAt { get; set; }
+    }
+
+    private sealed class ReviewDto
+    {
+        public string PoiId { get; set; } = string.Empty;
+        public int Rating { get; set; }
+        public string Comment { get; set; } = string.Empty;
+        public string LanguageCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; }
     }
 
     private sealed class ViewLogDto
