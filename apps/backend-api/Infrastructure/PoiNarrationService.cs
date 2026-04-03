@@ -20,6 +20,7 @@ public sealed class PoiNarrationService(
     {
         ["vi"] = "vi-VN",
         ["en"] = "en-US",
+        ["fr"] = "fr-FR",
         ["zh-CN"] = "zh-CN",
         ["ko"] = "ko-KR",
         ["ja"] = "ja-JP"
@@ -29,6 +30,7 @@ public sealed class PoiNarrationService(
     {
         ["vi"] = "Tieng Viet",
         ["en"] = "Tieng Anh",
+        ["fr"] = "Tieng Phap",
         ["zh-CN"] = "Tieng Trung",
         ["ko"] = "Tieng Han",
         ["ja"] = "Tieng Nhat"
@@ -458,7 +460,15 @@ public sealed class PoiNarrationService(
         {
             if (!string.IsNullOrWhiteSpace(candidate))
             {
-                return candidate.Trim();
+                return candidate.Trim() switch
+                {
+                    "zh" => "zh-CN",
+                    "fr-FR" => "fr",
+                    "en-US" => "en",
+                    "ja-JP" => "ja",
+                    "ko-KR" => "ko",
+                    _ => candidate.Trim()
+                };
             }
         }
 

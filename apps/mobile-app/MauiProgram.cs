@@ -1,6 +1,8 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
+using Plugin.Maui.Audio;
 using VinhKhanh.MobileApp.Services;
 using VinhKhanh.MobileApp.ViewModels;
+using ZXing.Net.Maui.Controls;
 
 namespace VinhKhanh.MobileApp;
 
@@ -11,6 +13,8 @@ public static class MauiProgram
         var builder = MauiApp.CreateBuilder();
         builder
             .UseMauiApp<App>()
+            .AddAudio()
+            .UseBarcodeReader()
             .ConfigureFonts(fonts =>
             {
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -22,10 +26,11 @@ public static class MauiProgram
         builder.Services.AddSingleton<IPoiNarrationService, PoiNarrationService>();
         builder.Services.AddSingleton<IPoiTourStoreService, PoiTourStoreService>();
 
-        builder.Services.AddTransient<QRSuccessLanguageViewModel>();
+        builder.Services.AddTransient<LanguageSelectionViewModel>();
         builder.Services.AddTransient<LoginViewModel>();
         builder.Services.AddTransient<HomeMapViewModel>();
         builder.Services.AddTransient<MyTourViewModel>();
+        builder.Services.AddTransient<QrScannerViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
 
 #if DEBUG

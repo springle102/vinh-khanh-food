@@ -14,10 +14,11 @@ public static class ServiceHelper
 
 public static class AppRoutes
 {
-    public const string QRSuccess = "QRSuccessLanguagePage";
     public const string Login = "LoginPage";
     public const string HomeMap = "HomeMapPage";
     public const string MyTour = "MyTourPage";
+    public const string QrScanner = "QrScannerPage";
+    public const string LanguageSelection = "LanguageSelectionPage";
     public const string Settings = "SettingsPage";
 
     public static string Root(string route) => route.StartsWith("//", StringComparison.Ordinal) ? route : $"//{route}";

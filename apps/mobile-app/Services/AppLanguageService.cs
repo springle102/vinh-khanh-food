@@ -6,6 +6,7 @@ namespace VinhKhanh.MobileApp.Services;
 public interface IAppLanguageService
 {
     string CurrentLanguage { get; }
+    bool HasSavedLanguageSelection { get; }
     event EventHandler? LanguageChanged;
     Task InitializeAsync();
     Task SetLanguageAsync(string languageCode);
@@ -323,12 +324,15 @@ public sealed class AppLanguageService : IAppLanguageService
 
     private readonly WeakEventManager _eventManager = new();
     private Dictionary<string, string> _texts = CreateBuiltInTextDictionary(DefaultLanguage);
+    private bool _hasSavedLanguageSelection;
 
     public string CurrentLanguage { get; private set; } = DefaultLanguage;
+    public bool HasSavedLanguageSelection => _hasSavedLanguageSelection;
 
     public AppLanguageService()
     {
         _texts = CreateBuiltInTextDictionary(DefaultLanguage);
+        _hasSavedLanguageSelection = TryLoadSavedLanguageSync() is not null;
     }
 
     public event EventHandler? LanguageChanged
@@ -339,11 +343,15 @@ public sealed class AppLanguageService : IAppLanguageService
 
     public async Task InitializeAsync()
     {
-        var languageCode = await LoadSavedLanguageAsync() ?? DefaultLanguage;
-        await SetLanguageAsync(languageCode);
+        var savedLanguageCode = await LoadSavedLanguageAsync();
+        _hasSavedLanguageSelection = !string.IsNullOrWhiteSpace(savedLanguageCode);
+        await ApplyLanguageAsync(savedLanguageCode ?? DefaultLanguage, persistSelection: false);
     }
 
     public async Task SetLanguageAsync(string languageCode)
+        => await ApplyLanguageAsync(languageCode, persistSelection: true);
+
+    private async Task ApplyLanguageAsync(string languageCode, bool persistSelection)
     {
         var normalizedCode = NormalizeLanguageCode(languageCode);
         var mergedTexts = CreateBuiltInTextDictionary(normalizedCode);
@@ -356,13 +364,19 @@ public sealed class AppLanguageService : IAppLanguageService
 
         if (mergedTexts.Count == 0 && !string.Equals(normalizedCode, DefaultLanguage, StringComparison.OrdinalIgnoreCase))
         {
-            await SetLanguageAsync(DefaultLanguage);
+            await ApplyLanguageAsync(DefaultLanguage, persistSelection);
             return;
         }
 
         CurrentLanguage = normalizedCode;
         _texts = mergedTexts;
-        await SaveLanguageAsync(normalizedCode);
+
+        if (persistSelection)
+        {
+            await SaveLanguageAsync(normalizedCode);
+            _hasSavedLanguageSelection = true;
+        }
+
         _eventManager.HandleEvent(this, EventArgs.Empty, nameof(LanguageChanged));
     }
 
@@ -416,6 +430,25 @@ public sealed class AppLanguageService : IAppLanguageService
             }
 
             var value = (await File.ReadAllTextAsync(path)).Trim();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryLoadSavedLanguageSync()
+    {
+        try
+        {
+            var path = GetPreferenceFilePath();
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            var value = File.ReadAllText(path).Trim();
             return string.IsNullOrWhiteSpace(value) ? null : value;
         }
         catch

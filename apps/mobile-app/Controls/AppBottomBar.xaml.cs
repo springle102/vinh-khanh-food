@@ -13,6 +13,7 @@ public partial class AppBottomBar : ContentView
     private static readonly Color ActiveBackgroundColor = Color.FromArgb("#FFF4E7");
     private static readonly Color ActiveStrokeColor = Color.FromArgb("#EAB06D");
     private readonly IAppLanguageService _languageService;
+    private readonly IPoiNarrationService _poiNarrationService;
 
     public static readonly BindableProperty CurrentRouteProperty = BindableProperty.Create(
         nameof(CurrentRoute),
@@ -31,6 +32,7 @@ public partial class AppBottomBar : ContentView
     {
         InitializeComponent();
         _languageService = ServiceHelper.GetService<IAppLanguageService>();
+        _poiNarrationService = ServiceHelper.GetService<IPoiNarrationService>();
         _languageService.LanguageChanged += (_, _) => ApplyLocalization();
         Loaded += (_, _) =>
         {
@@ -39,7 +41,7 @@ public partial class AppBottomBar : ContentView
         };
     }
 
-    private async void OnQrTapped(object? sender, TappedEventArgs e) => await NavigateAsync(AppRoutes.QRSuccess);
+    private async void OnQrTapped(object? sender, TappedEventArgs e) => await NavigateAsync(AppRoutes.QrScanner);
     private async void OnSettingsTapped(object? sender, TappedEventArgs e) => await NavigateAsync(AppRoutes.Settings);
     private async void OnPoiTapped(object? sender, TappedEventArgs e) => await NavigateAsync(AppRoutes.HomeMap);
     private async void OnTourTapped(object? sender, TappedEventArgs e) => await NavigateAsync(AppRoutes.MyTour);
@@ -51,24 +53,25 @@ public partial class AppBottomBar : ContentView
             return;
         }
 
+        await _poiNarrationService.StopAsync();
         CurrentRoute = route;
         await Shell.Current.GoToAsync(AppRoutes.Root(route));
     }
 
     private void ApplyState()
     {
-        ApplyItemState(CurrentRoute == AppRoutes.QRSuccess, QrTab, QrLabel, QrPath1, QrPath2);
-        ApplyItemState(CurrentRoute == AppRoutes.Settings, SettingsTab, SettingsLabel, SettingsPath1, SettingsPath2);
         ApplyItemState(CurrentRoute == AppRoutes.HomeMap, PoiTab, PoiLabel, PoiPath1, PoiPath2, PoiPath3);
         ApplyItemState(CurrentRoute == AppRoutes.MyTour, TourTab, TourLabel, TourPath1, TourPath2);
+        ApplyItemState(CurrentRoute == AppRoutes.Settings, SettingsTab, SettingsLabel, SettingsPath1, SettingsPath2);
+        ApplyQrState(CurrentRoute == AppRoutes.QrScanner);
     }
 
     private void ApplyLocalization()
     {
         QrLabel.Text = _languageService.GetText("bottom_qr");
-        SettingsLabel.Text = _languageService.GetText("bottom_settings");
         PoiLabel.Text = _languageService.GetText("bottom_poi");
         TourLabel.Text = _languageService.GetText("bottom_tour");
+        SettingsLabel.Text = _languageService.GetText("bottom_settings");
     }
 
     private static void ApplyItemState(bool isActive, Border tab, Label label, params ShapePath[] paths)
@@ -84,5 +87,12 @@ public partial class AppBottomBar : ContentView
         {
             path.Stroke = new SolidColorBrush(color);
         }
+    }
+
+    private void ApplyQrState(bool isActive)
+    {
+        QrTab.BackgroundColor = isActive ? Color.FromArgb("#D87410") : ActiveColor;
+        QrTab.Scale = isActive ? 1.02 : 1.0;
+        QrLabel.FontAttributes = FontAttributes.Bold;
     }
 }

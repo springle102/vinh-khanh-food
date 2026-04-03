@@ -23,6 +23,7 @@ public sealed class HomeMapViewModel : BaseViewModel
     private bool _isBottomSheetVisible;
     private bool _isPoiDetailLoading;
     private bool _isPoiSaved;
+    private volatile bool _isNarrationContextActive = true;
     private int _mapDataVersion;
     private long _detailRequestVersion;
 
@@ -213,8 +214,8 @@ public sealed class HomeMapViewModel : BaseViewModel
         }
     }
 
-    public AsyncCommand<PoiLocation> SelectPoiCommand => new(SelectPoiAsync);
-    public AsyncCommand<string> LoadPoiDetailCommand => new(LoadPoiDetailByIdAsync);
+    public AsyncCommand<PoiLocation> SelectPoiCommand => new(poi => SelectPoiAsync(poi, autoPlayNarration: true));
+    public AsyncCommand<string> LoadPoiDetailCommand => new(poiId => LoadPoiDetailByIdAsync(poiId, autoPlayNarration: true));
     public AsyncCommand SelectNextPoiCommand => new(SelectNextPoiAsync);
     public AsyncCommand ToggleHeatmapCommand => new(ToggleHeatmapAsync);
     public AsyncCommand CloseBottomSheetCommand => new(CloseBottomSheetAsync);
@@ -222,7 +223,22 @@ public sealed class HomeMapViewModel : BaseViewModel
     public AsyncCommand OpenDirectionsCommand => new(OpenDirectionsAsync);
     public AsyncCommand ToggleSaveToTourCommand => new(ToggleSaveToTourAsync);
 
-    public async Task LoadAsync()
+    public void ActivateNarrationContext()
+        => _isNarrationContextActive = true;
+
+    public async Task SuspendNarrationAsync()
+    {
+        _isNarrationContextActive = false;
+        await _poiNarrationService.StopAsync();
+    }
+
+    public Task StopNarrationAsync()
+        => _poiNarrationService.StopAsync();
+
+    public Task LoadAsync()
+        => LoadAsync(autoPlayNarrationForSelection: false);
+
+    public async Task LoadAsync(bool autoPlayNarrationForSelection)
     {
         var languageCode = _languageService.CurrentLanguage;
         var shouldReload = Pois.Count == 0 || !string.Equals(_loadedLanguage, languageCode, StringComparison.OrdinalIgnoreCase);
@@ -245,7 +261,7 @@ public sealed class HomeMapViewModel : BaseViewModel
 
         if (SelectedPoi is not null && (IsBottomSheetVisible || SelectedPoiDetail is not null))
         {
-            await LoadPoiDetailCoreAsync(SelectedPoi, IsBottomSheetVisible);
+            await LoadPoiDetailCoreAsync(SelectedPoi, IsBottomSheetVisible, autoPlayNarrationForSelection);
         }
         else
         {
@@ -254,6 +270,9 @@ public sealed class HomeMapViewModel : BaseViewModel
     }
 
     public async Task SelectPoiByIdAsync(string poiId)
+        => await SelectPoiByIdAsync(poiId, autoPlayNarration: true);
+
+    public async Task SelectPoiByIdAsync(string poiId, bool autoPlayNarration)
     {
         if (string.IsNullOrWhiteSpace(poiId))
         {
@@ -265,20 +284,20 @@ public sealed class HomeMapViewModel : BaseViewModel
             await LoadAsync();
         }
 
-        await LoadPoiDetailByIdAsync(poiId);
+        await LoadPoiDetailByIdAsync(poiId, autoPlayNarration);
     }
 
-    private async Task SelectPoiAsync(PoiLocation? poi)
+    private async Task SelectPoiAsync(PoiLocation? poi, bool autoPlayNarration = true)
     {
         if (poi is null)
         {
             return;
         }
 
-        await LoadPoiDetailCoreAsync(poi, true);
+        await LoadPoiDetailCoreAsync(poi, true, autoPlayNarration);
     }
 
-    private async Task LoadPoiDetailByIdAsync(string? poiId)
+    private async Task LoadPoiDetailByIdAsync(string? poiId, bool autoPlayNarration = true)
     {
         if (string.IsNullOrWhiteSpace(poiId))
         {
@@ -291,16 +310,18 @@ public sealed class HomeMapViewModel : BaseViewModel
             return;
         }
 
-        await LoadPoiDetailCoreAsync(poi, true);
+        await LoadPoiDetailCoreAsync(poi, true, autoPlayNarration);
     }
 
-    private async Task LoadPoiDetailCoreAsync(PoiLocation poi, bool showBottomSheet)
+    private async Task LoadPoiDetailCoreAsync(PoiLocation poi, bool showBottomSheet, bool autoPlayNarration = false)
     {
+        var requestVersion = Interlocked.Increment(ref _detailRequestVersion);
+        await StopNarrationAsync();
+
         SelectedPoi = poi;
         IsBottomSheetVisible = showBottomSheet;
         IsPoiDetailLoading = true;
 
-        var requestVersion = Interlocked.Increment(ref _detailRequestVersion);
         try
         {
             PoiExperienceDetail detail;
@@ -321,6 +342,11 @@ public sealed class HomeMapViewModel : BaseViewModel
 
             SelectedPoiDetail = detail;
             IsPoiSaved = isSaved;
+
+            if (autoPlayNarration)
+            {
+                QueueAutoPlayNarration(detail, requestVersion);
+            }
         }
         finally
         {
@@ -341,7 +367,7 @@ public sealed class HomeMapViewModel : BaseViewModel
 
         var currentIndex = SelectedPoi is null ? -1 : Pois.IndexOf(SelectedPoi);
         var nextPoi = Pois[(currentIndex + 1 + Pois.Count) % Pois.Count];
-        await SelectPoiAsync(nextPoi);
+        await SelectPoiAsync(nextPoi, autoPlayNarration: true);
     }
 
     private Task ToggleHeatmapAsync()
@@ -361,12 +387,42 @@ public sealed class HomeMapViewModel : BaseViewModel
 
     private async Task PlayNarrationAsync()
     {
-        if (SelectedPoiDetail is null)
+        if (SelectedPoiDetail is null || !_isNarrationContextActive)
         {
             return;
         }
 
         await _poiNarrationService.PlayAsync(SelectedPoiDetail, _languageService.CurrentLanguage);
+    }
+
+    private void QueueAutoPlayNarration(PoiExperienceDetail detail, long requestVersion)
+    {
+        if (!_isNarrationContextActive)
+        {
+            return;
+        }
+
+        MainThread.BeginInvokeOnMainThread(() => _ = AutoPlayNarrationAsync(detail, requestVersion));
+    }
+
+    private async Task AutoPlayNarrationAsync(PoiExperienceDetail detail, long requestVersion)
+    {
+        if (requestVersion != _detailRequestVersion ||
+            !_isNarrationContextActive ||
+            SelectedPoiDetail is null ||
+            !string.Equals(SelectedPoiDetail.Id, detail.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            await _poiNarrationService.PlayAsync(detail, _languageService.CurrentLanguage);
+        }
+        catch
+        {
+            // Best effort auto-play. Manual replay remains available.
+        }
     }
 
     private async Task OpenDirectionsAsync()
@@ -472,7 +528,8 @@ public sealed class HomeMapViewModel : BaseViewModel
         {
             try
             {
-                await LoadAsync();
+                await StopNarrationAsync();
+                await LoadAsync(autoPlayNarrationForSelection: _isNarrationContextActive && IsBottomSheetVisible);
             }
             catch
             {

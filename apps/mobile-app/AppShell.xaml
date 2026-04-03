@@ -9,10 +9,6 @@
     Title="Vinh Khanh Food Street">
 
     <ShellContent
-        Route="QRSuccessLanguagePage"
-        ContentTemplate="{DataTemplate pages:QRSuccessLanguagePage}" />
-
-    <ShellContent
         Route="LoginPage"
         ContentTemplate="{DataTemplate pages:LoginPage}" />
 
@@ -25,6 +21,14 @@
         ContentTemplate="{DataTemplate pages:MyTourPage}" />
 
     <ShellContent
+        Route="QrScannerPage"
+        ContentTemplate="{DataTemplate pages:QrScannerPage}" />
+
+    <ShellContent
         Route="SettingsPage"
         ContentTemplate="{DataTemplate pages:SettingsPage}" />
+
+    <ShellContent
+        Route="LanguageSelectionPage"
+        ContentTemplate="{DataTemplate pages:LanguageSelectionPage}" />
 </Shell>

@@ -9,13 +9,19 @@ using VinhKhanh.MobileApp.ViewModels;
 
 namespace VinhKhanh.MobileApp.Pages;
 
-public partial class HomeMapPage : ContentPage
+public partial class HomeMapPage : ContentPage, IQueryAttributable
 {
     private const string MapTemplateFileName = "openstreetmap-map.html";
+    private const string LeafletCssFileName = "leaflet.css";
+    private const string LeafletJsFileName = "leaflet.js";
+    private const string MapStatePlaceholder = "__MAP_STATE_BASE64__";
+    private const string LeafletCssPlaceholder = "__LEAFLET_CSS__";
+    private const string LeafletJsPlaceholder = "__LEAFLET_JS__";
 
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HomeMapViewModel _viewModel;
     private bool _isMapReady;
+    private string? _pendingPoiId;
 
     public HomeMapPage()
     {
@@ -28,9 +34,36 @@ public partial class HomeMapPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        _viewModel.ActivateNarrationContext();
         await _viewModel.LoadAsync();
+        if (!string.IsNullOrWhiteSpace(_pendingPoiId))
+        {
+            await _viewModel.SelectPoiByIdAsync(_pendingPoiId);
+            _pendingPoiId = null;
+        }
+
         await RenderMapAsync();
         await PoiDetailBottomSheet.SetPresentedAsync(_viewModel.IsBottomSheetVisible);
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        _ = _viewModel.SuspendNarrationAsync();
+    }
+
+    public void ApplyQueryAttributes(IDictionary<string, object> query)
+    {
+        if (!query.TryGetValue("poiId", out var poiId))
+        {
+            return;
+        }
+
+        _pendingPoiId = poiId?.ToString();
+        if (!string.IsNullOrWhiteSpace(_pendingPoiId))
+        {
+            _pendingPoiId = Uri.UnescapeDataString(_pendingPoiId);
+        }
     }
 
     private async void OnMapNavigated(object? sender, WebNavigatedEventArgs e)
@@ -93,9 +126,9 @@ public partial class HomeMapPage : ContentPage
     private async Task RenderMapAsync()
     {
         _isMapReady = false;
-        await using var stream = await FileSystem.OpenAppPackageFileAsync(MapTemplateFileName);
-        using var reader = new StreamReader(stream);
-        var template = await reader.ReadToEndAsync();
+        var template = await ReadRawAssetTextAsync(MapTemplateFileName);
+        var leafletCss = await ReadRawAssetTextAsync(LeafletCssFileName);
+        var leafletJs = await ReadRawAssetTextAsync(LeafletJsFileName);
 
         var payload = new
         {
@@ -127,8 +160,18 @@ public partial class HomeMapPage : ContentPage
         var encodedJson = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
         MapWebView.Source = new HtmlWebViewSource
         {
-            Html = template.Replace("__MAP_STATE_BASE64__", encodedJson, StringComparison.Ordinal)
+            Html = template
+                .Replace(LeafletCssPlaceholder, leafletCss, StringComparison.Ordinal)
+                .Replace(LeafletJsPlaceholder, leafletJs, StringComparison.Ordinal)
+                .Replace(MapStatePlaceholder, encodedJson, StringComparison.Ordinal)
         };
+    }
+
+    private static async Task<string> ReadRawAssetTextAsync(string fileName)
+    {
+        await using var stream = await FileSystem.OpenAppPackageFileAsync(fileName);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

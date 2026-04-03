@@ -61,10 +61,13 @@ public sealed class LoginViewModel : BaseViewModel
     public string FacebookLoginText => _languageService.GetText("login_facebook");
     public string AppleLoginText => _languageService.GetText("login_apple");
     public string CreateAccountText => _languageService.GetText("login_create_account");
+    public string CurrentLanguageDisplayName => ResolveLanguageDisplayName(_languageService.CurrentLanguage);
+    public string CurrentLanguageFlag => ResolveLanguageFlag(_languageService.CurrentLanguage);
 
     public AsyncCommand<string> SwitchModeCommand => new(SwitchModeAsync);
     public AsyncCommand LoginCommand => new(GoToHomeAsync);
     public AsyncCommand<string> SocialLoginCommand => new(_ => GoToHomeAsync());
+    public AsyncCommand OpenLanguageSelectionCommand => new(OpenLanguageSelectionAsync);
     public AsyncCommand OpenCreateAccountCommand => new(async () =>
     {
         IsLoginMode = false;
@@ -99,6 +102,9 @@ public sealed class LoginViewModel : BaseViewModel
         return Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.HomeMap));
     }
 
+    private Task OpenLanguageSelectionAsync()
+        => Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.LanguageSelection));
+
     private void RefreshLocalizedTexts()
     {
         OnPropertyChanged(nameof(PortalSubtitleText));
@@ -112,5 +118,47 @@ public sealed class LoginViewModel : BaseViewModel
         OnPropertyChanged(nameof(FacebookLoginText));
         OnPropertyChanged(nameof(AppleLoginText));
         OnPropertyChanged(nameof(CreateAccountText));
+        OnPropertyChanged(nameof(CurrentLanguageDisplayName));
+        OnPropertyChanged(nameof(CurrentLanguageFlag));
+    }
+
+    private static string ResolveLanguageDisplayName(string? languageCode)
+        => NormalizeLanguageCode(languageCode) switch
+        {
+            "en" => "English",
+            "zh-CN" => "中文",
+            "ko" => "한국어",
+            "ja" => "日本語",
+            "fr" => "Français",
+            _ => "Tiếng Việt"
+        };
+
+    private static string ResolveLanguageFlag(string? languageCode)
+        => NormalizeLanguageCode(languageCode) switch
+        {
+            "en" => "🇬🇧",
+            "zh-CN" => "🇨🇳",
+            "ko" => "🇰🇷",
+            "ja" => "🇯🇵",
+            "fr" => "🇫🇷",
+            _ => "🇻🇳"
+        };
+
+    private static string NormalizeLanguageCode(string? languageCode)
+    {
+        if (string.IsNullOrWhiteSpace(languageCode))
+        {
+            return "vi";
+        }
+
+        return languageCode.Trim() switch
+        {
+            "zh" => "zh-CN",
+            "fr-FR" => "fr",
+            "en-US" => "en",
+            "ja-JP" => "ja",
+            "ko-KR" => "ko",
+            _ => languageCode.Trim()
+        };
     }
 }

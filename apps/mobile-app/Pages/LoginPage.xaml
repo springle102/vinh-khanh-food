@@ -23,28 +23,65 @@
         </Border>
 
         <ScrollView>
-            <VerticalStackLayout Padding="28,34,28,42" Spacing="16">
-                <VerticalStackLayout Spacing="6" HorizontalOptions="Center">
+            <Grid Padding="18,26,18,30">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <VerticalStackLayout Grid.Row="0" Spacing="8" HorizontalOptions="Center">
                     <Label
                         HorizontalTextAlignment="Center"
                         Text="Vinh Khanh&#10;Food Street"
                         TextColor="White"
                         FontFamily="OpenSansSemibold"
-                        FontSize="24" />
+                        FontSize="28" />
                     <Label
                         HorizontalTextAlignment="Center"
                         Text="{Binding PortalSubtitleText}"
                         TextColor="#FDF2E2"
                         FontFamily="OpenSansSemibold"
-                        FontSize="16" />
+                        FontSize="17" />
+
+                    <Border
+                        Padding="16,10"
+                        BackgroundColor="#1AFFFFFF"
+                        HorizontalOptions="Center"
+                        Stroke="#5CFDF2E2"
+                        StrokeShape="RoundRectangle 20">
+                        <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="8">
+                            <Label
+                                FontSize="18"
+                                Text="{Binding CurrentLanguageFlag}"
+                                VerticalOptions="Center" />
+                            <Label
+                                Grid.Column="1"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="14"
+                                Text="{Binding CurrentLanguageDisplayName}"
+                                TextColor="White"
+                                VerticalOptions="Center" />
+                            <Label
+                                Grid.Column="2"
+                                FontSize="18"
+                                Text="›"
+                                TextColor="#FDF2E2"
+                                VerticalOptions="Center" />
+                        </Grid>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding OpenLanguageSelectionCommand}" />
+                        </Border.GestureRecognizers>
+                    </Border>
                 </VerticalStackLayout>
 
                 <Border
-                    Margin="0,54,0,0"
-                    Padding="22"
+                    Grid.Row="1"
+                    Margin="0,22,0,0"
+                    Padding="24,22,24,20"
                     BackgroundColor="White"
-                    HorizontalOptions="Center"
-                    MaximumWidthRequest="430"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Center"
+                    MaximumWidthRequest="540"
                     Stroke="#EEDFCB"
                     StrokeThickness="1"
                     StrokeShape="RoundRectangle 28">
@@ -52,10 +89,10 @@
                         <Shadow Brush="#18000000" Offset="0,8" Radius="18" Opacity="0.10" />
                     </Border.Shadow>
 
-                    <VerticalStackLayout Spacing="18">
+                    <VerticalStackLayout Spacing="20">
                         <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,3">
                             <VerticalStackLayout Grid.Column="0" Spacing="8">
-                                <Label HorizontalTextAlignment="Center" FontFamily="OpenSansSemibold" Text="{Binding LoginTabText}">
+                                <Label HorizontalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="17" Text="{Binding LoginTabText}">
                                     <Label.Triggers>
                                         <DataTrigger TargetType="Label" Binding="{Binding IsLoginMode}" Value="False">
                                             <Setter Property="TextColor" Value="{StaticResource BrandTextMuted}" />
@@ -68,7 +105,7 @@
                             </VerticalStackLayout>
 
                             <VerticalStackLayout Grid.Column="1" Spacing="8">
-                                <Label HorizontalTextAlignment="Center" FontFamily="OpenSansSemibold" Text="{Binding SignUpTabText}">
+                                <Label HorizontalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="17" Text="{Binding SignUpTabText}">
                                     <Label.Triggers>
                                         <DataTrigger TargetType="Label" Binding="{Binding IsSignUpMode}" Value="False">
                                             <Setter Property="TextColor" Value="{StaticResource BrandTextMuted}" />
@@ -96,14 +133,14 @@
                             </BoxView>
                         </Grid>
 
-                        <Border Style="{StaticResource InputContainerStyle}">
+                        <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
                             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                 <Label FontSize="17" Text="@" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
                                 <Entry Grid.Column="1" Placeholder="{Binding IdentifierPlaceholderText}" Text="{Binding Identifier}" />
                             </Grid>
                         </Border>
 
-                        <Border Style="{StaticResource InputContainerStyle}">
+                        <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
                                 <Label FontSize="17" Text="*" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
                                 <Entry Grid.Column="1" IsPassword="True" Placeholder="{Binding PasswordPlaceholderText}" Text="{Binding Password}" />
@@ -116,11 +153,11 @@
                             Text="{Binding ForgotPasswordText}"
                             TextColor="{StaticResource BrandPrimary}"
                             FontFamily="OpenSansSemibold"
-                            FontSize="13" />
+                            FontSize="14" />
 
-                        <Button Command="{Binding LoginCommand}" FontSize="16" Text="{Binding PrimaryButtonText}" />
+                        <Button Command="{Binding LoginCommand}" FontSize="17" Text="{Binding PrimaryButtonText}" />
 
-                        <VerticalStackLayout Spacing="12">
+                        <VerticalStackLayout Spacing="14">
                             <Button Command="{Binding SocialLoginCommand}" CommandParameter="google" Style="{StaticResource SecondaryButtonStyle}" Text="{Binding GoogleLoginText}" />
                             <Button Command="{Binding SocialLoginCommand}" CommandParameter="facebook" Style="{StaticResource SecondaryButtonStyle}" Text="{Binding FacebookLoginText}" />
                             <Button Command="{Binding SocialLoginCommand}" CommandParameter="apple" Style="{StaticResource SecondaryButtonStyle}" Text="{Binding AppleLoginText}" />
@@ -138,7 +175,7 @@
                         </Label>
                     </VerticalStackLayout>
                 </Border>
-            </VerticalStackLayout>
+            </Grid>
         </ScrollView>
     </Grid>
 </ContentPage>

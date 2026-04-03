@@ -6,6 +6,7 @@
     "dev": "npm --prefix apps/admin-web run dev",
     "dev:admin": "npm --prefix apps/admin-web run dev",
     "dev:backend": "node ./scripts/run-backend.cjs dev",
+    "dev:mobile:android": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-mobile-android.ps1",
     "build": "npm --prefix apps/admin-web run build",
     "build:admin": "npm --prefix apps/admin-web run build",
     "build:backend": "node ./scripts/run-backend.cjs build",
