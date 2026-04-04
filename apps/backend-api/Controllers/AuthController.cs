@@ -21,14 +21,14 @@ public sealed class AuthController(AdminDataRepository repository) : ControllerB
     {
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
         {
-            return BadRequest(ApiResponse<AuthTokensResponse>.Fail("Email va mat khau la bat buoc."));
+            return BadRequest(ApiResponse<AuthTokensResponse>.Fail("Email và mật khẩu là bắt buộc."));
         }
 
         var portal = string.IsNullOrWhiteSpace(request.Portal) ? null : request.Portal.Trim().ToLowerInvariant();
         var result = repository.Login(request.Email, request.Password, portal);
         return result is null
-            ? Unauthorized(ApiResponse<AuthTokensResponse>.Fail("Thong tin dang nhap khong hop le."))
-            : Ok(ApiResponse<AuthTokensResponse>.Ok(result, "Dang nhap thanh cong."));
+            ? Unauthorized(ApiResponse<AuthTokensResponse>.Fail("Thông tin đăng nhập không hợp lệ."))
+            : Ok(ApiResponse<AuthTokensResponse>.Ok(result, "Đăng nhập thành công."));
     }
 
     [HttpPost("refresh")]
@@ -36,13 +36,13 @@ public sealed class AuthController(AdminDataRepository repository) : ControllerB
     {
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
         {
-            return BadRequest(ApiResponse<AuthTokensResponse>.Fail("Refresh token la bat buoc."));
+            return BadRequest(ApiResponse<AuthTokensResponse>.Fail("Refresh token là bắt buộc."));
         }
 
         var result = repository.Refresh(request.RefreshToken);
         return result is null
-            ? Unauthorized(ApiResponse<AuthTokensResponse>.Fail("Refresh token khong hop le hoac da het han."))
-            : Ok(ApiResponse<AuthTokensResponse>.Ok(result, "Lam moi phien dang nhap thanh cong."));
+            ? Unauthorized(ApiResponse<AuthTokensResponse>.Fail("Refresh token không hợp lệ hoặc đã hết hạn."))
+            : Ok(ApiResponse<AuthTokensResponse>.Ok(result, "Làm mới phiên đăng nhập thành công."));
     }
 
     [HttpPost("logout")]
@@ -50,10 +50,10 @@ public sealed class AuthController(AdminDataRepository repository) : ControllerB
     {
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
         {
-            return BadRequest(ApiResponse<string>.Fail("Refresh token la bat buoc."));
+            return BadRequest(ApiResponse<string>.Fail("Refresh token là bắt buộc."));
         }
 
         repository.Logout(request.RefreshToken);
-        return Ok(ApiResponse<string>.Ok("logged_out", "Dang xuat thanh cong."));
+        return Ok(ApiResponse<string>.Ok("logged_out", "Đăng xuất thành công."));
     }
 }

@@ -9,7 +9,7 @@ import { useAuth } from "./AuthContext";
 import { getHomePathForRole, isPathAllowedForRole } from "./auth-routing";
 
 const getAccountRoleLabel = (role: LoginAccountOption["role"]) =>
-  role === "SUPER_ADMIN" ? "Super Admin" : "Chu quan";
+  role === "SUPER_ADMIN" ? "Super Admin" : "Chủ quán";
 
 export const LoginPage = () => {
   const navigate = useNavigate();
@@ -100,7 +100,7 @@ export const LoginPage = () => {
     setSubmitting(false);
 
     if (!result.ok) {
-      setError(result.message ?? "Dang nhap khong thanh cong.");
+      setError(result.message ?? "Đăng nhập không thành công.");
       return;
     }
 
@@ -127,9 +127,9 @@ export const LoginPage = () => {
             </div>
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary-600">
-                Login Portal
+                Cổng đăng nhập
               </p>
-              <h1 className="text-2xl font-bold">Dang nhap he thong nha hang</h1>
+              <h1 className="text-2xl font-bold">Đăng nhập hệ thống nhà hàng</h1>
             </div>
           </div>
 
@@ -143,11 +143,11 @@ export const LoginPage = () => {
                 autoComplete="username"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="Nhap email"
+                placeholder="Nhập email"
               />
             </div>
             <div>
-              <label className="field-label">Mat khau</label>
+              <label className="field-label">Mật khẩu</label>
               <Input
                 ref={passwordInputRef}
                 type="password"
@@ -155,7 +155,7 @@ export const LoginPage = () => {
                 autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Nhap mat khau"
+                placeholder="Nhập mật khẩu"
               />
             </div>
 
@@ -164,14 +164,14 @@ export const LoginPage = () => {
             ) : null}
 
             <Button type="submit" className="w-full" disabled={submitting || isInitializing}>
-              {submitting || isInitializing ? "Dang dang nhap..." : "Dang nhap"}
+              {submitting || isInitializing ? "Đang đăng nhập..." : "Đăng nhập"}
             </Button>
           </form>
 
           <div className="mt-6 rounded-3xl bg-sand-50 p-4 text-sm text-ink-500">
-            <p className="font-semibold text-ink-700">Tai khoan trong database</p>
+            <p className="font-semibold text-ink-700">Tài khoản trong database</p>
             <p className="mt-1 text-xs text-ink-500">
-              Danh sach nay duoc lay tu bang AdminUsers. Nhan vao de dien san email va mat khau.
+              Danh sách này được lấy từ bảng AdminUsers. Nhấn vào để điền sẵn email và mật khẩu.
             </p>
 
             {accountsError ? (
@@ -183,13 +183,13 @@ export const LoginPage = () => {
             <div className="mt-3 grid gap-3">
               {isLoadingAccounts ? (
                 <div className="rounded-2xl border border-dashed border-sand-200 px-4 py-3 text-sm text-ink-500">
-                  Dang tai tai khoan tu database...
+                  Đang tải tài khoản từ database...
                 </div>
               ) : null}
 
               {!isLoadingAccounts && !accountsError && loginAccounts.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-sand-200 px-4 py-3 text-sm text-ink-500">
-                  Chua co tai khoan active trong database.
+                  Chưa có tài khoản đang hoạt động trong database.
                 </div>
               ) : null}
 

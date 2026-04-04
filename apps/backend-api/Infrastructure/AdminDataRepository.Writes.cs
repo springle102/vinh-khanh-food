@@ -48,7 +48,7 @@ public sealed partial class AdminDataRepository
             user.Id);
 
         user.LastLoginAt = now;
-        AppendAuditLog(connection, transaction, user.Name, user.Role, "Dang nhap admin", user.Email);
+        AppendAuditLog(connection, transaction, user.Name, user.Role, "Đăng nhập admin", user.Email);
         var session = CreateSession(connection, transaction, user);
 
         transaction.Commit();
@@ -101,7 +101,7 @@ public sealed partial class AdminDataRepository
             "DELETE FROM dbo.RefreshSessions WHERE RefreshToken = ?;",
             refreshToken);
 
-        AppendAuditLog(connection, transaction, user.Name, user.Role, "Lam moi phien dang nhap", user.Email);
+        AppendAuditLog(connection, transaction, user.Name, user.Role, "Làm mới phiên đăng nhập", user.Email);
         var refreshed = CreateSession(connection, transaction, user);
 
         transaction.Commit();
@@ -190,11 +190,11 @@ public sealed partial class AdminDataRepository
             transaction,
             request.ActorName,
             request.ActorRole,
-            isNew ? "Tao tai khoan admin" : "Cap nhat tai khoan admin",
+            isNew ? "Tạo tài khoản admin" : "Cập nhật tài khoản admin",
             request.Email);
 
         var saved = GetUserById(connection, transaction, userId)
-            ?? throw new InvalidOperationException("Khong the doc lai tai khoan admin sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại tài khoản admin sau khi lưu.");
 
         transaction.Commit();
         return saved;
@@ -221,13 +221,13 @@ public sealed partial class AdminDataRepository
         {
             if (actorUser is null || !string.Equals(actorUser.Role, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("Khong xac dinh duoc chu quan thuc hien thao tac POI.");
+                throw new InvalidOperationException("Không xác định được chủ quán thực hiện thao tác POI.");
             }
 
             var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actorUser.Id);
             if (!isNew && !ownerPoiIds.Contains(poiId))
             {
-                throw new InvalidOperationException("Chu quan chi duoc cap nhat POI cua chinh minh.");
+                throw new InvalidOperationException("Chủ quán chỉ được cập nhật POI của chính mình.");
             }
         }
 
@@ -321,7 +321,7 @@ public sealed partial class AdminDataRepository
             request.Slug);
 
         var saved = GetPoiById(connection, transaction, poiId)
-            ?? throw new InvalidOperationException("Khong the doc lai POI sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại POI sau khi lưu.");
 
         transaction.Commit();
         return saved;
@@ -348,16 +348,16 @@ public sealed partial class AdminDataRepository
     {
         if (isOwnerActor)
         {
-            return existing is null ? "Gui duyet POI moi" : "Cap nhat POI cho duyet";
+            return existing is null ? "Gửi duyệt POI mới" : "Cập nhật POI chờ duyệt";
         }
 
         if (!string.Equals(existing?.Status, "published", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(nextStatus, "published", StringComparison.OrdinalIgnoreCase))
         {
-            return "Duyet POI";
+            return "Duyệt POI";
         }
 
-        return existing is null ? "Tao POI" : "Cap nhat POI";
+        return existing is null ? "Tạo POI" : "Cập nhật POI";
     }
 
     public bool DeletePoi(string id)
@@ -387,7 +387,7 @@ public sealed partial class AdminDataRepository
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioListenLogs WHERE PoiId = ?;", id);
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Pois WHERE Id = ?;", id);
 
-        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa POI", poi.Slug);
+        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa POI", poi.Slug);
 
         transaction.Commit();
         return true;
@@ -471,11 +471,11 @@ public sealed partial class AdminDataRepository
             transaction,
             request.UpdatedBy,
             "SYSTEM",
-            isNew ? "Tao noi dung thuyet minh" : "Cap nhat noi dung thuyet minh",
+            isNew ? "Tạo nội dung thuyết minh" : "Cập nhật nội dung thuyết minh",
             $"{request.EntityType}:{request.LanguageCode}:{request.EntityId}");
 
         var saved = GetTranslationById(connection, transaction, translationId)
-            ?? throw new InvalidOperationException("Khong the doc lai noi dung thuyet minh sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại nội dung thuyết minh sau khi lưu.");
 
         transaction.Commit();
         return saved;
@@ -489,7 +489,7 @@ public sealed partial class AdminDataRepository
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTranslations WHERE Id = ?;", id) > 0;
         if (deleted)
         {
-            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa noi dung thuyet minh", id);
+            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa nội dung thuyết minh", id);
         }
 
         transaction.Commit();
@@ -568,11 +568,11 @@ public sealed partial class AdminDataRepository
             transaction,
             request.UpdatedBy,
             "SYSTEM",
-            isNew ? "Tao audio guide" : "Cap nhat audio guide",
+            isNew ? "Tạo audio guide" : "Cập nhật audio guide",
             $"{request.EntityType}:{request.LanguageCode}:{request.EntityId}");
 
         var saved = GetAudioGuideById(connection, transaction, audioId)
-            ?? throw new InvalidOperationException("Khong the doc lai audio guide sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại audio guide sau khi lưu.");
 
         transaction.Commit();
         return saved;
@@ -586,7 +586,7 @@ public sealed partial class AdminDataRepository
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioGuides WHERE Id = ?;", id) > 0;
         if (deleted)
         {
-            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa audio guide", id);
+            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa audio guide", id);
         }
 
         transaction.Commit();

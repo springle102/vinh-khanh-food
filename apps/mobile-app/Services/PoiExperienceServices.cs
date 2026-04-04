@@ -353,7 +353,17 @@ public sealed class PoiNarrationService : IPoiNarrationService
                 Uri.EscapeDataString(poiId),
                 Uri.EscapeDataString(languageCode));
             var envelope = await client.GetFromJsonAsync<ApiEnvelope<PoiNarrationResponseDto>>(relativeUrl, _jsonOptions, cancellationToken);
-            return envelope?.Success == true ? envelope.Data : null;
+            if (envelope?.Success != true || envelope.Data is null)
+            {
+                return null;
+            }
+
+            if (envelope.Data.AudioGuide is not null)
+            {
+                envelope.Data.AudioGuide.AudioUrl = NormalizeAudioUrl(envelope.Data.AudioGuide.AudioUrl, client.BaseAddress);
+            }
+
+            return envelope.Data;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -455,6 +465,24 @@ public sealed class PoiNarrationService : IPoiNarrationService
 
     private static bool HasPlayableRemoteAudioUrl(string? value) =>
         !string.IsNullOrWhiteSpace(value) && !IsPlaceholderAudioUrl(value);
+
+    private static string NormalizeAudioUrl(string? value, Uri? baseAddress)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim();
+        if (Uri.TryCreate(normalized, UriKind.Absolute, out var absolute))
+        {
+            return absolute.ToString();
+        }
+
+        return baseAddress is null
+            ? normalized
+            : new Uri(baseAddress, normalized).ToString();
+    }
 
     private static bool IsPlaceholderAudioUrl(string? value)
     {

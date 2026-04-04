@@ -23,7 +23,7 @@ public sealed class UsersController(AdminDataRepository repository) : Controller
     {
         var user = repository.GetEndUserById(id, userId, role);
         return user is null
-            ? NotFound(ApiResponse<EndUser>.Fail("Khong tim thay nguoi dung cuoi."))
+            ? NotFound(ApiResponse<EndUser>.Fail("Không tìm thấy người dùng cuối."))
             : Ok(ApiResponse<EndUser>.Ok(user));
     }
 
@@ -36,7 +36,7 @@ public sealed class UsersController(AdminDataRepository repository) : Controller
         var user = repository.GetEndUserById(id, userId, role);
         if (user is null)
         {
-            return NotFound(ApiResponse<IReadOnlyList<EndUserPoiVisit>>.Fail("Khong tim thay nguoi dung cuoi."));
+            return NotFound(ApiResponse<IReadOnlyList<EndUserPoiVisit>>.Fail("Không tìm thấy người dùng cuối."));
         }
 
         return Ok(ApiResponse<IReadOnlyList<EndUserPoiVisit>>.Ok(repository.GetEndUserHistory(id, userId, role)));
@@ -47,7 +47,7 @@ public sealed class UsersController(AdminDataRepository repository) : Controller
     {
         var updated = repository.UpdateEndUserStatus(id, request);
         return updated is null
-            ? NotFound(ApiResponse<EndUser>.Fail("Khong tim thay nguoi dung cuoi."))
-            : Ok(ApiResponse<EndUser>.Ok(updated, "Cap nhat trang thai nguoi dung thanh cong."));
+            ? NotFound(ApiResponse<EndUser>.Fail("Không tìm thấy người dùng cuối."))
+            : Ok(ApiResponse<EndUser>.Ok(updated, "Cập nhật trạng thái người dùng thành công."));
     }
 }

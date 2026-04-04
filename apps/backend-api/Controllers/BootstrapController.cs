@@ -7,13 +7,37 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1")]
-public sealed class BootstrapController(AdminDataRepository repository) : ControllerBase
+public sealed class BootstrapController(
+    AdminDataRepository repository,
+    ILogger<BootstrapController> logger) : ControllerBase
 {
     [HttpGet("bootstrap")]
     public ActionResult<ApiResponse<AdminBootstrapResponse>> GetBootstrap(
         [FromQuery] string? userId,
         [FromQuery] string? role)
-        => Ok(ApiResponse<AdminBootstrapResponse>.Ok(repository.GetBootstrap(userId, role)));
+    {
+        var bootstrap = repository.GetBootstrap(userId, role);
+        if (bootstrap.SyncState is not null)
+        {
+            Response.Headers["X-Data-Version"] = bootstrap.SyncState.Version;
+        }
+
+        logger.LogDebug(
+            "Bootstrap served for scope userId={UserId}, role={Role}, version={Version}",
+            userId,
+            role,
+            bootstrap.SyncState?.Version);
+
+        return Ok(ApiResponse<AdminBootstrapResponse>.Ok(bootstrap));
+    }
+
+    [HttpGet("sync-state")]
+    public ActionResult<ApiResponse<DataSyncState>> GetSyncState()
+    {
+        var syncState = repository.GetSyncState();
+        Response.Headers["X-Data-Version"] = syncState.Version;
+        return Ok(ApiResponse<DataSyncState>.Ok(syncState));
+    }
 
     [HttpGet("dashboard/summary")]
     public ActionResult<ApiResponse<DashboardSummaryResponse>> GetDashboardSummary()

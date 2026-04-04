@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Maui.Devices;
 using Microsoft.Maui.Storage;
+using Microsoft.Extensions.Logging;
 using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
@@ -23,7 +25,9 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
 {
     private const string AppSettingsFileName = "appsettings.json";
     private const string BootstrapEndpoint = "api/v1/bootstrap";
+    private const string SyncStateEndpoint = "api/v1/sync-state";
     private const string DefaultBackdropImageUrl = "https://images.unsplash.com/photo-1520201163981-8cc95007dd2e?auto=format&fit=crop&w=1200&q=80";
+    private static readonly TimeSpan SyncCheckInterval = TimeSpan.FromSeconds(5);
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -111,40 +115,65 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
 
     private readonly SemaphoreSlim _bootstrapLock = new(1, 1);
     private readonly IAppLanguageService _languageService;
+    private readonly ILogger<FoodStreetMockDataService> _logger;
     private BootstrapSnapshot? _bootstrapSnapshot;
+    private DataSyncStateDto? _syncState;
+    private DateTimeOffset _lastSyncCheckAt = DateTimeOffset.MinValue;
     private MobileRuntimeAppSettings? _runtimeSettings;
     private HttpClient? _httpClient;
     private string? _resolvedBaseUrl;
 
-    public FoodStreetMockDataService(IAppLanguageService languageService)
+    public FoodStreetMockDataService(
+        IAppLanguageService languageService,
+        ILogger<FoodStreetMockDataService> logger)
     {
         _languageService = languageService;
+        _logger = logger;
         _languageService.LanguageChanged += (_, _) =>
         {
             _bootstrapSnapshot = null;
+            _syncState = null;
+            _lastSyncCheckAt = DateTimeOffset.MinValue;
             _detailCache.Clear();
         };
     }
 
-    public Task<IReadOnlyList<LanguageOption>> GetLanguagesAsync()
-        => Task.FromResult<IReadOnlyList<LanguageOption>>(Languages.Select(language => new LanguageOption
+    public async Task<IReadOnlyList<LanguageOption>> GetLanguagesAsync()
+    {
+        var snapshot = await GetBootstrapSnapshotAsync();
+        var source = snapshot?.SupportedLanguages.Count > 0
+            ? snapshot.SupportedLanguages
+            : Languages;
+
+        return source.Select(language => new LanguageOption
         {
             Code = language.Code,
             Flag = language.Flag,
             DisplayName = language.DisplayName,
             IsSelected = string.Equals(language.Code, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase)
-        }).ToList());
+        }).ToList();
+    }
 
     public async Task<IReadOnlyList<PoiLocation>> GetPoisAsync()
     {
         var snapshot = await GetBootstrapSnapshotAsync();
-        return snapshot?.Pois.Count > 0 ? snapshot.Pois : BuildLocalizedFallbackPois();
+        if (snapshot?.Pois.Count > 0)
+        {
+            return snapshot.Pois;
+        }
+
+        return await ShouldUseBundledFallbackAsync() ? BuildLocalizedFallbackPois() : [];
     }
 
     public async Task<IReadOnlyList<MapHeatPoint>> GetHeatPointsAsync()
     {
         var snapshot = await GetBootstrapSnapshotAsync();
-        return snapshot?.HeatPoints.Count > 0 ? snapshot.HeatPoints : FallbackHeatPoints;
+        if (snapshot?.HeatPoints.Count > 0)
+        {
+            return snapshot.HeatPoints;
+        }
+
+        return await ShouldUseBundledFallbackAsync() ? FallbackHeatPoints : [];
     }
 
     public async Task<PoiExperienceDetail?> GetPoiDetailAsync(string poiId)
@@ -166,6 +195,11 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
             return detail;
         }
 
+        if (!await ShouldUseBundledFallbackAsync())
+        {
+            return null;
+        }
+
         var fallbackDetail = BuildFallbackPoiDetail(poiId);
         if (fallbackDetail is not null)
         {
@@ -177,6 +211,18 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
 
     public async Task<TourPlan> GetTourPlanAsync()
     {
+        var snapshot = await GetBootstrapSnapshotAsync();
+        var routePlan = TryBuildTourPlanFromSnapshot(snapshot);
+        if (routePlan is not null)
+        {
+            return routePlan;
+        }
+
+        if (!await ShouldUseBundledFallbackAsync())
+        {
+            return CreateEmptyTourPlan();
+        }
+
         var poiLookup = (await GetPoisAsync()).ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
         var stops = new List<TourStop>
         {
@@ -203,6 +249,25 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
             Checkpoints = checkpoints
         };
     }
+
+    private TourPlan CreateEmptyTourPlan()
+        => new()
+        {
+            Title = GetTourThemeText(),
+            Theme = GetTourThemeText(),
+            Description = GetTourDescriptionText(),
+            ProgressValue = 0,
+            ProgressText = FormatTourProgressText(0, 0),
+            SummaryText = SelectLocalizedText(CreateLocalizedMap(
+                "Chưa có lộ trình nào sẵn sàng từ hệ thống quản trị.",
+                "No tour is currently available from the admin system.",
+                "管理系统当前尚未提供可用路线。",
+                "관리 시스템에서 현재 사용할 수 있는 투어 경로가 없습니다.",
+                "現在、管理システムから利用可能なツアールートはありません。",
+                "Aucun itinéraire n'est actuellement disponible depuis le système d'administration.")),
+            Stops = [],
+            Checkpoints = []
+        };
 
     public async Task<UserProfileCard> GetUserProfileAsync()
     {
@@ -247,49 +312,110 @@ public sealed partial class FoodStreetMockDataService
 
     private async Task<BootstrapSnapshot?> GetBootstrapSnapshotAsync()
     {
-        if (_bootstrapSnapshot is not null)
-        {
-            return _bootstrapSnapshot;
-        }
-
         await _bootstrapLock.WaitAsync();
         try
         {
-            if (_bootstrapSnapshot is not null)
+            var client = await GetClientAsync();
+            if (client is null)
             {
                 return _bootstrapSnapshot;
             }
 
-            var client = await GetClientAsync();
-            if (client is null)
+            if (_bootstrapSnapshot is null)
             {
-                return null;
+                return await RefreshBootstrapSnapshotAsync(client, null, "initial");
             }
 
-            var response = await client.GetAsync(BootstrapEndpoint);
-            if (!response.IsSuccessStatusCode)
+            if (!ShouldCheckSyncState())
             {
-                return null;
+                return _bootstrapSnapshot;
             }
 
-            var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<AdminBootstrapDto>>(JsonOptions);
-            if (envelope?.Success != true || envelope.Data is null)
+            var remoteSyncState = await FetchSyncStateAsync(client);
+            _lastSyncCheckAt = DateTimeOffset.UtcNow;
+
+            if (remoteSyncState is null)
             {
-                return null;
+                _logger.LogDebug(
+                    "Sync-state check failed. Reusing cached bootstrap version {Version}.",
+                    _syncState?.Version ?? "none");
+                return _bootstrapSnapshot;
             }
 
-            var snapshot = CreateSnapshot(envelope.Data);
-            _bootstrapSnapshot = snapshot.Pois.Count > 0 ? snapshot : null;
-            return _bootstrapSnapshot;
+            if (string.Equals(_syncState?.Version, remoteSyncState.Version, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogDebug("Bootstrap snapshot is already current at version {Version}.", remoteSyncState.Version);
+                return _bootstrapSnapshot;
+            }
+
+            return await RefreshBootstrapSnapshotAsync(client, remoteSyncState, "version-changed");
         }
-        catch
+        catch (Exception exception)
         {
-            return null;
+            _logger.LogWarning(exception, "Unable to refresh bootstrap snapshot. Reusing cached data if available.");
+            return _bootstrapSnapshot;
         }
         finally
         {
             _bootstrapLock.Release();
         }
+    }
+
+    private bool ShouldCheckSyncState()
+        => _bootstrapSnapshot is null || DateTimeOffset.UtcNow - _lastSyncCheckAt >= SyncCheckInterval;
+
+    private async Task<bool> ShouldUseBundledFallbackAsync()
+        => !await HasRemoteApiConfiguredAsync();
+
+    private async Task<bool> HasRemoteApiConfiguredAsync()
+    {
+        var runtimeSettings = await LoadRuntimeSettingsAsync();
+        return !string.IsNullOrWhiteSpace(EnsureTrailingSlash(ResolveApiBaseUrl(runtimeSettings)));
+    }
+
+    private async Task<DataSyncStateDto?> FetchSyncStateAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync(SyncStateEndpoint);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<DataSyncStateDto>>(JsonOptions);
+        return envelope?.Success == true ? envelope.Data : null;
+    }
+
+    private async Task<BootstrapSnapshot?> RefreshBootstrapSnapshotAsync(
+        HttpClient client,
+        DataSyncStateDto? remoteSyncState,
+        string reason)
+    {
+        using var response = await client.GetAsync(BootstrapEndpoint);
+        if (!response.IsSuccessStatusCode)
+        {
+            return _bootstrapSnapshot;
+        }
+
+        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<AdminBootstrapDto>>(JsonOptions);
+        if (envelope?.Success != true || envelope.Data is null)
+        {
+            return _bootstrapSnapshot;
+        }
+
+        var snapshot = CreateSnapshot(envelope.Data);
+        _bootstrapSnapshot = snapshot;
+        _syncState = envelope.Data.SyncState ?? remoteSyncState;
+        _lastSyncCheckAt = DateTimeOffset.UtcNow;
+        _detailCache.Clear();
+
+        _logger.LogInformation(
+            "Bootstrap snapshot refreshed ({Reason}). Version={Version}; pois={PoiCount}; routes={RouteCount}",
+            reason,
+            _syncState?.Version ?? "none",
+            snapshot.Pois.Count,
+            snapshot.Routes.Count);
+
+        return _bootstrapSnapshot;
     }
 
     private async Task<HttpClient?> GetClientAsync()
@@ -298,6 +424,7 @@ public sealed partial class FoodStreetMockDataService
         var nextBaseUrl = EnsureTrailingSlash(ResolveApiBaseUrl(runtimeSettings));
         if (string.IsNullOrWhiteSpace(nextBaseUrl))
         {
+            _logger.LogWarning("Mobile app has no API base URL configured. Using bundled fallback content.");
             return null;
         }
 
@@ -318,6 +445,12 @@ public sealed partial class FoodStreetMockDataService
             BaseAddress = new Uri(nextBaseUrl, UriKind.Absolute),
             Timeout = TimeSpan.FromSeconds(4)
         };
+        _httpClient.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue
+        {
+            NoCache = true,
+            NoStore = true
+        };
+        _httpClient.DefaultRequestHeaders.Pragma.ParseAdd("no-cache");
         _resolvedBaseUrl = nextBaseUrl;
         return _httpClient;
     }
@@ -349,6 +482,7 @@ public sealed partial class FoodStreetMockDataService
         var categoriesById = bootstrap.Categories
             .Where(item => !string.IsNullOrWhiteSpace(item.Id))
             .ToDictionary(item => item.Id, item => item.Name, StringComparer.OrdinalIgnoreCase);
+        var supportedLanguages = BuildSupportedLanguages(bootstrap.Settings);
 
         var translationsByPoiId = bootstrap.Translations
             .Where(item => string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase))
@@ -369,11 +503,14 @@ public sealed partial class FoodStreetMockDataService
             .ToDictionary(group => group.Key, group => group.First().ImageUrl, StringComparer.OrdinalIgnoreCase);
 
         var orderedPois = bootstrap.Pois
-            .Where(item => IsValidCoordinate(item.Lat) && IsValidCoordinate(item.Lng))
+            .Where(item => IsPublishedContent(item.Status) && IsValidCoordinate(item.Lat) && IsValidCoordinate(item.Lng))
             .OrderByDescending(item => item.Featured)
             .ThenByDescending(item => item.PopularityScore)
             .ThenBy(item => item.Slug, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var publishedPoiIds = orderedPois
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var poiLocations = orderedPois.Select(poi =>
         {
@@ -410,7 +547,9 @@ public sealed partial class FoodStreetMockDataService
             BuildHeatPoints(orderedPois, bootstrap.ViewLogs, bootstrap.AudioListenLogs),
             ResolveBackdropImageUrl(poiLocations, poiImages),
             ResolveUserProfile(bootstrap.CustomerUsers),
-            new Dictionary<string, PoiExperienceDetail>(StringComparer.OrdinalIgnoreCase));
+            new Dictionary<string, PoiExperienceDetail>(StringComparer.OrdinalIgnoreCase),
+            supportedLanguages,
+            BuildRouteSnapshots(bootstrap.Routes, bootstrap.Translations, publishedPoiIds));
     }
 
     private BootstrapSnapshot CreateSnapshot(AdminBootstrapDto bootstrap)
@@ -418,6 +557,7 @@ public sealed partial class FoodStreetMockDataService
         var categoriesById = bootstrap.Categories
             .Where(item => !string.IsNullOrWhiteSpace(item.Id))
             .ToDictionary(item => item.Id, item => item.Name, StringComparer.OrdinalIgnoreCase);
+        var supportedLanguages = BuildSupportedLanguages(bootstrap.Settings);
 
         var translationsByPoiId = bootstrap.Translations
             .Where(item => string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase))
@@ -466,11 +606,14 @@ public sealed partial class FoodStreetMockDataService
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
 
         var orderedPois = bootstrap.Pois
-            .Where(item => IsValidCoordinate(item.Lat) && IsValidCoordinate(item.Lng))
+            .Where(item => IsPublishedContent(item.Status) && IsValidCoordinate(item.Lat) && IsValidCoordinate(item.Lng))
             .OrderByDescending(item => item.Featured)
             .ThenByDescending(item => item.PopularityScore)
             .ThenBy(item => item.Slug, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var publishedPoiIds = orderedPois
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var poiDetails = orderedPois.ToDictionary(poi => poi.Id, poi =>
         {
@@ -497,7 +640,175 @@ public sealed partial class FoodStreetMockDataService
             BuildHeatPoints(orderedPois, bootstrap.ViewLogs, bootstrap.AudioListenLogs),
             ResolveBackdropImageUrl(poiDetails),
             ResolveUserProfile(bootstrap.CustomerUsers),
-            poiDetails);
+            poiDetails,
+            supportedLanguages,
+            BuildRouteSnapshots(bootstrap.Routes, bootstrap.Translations, publishedPoiIds));
+    }
+
+    private TourPlan? TryBuildTourPlanFromSnapshot(BootstrapSnapshot? snapshot)
+    {
+        if (snapshot is null || snapshot.Routes.Count == 0)
+        {
+            return null;
+        }
+
+        var poiLookup = snapshot.Pois.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
+        var route = snapshot.Routes
+            .Where(item => item.StopPoiIds.Count > 0)
+            .OrderByDescending(item => item.UpdatedAt)
+            .FirstOrDefault();
+        if (route is null)
+        {
+            return null;
+        }
+
+        var stopPoiIds = route.StopPoiIds
+            .Where(poiLookup.ContainsKey)
+            .ToList();
+        if (stopPoiIds.Count == 0)
+        {
+            return null;
+        }
+
+        var stops = stopPoiIds
+            .Select((poiId, index) => CreateTourStop(poiLookup, poiId, index + 1))
+            .ToList();
+        var checkpoints = stopPoiIds
+            .Select((poiId, index) =>
+            {
+                var distanceText = poiLookup.TryGetValue(poiId, out var poi)
+                    ? poi.DistanceText
+                    : FormatVisitDuration(15);
+                return CreateCheckpoint(poiLookup, poiId, index + 1, distanceText, false);
+            })
+            .ToList();
+
+        return new TourPlan
+        {
+            Title = FirstNonEmpty(route.Name, route.Theme, GetTourThemeText()),
+            Theme = FirstNonEmpty(route.Theme, route.Name, GetTourThemeText()),
+            Description = FirstNonEmpty(route.Description, GetTourDescriptionText()),
+            ProgressValue = 0,
+            ProgressText = FormatTourProgressText(0, checkpoints.Count),
+            SummaryText = BuildRouteSummaryText(route, checkpoints.Count),
+            Stops = stops,
+            Checkpoints = checkpoints
+        };
+    }
+
+    private IReadOnlyList<LanguageOption> BuildSupportedLanguages(SystemSettingDto? settings)
+    {
+        var orderedCodes = new List<string>();
+
+        void AddCode(string? code)
+        {
+            if (!string.IsNullOrWhiteSpace(code) &&
+                !orderedCodes.Contains(code.Trim(), StringComparer.OrdinalIgnoreCase))
+            {
+                orderedCodes.Add(code.Trim());
+            }
+        }
+
+        AddCode(settings?.DefaultLanguage);
+        AddCode(settings?.FallbackLanguage);
+
+        foreach (var code in settings?.FreeLanguages ?? [])
+        {
+            AddCode(code);
+        }
+
+        foreach (var code in settings?.PremiumLanguages ?? [])
+        {
+            AddCode(code);
+        }
+
+        if (orderedCodes.Count == 0)
+        {
+            orderedCodes.AddRange(Languages.Select(item => item.Code));
+        }
+
+        return orderedCodes
+            .Select(CreateLanguageOption)
+            .ToList();
+    }
+
+    private LanguageOption CreateLanguageOption(string code)
+    {
+        var template = Languages.FirstOrDefault(item =>
+            string.Equals(item.Code, code, StringComparison.OrdinalIgnoreCase));
+
+        return new LanguageOption
+        {
+            Code = code,
+            Flag = template?.Flag ?? "🌐",
+            DisplayName = template?.DisplayName ?? code,
+            IsSelected = string.Equals(code, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase)
+        };
+    }
+
+    private IReadOnlyList<RouteSnapshot> BuildRouteSnapshots(
+        IReadOnlyList<RouteDto> routes,
+        IReadOnlyList<TranslationDto> translations,
+        IReadOnlySet<string> publishedPoiIds)
+    {
+        var routeTranslationsById = translations
+            .Where(item => string.Equals(item.EntityType, "route", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        return routes
+            .Where(route => route.IsActive)
+            .Select(route =>
+            {
+                routeTranslationsById.TryGetValue(route.Id, out var routeTranslations);
+                var translation = SelectRouteTranslation(routeTranslations);
+                var stopPoiIds = route.StopPoiIds
+                    .Where(publishedPoiIds.Contains)
+                    .ToList();
+
+                return new RouteSnapshot(
+                    route.Id,
+                    FirstNonEmpty(translation?.Title, route.Name),
+                    route.Theme,
+                    FirstNonEmpty(translation?.FullText, translation?.ShortText, route.Description),
+                    route.UpdatedAt,
+                    stopPoiIds);
+            })
+            .Where(route => route.StopPoiIds.Count > 0)
+            .ToList();
+    }
+
+    private TranslationDto? SelectRouteTranslation(IReadOnlyList<TranslationDto>? translations)
+    {
+        if (translations is null || translations.Count == 0)
+        {
+            return null;
+        }
+
+        return translations.FirstOrDefault(item =>
+                   !string.IsNullOrWhiteSpace(item.Title) &&
+                   string.Equals(item.LanguageCode, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase))
+               ?? translations.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.Title))
+               ?? translations[0];
+    }
+
+    private static bool IsPublishedContent(string? status)
+        => string.Equals(status?.Trim(), "published", StringComparison.OrdinalIgnoreCase);
+
+    private string BuildRouteSummaryText(RouteSnapshot route, int stopCount)
+    {
+        if (!string.IsNullOrWhiteSpace(route.Description))
+        {
+            return route.Description;
+        }
+
+        return SelectLocalizedText(CreateLocalizedMap(
+            $"Tuyến này có {stopCount} điểm dừng đang được xuất bản trên app.",
+            $"This route currently includes {stopCount} published stops in the app.",
+            $"该路线当前包含 {stopCount} 个已在应用发布的站点。",
+            $"이 경로에는 현재 앱에 게시된 정차 지점 {stopCount}곳이 포함됩니다.",
+            $"このルートには現在、アプリ上で公開されている立ち寄り先が {stopCount} か所あります。",
+            $"Cet itinéraire comprend actuellement {stopCount} étapes publiées dans l'application."));
     }
 
     private static IReadOnlyList<MapHeatPoint> BuildHeatPoints(
@@ -755,7 +1066,17 @@ public sealed partial class FoodStreetMockDataService
         IReadOnlyList<MapHeatPoint> HeatPoints,
         string BackdropImageUrl,
         UserProfileCard UserProfile,
-        IReadOnlyDictionary<string, PoiExperienceDetail> PoiDetails);
+        IReadOnlyDictionary<string, PoiExperienceDetail> PoiDetails,
+        IReadOnlyList<LanguageOption> SupportedLanguages,
+        IReadOnlyList<RouteSnapshot> Routes);
+
+    private sealed record RouteSnapshot(
+        string Id,
+        string Name,
+        string Theme,
+        string Description,
+        DateTimeOffset UpdatedAt,
+        IReadOnlyList<string> StopPoiIds);
 
     private sealed class MobileRuntimeAppSettings
     {
@@ -774,9 +1095,12 @@ public sealed partial class FoodStreetMockDataService
         public List<AudioGuideDto> AudioGuides { get; set; } = [];
         public List<MediaAssetDto> MediaAssets { get; set; } = [];
         public List<FoodItemDto> FoodItems { get; set; } = [];
+        public List<RouteDto> Routes { get; set; } = [];
         public List<ReviewDto> Reviews { get; set; } = [];
         public List<ViewLogDto> ViewLogs { get; set; } = [];
         public List<AudioListenLogDto> AudioListenLogs { get; set; } = [];
+        public SystemSettingDto? Settings { get; set; }
+        public DataSyncStateDto? SyncState { get; set; }
     }
 
     private sealed class CustomerUserDto
@@ -847,6 +1171,18 @@ public sealed partial class FoodStreetMockDataService
         public string ImageUrl { get; set; } = string.Empty;
     }
 
+    private sealed class RouteDto
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Theme { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public int DurationMinutes { get; set; }
+        public List<string> StopPoiIds { get; set; } = [];
+        public bool IsActive { get; set; }
+        public DateTimeOffset UpdatedAt { get; set; }
+    }
+
     private sealed class AudioGuideDto
     {
         public string EntityType { get; set; } = string.Empty;
@@ -876,5 +1212,20 @@ public sealed partial class FoodStreetMockDataService
     private sealed class AudioListenLogDto
     {
         public string PoiId { get; set; } = string.Empty;
+    }
+
+    private sealed class SystemSettingDto
+    {
+        public string DefaultLanguage { get; set; } = "vi";
+        public string FallbackLanguage { get; set; } = "en";
+        public List<string> FreeLanguages { get; set; } = [];
+        public List<string> PremiumLanguages { get; set; } = [];
+    }
+
+    private sealed class DataSyncStateDto
+    {
+        public string Version { get; set; } = string.Empty;
+        public DateTimeOffset GeneratedAt { get; set; }
+        public DateTimeOffset LastChangedAt { get; set; }
     }
 }

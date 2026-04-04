@@ -114,6 +114,12 @@ Mobile App -------------------> Backend API
   - `ApiBaseUrl` cho môi trường local
   - `PlatformApiBaseUrls.Android` nên đổi thành IP của máy đang chạy backend trong cùng mạng hoặc emulator
 
+## Google Translate TTS
+
+- Audio guide đã upload vẫn được ưu tiên cho admin web và mobile app
+- Khi không có audio sẵn, admin web và mobile app đều fallback sang Google Translate TTS từ cùng một nội dung narration đã resolve từ backend
+- Backend `api/v1/pois/{id}/narration` tiếp tục đồng bộ text, ngôn ngữ hiệu lực và audio guide giữa admin và app
+
 ## Các lệnh root thường dùng
 
 ```powershell

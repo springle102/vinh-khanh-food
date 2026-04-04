@@ -56,7 +56,7 @@ public sealed class PoisController(
     {
         var poi = repository.GetPois(userId, role).FirstOrDefault(item => item.Id == id);
         return poi is null
-            ? NotFound(ApiResponse<Poi>.Fail("Khong tim thay POI."))
+            ? NotFound(ApiResponse<Poi>.Fail("Không tìm thấy POI."))
             : Ok(ApiResponse<Poi>.Ok(poi));
     }
 
@@ -69,7 +69,7 @@ public sealed class PoisController(
         var poi = repository.GetPois(userId, role).FirstOrDefault(item => item.Id == id);
         if (poi is null)
         {
-            return NotFound(ApiResponse<PoiDetailResponse>.Fail("Khong tim thay POI."));
+            return NotFound(ApiResponse<PoiDetailResponse>.Fail("Không tìm thấy POI."));
         }
 
         var translations = repository.GetTranslations()
@@ -98,7 +98,7 @@ public sealed class PoisController(
     {
         if (string.IsNullOrWhiteSpace(languageCode))
         {
-            return BadRequest(ApiResponse<PoiNarrationResponse>.Fail("LanguageCode la bat buoc."));
+            return BadRequest(ApiResponse<PoiNarrationResponse>.Fail("LanguageCode là bắt buộc."));
         }
 
         var narration = await poiNarrationService.ResolveAsync(
@@ -109,7 +109,7 @@ public sealed class PoisController(
             role,
             cancellationToken);
         return narration is null
-            ? NotFound(ApiResponse<PoiNarrationResponse>.Fail("Khong tim thay POI."))
+            ? NotFound(ApiResponse<PoiNarrationResponse>.Fail("Không tìm thấy POI."))
             : Ok(ApiResponse<PoiNarrationResponse>.Ok(narration));
     }
 
@@ -118,11 +118,11 @@ public sealed class PoisController(
     {
         if (string.IsNullOrWhiteSpace(request.Slug) || string.IsNullOrWhiteSpace(request.Address))
         {
-            return BadRequest(ApiResponse<Poi>.Fail("Slug va dia chi POI la bat buoc."));
+            return BadRequest(ApiResponse<Poi>.Fail("Slug và địa chỉ POI là bắt buộc."));
         }
 
         var saved = repository.SavePoi(null, request);
-        return CreatedAtAction(nameof(GetPoiById), new { id = saved.Id }, ApiResponse<Poi>.Ok(saved, "Tao POI thanh cong."));
+        return CreatedAtAction(nameof(GetPoiById), new { id = saved.Id }, ApiResponse<Poi>.Ok(saved, "Tạo POI thành công."));
     }
 
     [HttpPut("{id}")]
@@ -131,11 +131,11 @@ public sealed class PoisController(
         var existing = repository.GetPois().Any(item => item.Id == id);
         if (!existing)
         {
-            return NotFound(ApiResponse<Poi>.Fail("Khong tim thay POI."));
+            return NotFound(ApiResponse<Poi>.Fail("Không tìm thấy POI."));
         }
 
         var saved = repository.SavePoi(id, request);
-        return Ok(ApiResponse<Poi>.Ok(saved, "Cap nhat POI thanh cong."));
+        return Ok(ApiResponse<Poi>.Ok(saved, "Cập nhật POI thành công."));
     }
 
     [HttpDelete("{id}")]
@@ -143,7 +143,7 @@ public sealed class PoisController(
     {
         var deleted = repository.DeletePoi(id);
         return deleted
-            ? Ok(ApiResponse<string>.Ok(id, "Xoa POI thanh cong."))
-            : NotFound(ApiResponse<string>.Fail("Khong tim thay POI."));
+            ? Ok(ApiResponse<string>.Ok(id, "Xóa POI thành công."))
+            : NotFound(ApiResponse<string>.Fail("Không tìm thấy POI."));
     }
 }

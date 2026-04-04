@@ -47,7 +47,7 @@ function Resolve-AndroidDeviceManagerPath {
         }
     }
 
-    throw "Khong tim thay AndroidDevices.exe trong Visual Studio."
+    throw "Không tìm thấy AndroidDevices.exe trong Visual Studio."
 }
 
 function Get-OrStart-AndroidDeviceManager {

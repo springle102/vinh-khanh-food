@@ -32,11 +32,11 @@ public sealed class PromotionsController(AdminDataRepository repository) : Contr
     {
         if (string.IsNullOrWhiteSpace(request.PoiId) || string.IsNullOrWhiteSpace(request.Title))
         {
-            return BadRequest(ApiResponse<Promotion>.Fail("PoiId va tieu de uu dai la bat buoc."));
+            return BadRequest(ApiResponse<Promotion>.Fail("PoiId và tiêu đề ưu đãi là bắt buộc."));
         }
 
         var saved = repository.SavePromotion(null, request);
-        return Ok(ApiResponse<Promotion>.Ok(saved, "Tao uu dai thanh cong."));
+        return Ok(ApiResponse<Promotion>.Ok(saved, "Tạo ưu đãi thành công."));
     }
 
     [HttpPut("{id}")]
@@ -45,11 +45,11 @@ public sealed class PromotionsController(AdminDataRepository repository) : Contr
         var existing = repository.GetPromotions().Any(item => item.Id == id);
         if (!existing)
         {
-            return NotFound(ApiResponse<Promotion>.Fail("Khong tim thay uu dai."));
+            return NotFound(ApiResponse<Promotion>.Fail("Không tìm thấy ưu đãi."));
         }
 
         var saved = repository.SavePromotion(id, request);
-        return Ok(ApiResponse<Promotion>.Ok(saved, "Cap nhat uu dai thanh cong."));
+        return Ok(ApiResponse<Promotion>.Ok(saved, "Cập nhật ưu đãi thành công."));
     }
 
     [HttpDelete("{id}")]
@@ -57,7 +57,7 @@ public sealed class PromotionsController(AdminDataRepository repository) : Contr
     {
         var deleted = repository.DeletePromotion(id);
         return deleted
-            ? Ok(ApiResponse<string>.Ok(id, "Xoa uu dai thanh cong."))
-            : NotFound(ApiResponse<string>.Fail("Khong tim thay uu dai."));
+            ? Ok(ApiResponse<string>.Ok(id, "Xóa ưu đãi thành công."))
+            : NotFound(ApiResponse<string>.Fail("Không tìm thấy ưu đãi."));
     }
 }

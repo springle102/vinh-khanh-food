@@ -17,10 +17,10 @@ public sealed class StorageController(StorageService storageService) : Controlle
     {
         if (file is null)
         {
-            return BadRequest(ApiResponse<StoredFileResponse>.Fail("File upload la bat buoc."));
+            return BadRequest(ApiResponse<StoredFileResponse>.Fail("File upload là bắt buộc."));
         }
 
         var stored = await storageService.SaveAsync(file, folder, cancellationToken);
-        return Ok(ApiResponse<StoredFileResponse>.Ok(stored, "Upload file thanh cong."));
+        return Ok(ApiResponse<StoredFileResponse>.Ok(stored, "Upload file thành công."));
     }
 }

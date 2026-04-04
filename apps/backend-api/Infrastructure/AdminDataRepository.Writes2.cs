@@ -40,7 +40,7 @@ public sealed partial class AdminDataRepository
             transaction,
             request.ActorName,
             request.ActorRole,
-            request.IsBanned ? "Khoa nguoi dung cuoi" : "Mo khoa nguoi dung cuoi",
+            request.IsBanned ? "Khóa người dùng cuối" : "Mở khóa người dùng cuối",
             id);
 
         var saved = GetEndUserById(connection, transaction, id);
@@ -97,10 +97,10 @@ public sealed partial class AdminDataRepository
                 mediaId);
         }
 
-        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", isNew ? "Tao media asset" : "Cap nhat media asset", mediaId);
+        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", isNew ? "Tạo media asset" : "Cập nhật media asset", mediaId);
 
         var saved = GetMediaAssetById(connection, transaction, mediaId)
-            ?? throw new InvalidOperationException("Khong the doc lai media asset sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại media asset sau khi lưu.");
 
         transaction.Commit();
         return saved;
@@ -114,7 +114,7 @@ public sealed partial class AdminDataRepository
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.MediaAssets WHERE Id = ?;", id) > 0;
         if (deleted)
         {
-            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa media asset", id);
+            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa media asset", id);
         }
 
         transaction.Commit();
@@ -171,10 +171,10 @@ public sealed partial class AdminDataRepository
                 foodId);
         }
 
-        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", isNew ? "Tao mon an" : "Cap nhat mon an", request.Name);
+        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", isNew ? "Tạo món ăn" : "Cập nhật món ăn", request.Name);
 
         var saved = GetFoodItemById(connection, transaction, foodId)
-            ?? throw new InvalidOperationException("Khong the doc lai mon an sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại món ăn sau khi lưu.");
 
         transaction.Commit();
         return saved;
@@ -188,7 +188,7 @@ public sealed partial class AdminDataRepository
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.FoodItems WHERE Id = ?;", id) > 0;
         if (deleted)
         {
-            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa mon an", id);
+            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa món ăn", id);
         }
 
         transaction.Commit();
@@ -412,11 +412,11 @@ public sealed partial class AdminDataRepository
             transaction,
             request.ActorName,
             request.ActorRole,
-            isNew ? "Tao uu dai" : "Cap nhat uu dai",
+            isNew ? "Tạo ưu đãi" : "Cập nhật ưu đãi",
             request.Title);
 
         var saved = GetPromotionById(connection, transaction, promotionId)
-            ?? throw new InvalidOperationException("Khong the doc lai uu dai sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại ưu đãi sau khi lưu.");
 
         transaction.Commit();
         return saved;
@@ -430,7 +430,7 @@ public sealed partial class AdminDataRepository
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Promotions WHERE Id = ?;", id) > 0;
         if (deleted)
         {
-            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa uu dai", id);
+            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa ưu đãi", id);
         }
 
         transaction.Commit();
@@ -470,7 +470,7 @@ public sealed partial class AdminDataRepository
             review.CreatedAt,
             review.Status);
 
-        AppendAuditLog(connection, transaction, review.UserName, "CUSTOMER", "Tao danh gia", review.PoiId);
+        AppendAuditLog(connection, transaction, review.UserName, "CUSTOMER", "Tạo đánh giá", review.PoiId);
 
         transaction.Commit();
         return review;
@@ -489,7 +489,7 @@ public sealed partial class AdminDataRepository
         }
 
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.Reviews SET [Status] = ? WHERE Id = ?;", request.Status, id);
-        AppendAuditLog(connection, transaction, request.ActorName, request.ActorRole, "Cap nhat trang thai danh gia", id);
+        AppendAuditLog(connection, transaction, request.ActorName, request.ActorRole, "Cập nhật trạng thái đánh giá", id);
 
         var saved = GetReviewById(connection, transaction, id);
         transaction.Commit();
@@ -562,7 +562,7 @@ public sealed partial class AdminDataRepository
         ReplaceSettingLanguages(connection, transaction, "free", request.FreeLanguages);
         ReplaceSettingLanguages(connection, transaction, "premium", request.PremiumLanguages);
 
-        AppendAuditLog(connection, transaction, request.ActorName, request.ActorRole, "Cap nhat cai dat he thong", request.AppName);
+        AppendAuditLog(connection, transaction, request.ActorName, request.ActorRole, "Cập nhật cài đặt hệ thống", request.AppName);
 
         var saved = GetSettings(connection, transaction);
         transaction.Commit();

@@ -146,7 +146,7 @@ const buildHeaders = (headers?: HeadersInit) => {
   return nextHeaders;
 };
 
-const resolveRequestUrl = (path: string) => {
+export const resolveApiUrl = (path: string) => {
   if (!API_BASE_URL || ABSOLUTE_URL_PATTERN.test(path)) {
     return path;
   }
@@ -187,8 +187,9 @@ const parseResponse = async <T>(response: Response) => {
 };
 
 const request = async <T>(path: string, init?: RequestInit) => {
-  const response = await fetch(resolveRequestUrl(path), {
+  const response = await fetch(resolveApiUrl(path), {
     ...init,
+    cache: "no-store",
     headers: buildHeaders(init?.headers),
   });
 

@@ -16,25 +16,25 @@ public static class ApiResponseHttpWriter
         var messages = context.ModelState
             .Values
             .SelectMany(entry => entry.Errors)
-            .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage) ? "Du lieu gui len khong hop le." : error.ErrorMessage)
+            .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage) ? "Dữ liệu gửi lên không hợp lệ." : error.ErrorMessage)
             .Distinct()
             .ToArray();
 
         return messages.Length > 0
             ? string.Join("; ", messages)
-            : "Du lieu gui len khong hop le.";
+            : "Dữ liệu gửi lên không hợp lệ.";
     }
 
     public static string GetDefaultMessage(int statusCode) => statusCode switch
     {
-        StatusCodes.Status400BadRequest => "Du lieu gui len khong hop le.",
-        StatusCodes.Status401Unauthorized => "Ban chua dang nhap hoac phien dang nhap da het han.",
-        StatusCodes.Status403Forbidden => "Ban khong co quyen truy cap tai nguyen nay.",
-        StatusCodes.Status404NotFound => "Khong tim thay tai nguyen yeu cau.",
-        StatusCodes.Status405MethodNotAllowed => "Phuong thuc yeu cau khong duoc ho tro.",
-        StatusCodes.Status415UnsupportedMediaType => "Dinh dang du lieu gui len khong duoc ho tro.",
-        StatusCodes.Status422UnprocessableEntity => "Du lieu gui len khong hop le.",
-        StatusCodes.Status500InternalServerError => "He thong gap loi trong qua trinh xu ly.",
-        _ => "Yeu cau den backend that bai."
+        StatusCodes.Status400BadRequest => "Dữ liệu gửi lên không hợp lệ.",
+        StatusCodes.Status401Unauthorized => "Bạn chưa đăng nhập hoặc phiên đăng nhập đã hết hạn.",
+        StatusCodes.Status403Forbidden => "Bạn không có quyền truy cập tài nguyên này.",
+        StatusCodes.Status404NotFound => "Không tìm thấy tài nguyên yêu cầu.",
+        StatusCodes.Status405MethodNotAllowed => "Phương thức yêu cầu không được hỗ trợ.",
+        StatusCodes.Status415UnsupportedMediaType => "Định dạng dữ liệu gửi lên không được hỗ trợ.",
+        StatusCodes.Status422UnprocessableEntity => "Dữ liệu gửi lên không hợp lệ.",
+        StatusCodes.Status500InternalServerError => "Hệ thống gặp lỗi trong quá trình xử lý.",
+        _ => "Yêu cầu đến backend thất bại."
     };
 }

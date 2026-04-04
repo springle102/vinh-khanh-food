@@ -111,6 +111,7 @@ const getSubmissionStatus = (role: "SUPER_ADMIN" | "PLACE_OWNER" | undefined, st
 export const PoisPage = () => {
   const { state, saveAudioGuide, savePoi } = useAdminData();
   const { user } = useAuth();
+  const syncVersion = state.syncState?.version ?? "bootstrap";
   const isOwner = user?.role === "PLACE_OWNER";
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const {
@@ -119,6 +120,7 @@ export const PoisPage = () => {
     primePlayback,
     resolvePoiNarration,
     playPoiNarration,
+    playResolvedNarration,
     buildPlaybackKey,
   } = usePoiNarrationPlayback(state);
   const [keyword, setKeyword] = useState("");
@@ -390,6 +392,22 @@ export const PoisPage = () => {
   }, [selectedPoiId, stopCurrentAudio]);
 
   useEffect(() => {
+    poiDetailCacheRef.current.clear();
+    setSelectedNarration(null);
+
+    if (!selectedPoiId) {
+      setSelectedPoiDetail(null);
+      return;
+    }
+
+    setSelectedPoiDetail(null);
+    void fetchPOIDetail(selectedPoiId, {
+      useCache: false,
+      updateSelected: true,
+    }).catch(() => undefined);
+  }, [fetchPOIDetail, selectedPoiId, syncVersion]);
+
+  useEffect(() => {
     if (!selectedPoiId) {
       return;
     }
@@ -523,6 +541,36 @@ export const PoisPage = () => {
       void prefetchPoiNarration(poiId);
     });
   }, [mapPois, prefetchPoiNarration, visiblePoiIds]);
+
+  const handleReplaySelectedNarration = useCallback(() => {
+    if (!selectedPoi) {
+      return;
+    }
+
+    primePlayback();
+    setHasNarrationInteraction(true);
+
+    if (selectedNarration) {
+      void playResolvedNarration(selectedNarration);
+      return;
+    }
+
+    void playPoiNarration({
+      poi: selectedPoi,
+      language: selectedNarrationLanguage,
+      voice: selectedVoice,
+      detail: selectedPoiDetail,
+    });
+  }, [
+    playPoiNarration,
+    playResolvedNarration,
+    primePlayback,
+    selectedNarration,
+    selectedNarrationLanguage,
+    selectedPoi,
+    selectedPoiDetail,
+    selectedVoice,
+  ]);
 
   const handleAudioFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const nextFile = event.target.files?.[0];
@@ -874,7 +922,7 @@ export const PoisPage = () => {
               <div className="rounded-3xl border border-sand-100 bg-sand-50 p-4">
                 <p className="text-sm font-semibold text-ink-900">Mô tả POI</p>
                 <p className="mt-3 text-sm leading-6 text-ink-600">
-                  {selectedNarration?.displayText || "Chưa có thuyết minh cho POI này."}
+                  {selectedNarration?.displayText || "Chưa có bài thuyết minh cho POI này."}
                 </p>
                 <p className="mt-3 text-xs text-ink-500">
                   Audio: {selectedAudio ? `${selectedAudio.sourceType} / ${selectedAudio.status}` : "Chưa có"}
@@ -884,8 +932,8 @@ export const PoisPage = () => {
                 ) : null}
                 <p className="mt-2 text-xs text-ink-500">
                   {isResolvingNarration
-                    ? "Dang dong bo text va TTS theo ngon ngu da chon..."
-                    : `TTS input: ${selectedNarration?.ttsInputText ? "san sang" : "chua co"}`}
+                    ? "Đang đồng bộ nội dung và TTS theo ngôn ngữ đã chọn..."
+                    : `Nội dung TTS: ${selectedNarration?.ttsInputText ? "sẵn sàng" : "chưa có"}`}
                 </p>
                 <p className="mt-2 text-xs text-ink-500">
                   {selectedNarration
@@ -904,8 +952,8 @@ export const PoisPage = () => {
                   }`}
                 >
                   {playbackState.isLoadingPOI
-                    ? "Đang tải thuyết minh..."
-                    : playbackState.message || "Chọn một POI trên bản đồ để tự động phát thuyết minh."}
+                    ? "Đang tải bài thuyết minh..."
+                    : playbackState.message || "Chọn một POI trên bản đồ để tự động phát bài thuyết minh."}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -916,11 +964,11 @@ export const PoisPage = () => {
                     </span>
                   ))
                 ) : (
-                  <p className="text-sm text-ink-500">POI này chưa có tag.</p>
+                  <p className="text-sm text-ink-500">POI này chưa có thẻ tag.</p>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => handlePoiSelect(selectedPoi.id)}>
+                <Button onClick={handleReplaySelectedNarration}>
                   {playbackState.isLoadingPOI
                     ? "Đang tải..."
                     : isSelectedPoiNarrationPlaying

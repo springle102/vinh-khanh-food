@@ -43,11 +43,11 @@
                 </Grid>
 
                 <VerticalStackLayout Grid.Row="2" Spacing="14">
-                    <Label HorizontalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="26" Text="Quet QR" TextColor="White" />
+                    <Label HorizontalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="26" Text="Quét QR" TextColor="White" />
                     <Label
                         HorizontalTextAlignment="Center"
                         FontSize="14"
-                        Text="Dua ma QR vao trong khung de chon ngon ngu va tiep tuc trai nghiem."
+                        Text="Đưa mã QR vào trong khung để chọn ngôn ngữ và tiếp tục trải nghiệm."
                         TextColor="#D6DEEC" />
 
                     <Border Padding="16,14" BackgroundColor="#2A3447" Stroke="#44506A" StrokeShape="RoundRectangle 18">
@@ -56,8 +56,8 @@
                                 <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="17" Text="QR" TextColor="{StaticResource BrandPrimary}" />
                             </Border>
                             <VerticalStackLayout Spacing="4">
-                                <Label FontFamily="OpenSansSemibold" Text="Nhap ma thu cong" TextColor="White" />
-                                <Label FontSize="12" Text="Dung de test nhanh bang poi id, vi du: poi-bbq-night" TextColor="#C9D2E3" />
+                                <Label FontFamily="OpenSansSemibold" Text="Nhập mã thủ công" TextColor="White" />
+                                <Label FontSize="12" Text="Dùng để kiểm tra nhanh bằng POI ID, ví dụ: poi-bbq-night." TextColor="#C9D2E3" />
                             </VerticalStackLayout>
                         </HorizontalStackLayout>
                         <Border.GestureRecognizers>

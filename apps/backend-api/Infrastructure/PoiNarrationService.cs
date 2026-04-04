@@ -6,6 +6,7 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 public sealed class PoiNarrationService(
     AdminDataRepository repository,
     TranslationProxyService translationProxyService,
+    IHttpContextAccessor httpContextAccessor,
     ILogger<PoiNarrationService> logger)
 {
     private static readonly HashSet<string> SupportedVoices =
@@ -28,12 +29,12 @@ public sealed class PoiNarrationService(
 
     private static readonly Dictionary<string, string> LanguageLabels = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["vi"] = "Tieng Viet",
-        ["en"] = "Tieng Anh",
-        ["fr"] = "Tieng Phap",
-        ["zh-CN"] = "Tieng Trung",
-        ["ko"] = "Tieng Han",
-        ["ja"] = "Tieng Nhat"
+        ["vi"] = "Tiếng Việt",
+        ["en"] = "Tiếng Anh",
+        ["fr"] = "Tiếng Pháp",
+        ["zh-CN"] = "Tiếng Trung",
+        ["ko"] = "Tiếng Hàn",
+        ["ja"] = "Tiếng Nhật"
     };
 
     public async Task<PoiNarrationResponse?> ResolveAsync(
@@ -133,7 +134,7 @@ public sealed class PoiNarrationService(
 
                 if (!HasNarrationContent(displayText))
                 {
-                    throw new InvalidOperationException("Khong nhan duoc noi dung da dich hop le.");
+                    throw new InvalidOperationException("Không nhận được nội dung đã dịch hợp lệ.");
                 }
             }
             catch (Exception exception) when (
@@ -193,6 +194,8 @@ public sealed class PoiNarrationService(
         {
             audioGuide = FindPoiAudioGuide(audioGuides, effectiveLanguageCode, normalizedVoiceType);
         }
+
+        audioGuide = NormalizeAudioGuideForResponse(audioGuide);
 
         var uiPlaybackKey = BuildUiPlaybackKey(poi.Id, normalizedRequestedLanguage, normalizedVoiceType);
         var audioCacheKey = BuildAudioCacheKey(
@@ -488,27 +491,72 @@ public sealed class PoiNarrationService(
             return label;
         }
 
-        return languageCode?.Trim() ?? "ngon ngu hien tai";
+        return languageCode?.Trim() ?? "ngôn ngữ hiện tại";
     }
 
     private static string BuildStoredTranslationFallbackMessage(
         Exception exception,
         string requestedLanguageCode) =>
         IsTranslationServiceUnavailable(exception)
-            ? $"Khong the ket noi dich vu dich de cap nhat ban {GetLanguageLabel(requestedLanguageCode)}. Dang dung ban dich da luu truoc do."
-            : $"Khong the dich lai sang {GetLanguageLabel(requestedLanguageCode)}. Dang dung ban dich da luu truoc do.";
+            ? $"Không thể kết nối dịch vụ dịch để cập nhật bản {GetLanguageLabel(requestedLanguageCode)}. Đang dùng bản dịch đã lưu trước đó."
+            : $"Không thể dịch lại sang {GetLanguageLabel(requestedLanguageCode)}. Đang dùng bản dịch đã lưu trước đó.";
 
     private static string BuildSourceFallbackMessage(
         Exception exception,
         string requestedLanguageCode,
         string? sourceLanguageCode) =>
         IsTranslationServiceUnavailable(exception)
-            ? $"Khong the ket noi dich vu dich cho {GetLanguageLabel(requestedLanguageCode)}. Dang dung noi dung goc {GetLanguageLabel(sourceLanguageCode)}."
-            : $"Khong co ban dich luu san cho {GetLanguageLabel(requestedLanguageCode)}. Dang dung noi dung goc {GetLanguageLabel(sourceLanguageCode)}.";
+            ? $"Không thể kết nối dịch vụ dịch cho {GetLanguageLabel(requestedLanguageCode)}. Đang dùng nội dung gốc {GetLanguageLabel(sourceLanguageCode)}."
+            : $"Chưa có bản dịch lưu sẵn cho {GetLanguageLabel(requestedLanguageCode)}. Đang dùng nội dung gốc {GetLanguageLabel(sourceLanguageCode)}.";
 
     private static bool IsTranslationServiceUnavailable(Exception exception) =>
         exception is HttpRequestException ||
         exception.InnerException is HttpRequestException;
+
+    private AudioGuide? NormalizeAudioGuideForResponse(AudioGuide? audioGuide)
+    {
+        if (audioGuide is null || !HasValidAudioUrl(audioGuide.AudioUrl))
+        {
+            return audioGuide;
+        }
+
+        var absoluteUrl = BuildAbsoluteUrl(audioGuide.AudioUrl);
+        if (string.Equals(absoluteUrl, audioGuide.AudioUrl, StringComparison.Ordinal))
+        {
+            return audioGuide;
+        }
+
+        return new AudioGuide
+        {
+            Id = audioGuide.Id,
+            EntityType = audioGuide.EntityType,
+            EntityId = audioGuide.EntityId,
+            LanguageCode = audioGuide.LanguageCode,
+            AudioUrl = absoluteUrl,
+            VoiceType = audioGuide.VoiceType,
+            SourceType = audioGuide.SourceType,
+            Status = audioGuide.Status,
+            UpdatedBy = audioGuide.UpdatedBy,
+            UpdatedAt = audioGuide.UpdatedAt
+        };
+    }
+
+    private string BuildAbsoluteUrl(string value)
+    {
+        if (!HasValidAudioUrl(value) || Uri.TryCreate(value, UriKind.Absolute, out _))
+        {
+            return value;
+        }
+
+        var request = httpContextAccessor.HttpContext?.Request;
+        if (request is null || string.IsNullOrWhiteSpace(request.Host.Value))
+        {
+            return value;
+        }
+
+        var normalizedPath = value.StartsWith("/", StringComparison.Ordinal) ? value : $"/{value}";
+        return $"{request.Scheme}://{request.Host}{request.PathBase}{normalizedPath}";
+    }
 
     private static bool HasNarrationContent(string? value) =>
         !string.IsNullOrWhiteSpace(value);

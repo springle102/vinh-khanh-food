@@ -256,7 +256,7 @@ public sealed partial class AdminDataRepository
     private SqlConnection OpenMasterConnection()
     {
         var builder = TryCreateConnectionStringBuilder()
-            ?? throw new InvalidOperationException("Khong the phan tich connection string SQL Server hien tai.");
+            ?? throw new InvalidOperationException("Không thể phân tích connection string SQL Server hiện tại.");
 
         builder.InitialCatalog = "master";
         builder["Database"] = "master";
@@ -307,7 +307,7 @@ public sealed partial class AdminDataRepository
         if (!File.Exists(_seedSqlServerPath))
         {
             throw new InvalidOperationException(
-                $"Khong tim thay file seed SQL Server de khoi tao database: {_seedSqlServerPath}");
+                $"Không tìm thấy file seed SQL Server để khởi tạo database: {_seedSqlServerPath}");
         }
 
         var scriptContent = File.ReadAllText(_seedSqlServerPath);
@@ -355,7 +355,7 @@ public sealed partial class AdminDataRepository
                 ? " Chuoi ket noi hien tai dang dung named pipe."
                 : string.Empty;
 
-            return $"Khong the ket noi SQL Server tai Server='{server}'. Loi hien tai la Windows Authentication/SSPI ({authMode}): {detail}.{namedPipeHint} Neu ban dang dung Trusted_Connection=True, hay thu SQL login (User ID/Password) hoac sua SPN/Windows auth cua instance SQL Server.";
+            return $"Không thể kết nối SQL Server tại Server='{server}'. Lỗi hiện tại là Windows Authentication/SSPI ({authMode}): {detail}.{namedPipeHint} Nếu bạn đang dùng Trusted_Connection=True, hãy thử SQL login (User ID/Password) hoặc sửa SPN/Windows auth của instance SQL Server.";
         }
 
         if (detail.Contains("error: 40", StringComparison.OrdinalIgnoreCase) ||
@@ -363,15 +363,15 @@ public sealed partial class AdminDataRepository
             detail.Contains("timed out", StringComparison.OrdinalIgnoreCase) ||
             detail.Contains("refused the network connection", StringComparison.OrdinalIgnoreCase))
         {
-            return $"Khong the ket noi SQL Server tai Server='{server}'. Backend dang gap loi mang/transport: {detail}. Hay kiem tra SQL Server service, SQL Browser, TCP/IP va firewall cua instance nay.";
+            return $"Không thể kết nối SQL Server tại Server='{server}'. Backend đang gặp lỗi mạng/transport: {detail}. Hãy kiểm tra SQL Server service, SQL Browser, TCP/IP và firewall của instance này.";
         }
 
         if (detail.Contains("Cannot open database", StringComparison.OrdinalIgnoreCase))
         {
-            return $"Khong the mo database '{databaseName}' tren Server='{server}' ({authMode}). Backend da thu khoi tao database hoac gan quyen cho login hien tai neu co the, nhung van that bai. Chi tiet: {detail}";
+            return $"Không thể mở database '{databaseName}' trên Server='{server}' ({authMode}). Backend đã thử khởi tạo database hoặc gán quyền cho login hiện tại nếu có thể, nhưng vẫn thất bại. Chi tiết: {detail}";
         }
 
-        return $"Khong the ket noi SQL Server tai Server='{server}' ({authMode}). Chi tiet: {detail}";
+        return $"Không thể kết nối SQL Server tại Server='{server}' ({authMode}). Chi tiết: {detail}";
     }
 
     private SqlConnectionStringBuilder? TryCreateConnectionStringBuilder()

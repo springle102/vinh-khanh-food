@@ -12,7 +12,7 @@ export type MediaType = "image" | "video";
 export type PromotionStatus = "upcoming" | "active" | "expired";
 export type ReviewStatus = "pending" | "approved" | "hidden";
 export type DeviceType = "ios" | "android" | "web";
-export type TtsProvider = "google_translate" | "native" | "azure";
+export type TtsProvider = "google_translate";
 
 export interface GeocodingLocation {
   address: string;
@@ -263,6 +263,12 @@ export interface SystemSetting {
   analyticsRetentionDays: number;
 }
 
+export interface DataSyncState {
+  version: string;
+  generatedAt: string;
+  lastChangedAt: string;
+}
+
 export interface AdminDataState {
   users: AdminUser[];
   customerUsers: CustomerUser[];
@@ -279,4 +285,5 @@ export interface AdminDataState {
   audioListenLogs: AudioListenLog[];
   auditLogs: AuditLog[];
   settings: SystemSetting;
+  syncState?: DataSyncState | null;
 }

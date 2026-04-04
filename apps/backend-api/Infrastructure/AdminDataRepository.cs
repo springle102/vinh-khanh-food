@@ -263,6 +263,8 @@ public sealed partial class AdminDataRepository
                 .ToList();
         }
 
+        var syncState = GetSyncState(connection, null);
+
         return new AdminBootstrapResponse(
             users,
             customerUsers,
@@ -278,7 +280,8 @@ public sealed partial class AdminDataRepository
             viewLogs,
             audioListenLogs,
             auditLogs,
-            settings);
+            settings,
+            syncState);
     }
 
     public DashboardSummaryResponse GetDashboardSummary()

@@ -183,6 +183,11 @@ public sealed record DashboardSummaryResponse(
     int PendingReviews,
     int PremiumLanguageCount);
 
+public sealed record DataSyncState(
+    string Version,
+    DateTimeOffset GeneratedAt,
+    DateTimeOffset LastChangedAt);
+
 public sealed record AdminBootstrapResponse(
     IReadOnlyList<Models.AdminUser> Users,
     IReadOnlyList<Models.CustomerUser> CustomerUsers,
@@ -198,7 +203,8 @@ public sealed record AdminBootstrapResponse(
     IReadOnlyList<Models.ViewLog> ViewLogs,
     IReadOnlyList<Models.AudioListenLog> AudioListenLogs,
     IReadOnlyList<Models.AuditLog> AuditLogs,
-    Models.SystemSetting Settings);
+    Models.SystemSetting Settings,
+    DataSyncState? SyncState = null);
 
 public sealed record PoiDetailResponse(
     Models.Poi Poi,

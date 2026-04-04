@@ -27,11 +27,11 @@ public sealed class FoodItemsController(AdminDataRepository repository) : Contro
     {
         if (string.IsNullOrWhiteSpace(request.PoiId) || string.IsNullOrWhiteSpace(request.Name))
         {
-            return BadRequest(ApiResponse<FoodItem>.Fail("PoiId va ten mon an la bat buoc."));
+            return BadRequest(ApiResponse<FoodItem>.Fail("PoiId và tên món ăn là bắt buộc."));
         }
 
         var saved = repository.SaveFoodItem(null, request);
-        return Ok(ApiResponse<FoodItem>.Ok(saved, "Tao mon an thanh cong."));
+        return Ok(ApiResponse<FoodItem>.Ok(saved, "Tạo món ăn thành công."));
     }
 
     [HttpPut("{id}")]
@@ -40,11 +40,11 @@ public sealed class FoodItemsController(AdminDataRepository repository) : Contro
         var existing = repository.GetFoodItems().Any(item => item.Id == id);
         if (!existing)
         {
-            return NotFound(ApiResponse<FoodItem>.Fail("Khong tim thay mon an."));
+            return NotFound(ApiResponse<FoodItem>.Fail("Không tìm thấy món ăn."));
         }
 
         var saved = repository.SaveFoodItem(id, request);
-        return Ok(ApiResponse<FoodItem>.Ok(saved, "Cap nhat mon an thanh cong."));
+        return Ok(ApiResponse<FoodItem>.Ok(saved, "Cập nhật món ăn thành công."));
     }
 
     [HttpDelete("{id}")]
@@ -52,7 +52,7 @@ public sealed class FoodItemsController(AdminDataRepository repository) : Contro
     {
         var deleted = repository.DeleteFoodItem(id);
         return deleted
-            ? Ok(ApiResponse<string>.Ok(id, "Xoa mon an thanh cong."))
-            : NotFound(ApiResponse<string>.Fail("Khong tim thay mon an."));
+            ? Ok(ApiResponse<string>.Ok(id, "Xóa món ăn thành công."))
+            : NotFound(ApiResponse<string>.Fail("Không tìm thấy món ăn."));
     }
 }

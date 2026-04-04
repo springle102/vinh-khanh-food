@@ -6,7 +6,7 @@ import type {
   PoiDetail,
   RegionVoice,
 } from "../data/types";
-import { adminApi } from "./api";
+import { adminApi, resolveApiUrl } from "./api";
 import { languageLabels } from "./utils";
 
 export type {
@@ -20,6 +20,15 @@ export const languageLocales: Record<LanguageCode, string> = {
   "zh-CN": "zh-CN",
   ko: "ko-KR",
   ja: "ja-JP",
+};
+
+const GOOGLE_TTS_MAX_CHARS = 180;
+const googleTtsLanguages: Record<LanguageCode, string> = {
+  vi: "vi",
+  en: "en",
+  "zh-CN": "zh-CN",
+  ko: "ko",
+  ja: "ja",
 };
 
 export const supportedNarrationLanguages = Object.keys(languageLabels) as LanguageCode[];
@@ -113,6 +122,61 @@ export const logNarrationDebug = (
   }
 
   console.debug(`[poi-narration:${scope}]`, payload);
+};
+
+const splitNarrationIntoChunks = (text: string, maxLength = GOOGLE_TTS_MAX_CHARS) => {
+  const chunks: string[] = [];
+  let start = 0;
+
+  while (start < text.length) {
+    let end = Math.min(start + maxLength, text.length);
+
+    if (end < text.length) {
+      const searchStart = start + Math.floor(maxLength * 0.6);
+      for (let index = end; index > searchStart; index -= 1) {
+        if (/[.!?,;:\s]/.test(text[index] ?? "")) {
+          end = index + 1;
+          break;
+        }
+      }
+    }
+
+    const chunk = text.slice(start, end).trim();
+    if (chunk) {
+      chunks.push(chunk);
+    }
+
+    start = end;
+  }
+
+  return chunks;
+};
+
+export const buildGoogleTtsAudioUrls = (
+  text: string,
+  languageCode: LanguageCode,
+) => {
+  const normalizedText = text.trim();
+  if (!normalizedText) {
+    return [];
+  }
+
+  const language = googleTtsLanguages[languageCode];
+  if (!language) {
+    return [];
+  }
+
+  const chunks = splitNarrationIntoChunks(normalizedText);
+  return chunks.map((chunk, index) => {
+    const query = new URLSearchParams({
+      languageCode: language,
+      text: chunk,
+      total: chunks.length.toString(),
+      idx: index.toString(),
+    });
+
+    return resolveApiUrl(`/api/v1/tts/google?${query.toString()}`);
+  });
 };
 
 export const resolvePoiNarration = async ({

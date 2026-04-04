@@ -41,6 +41,7 @@ public sealed class LanguageSelectionViewModel : BaseViewModel
     public async Task LoadAsync()
     {
         Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
+        OnPropertyChanged(nameof(BackgroundImageUrl));
     }
 
     public void SetPendingQrCode(string? qrCode)

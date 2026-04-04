@@ -26,13 +26,7 @@ import type {
 
 const SESSION_KEY = "vinh-khanh-admin-web:session";
 
-const normalizeTtsProvider = (value: string | undefined): SystemSetting["ttsProvider"] => {
-  if (value === "native") {
-    return "native";
-  }
-
-  return "google_translate";
-};
+const normalizeTtsProvider = (_value: string | undefined): SystemSetting["ttsProvider"] => "google_translate";
 
 const normalizeSystemSetting = (settings: SystemSetting): SystemSetting => ({
   ...settings,
@@ -288,7 +282,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       return nextState;
     } catch (error) {
       if (mode === "initial" && requestId === bootstrapRequestIdRef.current) {
-        setBootstrapError(error instanceof Error ? error.message : "Khong the tai bootstrap.");
+        setBootstrapError(error instanceof Error ? error.message : "Không thể tải dữ liệu khởi tạo.");
       }
 
       throw error;
