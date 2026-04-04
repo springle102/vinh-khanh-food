@@ -29,7 +29,7 @@ public static class LocalizedTextHelper
             return string.Empty;
         }
 
-        foreach (var candidate in GetLanguageCandidates(languageCode))
+        foreach (var candidate in AppLanguage.GetCandidateCodes(languageCode))
         {
             if (values.TryGetValue(candidate, out var value) && !string.IsNullOrWhiteSpace(value))
             {
@@ -60,66 +60,4 @@ public static class LocalizedTextHelper
         return dictionary;
     }
 
-    private static IEnumerable<string> GetLanguageCandidates(string? languageCode)
-    {
-        var normalized = NormalizeLanguageCode(languageCode);
-        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        AddCandidate(normalized);
-        var separatorIndex = normalized.IndexOf('-');
-        if (separatorIndex > 0)
-        {
-            AddCandidate(normalized[..separatorIndex]);
-        }
-
-        switch (normalized)
-        {
-            case "zh":
-                AddCandidate("zh-CN");
-                break;
-            case "zh-CN":
-                AddCandidate("zh");
-                break;
-            case "en-US":
-                AddCandidate("en");
-                break;
-            case "ja-JP":
-                AddCandidate("ja");
-                break;
-            case "ko-KR":
-                AddCandidate("ko");
-                break;
-        }
-
-        AddCandidate("en");
-        AddCandidate("vi");
-
-        return candidates;
-
-        void AddCandidate(string? value)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                candidates.Add(value.Trim());
-            }
-        }
-    }
-
-    private static string NormalizeLanguageCode(string? languageCode)
-    {
-        if (string.IsNullOrWhiteSpace(languageCode))
-        {
-            return "en";
-        }
-
-        return languageCode.Trim() switch
-        {
-            "zh" => "zh-CN",
-            "fr-FR" => "fr",
-            "en-US" => "en",
-            "ja-JP" => "ja",
-            "ko-KR" => "ko",
-            _ => languageCode.Trim()
-        };
-    }
 }

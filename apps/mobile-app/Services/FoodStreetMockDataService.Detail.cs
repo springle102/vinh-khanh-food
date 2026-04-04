@@ -7,6 +7,29 @@ public sealed partial class FoodStreetMockDataService
 {
     private readonly Dictionary<string, PoiExperienceDetail> _detailCache = new(StringComparer.OrdinalIgnoreCase);
 
+    private PoiExperienceDetail CreateLocalizedDetail(PoiRuntimeSeed seed)
+    {
+        var template = seed.DetailTemplate;
+        var detail = new PoiExperienceDetail
+        {
+            Id = template.Id,
+            Category = LocalizeCategory(seed.CategoryName),
+            Address = LocalizeAddress(seed.Poi.Address, seed.Poi.Id),
+            Latitude = template.Latitude,
+            Longitude = template.Longitude,
+            Rating = template.Rating,
+            ReviewCount = template.ReviewCount,
+            IsFeatured = template.IsFeatured,
+            Images = template.Images.ToList()
+        };
+
+        CopyLocalizedValues(detail.Name, template.Name);
+        CopyLocalizedValues(detail.Summary, template.Summary);
+        CopyLocalizedValues(detail.Description, template.Description);
+        CopyLocalizedValues(detail.AudioUrls, template.AudioUrls);
+        return detail;
+    }
+
     private PoiExperienceDetail BuildPoiDetail(
         PoiDto poi,
         string category,
@@ -209,6 +232,14 @@ public sealed partial class FoodStreetMockDataService
             {
                 target.Set(pair.Key, pair.Value);
             }
+        }
+    }
+
+    private static void CopyLocalizedValues(LocalizedTextSet target, LocalizedTextSet source)
+    {
+        foreach (var pair in source.Values)
+        {
+            target.Set(pair.Key, pair.Value);
         }
     }
 }

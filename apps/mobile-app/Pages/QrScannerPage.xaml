@@ -4,7 +4,9 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:controls="clr-namespace:VinhKhanh.MobileApp.Controls"
+    xmlns:viewModels="clr-namespace:VinhKhanh.MobileApp.ViewModels"
     xmlns:zxing="clr-namespace:ZXing.Net.Maui.Controls;assembly=ZXing.Net.MAUI.Controls"
+    x:DataType="viewModels:QrScannerViewModel"
     BackgroundColor="#111A2D"
     Shell.NavBarIsVisible="False">
 
@@ -43,21 +45,21 @@
                 </Grid>
 
                 <VerticalStackLayout Grid.Row="2" Spacing="14">
-                    <Label HorizontalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="26" Text="Quet QR" TextColor="White" />
+                    <Label HorizontalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="26" Text="{Binding ScreenTitleText}" TextColor="White" />
                     <Label
                         HorizontalTextAlignment="Center"
                         FontSize="14"
-                        Text="Dua ma QR vao trong khung de chon ngon ngu va tiep tuc trai nghiem."
+                        Text="{Binding InstructionText}"
                         TextColor="#D6DEEC" />
 
                     <Border Padding="16,14" BackgroundColor="#2A3447" Stroke="#44506A" StrokeShape="RoundRectangle 18">
                         <HorizontalStackLayout Spacing="12">
                             <Border WidthRequest="38" HeightRequest="38" BackgroundColor="#1AF48A22" StrokeThickness="0" StrokeShape="RoundRectangle 14">
-                                <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="17" Text="QR" TextColor="{StaticResource BrandPrimary}" />
+                                <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="17" Text="{Binding PendingLabelText}" TextColor="{StaticResource BrandPrimary}" />
                             </Border>
                             <VerticalStackLayout Spacing="4">
-                                <Label FontFamily="OpenSansSemibold" Text="Nhap ma thu cong" TextColor="White" />
-                                <Label FontSize="12" Text="Dung de test nhanh bang poi id, vi du: poi-bbq-night" TextColor="#C9D2E3" />
+                                <Label FontFamily="OpenSansSemibold" Text="{Binding ManualEntryTitleText}" TextColor="White" />
+                                <Label FontSize="12" Text="{Binding ManualEntryDescriptionText}" TextColor="#C9D2E3" />
                             </VerticalStackLayout>
                         </HorizontalStackLayout>
                         <Border.GestureRecognizers>

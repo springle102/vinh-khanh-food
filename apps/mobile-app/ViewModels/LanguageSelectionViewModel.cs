@@ -22,16 +22,22 @@ public sealed class LanguageSelectionViewModel : BaseViewModel
             MainThread.BeginInvokeOnMainThread(async () =>
             {
                 await LoadAsync();
-                RefreshAllBindings();
+                RefreshLocalizedTexts();
             });
     }
 
     public ObservableCollection<LanguageOption> Languages { get; } = [];
 
     public string BackgroundImageUrl => _dataService.GetBackdropImageUrl();
-    public string ScanSuccessText => HasPendingQrCode ? _languageService.GetText("qr_success_title") : "Choose your language";
-    public string ChooseLanguageText => HasPendingQrCode ? _languageService.GetText("qr_choose_language") : "Select a language before signing in";
+    public string BrandTitleText => _languageService.GetText("brand_title");
+    public string ScanSuccessText => HasPendingQrCode
+        ? _languageService.GetText("qr_success_title")
+        : _languageService.GetText("language_selection_title");
+    public string ChooseLanguageText => HasPendingQrCode
+        ? _languageService.GetText("qr_choose_language")
+        : _languageService.GetText("language_selection_subtitle");
     public string ContinueText => _languageService.GetText("qr_continue");
+    public string PendingLabelText => _languageService.GetText("language_selection_pending_label");
     public bool HasPendingQrCode => !string.IsNullOrWhiteSpace(_pendingQrCode);
     public string PendingQrCodeText => _pendingQrCode ?? string.Empty;
 
@@ -48,10 +54,7 @@ public sealed class LanguageSelectionViewModel : BaseViewModel
         _pendingQrCode = string.IsNullOrWhiteSpace(qrCode)
             ? null
             : Uri.UnescapeDataString(qrCode.Trim());
-        OnPropertyChanged(nameof(ScanSuccessText));
-        OnPropertyChanged(nameof(ChooseLanguageText));
-        OnPropertyChanged(nameof(HasPendingQrCode));
-        OnPropertyChanged(nameof(PendingQrCodeText));
+        RefreshLocalizedTexts();
     }
 
     private async Task SelectLanguageAsync(LanguageOption? language)
@@ -63,7 +66,7 @@ public sealed class LanguageSelectionViewModel : BaseViewModel
 
         foreach (var item in Languages)
         {
-            item.IsSelected = item.Code == language.Code;
+            item.IsSelected = string.Equals(item.Code, language.Code, StringComparison.OrdinalIgnoreCase);
         }
 
         await _languageService.SetLanguageAsync(language.Code);
@@ -85,6 +88,17 @@ public sealed class LanguageSelectionViewModel : BaseViewModel
         }
 
         await Shell.Current.GoToAsync(route);
+    }
+
+    private void RefreshLocalizedTexts()
+    {
+        OnPropertyChanged(nameof(BrandTitleText));
+        OnPropertyChanged(nameof(ScanSuccessText));
+        OnPropertyChanged(nameof(ChooseLanguageText));
+        OnPropertyChanged(nameof(ContinueText));
+        OnPropertyChanged(nameof(PendingLabelText));
+        OnPropertyChanged(nameof(HasPendingQrCode));
+        OnPropertyChanged(nameof(PendingQrCodeText));
     }
 
     private static string? ResolvePoiId(string? qrCode)

@@ -574,7 +574,7 @@ public sealed class HomeMapViewModel : BaseViewModel
             return;
         }
 
-        var normalizedLanguage = NormalizeLanguageCode(_languageService.CurrentLanguage);
+        var normalizedLanguage = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
         target.Set(normalizedLanguage, value);
 
         var separatorIndex = normalizedLanguage.IndexOf('-');
@@ -582,24 +582,6 @@ public sealed class HomeMapViewModel : BaseViewModel
         {
             target.Set(normalizedLanguage[..separatorIndex], value);
         }
-    }
-
-    private static string NormalizeLanguageCode(string? languageCode)
-    {
-        if (string.IsNullOrWhiteSpace(languageCode))
-        {
-            return "vi";
-        }
-
-        return languageCode.Trim() switch
-        {
-            "zh" => "zh-CN",
-            "fr-FR" => "fr",
-            "en-US" => "en",
-            "ja-JP" => "ja",
-            "ko-KR" => "ko",
-            _ => languageCode.Trim()
-        };
     }
 
     private static string FirstNonEmpty(params string?[] values)
