@@ -48,6 +48,7 @@ public sealed class LoginViewModel : BaseViewModel
         set => SetProperty(ref _password, value);
     }
 
+    public string BrandTitleText => _languageService.GetText("brand_title");
     public string PortalSubtitleText => _languageService.GetText("login_portal_subtitle");
     public string LoginTabText => _languageService.GetText("login_tab");
     public string SignUpTabText => _languageService.GetText("signup_tab");
@@ -61,8 +62,8 @@ public sealed class LoginViewModel : BaseViewModel
     public string FacebookLoginText => _languageService.GetText("login_facebook");
     public string AppleLoginText => _languageService.GetText("login_apple");
     public string CreateAccountText => _languageService.GetText("login_create_account");
-    public string CurrentLanguageDisplayName => ResolveLanguageDisplayName(_languageService.CurrentLanguage);
-    public string CurrentLanguageFlag => ResolveLanguageFlag(_languageService.CurrentLanguage);
+    public string CurrentLanguageDisplayName => _languageService.GetLanguageDefinition(_languageService.CurrentLanguage).DisplayName;
+    public string CurrentLanguageFlag => _languageService.GetLanguageDefinition(_languageService.CurrentLanguage).Flag;
 
     public AsyncCommand<string> SwitchModeCommand => new(SwitchModeAsync);
     public AsyncCommand LoginCommand => new(GoToHomeAsync);
@@ -97,16 +98,14 @@ public sealed class LoginViewModel : BaseViewModel
     }
 
     private Task GoToHomeAsync()
-    {
-        // Mock auth flow for UI-only build.
-        return Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.HomeMap));
-    }
+        => Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.HomeMap));
 
     private Task OpenLanguageSelectionAsync()
         => Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.LanguageSelection));
 
     private void RefreshLocalizedTexts()
     {
+        OnPropertyChanged(nameof(BrandTitleText));
         OnPropertyChanged(nameof(PortalSubtitleText));
         OnPropertyChanged(nameof(LoginTabText));
         OnPropertyChanged(nameof(SignUpTabText));
@@ -120,45 +119,5 @@ public sealed class LoginViewModel : BaseViewModel
         OnPropertyChanged(nameof(CreateAccountText));
         OnPropertyChanged(nameof(CurrentLanguageDisplayName));
         OnPropertyChanged(nameof(CurrentLanguageFlag));
-    }
-
-    private static string ResolveLanguageDisplayName(string? languageCode)
-        => NormalizeLanguageCode(languageCode) switch
-        {
-            "en" => "English",
-            "zh-CN" => "中文",
-            "ko" => "한국어",
-            "ja" => "日本語",
-            "fr" => "Français",
-            _ => "Tiếng Việt"
-        };
-
-    private static string ResolveLanguageFlag(string? languageCode)
-        => NormalizeLanguageCode(languageCode) switch
-        {
-            "en" => "🇬🇧",
-            "zh-CN" => "🇨🇳",
-            "ko" => "🇰🇷",
-            "ja" => "🇯🇵",
-            "fr" => "🇫🇷",
-            _ => "🇻🇳"
-        };
-
-    private static string NormalizeLanguageCode(string? languageCode)
-    {
-        if (string.IsNullOrWhiteSpace(languageCode))
-        {
-            return "vi";
-        }
-
-        return languageCode.Trim() switch
-        {
-            "zh" => "zh-CN",
-            "fr-FR" => "fr",
-            "en-US" => "en",
-            "ja-JP" => "ja",
-            "ko-KR" => "ko",
-            _ => languageCode.Trim()
-        };
     }
 }

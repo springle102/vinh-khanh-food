@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Maui.Devices;
 using Microsoft.Maui.Storage;
+using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
@@ -119,15 +120,11 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
     public FoodStreetMockDataService(IAppLanguageService languageService)
     {
         _languageService = languageService;
-        _languageService.LanguageChanged += (_, _) =>
-        {
-            _bootstrapSnapshot = null;
-            _detailCache.Clear();
-        };
+        _languageService.LanguageChanged += (_, _) => _detailCache.Clear();
     }
 
     public Task<IReadOnlyList<LanguageOption>> GetLanguagesAsync()
-        => Task.FromResult<IReadOnlyList<LanguageOption>>(Languages.Select(language => new LanguageOption
+        => Task.FromResult<IReadOnlyList<LanguageOption>>(_languageService.SupportedLanguages.Select(language => new LanguageOption
         {
             Code = language.Code,
             Flag = language.Flag,
@@ -138,7 +135,14 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
     public async Task<IReadOnlyList<PoiLocation>> GetPoisAsync()
     {
         var snapshot = await GetBootstrapSnapshotAsync();
-        return snapshot?.Pois.Count > 0 ? snapshot.Pois : BuildLocalizedFallbackPois();
+        if (snapshot?.PoiSeeds.Count > 0)
+        {
+            return snapshot.PoiSeeds
+                .Select(seed => CreatePoiLocation(seed.Poi, CreateLocalizedDetail(seed)))
+                .ToList();
+        }
+
+        return BuildLocalizedFallbackPois();
     }
 
     public async Task<IReadOnlyList<MapHeatPoint>> GetHeatPointsAsync()
@@ -160,8 +164,9 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
         }
 
         var snapshot = await GetBootstrapSnapshotAsync();
-        if (snapshot?.PoiDetails.TryGetValue(poiId, out var detail) == true)
+        if (snapshot?.PoiSeedsById.TryGetValue(poiId, out var seed) == true)
         {
+            var detail = CreateLocalizedDetail(seed);
             _detailCache[poiId] = detail;
             return detail;
         }
@@ -207,9 +212,9 @@ public sealed partial class FoodStreetMockDataService : IFoodStreetDataService
     public async Task<UserProfileCard> GetUserProfileAsync()
     {
         var snapshot = await GetBootstrapSnapshotAsync();
-        if (snapshot?.UserProfile is not null)
+        if (snapshot?.CustomerUsers.Count > 0)
         {
-            return snapshot.UserProfile;
+            return ResolveUserProfile(snapshot.CustomerUsers);
         }
 
         return new UserProfileCard
@@ -279,7 +284,7 @@ public sealed partial class FoodStreetMockDataService
             }
 
             var snapshot = CreateSnapshot(envelope.Data);
-            _bootstrapSnapshot = snapshot.Pois.Count > 0 ? snapshot : null;
+            _bootstrapSnapshot = snapshot.PoiSeeds.Count > 0 ? snapshot : null;
             return _bootstrapSnapshot;
         }
         catch
@@ -406,11 +411,11 @@ public sealed partial class FoodStreetMockDataService
         }).ToList();
 
         return new BootstrapSnapshot(
-            poiLocations,
+            [],
+            new Dictionary<string, PoiRuntimeSeed>(StringComparer.OrdinalIgnoreCase),
             BuildHeatPoints(orderedPois, bootstrap.ViewLogs, bootstrap.AudioListenLogs),
             ResolveBackdropImageUrl(poiLocations, poiImages),
-            ResolveUserProfile(bootstrap.CustomerUsers),
-            new Dictionary<string, PoiExperienceDetail>(StringComparer.OrdinalIgnoreCase));
+            bootstrap.CustomerUsers.ToList());
     }
 
     private BootstrapSnapshot CreateSnapshot(AdminBootstrapDto bootstrap)
@@ -472,13 +477,13 @@ public sealed partial class FoodStreetMockDataService
             .ThenBy(item => item.Slug, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var poiDetails = orderedPois.ToDictionary(poi => poi.Id, poi =>
+        var poiSeeds = orderedPois.Select(poi =>
         {
             translationsByPoiId.TryGetValue(poi.Id, out var poiTranslations);
             audioGuidesByPoiId.TryGetValue(poi.Id, out var poiAudioGuides);
             reviewsByPoiId.TryGetValue(poi.Id, out var poiReviews);
 
-            return BuildPoiDetail(
+            var detail = BuildPoiDetail(
                 poi,
                 GetCategoryName(categoriesById, poi.CategoryId),
                 poiTranslations,
@@ -486,18 +491,15 @@ public sealed partial class FoodStreetMockDataService
                 poiReviews,
                 poiImages,
                 foodImages);
-        }, StringComparer.OrdinalIgnoreCase);
-
-        var poiLocations = orderedPois
-            .Select(poi => CreatePoiLocation(poi, poiDetails[poi.Id]))
-            .ToList();
+            return new PoiRuntimeSeed(poi, GetCategoryName(categoriesById, poi.CategoryId), detail);
+        }).ToList();
 
         return new BootstrapSnapshot(
-            poiLocations,
+            poiSeeds,
+            poiSeeds.ToDictionary(item => item.Poi.Id, item => item, StringComparer.OrdinalIgnoreCase),
             BuildHeatPoints(orderedPois, bootstrap.ViewLogs, bootstrap.AudioListenLogs),
-            ResolveBackdropImageUrl(poiDetails),
-            ResolveUserProfile(bootstrap.CustomerUsers),
-            poiDetails);
+            ResolveBackdropImageUrl(poiSeeds.ToDictionary(item => item.Poi.Id, item => item.DetailTemplate, StringComparer.OrdinalIgnoreCase)),
+            bootstrap.CustomerUsers.ToList());
     }
 
     private static IReadOnlyList<MapHeatPoint> BuildHeatPoints(
@@ -675,15 +677,20 @@ public sealed partial class FoodStreetMockDataService
             return null;
         }
 
+        foreach (var candidate in AppLanguage.GetCandidateCodes(currentLanguage))
+        {
+            var match = translations.FirstOrDefault(item =>
+                !string.IsNullOrWhiteSpace(item.Title) &&
+                string.Equals(item.LanguageCode, candidate, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
         return translations.FirstOrDefault(item =>
                    !string.IsNullOrWhiteSpace(item.Title) &&
-                   string.Equals(item.LanguageCode, currentLanguage, StringComparison.OrdinalIgnoreCase))
-               ?? translations.FirstOrDefault(item =>
-                   !string.IsNullOrWhiteSpace(item.Title) &&
-                   string.Equals(item.LanguageCode, poi.DefaultLanguageCode, StringComparison.OrdinalIgnoreCase))
-               ?? translations.FirstOrDefault(item =>
-                   !string.IsNullOrWhiteSpace(item.Title) &&
-                   string.Equals(item.LanguageCode, "vi", StringComparison.OrdinalIgnoreCase))
+                   string.Equals(item.LanguageCode, AppLanguage.NormalizeCode(poi.DefaultLanguageCode), StringComparison.OrdinalIgnoreCase))
                ?? translations.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.Title))
                ?? translations[0];
     }
@@ -751,11 +758,16 @@ public sealed partial class FoodStreetMockDataService
         => !double.IsNaN(value) && !double.IsInfinity(value);
 
     private sealed record BootstrapSnapshot(
-        IReadOnlyList<PoiLocation> Pois,
+        IReadOnlyList<PoiRuntimeSeed> PoiSeeds,
+        IReadOnlyDictionary<string, PoiRuntimeSeed> PoiSeedsById,
         IReadOnlyList<MapHeatPoint> HeatPoints,
         string BackdropImageUrl,
-        UserProfileCard UserProfile,
-        IReadOnlyDictionary<string, PoiExperienceDetail> PoiDetails);
+        IReadOnlyList<CustomerUserDto> CustomerUsers);
+
+    private sealed record PoiRuntimeSeed(
+        PoiDto Poi,
+        string CategoryName,
+        PoiExperienceDetail DetailTemplate);
 
     private sealed class MobileRuntimeAppSettings
     {

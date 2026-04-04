@@ -1,339 +1,126 @@
+using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Storage;
+using VinhKhanh.MobileApp.Helpers;
 
 namespace VinhKhanh.MobileApp.Services;
 
 public interface IAppLanguageService
 {
     string CurrentLanguage { get; }
+    CultureInfo CurrentCulture { get; }
     bool HasSavedLanguageSelection { get; }
+    IReadOnlyList<AppLanguageDefinition> SupportedLanguages { get; }
     event EventHandler? LanguageChanged;
     Task InitializeAsync();
     Task SetLanguageAsync(string languageCode);
     string GetText(string key);
+    AppLanguageDefinition GetLanguageDefinition(string? languageCode);
 }
 
 public sealed class AppLanguageService : IAppLanguageService
 {
-    private const string PreferenceFileName = "vkfood.language.txt";
-    private const string DefaultLanguage = "vi";
+    private const string PreferenceKey = "vkfood.language.code";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
     };
 
-    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> BuiltInTexts =
-        new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
+    private static readonly IReadOnlyDictionary<string, string> SeedEnglishTexts =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["vi"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["qr_success_title"] = "QUÉT QR THÀNH CÔNG!",
-                ["qr_choose_language"] = "CHỌN NGÔN NGỮ CỦA BẠN",
-                ["qr_continue"] = "TIẾP TỤC",
-                ["login_portal_subtitle"] = "Đăng nhập / Đăng ký",
-                ["login_tab"] = "ĐĂNG NHẬP",
-                ["signup_tab"] = "ĐĂNG KÝ",
-                ["login_identifier_placeholder"] = "Email / Số điện thoại",
-                ["login_password_placeholder"] = "Mật khẩu",
-                ["login_forgot_password"] = "Quên mật khẩu?",
-                ["login_button"] = "ĐĂNG NHẬP",
-                ["signup_button"] = "ĐĂNG KÝ",
-                ["login_google"] = "Đăng nhập bằng Google",
-                ["login_facebook"] = "Facebook",
-                ["login_apple"] = "Apple",
-                ["login_create_account"] = "Tạo tài khoản mới",
-                ["home_search_placeholder"] = "Tìm quán ăn, món ăn...",
-                ["home_poi_chip"] = "POI",
-                ["home_layer"] = "Lớp",
-                ["home_default_title"] = "Vinh Khanh Food Street",
-                ["home_default_description"] = "Chạm marker hoặc dùng thanh tìm kiếm để khám phá các quán ăn nổi bật.",
-                ["home_default_address"] = "Phường Khánh Hội, Quận 4, TP.HCM",
-                ["tour_title"] = "LỊCH TRÌNH TOUR",
-                ["tour_create"] = "Tạo Tour Mới",
-                ["tour_checkpoints"] = "Checkpoint đã đi",
-                ["settings_title"] = "CÀI ĐẶT",
-                ["settings_account"] = "TÀI KHOẢN",
-                ["settings_user_name"] = "Tên người dùng",
-                ["settings_contact"] = "Email / Số điện thoại",
-                ["settings_logout"] = "Đăng xuất",
-                ["settings_notifications"] = "Thông báo",
-                ["settings_cards"] = "Quản lý Thẻ",
-                ["settings_privacy"] = "Quyền riêng tư",
-                ["settings_support"] = "Hỗ trợ",
-                ["bottom_qr"] = "Quét QR",
-                ["bottom_settings"] = "Cài Đặt",
-                ["bottom_poi"] = "Tìm POI",
-                ["bottom_tour"] = "Tour Của Tôi",
-                ["poi_detail_listen"] = "Nghe thuyết minh",
-                ["poi_detail_directions"] = "Chỉ đường",
-                ["poi_detail_save"] = "Lưu vào tour",
-                ["poi_detail_saved"] = "Đã lưu",
-                ["poi_detail_loading"] = "Đang tải thông tin...",
-                ["poi_detail_featured"] = "Nổi bật",
-                ["poi_detail_reviews"] = "đánh giá",
-                ["poi_detail_no_selection"] = "Chọn một địa điểm trên bản đồ",
-                ["poi_detail_address"] = "Địa chỉ"
-            },
-            ["en"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["qr_success_title"] = "QR SCAN SUCCESSFUL!",
-                ["qr_choose_language"] = "CHOOSE YOUR LANGUAGE",
-                ["qr_continue"] = "CONTINUE",
-                ["login_portal_subtitle"] = "Login / Sign Up",
-                ["login_tab"] = "LOGIN",
-                ["signup_tab"] = "SIGN UP",
-                ["login_identifier_placeholder"] = "Email / Phone number",
-                ["login_password_placeholder"] = "Password",
-                ["login_forgot_password"] = "Forgot password?",
-                ["login_button"] = "LOGIN",
-                ["signup_button"] = "SIGN UP",
-                ["login_google"] = "Continue with Google",
-                ["login_facebook"] = "Facebook",
-                ["login_apple"] = "Apple",
-                ["login_create_account"] = "Create a new account",
-                ["home_search_placeholder"] = "Search restaurants or dishes...",
-                ["home_poi_chip"] = "POI",
-                ["home_layer"] = "Layer",
-                ["home_default_title"] = "Vinh Khanh Food Street",
-                ["home_default_description"] = "Tap a marker or use the search bar to explore popular food spots.",
-                ["home_default_address"] = "Khanh Hoi Ward, District 4, Ho Chi Minh City",
-                ["tour_title"] = "TOUR ITINERARY",
-                ["tour_create"] = "Create New Tour",
-                ["tour_checkpoints"] = "Visited checkpoints",
-                ["settings_title"] = "SETTINGS",
-                ["settings_account"] = "ACCOUNT",
-                ["settings_user_name"] = "User name",
-                ["settings_contact"] = "Email / Phone number",
-                ["settings_logout"] = "Log out",
-                ["settings_notifications"] = "Notifications",
-                ["settings_cards"] = "Card Management",
-                ["settings_privacy"] = "Privacy",
-                ["settings_support"] = "Support",
-                ["bottom_qr"] = "Scan QR",
-                ["bottom_settings"] = "Settings",
-                ["bottom_poi"] = "Find POI",
-                ["bottom_tour"] = "My Tour",
-                ["poi_detail_listen"] = "Listen",
-                ["poi_detail_directions"] = "Directions",
-                ["poi_detail_save"] = "Save to tour",
-                ["poi_detail_saved"] = "Saved",
-                ["poi_detail_loading"] = "Loading details...",
-                ["poi_detail_featured"] = "Featured",
-                ["poi_detail_reviews"] = "reviews",
-                ["poi_detail_no_selection"] = "Select a place on the map",
-                ["poi_detail_address"] = "Address"
-            },
-            ["zh-CN"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["qr_success_title"] = "二维码扫描成功！",
-                ["qr_choose_language"] = "选择您的语言",
-                ["qr_continue"] = "继续",
-                ["login_portal_subtitle"] = "登录 / 注册",
-                ["login_tab"] = "登录",
-                ["signup_tab"] = "注册",
-                ["login_identifier_placeholder"] = "邮箱 / 电话号码",
-                ["login_password_placeholder"] = "密码",
-                ["login_forgot_password"] = "忘记密码？",
-                ["login_button"] = "登录",
-                ["signup_button"] = "注册",
-                ["login_google"] = "使用 Google 登录",
-                ["login_facebook"] = "Facebook",
-                ["login_apple"] = "Apple",
-                ["login_create_account"] = "创建新账号",
-                ["home_search_placeholder"] = "搜索餐厅或菜品...",
-                ["home_poi_chip"] = "POI",
-                ["home_layer"] = "图层",
-                ["home_default_title"] = "Vinh Khanh Food Street",
-                ["home_default_description"] = "点击标记或使用搜索栏探索热门美食地点。",
-                ["home_default_address"] = "胡志明市第四郡庆会坊",
-                ["tour_title"] = "行程安排",
-                ["tour_create"] = "创建新行程",
-                ["tour_checkpoints"] = "已到访站点",
-                ["settings_title"] = "设置",
-                ["settings_account"] = "账户",
-                ["settings_user_name"] = "用户名",
-                ["settings_contact"] = "邮箱 / 电话号码",
-                ["settings_logout"] = "退出登录",
-                ["settings_notifications"] = "通知",
-                ["settings_cards"] = "卡片管理",
-                ["settings_privacy"] = "隐私",
-                ["settings_support"] = "支持",
-                ["bottom_qr"] = "扫码",
-                ["bottom_settings"] = "设置",
-                ["bottom_poi"] = "找 POI",
-                ["bottom_tour"] = "我的行程",
-                ["poi_detail_listen"] = "收听讲解",
-                ["poi_detail_directions"] = "路线",
-                ["poi_detail_save"] = "保存到行程",
-                ["poi_detail_saved"] = "已保存",
-                ["poi_detail_loading"] = "正在加载详情...",
-                ["poi_detail_featured"] = "精选",
-                ["poi_detail_reviews"] = "条评价",
-                ["poi_detail_no_selection"] = "请在地图上选择地点",
-                ["poi_detail_address"] = "地址"
-            },
-            ["ko"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["qr_success_title"] = "QR 스캔 성공!",
-                ["qr_choose_language"] = "언어를 선택하세요",
-                ["qr_continue"] = "계속",
-                ["login_portal_subtitle"] = "로그인 / 회원가입",
-                ["login_tab"] = "로그인",
-                ["signup_tab"] = "회원가입",
-                ["login_identifier_placeholder"] = "이메일 / 전화번호",
-                ["login_password_placeholder"] = "비밀번호",
-                ["login_forgot_password"] = "비밀번호를 잊으셨나요?",
-                ["login_button"] = "로그인",
-                ["signup_button"] = "회원가입",
-                ["login_google"] = "Google로 로그인",
-                ["login_facebook"] = "Facebook",
-                ["login_apple"] = "Apple",
-                ["login_create_account"] = "새 계정 만들기",
-                ["home_search_placeholder"] = "식당이나 음식을 검색하세요...",
-                ["home_poi_chip"] = "POI",
-                ["home_layer"] = "레이어",
-                ["home_default_title"] = "Vinh Khanh Food Street",
-                ["home_default_description"] = "마커를 누르거나 검색창으로 인기 맛집을 찾아보세요.",
-                ["home_default_address"] = "호치민시 4군 칸호이동",
-                ["tour_title"] = "투어 일정",
-                ["tour_create"] = "새 투어 만들기",
-                ["tour_checkpoints"] = "방문한 체크포인트",
-                ["settings_title"] = "설정",
-                ["settings_account"] = "계정",
-                ["settings_user_name"] = "사용자 이름",
-                ["settings_contact"] = "이메일 / 전화번호",
-                ["settings_logout"] = "로그아웃",
-                ["settings_notifications"] = "알림",
-                ["settings_cards"] = "카드 관리",
-                ["settings_privacy"] = "개인정보",
-                ["settings_support"] = "지원",
-                ["bottom_qr"] = "QR 스캔",
-                ["bottom_settings"] = "설정",
-                ["bottom_poi"] = "POI 찾기",
-                ["bottom_tour"] = "내 투어",
-                ["poi_detail_listen"] = "오디오 가이드",
-                ["poi_detail_directions"] = "길찾기",
-                ["poi_detail_save"] = "투어에 저장",
-                ["poi_detail_saved"] = "저장됨",
-                ["poi_detail_loading"] = "정보를 불러오는 중...",
-                ["poi_detail_featured"] = "추천",
-                ["poi_detail_reviews"] = "개 후기",
-                ["poi_detail_no_selection"] = "지도에서 장소를 선택하세요",
-                ["poi_detail_address"] = "주소"
-            },
-            ["ja"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["qr_success_title"] = "QR読み取り成功！",
-                ["qr_choose_language"] = "言語を選択してください",
-                ["qr_continue"] = "続ける",
-                ["login_portal_subtitle"] = "ログイン / 新規登録",
-                ["login_tab"] = "ログイン",
-                ["signup_tab"] = "登録",
-                ["login_identifier_placeholder"] = "メール / 電話番号",
-                ["login_password_placeholder"] = "パスワード",
-                ["login_forgot_password"] = "パスワードをお忘れですか？",
-                ["login_button"] = "ログイン",
-                ["signup_button"] = "登録",
-                ["login_google"] = "Googleでログイン",
-                ["login_facebook"] = "Facebook",
-                ["login_apple"] = "Apple",
-                ["login_create_account"] = "新しいアカウントを作成",
-                ["home_search_placeholder"] = "お店や料理を検索...",
-                ["home_poi_chip"] = "POI",
-                ["home_layer"] = "レイヤー",
-                ["home_default_title"] = "Vinh Khanh Food Street",
-                ["home_default_description"] = "マーカーや検索バーで人気の店を探せます。",
-                ["home_default_address"] = "ホーチミン市4区カインホイ坊",
-                ["tour_title"] = "ツアー日程",
-                ["tour_create"] = "新しいツアーを作成",
-                ["tour_checkpoints"] = "訪問済みチェックポイント",
-                ["settings_title"] = "設定",
-                ["settings_account"] = "アカウント",
-                ["settings_user_name"] = "ユーザー名",
-                ["settings_contact"] = "メール / 電話番号",
-                ["settings_logout"] = "ログアウト",
-                ["settings_notifications"] = "通知",
-                ["settings_cards"] = "カード管理",
-                ["settings_privacy"] = "プライバシー",
-                ["settings_support"] = "サポート",
-                ["bottom_qr"] = "QR",
-                ["bottom_settings"] = "設定",
-                ["bottom_poi"] = "POI検索",
-                ["bottom_tour"] = "マイツアー",
-                ["poi_detail_listen"] = "音声ガイド",
-                ["poi_detail_directions"] = "経路",
-                ["poi_detail_save"] = "ツアーに保存",
-                ["poi_detail_saved"] = "保存済み",
-                ["poi_detail_loading"] = "詳細を読み込み中...",
-                ["poi_detail_featured"] = "注目",
-                ["poi_detail_reviews"] = "件のレビュー",
-                ["poi_detail_no_selection"] = "地図でスポットを選択してください",
-                ["poi_detail_address"] = "住所"
-            },
-            ["fr"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["qr_success_title"] = "SCAN QR RÉUSSI !",
-                ["qr_choose_language"] = "CHOISISSEZ VOTRE LANGUE",
-                ["qr_continue"] = "CONTINUER",
-                ["login_portal_subtitle"] = "Connexion / Inscription",
-                ["login_tab"] = "CONNEXION",
-                ["signup_tab"] = "INSCRIPTION",
-                ["login_identifier_placeholder"] = "E-mail / Téléphone",
-                ["login_password_placeholder"] = "Mot de passe",
-                ["login_forgot_password"] = "Mot de passe oublié ?",
-                ["login_button"] = "CONNEXION",
-                ["signup_button"] = "INSCRIPTION",
-                ["login_google"] = "Continuer avec Google",
-                ["login_facebook"] = "Facebook",
-                ["login_apple"] = "Apple",
-                ["login_create_account"] = "Créer un nouveau compte",
-                ["home_search_placeholder"] = "Rechercher un restaurant ou un plat...",
-                ["home_poi_chip"] = "POI",
-                ["home_layer"] = "Calque",
-                ["home_default_title"] = "Vinh Khanh Food Street",
-                ["home_default_description"] = "Touchez un marqueur ou utilisez la barre de recherche pour explorer les lieux populaires.",
-                ["home_default_address"] = "Quartier Khanh Hoi, District 4, Hô Chi Minh-Ville",
-                ["tour_title"] = "ITINÉRAIRE DU TOUR",
-                ["tour_create"] = "Créer un nouveau tour",
-                ["tour_checkpoints"] = "Étapes visitées",
-                ["settings_title"] = "PARAMÈTRES",
-                ["settings_account"] = "COMPTE",
-                ["settings_user_name"] = "Nom d'utilisateur",
-                ["settings_contact"] = "E-mail / Téléphone",
-                ["settings_logout"] = "Se déconnecter",
-                ["settings_notifications"] = "Notifications",
-                ["settings_cards"] = "Gestion des cartes",
-                ["settings_privacy"] = "Confidentialité",
-                ["settings_support"] = "Assistance",
-                ["bottom_qr"] = "QR",
-                ["bottom_settings"] = "Réglages",
-                ["bottom_poi"] = "Trouver POI",
-                ["bottom_tour"] = "Mon Tour",
-                ["poi_detail_listen"] = "Écouter",
-                ["poi_detail_directions"] = "Itinéraire",
-                ["poi_detail_save"] = "Enregistrer",
-                ["poi_detail_saved"] = "Enregistré",
-                ["poi_detail_loading"] = "Chargement des détails...",
-                ["poi_detail_featured"] = "À la une",
-                ["poi_detail_reviews"] = "avis",
-                ["poi_detail_no_selection"] = "Sélectionnez un lieu sur la carte",
-                ["poi_detail_address"] = "Adresse"
-            }
+            ["app_title"] = "Vinh Khanh Food Street",
+            ["brand_title"] = "Vinh Khanh\nFood Street",
+            ["language_selection_title"] = "Choose your language",
+            ["language_selection_subtitle"] = "Select a language before signing in",
+            ["language_selection_pending_label"] = "QR",
+            ["qr_success_title"] = "QR scan successful!",
+            ["qr_choose_language"] = "Choose your language",
+            ["qr_continue"] = "Continue",
+            ["login_portal_subtitle"] = "Login / Sign Up",
+            ["login_tab"] = "Login",
+            ["signup_tab"] = "Sign Up",
+            ["login_identifier_placeholder"] = "Email / Phone number",
+            ["login_password_placeholder"] = "Password",
+            ["login_forgot_password"] = "Forgot password?",
+            ["login_button"] = "Login",
+            ["signup_button"] = "Sign Up",
+            ["login_google"] = "Continue with Google",
+            ["login_facebook"] = "Facebook",
+            ["login_apple"] = "Apple",
+            ["login_create_account"] = "Create a new account",
+            ["home_search_placeholder"] = "Search restaurants or dishes...",
+            ["home_poi_chip"] = "POI",
+            ["home_layer"] = "Layer",
+            ["home_default_title"] = "Vinh Khanh Food Street",
+            ["home_default_description"] = "Tap a marker or use the search bar to explore popular food spots.",
+            ["home_default_address"] = "Khanh Hoi Ward, District 4, Ho Chi Minh City",
+            ["tour_title"] = "Tour itinerary",
+            ["tour_create"] = "Create New Tour",
+            ["tour_checkpoints"] = "Visited checkpoints",
+            ["settings_title"] = "Settings",
+            ["settings_account"] = "Account",
+            ["settings_language_title"] = "Language",
+            ["settings_user_name"] = "User name",
+            ["settings_contact"] = "Email / Phone number",
+            ["settings_logout"] = "Log out",
+            ["settings_notifications"] = "Notifications",
+            ["settings_cards"] = "Card Management",
+            ["settings_privacy"] = "Privacy",
+            ["settings_support"] = "Support",
+            ["bottom_qr"] = "Scan QR",
+            ["bottom_settings"] = "Settings",
+            ["bottom_poi"] = "Find POI",
+            ["bottom_tour"] = "My Tour",
+            ["poi_detail_listen"] = "Listen",
+            ["poi_detail_directions"] = "Directions",
+            ["poi_detail_save"] = "Save to tour",
+            ["poi_detail_saved"] = "Saved",
+            ["poi_detail_loading"] = "Loading details...",
+            ["poi_detail_featured"] = "Featured",
+            ["poi_detail_reviews"] = "reviews",
+            ["poi_detail_no_selection"] = "Select a place on the map",
+            ["poi_detail_address"] = "Address",
+            ["qr_scanner_title"] = "Scan QR",
+            ["qr_scanner_instruction"] = "Place the QR code inside the frame to choose a language and continue your experience.",
+            ["qr_scanner_manual_title"] = "Enter code manually",
+            ["qr_scanner_manual_description"] = "Use this for quick testing with a POI id, for example: poi-bbq-night",
+            ["qr_camera_permission_title"] = "QR",
+            ["qr_camera_permission_message"] = "Camera permission is required to scan QR codes.",
+            ["common_ok"] = "OK",
+            ["qr_manual_prompt_title"] = "QR code",
+            ["qr_manual_prompt_message"] = "Enter a QR code or POI id for testing",
+            ["qr_manual_prompt_accept"] = "Open",
+            ["qr_manual_prompt_cancel"] = "Cancel",
+            ["qr_manual_prompt_placeholder"] = "e.g. poi-bbq-night"
         };
 
     private readonly WeakEventManager _eventManager = new();
-    private Dictionary<string, string> _texts = CreateBuiltInTextDictionary(DefaultLanguage);
-    private bool _hasSavedLanguageSelection;
+    private readonly ILogger<AppLanguageService>? _logger;
+    private readonly HashSet<string> _missingKeyLogs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _fallbackKeyLogs = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> _fallbackTexts = new(SeedEnglishTexts, StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> _currentTexts = new(StringComparer.OrdinalIgnoreCase);
+    private bool _initialized;
 
-    public string CurrentLanguage { get; private set; } = DefaultLanguage;
-    public bool HasSavedLanguageSelection => _hasSavedLanguageSelection;
-
-    public AppLanguageService()
+    public AppLanguageService(ILogger<AppLanguageService>? logger = null)
     {
-        _texts = CreateBuiltInTextDictionary(DefaultLanguage);
-        _hasSavedLanguageSelection = TryLoadSavedLanguageSync() is not null;
+        _logger = logger;
+        CurrentLanguage = AppLanguage.NormalizeCode(Preferences.Default.Get(PreferenceKey, AppLanguage.DefaultLanguage));
+        CurrentCulture = AppLanguage.CreateCulture(CurrentLanguage);
+        HasSavedLanguageSelection = Preferences.Default.ContainsKey(PreferenceKey);
     }
+
+    public string CurrentLanguage { get; private set; }
+
+    public CultureInfo CurrentCulture { get; private set; }
+
+    public bool HasSavedLanguageSelection { get; private set; }
+
+    public IReadOnlyList<AppLanguageDefinition> SupportedLanguages => AppLanguage.SupportedLanguages;
 
     public event EventHandler? LanguageChanged
     {
@@ -343,47 +130,105 @@ public sealed class AppLanguageService : IAppLanguageService
 
     public async Task InitializeAsync()
     {
-        var savedLanguageCode = await LoadSavedLanguageAsync();
-        _hasSavedLanguageSelection = !string.IsNullOrWhiteSpace(savedLanguageCode);
-        await ApplyLanguageAsync(savedLanguageCode ?? DefaultLanguage, persistSelection: false);
+        await ApplyLanguageAsync(CurrentLanguage, persistSelection: false);
+        _initialized = true;
     }
 
-    public async Task SetLanguageAsync(string languageCode)
-        => await ApplyLanguageAsync(languageCode, persistSelection: true);
+    public Task SetLanguageAsync(string languageCode)
+        => ApplyLanguageAsync(languageCode, persistSelection: true);
+
+    public string GetText(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return string.Empty;
+        }
+
+        if (_currentTexts.TryGetValue(key, out var currentValue) && !string.IsNullOrWhiteSpace(currentValue))
+        {
+            return currentValue;
+        }
+
+        if (_fallbackTexts.TryGetValue(key, out var fallbackValue) && !string.IsNullOrWhiteSpace(fallbackValue))
+        {
+            LogFallbackKey(key);
+            return fallbackValue;
+        }
+
+        LogMissingKey(key);
+        return key;
+    }
+
+    public AppLanguageDefinition GetLanguageDefinition(string? languageCode)
+        => AppLanguage.GetDefinition(languageCode);
 
     private async Task ApplyLanguageAsync(string languageCode, bool persistSelection)
     {
-        var normalizedCode = NormalizeLanguageCode(languageCode);
-        var mergedTexts = CreateBuiltInTextDictionary(normalizedCode);
+        var normalizedCode = AppLanguage.NormalizeCode(languageCode);
+        var nextFallbackTexts = new Dictionary<string, string>(SeedEnglishTexts, StringComparer.OrdinalIgnoreCase);
+        MergeTexts(nextFallbackTexts, await LoadFromFileAsync(AppLanguage.FallbackLanguage));
 
-        var fileDictionary = await LoadFromFileAsync(normalizedCode);
-        foreach (var pair in fileDictionary)
+        var nextCurrentTexts = string.Equals(normalizedCode, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase)
+            ? new Dictionary<string, string>(nextFallbackTexts, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.Equals(normalizedCode, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase))
         {
-            mergedTexts[pair.Key] = pair.Value;
+            MergeTexts(nextCurrentTexts, await LoadFromFileAsync(normalizedCode));
         }
 
-        if (mergedTexts.Count == 0 && !string.Equals(normalizedCode, DefaultLanguage, StringComparison.OrdinalIgnoreCase))
+        if (nextCurrentTexts.Count == 0 && !string.Equals(normalizedCode, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase))
         {
-            await ApplyLanguageAsync(DefaultLanguage, persistSelection);
-            return;
+            _logger?.LogWarning("No translation file found for language '{LanguageCode}'. UI will use English fallback.", normalizedCode);
         }
+
+        _fallbackTexts = nextFallbackTexts;
+        _currentTexts = nextCurrentTexts;
+        _missingKeyLogs.Clear();
+        _fallbackKeyLogs.Clear();
 
         CurrentLanguage = normalizedCode;
-        _texts = mergedTexts;
+        CurrentCulture = AppLanguage.CreateCulture(normalizedCode);
+        ApplyCurrentCulture(CurrentCulture);
 
         if (persistSelection)
         {
-            await SaveLanguageAsync(normalizedCode);
-            _hasSavedLanguageSelection = true;
+            Preferences.Default.Set(PreferenceKey, normalizedCode);
+            HasSavedLanguageSelection = true;
+        }
+        else
+        {
+            HasSavedLanguageSelection = Preferences.Default.ContainsKey(PreferenceKey);
         }
 
-        _eventManager.HandleEvent(this, EventArgs.Empty, nameof(LanguageChanged));
+        await MainThread.InvokeOnMainThreadAsync(() =>
+            _eventManager.HandleEvent(this, EventArgs.Empty, nameof(LanguageChanged)));
     }
 
-    public string GetText(string key)
-        => _texts.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value
-            : key;
+    private void LogMissingKey(string key)
+    {
+        var token = $"{CurrentLanguage}:{key}";
+        if (_missingKeyLogs.Add(token))
+        {
+            _logger?.LogWarning("Missing translation key '{Key}' for language '{LanguageCode}'.", key, CurrentLanguage);
+        }
+    }
+
+    private void LogFallbackKey(string key)
+    {
+        if (!_initialized)
+        {
+            return;
+        }
+
+        var token = $"{CurrentLanguage}:{key}";
+        if (_fallbackKeyLogs.Add(token))
+        {
+            _logger?.LogInformation(
+                "Using English fallback for translation key '{Key}' in language '{LanguageCode}'.",
+                key,
+                CurrentLanguage);
+        }
+    }
 
     private static async Task<Dictionary<string, string>> LoadFromFileAsync(string languageCode)
     {
@@ -393,7 +238,7 @@ public sealed class AppLanguageService : IAppLanguageService
             using var reader = new StreamReader(stream);
             var content = await reader.ReadToEndAsync();
             return JsonSerializer.Deserialize<Dictionary<string, string>>(content, JsonOptions)
-                   ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
         catch
         {
@@ -401,98 +246,22 @@ public sealed class AppLanguageService : IAppLanguageService
         }
     }
 
-    private static Dictionary<string, string> CreateBuiltInTextDictionary(string languageCode)
+    private static void MergeTexts(IDictionary<string, string> destination, IReadOnlyDictionary<string, string> source)
     {
-        var normalizedCode = NormalizeLanguageCode(languageCode);
-        var texts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        if (!BuiltInTexts.TryGetValue(normalizedCode, out var builtIn))
+        foreach (var pair in source)
         {
-            return texts;
-        }
-
-        foreach (var pair in builtIn)
-        {
-            texts[pair.Key] = pair.Value;
-        }
-
-        return texts;
-    }
-
-    private static async Task<string?> LoadSavedLanguageAsync()
-    {
-        try
-        {
-            var path = GetPreferenceFilePath();
-            if (!File.Exists(path))
+            if (!string.IsNullOrWhiteSpace(pair.Value))
             {
-                return null;
+                destination[pair.Key] = pair.Value.Trim();
             }
-
-            var value = (await File.ReadAllTextAsync(path)).Trim();
-            return string.IsNullOrWhiteSpace(value) ? null : value;
-        }
-        catch
-        {
-            return null;
         }
     }
 
-    private static string? TryLoadSavedLanguageSync()
+    private static void ApplyCurrentCulture(CultureInfo culture)
     {
-        try
-        {
-            var path = GetPreferenceFilePath();
-            if (!File.Exists(path))
-            {
-                return null;
-            }
-
-            var value = File.ReadAllText(path).Trim();
-            return string.IsNullOrWhiteSpace(value) ? null : value;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static async Task SaveLanguageAsync(string languageCode)
-    {
-        try
-        {
-            var path = GetPreferenceFilePath();
-            var directory = Path.GetDirectoryName(path);
-            if (!string.IsNullOrWhiteSpace(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            await File.WriteAllTextAsync(path, languageCode);
-        }
-        catch
-        {
-            // Best effort persistence only.
-        }
-    }
-
-    private static string GetPreferenceFilePath()
-        => Path.Combine(FileSystem.Current.AppDataDirectory, PreferenceFileName);
-    private static string NormalizeLanguageCode(string? languageCode)
-    {
-        if (string.IsNullOrWhiteSpace(languageCode))
-        {
-            return DefaultLanguage;
-        }
-
-        return languageCode.Trim() switch
-        {
-            "zh" => "zh-CN",
-            "fr-FR" => "fr",
-            "en-US" => "en",
-            "ja-JP" => "ja",
-            "ko-KR" => "ko",
-            _ => languageCode.Trim()
-        };
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+        CultureInfo.DefaultThreadCurrentCulture = culture;
+        CultureInfo.DefaultThreadCurrentUICulture = culture;
     }
 }

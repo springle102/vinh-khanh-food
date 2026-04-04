@@ -33,7 +33,7 @@ public sealed class SettingsViewModel : BaseViewModel
 
     public string HeaderTitleText => _languageService.GetText("settings_title");
     public string AccountTitleText => _languageService.GetText("settings_account");
-    public string LanguageTitleText => _languageService.GetText("qr_choose_language");
+    public string LanguageTitleText => _languageService.GetText("settings_language_title");
     public string UserNameLabelText => _languageService.GetText("settings_user_name");
     public string ContactLabelText => _languageService.GetText("settings_contact");
     public string LogoutText => _languageService.GetText("settings_logout");
