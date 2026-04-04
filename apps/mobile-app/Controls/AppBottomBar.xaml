@@ -2,57 +2,110 @@
 <ContentView
     x:Class="VinhKhanh.MobileApp.Controls.AppBottomBar"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:viewModels="clr-namespace:VinhKhanh.MobileApp.ViewModels"
+    x:DataType="viewModels:AppBottomBarViewModel">
 
-    <Grid HeightRequest="112" Padding="18,6,18,14">
+    <Grid
+        HeightRequest="104"
+        Padding="16,4,16,10"
+        ColumnDefinitions="*,*,92,*">
+
         <Border
-            Margin="0,26,0,0"
-            BackgroundColor="White"
-            Padding="8,8"
-            StrokeThickness="0"
-            StrokeShape="RoundRectangle 22">
+            Grid.ColumnSpan="4"
+            Margin="0,18,0,0"
+            BackgroundColor="#FFFDFC"
+            Padding="10,8,10,10"
+            Stroke="#EEE4D8"
+            StrokeThickness="1"
+            StrokeShape="RoundRectangle 24">
             <Border.Shadow>
-                <Shadow Brush="{StaticResource BrandShadow}" Offset="0,6" Radius="18" Opacity="0.12" />
+                <Shadow Brush="{StaticResource BrandShadow}" Offset="0,6" Radius="18" Opacity="0.10" />
             </Border.Shadow>
 
-            <Grid ColumnDefinitions="*,*,1.2*,*" ColumnSpacing="4">
-                <Border x:Name="PoiTab" Grid.Column="0" Padding="6,8,6,6" BackgroundColor="Transparent" StrokeThickness="0" StrokeShape="RoundRectangle 16">
-                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
-                        <Grid WidthRequest="22" HeightRequest="22">
+            <Grid ColumnDefinitions="*,*,92,*" ColumnSpacing="4">
+                <Border
+                    x:Name="PoiTab"
+                    Grid.Column="0"
+                    HeightRequest="54"
+                    Margin="0,0,4,0"
+                    Padding="10,7,10,6"
+                    BackgroundColor="Transparent"
+                    StrokeThickness="0"
+                    StrokeShape="RoundRectangle 18"
+                    VerticalOptions="Center">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4" VerticalOptions="Center">
+                        <Grid WidthRequest="20" HeightRequest="20">
                             <Path x:Name="PoiPath1" Data="M 9.4 16.6 C 5.8 13.4 4 11.2 4 8.6 A 6.6 6.6 0 1 1 17.2 8.6 C 17.2 11.2 15.3 13.4 11.8 16.6 L 10.6 17.8 Z" StrokeThickness="1.8" StrokeLineJoin="Round" />
                             <Path x:Name="PoiPath2" Data="M 16.5 16.5 L 20 20" StrokeThickness="1.8" StrokeLineCap="Round" />
                             <Path x:Name="PoiPath3" Data="M 10.6 8.7 A 2.1 2.1 0 1 1 10.59 8.7 Z" StrokeThickness="1.8" StrokeLineJoin="Round" />
                         </Grid>
-                        <Label x:Name="PoiLabel" FontSize="10" HorizontalTextAlignment="Center" Text="Tim POI" />
+                        <Label
+                            x:Name="PoiLabel"
+                            FontSize="10"
+                            HorizontalTextAlignment="Center"
+                            LineBreakMode="NoWrap"
+                            MaxLines="1"
+                            Text="Tim POI" />
                     </VerticalStackLayout>
                     <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnPoiTapped" />
+                        <TapGestureRecognizer Command="{Binding NavigateToPoiCommand}" />
                     </Border.GestureRecognizers>
                 </Border>
 
-                <Border x:Name="TourTab" Grid.Column="1" Padding="6,8,6,6" BackgroundColor="Transparent" StrokeThickness="0" StrokeShape="RoundRectangle 16">
-                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
-                        <Grid WidthRequest="22" HeightRequest="22">
+                <Border
+                    x:Name="TourTab"
+                    Grid.Column="1"
+                    HeightRequest="54"
+                    Margin="0,0,10,0"
+                    Padding="10,7,10,6"
+                    BackgroundColor="Transparent"
+                    StrokeThickness="0"
+                    StrokeShape="RoundRectangle 18"
+                    VerticalOptions="Center">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4" VerticalOptions="Center">
+                        <Grid WidthRequest="20" HeightRequest="20">
                             <Path x:Name="TourPath1" Data="M 6 5 A 2 2 0 1 1 5.99 5 Z M 16 17 A 2 2 0 1 1 15.99 17 Z M 6 7 V 10.2 C 6 11.6 7.2 12.8 8.6 12.8 H 13.2 C 14.8 12.8 16 14 16 15.6 V 15" StrokeThickness="1.8" StrokeLineCap="Round" StrokeLineJoin="Round" />
                             <Path x:Name="TourPath2" Data="M 9.8 3 H 18 M 13.8 19 H 4" StrokeThickness="1.8" StrokeLineCap="Round" />
                         </Grid>
-                        <Label x:Name="TourLabel" FontSize="10" HorizontalTextAlignment="Center" Text="Tour cua toi" />
+                        <Label
+                            x:Name="TourLabel"
+                            FontSize="10"
+                            HorizontalTextAlignment="Center"
+                            LineBreakMode="NoWrap"
+                            MaxLines="1"
+                            Text="Tour cua toi" />
                     </VerticalStackLayout>
                     <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnTourTapped" />
+                        <TapGestureRecognizer Command="{Binding NavigateToMyTourCommand}" />
                     </Border.GestureRecognizers>
                 </Border>
 
-                <Border x:Name="SettingsTab" Grid.Column="3" Padding="6,8,6,6" BackgroundColor="Transparent" StrokeThickness="0" StrokeShape="RoundRectangle 16">
-                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
-                        <Grid WidthRequest="22" HeightRequest="22">
+                <Border
+                    x:Name="SettingsTab"
+                    Grid.Column="3"
+                    HeightRequest="54"
+                    Margin="10,0,0,0"
+                    Padding="10,7,10,6"
+                    BackgroundColor="Transparent"
+                    StrokeThickness="0"
+                    StrokeShape="RoundRectangle 18"
+                    VerticalOptions="Center">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4" VerticalOptions="Center">
+                        <Grid WidthRequest="20" HeightRequest="20">
                             <Path x:Name="SettingsPath1" Data="M 11 7.4 A 3.6 3.6 0 1 1 10.99 7.4 Z" StrokeThickness="1.8" StrokeLineJoin="Round" />
                             <Path x:Name="SettingsPath2" Data="M 11 1.8 V 4 M 11 17.8 V 20 M 3.6 6.1 L 5.4 7.2 M 16.6 13.8 L 18.4 14.9 M 3.6 14.9 L 5.4 13.8 M 16.6 7.2 L 18.4 6.1 M 1.8 11 H 4 M 18 11 H 20.2" StrokeThickness="1.8" StrokeLineCap="Round" />
                         </Grid>
-                        <Label x:Name="SettingsLabel" FontSize="10" HorizontalTextAlignment="Center" Text="Cai dat" />
+                        <Label
+                            x:Name="SettingsLabel"
+                            FontSize="10"
+                            HorizontalTextAlignment="Center"
+                            LineBreakMode="NoWrap"
+                            MaxLines="1"
+                            Text="Cai dat" />
                     </VerticalStackLayout>
                     <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnSettingsTapped" />
+                        <TapGestureRecognizer Command="{Binding NavigateToSettingsCommand}" />
                     </Border.GestureRecognizers>
                 </Border>
             </Grid>
@@ -60,26 +113,36 @@
 
         <Border
             x:Name="QrTab"
-            WidthRequest="86"
-            HeightRequest="86"
+            Grid.Column="2"
+            WidthRequest="74"
+            HeightRequest="74"
             BackgroundColor="{StaticResource BrandPrimary}"
             HorizontalOptions="Center"
             Padding="0"
             StrokeThickness="0"
-            StrokeShape="RoundRectangle 43"
+            StrokeShape="RoundRectangle 37"
+            TranslationY="-2"
             VerticalOptions="Start">
             <Border.Shadow>
-                <Shadow Brush="#30F48A22" Offset="0,10" Radius="20" Opacity="0.32" />
+                <Shadow Brush="#24F48A22" Offset="0,8" Radius="18" Opacity="0.24" />
             </Border.Shadow>
             <VerticalStackLayout HorizontalOptions="Center" Spacing="3" VerticalOptions="Center">
-                <Grid WidthRequest="28" HeightRequest="28">
+                <Grid WidthRequest="24" HeightRequest="24">
                     <Path x:Name="QrPath1" Data="M 2 2 H 11 V 11 H 2 Z M 17 2 H 26 V 11 H 17 Z M 2 17 H 11 V 26 H 2 Z" Stroke="White" StrokeThickness="1.9" StrokeLineJoin="Round" />
                     <Path x:Name="QrPath2" Data="M 6 6 H 6.2 M 20 6 H 20.2 M 6 20 H 6.2 M 17 17 H 21 M 21 21 H 26 M 21 26 H 26 M 17 21 H 17.2 M 17 26 H 17.2 M 26 17 H 26.2" Stroke="White" StrokeThickness="3" StrokeLineCap="Round" />
                 </Grid>
-                <Label x:Name="QrLabel" FontFamily="OpenSansSemibold" FontSize="10" HorizontalTextAlignment="Center" Text="Quet QR" TextColor="White" />
+                <Label
+                    x:Name="QrLabel"
+                    FontFamily="OpenSansSemibold"
+                    FontSize="10"
+                    HorizontalTextAlignment="Center"
+                    LineBreakMode="NoWrap"
+                    MaxLines="1"
+                    Text="Quet QR"
+                    TextColor="White" />
             </VerticalStackLayout>
             <Border.GestureRecognizers>
-                <TapGestureRecognizer Tapped="OnQrTapped" />
+                <TapGestureRecognizer Command="{Binding NavigateToQrCommand}" />
             </Border.GestureRecognizers>
         </Border>
     </Grid>

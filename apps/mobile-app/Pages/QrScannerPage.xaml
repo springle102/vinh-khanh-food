@@ -68,6 +68,6 @@
             </Grid>
         </Grid>
 
-        <controls:AppBottomBar Grid.Row="1" CurrentRoute="QrScannerPage" />
+        <controls:AppBottomBar Grid.Row="1" />
     </Grid>
 </ContentPage>

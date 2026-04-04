@@ -18,27 +18,66 @@ $projectDirectory = Split-Path -Path $resolvedProjectPath -Parent
 
 $dotnetHome = Join-Path $repoRoot ".dotnet-home"
 $appDataDirectory = Join-Path $dotnetHome "AppData\Roaming"
+$localAppDataDirectory = Join-Path $dotnetHome "AppData\Local"
 $nugetPackagesDirectory = Join-Path $dotnetHome ".nuget\packages"
+$nugetHttpCacheDirectory = Join-Path $dotnetHome ".nuget\v3-cache"
+$androidSettingsDirectory = Join-Path $repoRoot ".android-settings"
 
-foreach ($directory in @($dotnetHome, $appDataDirectory, $nugetPackagesDirectory)) {
+foreach ($directory in @($dotnetHome, $appDataDirectory, $localAppDataDirectory, $nugetPackagesDirectory, $nugetHttpCacheDirectory, $androidSettingsDirectory)) {
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
 }
 
 $env:DOTNET_CLI_HOME = $dotnetHome
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1"
+$env:DOTNET_NOLOGO = "1"
 $env:APPDATA = $appDataDirectory
+$env:LOCALAPPDATA = $localAppDataDirectory
 $env:NUGET_PACKAGES = $nugetPackagesDirectory
+$env:NUGET_HTTP_CACHE_PATH = $nugetHttpCacheDirectory
+
+function Resolve-AndroidSdkRoot {
+    $candidates = @()
+
+    foreach ($sdkRoot in @($env:ANDROID_SDK_ROOT, $env:ANDROID_HOME)) {
+        if (-not [string]::IsNullOrWhiteSpace($sdkRoot)) {
+            $candidates += $sdkRoot
+        }
+    }
+
+    $candidates += @(
+        "C:\Program Files (x86)\Android\android-sdk",
+        "C:\Users\ADMIN\AppData\Local\Android\Sdk",
+        "C:\Users\ADMIN\AppData\Local\Android\sdk"
+    )
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) {
+            continue
+        }
+
+        if (Test-Path (Join-Path $candidate "platform-tools\adb.exe")) {
+            return $candidate
+        }
+    }
+
+    throw "Khong tim thay Android SDK hop le. Hay cai Android SDK truoc khi chay."
+}
+
+$resolvedAndroidSdkRoot = Resolve-AndroidSdkRoot
+$env:ANDROID_SDK_ROOT = $resolvedAndroidSdkRoot
+$env:ANDROID_HOME = $resolvedAndroidSdkRoot
 
 function Resolve-AdbPath {
     $candidates = @()
 
-    foreach ($sdkRoot in @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)) {
+    foreach ($sdkRoot in @($env:ANDROID_SDK_ROOT, $env:ANDROID_HOME)) {
         if (-not [string]::IsNullOrWhiteSpace($sdkRoot)) {
             $candidates += (Join-Path $sdkRoot "platform-tools\adb.exe")
         }
     }
 
     $candidates += @(
+        "C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe",
         "C:\Users\ADMIN\AppData\Local\Android\Sdk\platform-tools\adb.exe",
         "C:\Users\ADMIN\AppData\Local\Android\sdk\platform-tools\adb.exe",
         "C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe"
@@ -114,7 +153,9 @@ function Invoke-Deploy {
         "-f", $TargetFramework,
         "-t:Install",
         "--no-restore",
-        "-p:Device=$DeviceSerial"
+        "-p:Device=$DeviceSerial",
+        "-p:AppSettingsDirectory=$androidSettingsDirectory\",
+        "-p:NuGetAudit=false"
     )
 
     & dotnet @dotnetArguments
@@ -136,6 +177,7 @@ $device = Get-ConnectedDevice -AdbPath $adbPath
 
 Write-Host "[watch] Dang theo doi thay doi trong $projectDirectory" -ForegroundColor Yellow
 Write-Host "[watch] Emulator duoc chon: $($device.Serial)" -ForegroundColor Yellow
+Write-Host "[watch] Android SDK duoc chon: $resolvedAndroidSdkRoot" -ForegroundColor Yellow
 
 $watchState = [hashtable]::Synchronized(@{
     Dirty = $false

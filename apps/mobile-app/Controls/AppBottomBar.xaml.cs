@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Graphics;
 using ShapePath = Microsoft.Maui.Controls.Shapes.Path;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Services;
+using VinhKhanh.MobileApp.ViewModels;
 
 namespace VinhKhanh.MobileApp.Controls;
 
@@ -13,57 +15,63 @@ public partial class AppBottomBar : ContentView
     private static readonly Color ActiveBackgroundColor = Color.FromArgb("#FFF4E7");
     private static readonly Color ActiveStrokeColor = Color.FromArgb("#EAB06D");
     private readonly IAppLanguageService _languageService;
-    private readonly IPoiNarrationService _poiNarrationService;
-
-    public static readonly BindableProperty CurrentRouteProperty = BindableProperty.Create(
-        nameof(CurrentRoute),
-        typeof(string),
-        typeof(AppBottomBar),
-        AppRoutes.HomeMap,
-        propertyChanged: (bindable, _, _) => ((AppBottomBar)bindable).ApplyState());
-
-    public string CurrentRoute
-    {
-        get => (string)GetValue(CurrentRouteProperty);
-        set => SetValue(CurrentRouteProperty, value);
-    }
+    private readonly AppBottomBarViewModel _viewModel;
+    private bool _isSubscribed;
 
     public AppBottomBar()
     {
         InitializeComponent();
         _languageService = ServiceHelper.GetService<IAppLanguageService>();
-        _poiNarrationService = ServiceHelper.GetService<IPoiNarrationService>();
-        _languageService.LanguageChanged += (_, _) => ApplyLocalization();
-        Loaded += (_, _) =>
-        {
-            ApplyLocalization();
-            ApplyState();
-        };
+        _viewModel = ServiceHelper.GetService<AppBottomBarViewModel>();
+        BindingContext = _viewModel;
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
     }
 
-    private async void OnQrTapped(object? sender, TappedEventArgs e) => await NavigateAsync(AppRoutes.QrScanner);
-    private async void OnSettingsTapped(object? sender, TappedEventArgs e) => await NavigateAsync(AppRoutes.Settings);
-    private async void OnPoiTapped(object? sender, TappedEventArgs e) => await NavigateAsync(AppRoutes.HomeMap);
-    private async void OnTourTapped(object? sender, TappedEventArgs e) => await NavigateAsync(AppRoutes.MyTour);
-
-    private async Task NavigateAsync(string route)
+    private void OnLoaded(object? sender, EventArgs e)
     {
-        if (string.Equals(CurrentRoute, route, StringComparison.Ordinal))
+        if (_isSubscribed)
         {
             return;
         }
 
-        await _poiNarrationService.StopAsync();
-        CurrentRoute = route;
-        await Shell.Current.GoToAsync(AppRoutes.Root(route));
+        _isSubscribed = true;
+        _languageService.LanguageChanged += OnLanguageChanged;
+        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        _viewModel.SyncWithShell();
+        ApplyLocalization();
+        ApplyState();
+    }
+
+    private void OnUnloaded(object? sender, EventArgs e)
+    {
+        if (!_isSubscribed)
+        {
+            return;
+        }
+
+        _isSubscribed = false;
+        _languageService.LanguageChanged -= OnLanguageChanged;
+        _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+        => ApplyLocalization();
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(AppBottomBarViewModel.SelectedTab) or nameof(AppBottomBarViewModel.CurrentRoute) or "")
+        {
+            MainThread.BeginInvokeOnMainThread(ApplyState);
+        }
     }
 
     private void ApplyState()
     {
-        ApplyItemState(CurrentRoute == AppRoutes.HomeMap, PoiTab, PoiLabel, PoiPath1, PoiPath2, PoiPath3);
-        ApplyItemState(CurrentRoute == AppRoutes.MyTour, TourTab, TourLabel, TourPath1, TourPath2);
-        ApplyItemState(CurrentRoute == AppRoutes.Settings, SettingsTab, SettingsLabel, SettingsPath1, SettingsPath2);
-        ApplyQrState(CurrentRoute == AppRoutes.QrScanner);
+        ApplyItemState(_viewModel.SelectedTab == AppBottomBarTab.Poi, PoiTab, PoiLabel, PoiPath1, PoiPath2, PoiPath3);
+        ApplyItemState(_viewModel.SelectedTab == AppBottomBarTab.MyTour, TourTab, TourLabel, TourPath1, TourPath2);
+        ApplyItemState(_viewModel.SelectedTab == AppBottomBarTab.Settings, SettingsTab, SettingsLabel, SettingsPath1, SettingsPath2);
+        ApplyQrState(_viewModel.SelectedTab == AppBottomBarTab.QrScanner);
     }
 
     private void ApplyLocalization()
@@ -92,7 +100,9 @@ public partial class AppBottomBar : ContentView
     private void ApplyQrState(bool isActive)
     {
         QrTab.BackgroundColor = isActive ? Color.FromArgb("#D87410") : ActiveColor;
-        QrTab.Scale = isActive ? 1.02 : 1.0;
+        QrTab.Stroke = isActive ? new SolidColorBrush(Color.FromArgb("#FFD9B3")) : new SolidColorBrush(Colors.Transparent);
+        QrTab.StrokeThickness = isActive ? 1.2 : 0;
+        QrTab.Scale = 1.0;
         QrLabel.FontAttributes = FontAttributes.Bold;
     }
 }
