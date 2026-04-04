@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { adminApi, getErrorMessage, type LoginAccountOption } from "../../lib/api";
 import { Button } from "../../components/ui/Button";
@@ -22,6 +22,24 @@ export const LoginPage = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+
+  const applyAccountCredentials = (account: Pick<LoginAccountOption, "email" | "password">) => {
+    setEmail(account.email);
+    setPassword(account.password);
+    setError("");
+
+    window.requestAnimationFrame(() => {
+      if (emailInputRef.current) {
+        emailInputRef.current.value = account.email;
+      }
+
+      if (passwordInputRef.current) {
+        passwordInputRef.current.value = account.password;
+      }
+    });
+  };
 
   useEffect(() => {
     if (!user) {
@@ -46,8 +64,13 @@ export const LoginPage = () => {
 
         setLoginAccounts(nextAccounts);
         const firstAccount = nextAccounts[0];
-        setEmail((currentEmail) => currentEmail || firstAccount?.email || "");
-        setPassword((currentPassword) => currentPassword || firstAccount?.password || "");
+        if (
+          firstAccount &&
+          !emailInputRef.current?.value.trim() &&
+          !passwordInputRef.current?.value
+        ) {
+          applyAccountCredentials(firstAccount);
+        }
       } catch (nextError) {
         if (!isMounted) {
           return;
@@ -91,9 +114,7 @@ export const LoginPage = () => {
   };
 
   const handleSelectDatabaseAccount = (account: LoginAccountOption) => {
-    setEmail(account.email);
-    setPassword(account.password);
-    setError("");
+    applyAccountCredentials(account);
   };
 
   return (
@@ -116,7 +137,10 @@ export const LoginPage = () => {
             <div>
               <label className="field-label">Email</label>
               <Input
+                ref={emailInputRef}
                 type="email"
+                name="email"
+                autoComplete="username"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="Nhap email"
@@ -125,7 +149,10 @@ export const LoginPage = () => {
             <div>
               <label className="field-label">Mat khau</label>
               <Input
+                ref={passwordInputRef}
                 type="password"
+                name="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Nhap mat khau"
