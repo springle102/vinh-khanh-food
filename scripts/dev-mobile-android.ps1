@@ -130,6 +130,33 @@ function Get-ConnectedDevice {
     return $selectedDevice
 }
 
+function Resolve-LaunchActivity {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$AdbPath,
+        [Parameter(Mandatory = $true)]
+        [string]$DeviceSerial,
+        [Parameter(Mandatory = $true)]
+        [string]$AndroidPackageId
+    )
+
+    $output = & $AdbPath -s $DeviceSerial shell cmd package resolve-activity --brief $AndroidPackageId
+    if ($LASTEXITCODE -ne 0) {
+        throw "Khong xac dinh duoc launcher activity cua app Android."
+    }
+
+    $launchActivity = $output |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -like "$AndroidPackageId/*" } |
+        Select-Object -Last 1
+
+    if ([string]::IsNullOrWhiteSpace($launchActivity)) {
+        throw "Khong tim thay launcher activity hop le cua app Android."
+    }
+
+    return $launchActivity
+}
+
 function Invoke-Deploy {
     param(
         [Parameter(Mandatory = $true)]
@@ -163,8 +190,10 @@ function Invoke-Deploy {
         throw "Build/Install that bai. Sua loi build roi script se tiep tuc theo doi."
     }
 
-    Write-Host "[deploy] Launching $AndroidPackageId on $DeviceSerial..." -ForegroundColor Cyan
-    & $AdbPath -s $DeviceSerial shell monkey -p $AndroidPackageId -c android.intent.category.LAUNCHER 1 | Out-Null
+    $launchActivity = Resolve-LaunchActivity -AdbPath $AdbPath -DeviceSerial $DeviceSerial -AndroidPackageId $AndroidPackageId
+
+    Write-Host "[deploy] Launching $launchActivity on $DeviceSerial..." -ForegroundColor Cyan
+    & $AdbPath -s $DeviceSerial shell am start -W -n $launchActivity | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Da cai app xong nhung khong mo duoc app tren emulator."
     }
