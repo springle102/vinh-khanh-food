@@ -1,13 +1,19 @@
+using VinhKhanh.MobileApp.Helpers;
+using VinhKhanh.MobileApp.ViewModels;
+
 namespace VinhKhanh.MobileApp;
 
 public partial class AppShell : Shell
 {
     private readonly string _startupRoute;
+    private readonly AppBottomBarViewModel _bottomBarViewModel;
 
     public AppShell(string startupRoute)
     {
         InitializeComponent();
         _startupRoute = startupRoute;
+        _bottomBarViewModel = ServiceHelper.GetService<AppBottomBarViewModel>();
+        _bottomBarViewModel.AttachShell(this);
         Loaded += OnLoaded;
     }
 
@@ -21,6 +27,8 @@ public partial class AppShell : Shell
             {
                 await GoToAsync(route, false);
             }
+
+            _bottomBarViewModel.SyncWithShell();
         });
     }
 }

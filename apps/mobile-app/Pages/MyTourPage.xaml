@@ -92,6 +92,6 @@
             </ScrollView>
         </Grid>
 
-        <controls:AppBottomBar Grid.Row="1" CurrentRoute="MyTourPage" />
+        <controls:AppBottomBar Grid.Row="1" />
     </Grid>
 </ContentPage>

@@ -164,6 +164,6 @@
             </ScrollView>
         </Grid>
 
-        <controls:AppBottomBar Grid.Row="1" CurrentRoute="SettingsPage" />
+        <controls:AppBottomBar Grid.Row="1" />
     </Grid>
 </ContentPage>

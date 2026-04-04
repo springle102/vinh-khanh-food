@@ -22,6 +22,52 @@ public static class AppRoutes
     public const string Settings = "SettingsPage";
 
     public static string Root(string route) => route.StartsWith("//", StringComparison.Ordinal) ? route : $"//{route}";
+
+    public static string NormalizeShellRoute(string? route)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            return string.Empty;
+        }
+
+        var normalized = Uri.UnescapeDataString(route.Trim());
+        var queryIndex = normalized.IndexOfAny(['?', '#']);
+        if (queryIndex >= 0)
+        {
+            normalized = normalized[..queryIndex];
+        }
+
+        normalized = normalized.Trim('/');
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 0 ? string.Empty : segments[^1];
+    }
+
+    public static AppBottomBarTab ResolveBottomBarTab(string? route)
+    {
+        var normalizedRoute = NormalizeShellRoute(route);
+        return normalizedRoute switch
+        {
+            HomeMap or "HomePage" or "MapPage" or "PoiListPage" or "PoiDetailPage" => AppBottomBarTab.Poi,
+            MyTour => AppBottomBarTab.MyTour,
+            QrScanner => AppBottomBarTab.QrScanner,
+            Settings => AppBottomBarTab.Settings,
+            _ => AppBottomBarTab.None
+        };
+    }
+}
+
+public enum AppBottomBarTab
+{
+    None,
+    Poi,
+    MyTour,
+    QrScanner,
+    Settings
 }
 
 public abstract class ObservableObject : INotifyPropertyChanged
