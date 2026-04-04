@@ -31,7 +31,10 @@ public partial class QrScannerPage : ContentPage
         var cameraStatus = await Permissions.RequestAsync<Permissions.Camera>();
         if (cameraStatus != PermissionStatus.Granted)
         {
-            await DisplayAlertAsync("QR", "Ban can cap quyen camera de quet ma QR.", "OK");
+            await DisplayAlertAsync(
+                _viewModel.CameraPermissionTitleText,
+                _viewModel.CameraPermissionMessageText,
+                _viewModel.OkText);
         }
     }
 
@@ -60,7 +63,12 @@ public partial class QrScannerPage : ContentPage
 
     private async void OnManualTapped(object? sender, TappedEventArgs e)
     {
-        var code = await DisplayPromptAsync("Ma QR", "Nhap ma QR hoac poi id de test", "Mo", "Huy", "vd: poi-bbq-night");
+        var code = await DisplayPromptAsync(
+            _viewModel.ManualPromptTitleText,
+            _viewModel.ManualPromptMessageText,
+            _viewModel.ManualPromptAcceptText,
+            _viewModel.ManualPromptCancelText,
+            _viewModel.ManualPromptPlaceholderText);
         if (string.IsNullOrWhiteSpace(code))
         {
             return;

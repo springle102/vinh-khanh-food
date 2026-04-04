@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Maui.Devices;
 using Microsoft.Maui.Storage;
 using Microsoft.Extensions.Logging;
+using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
@@ -986,15 +987,20 @@ public sealed partial class FoodStreetMockDataService
             return null;
         }
 
+        foreach (var candidate in AppLanguage.GetCandidateCodes(currentLanguage))
+        {
+            var match = translations.FirstOrDefault(item =>
+                !string.IsNullOrWhiteSpace(item.Title) &&
+                string.Equals(item.LanguageCode, candidate, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
         return translations.FirstOrDefault(item =>
                    !string.IsNullOrWhiteSpace(item.Title) &&
-                   string.Equals(item.LanguageCode, currentLanguage, StringComparison.OrdinalIgnoreCase))
-               ?? translations.FirstOrDefault(item =>
-                   !string.IsNullOrWhiteSpace(item.Title) &&
-                   string.Equals(item.LanguageCode, poi.DefaultLanguageCode, StringComparison.OrdinalIgnoreCase))
-               ?? translations.FirstOrDefault(item =>
-                   !string.IsNullOrWhiteSpace(item.Title) &&
-                   string.Equals(item.LanguageCode, "vi", StringComparison.OrdinalIgnoreCase))
+                   string.Equals(item.LanguageCode, AppLanguage.NormalizeCode(poi.DefaultLanguageCode), StringComparison.OrdinalIgnoreCase))
                ?? translations.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.Title))
                ?? translations[0];
     }

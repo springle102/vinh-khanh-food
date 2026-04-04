@@ -4,6 +4,7 @@ using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Devices;
 using Microsoft.Maui.Storage;
 using Plugin.Maui.Audio;
+using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
@@ -69,12 +70,12 @@ public sealed class PoiNarrationService : IPoiNarrationService
     {
         ArgumentNullException.ThrowIfNull(detail);
 
-        var requestedLanguageCode = NormalizeAppLanguageCode(languageCode);
+        var requestedLanguageCode = AppLanguage.NormalizeCode(languageCode);
         var session = await BeginPlaybackSessionAsync(cancellationToken);
         try
         {
             var resolvedNarration = await TryResolveNarrationAsync(detail.Id, requestedLanguageCode, session.Token);
-            var effectiveLanguageCode = NormalizeAppLanguageCode(resolvedNarration?.EffectiveLanguageCode ?? requestedLanguageCode);
+            var effectiveLanguageCode = AppLanguage.NormalizeCode(resolvedNarration?.EffectiveLanguageCode ?? requestedLanguageCode);
             var canUseResolvedNarration = CanUseResolvedNarration(resolvedNarration, requestedLanguageCode, effectiveLanguageCode);
             var narrationText = FirstNonEmpty(
                 canUseResolvedNarration ? resolvedNarration?.TranslatedText : null,
@@ -132,24 +133,6 @@ public sealed class PoiNarrationService : IPoiNarrationService
         }
     }
 
-    private static string NormalizeAppLanguageCode(string? languageCode)
-    {
-        if (string.IsNullOrWhiteSpace(languageCode))
-        {
-            return "vi";
-        }
-
-        return languageCode.Trim() switch
-        {
-            "zh" => "zh-CN",
-            "fr-FR" => "fr",
-            "en-US" => "en",
-            "ja-JP" => "ja",
-            "ko-KR" => "ko",
-            _ => languageCode.Trim()
-        };
-    }
-
     private static bool CanUseResolvedNarration(
         PoiNarrationResponseDto? resolvedNarration,
         string requestedLanguageCode,
@@ -193,48 +176,7 @@ public sealed class PoiNarrationService : IPoiNarrationService
 
     private static IEnumerable<string> GetRequestedLanguageCandidates(string languageCode)
     {
-        var normalized = NormalizeAppLanguageCode(languageCode);
-        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        AddCandidate(normalized);
-
-        var separatorIndex = normalized.IndexOf('-');
-        if (separatorIndex > 0)
-        {
-            AddCandidate(normalized[..separatorIndex]);
-        }
-
-        switch (normalized)
-        {
-            case "zh":
-                AddCandidate("zh-CN");
-                break;
-            case "zh-CN":
-                AddCandidate("zh");
-                break;
-            case "en":
-                AddCandidate("en-US");
-                break;
-            case "ja":
-                AddCandidate("ja-JP");
-                break;
-            case "ko":
-                AddCandidate("ko-KR");
-                break;
-            case "fr":
-                AddCandidate("fr-FR");
-                break;
-        }
-
-        return candidates;
-
-        void AddCandidate(string? value)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                candidates.Add(value.Trim());
-            }
-        }
+        return AppLanguage.GetCandidateCodes(languageCode);
     }
 
     private async Task<PlaybackSession> BeginPlaybackSessionAsync(CancellationToken cancellationToken)
@@ -502,7 +444,7 @@ public sealed class PoiNarrationService : IPoiNarrationService
             return Array.Empty<string>();
         }
 
-        var normalizedLanguageCode = NormalizeAppLanguageCode(languageCode);
+        var normalizedLanguageCode = AppLanguage.NormalizeCode(languageCode);
         if (!GoogleTtsLanguages.TryGetValue(normalizedLanguageCode, out var googleLanguage))
         {
             return Array.Empty<string>();

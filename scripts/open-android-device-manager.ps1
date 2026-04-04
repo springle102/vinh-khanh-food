@@ -32,22 +32,52 @@ public static class Win32
 '@
 
 function Resolve-AndroidDeviceManagerPath {
-    $candidates = @(
-        "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\Extensions\Microsoft\Maui\AndroidDeviceManager\AndroidDevices.exe",
-        "C:\Program Files\Microsoft Visual Studio\18\Professional\Common7\IDE\Extensions\Microsoft\Maui\AndroidDeviceManager\AndroidDevices.exe",
-        "C:\Program Files\Microsoft Visual Studio\18\Enterprise\Common7\IDE\Extensions\Microsoft\Maui\AndroidDeviceManager\AndroidDevices.exe",
-        "C:\Program Files\Microsoft Visual Studio\17\Community\Common7\IDE\Extensions\Microsoft\Maui\AndroidDeviceManager\AndroidDevices.exe",
-        "C:\Program Files\Microsoft Visual Studio\17\Professional\Common7\IDE\Extensions\Microsoft\Maui\AndroidDeviceManager\AndroidDevices.exe",
-        "C:\Program Files\Microsoft Visual Studio\17\Enterprise\Common7\IDE\Extensions\Microsoft\Maui\AndroidDeviceManager\AndroidDevices.exe"
+    $candidateMap = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    $visualStudioRoots = @(
+        "C:\Program Files\Microsoft Visual Studio",
+        "C:\Program Files (x86)\Microsoft Visual Studio"
     )
 
-    foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
-            return $candidate
+    foreach ($root in $visualStudioRoots) {
+        if (-not (Test-Path $root)) {
+            continue
+        }
+
+        Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending |
+            ForEach-Object {
+                Get-ChildItem -Path $_.FullName -Directory -ErrorAction SilentlyContinue |
+                    ForEach-Object {
+                        $candidate = Join-Path $_.FullName "Common7\IDE\Extensions\Microsoft\Maui\AndroidDeviceManager\AndroidDevices.exe"
+                        if (Test-Path $candidate) {
+                            [void]$candidateMap.Add($candidate)
+                        }
+                    }
+            }
+    }
+
+    $vsWherePath = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $vsWherePath) {
+        $installRoots = & $vsWherePath -products * -prerelease -requires Microsoft.Component.Maui -property installationPath 2>$null
+        foreach ($installRoot in $installRoots) {
+            if ([string]::IsNullOrWhiteSpace($installRoot)) {
+                continue
+            }
+
+            $candidate = Join-Path $installRoot.Trim() "Common7\IDE\Extensions\Microsoft\Maui\AndroidDeviceManager\AndroidDevices.exe"
+            if (Test-Path $candidate) {
+                [void]$candidateMap.Add($candidate)
+            }
         }
     }
 
-    throw "Không tìm thấy AndroidDevices.exe trong Visual Studio."
+    $candidates = @($candidateMap.ToArray() | Sort-Object -Descending)
+    if ($candidates.Count -gt 0) {
+        return $candidates[0]
+    }
+
+    throw "Khong tim thay Android Device Manager. Hay mo Visual Studio Installer va cai workload .NET MAUI hoac Android SDK tools."
 }
 
 function Get-OrStart-AndroidDeviceManager {

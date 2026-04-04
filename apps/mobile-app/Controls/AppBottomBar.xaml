@@ -46,7 +46,7 @@
                             HorizontalTextAlignment="Center"
                             LineBreakMode="NoWrap"
                             MaxLines="1"
-                            Text="Tim POI" />
+                            Text="" />
                     </VerticalStackLayout>
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding NavigateToPoiCommand}" />
@@ -74,7 +74,7 @@
                             HorizontalTextAlignment="Center"
                             LineBreakMode="NoWrap"
                             MaxLines="1"
-                            Text="Tour cua toi" />
+                            Text="" />
                     </VerticalStackLayout>
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding NavigateToMyTourCommand}" />
@@ -102,7 +102,7 @@
                             HorizontalTextAlignment="Center"
                             LineBreakMode="NoWrap"
                             MaxLines="1"
-                            Text="Cai dat" />
+                            Text="" />
                     </VerticalStackLayout>
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding NavigateToSettingsCommand}" />
@@ -138,7 +138,7 @@
                     HorizontalTextAlignment="Center"
                     LineBreakMode="NoWrap"
                     MaxLines="1"
-                    Text="Quet QR"
+                    Text=""
                     TextColor="White" />
             </VerticalStackLayout>
             <Border.GestureRecognizers>

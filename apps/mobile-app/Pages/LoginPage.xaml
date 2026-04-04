@@ -32,7 +32,7 @@
                 <VerticalStackLayout Grid.Row="0" Spacing="8" HorizontalOptions="Center">
                     <Label
                         HorizontalTextAlignment="Center"
-                        Text="Vinh Khanh&#10;Food Street"
+                        Text="{Binding BrandTitleText}"
                         TextColor="White"
                         FontFamily="OpenSansSemibold"
                         FontSize="28" />
