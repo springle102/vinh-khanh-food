@@ -192,8 +192,14 @@ function Invoke-Deploy {
 
     $launchActivity = Resolve-LaunchActivity -AdbPath $AdbPath -DeviceSerial $DeviceSerial -AndroidPackageId $AndroidPackageId
 
+    Write-Host "[deploy] Restarting $AndroidPackageId on $DeviceSerial..." -ForegroundColor Cyan
+    & $AdbPath -s $DeviceSerial shell am force-stop $AndroidPackageId | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Da cai app xong nhung khong dung duoc tien trinh cu tren emulator."
+    }
+
     Write-Host "[deploy] Launching $launchActivity on $DeviceSerial..." -ForegroundColor Cyan
-    & $AdbPath -s $DeviceSerial shell am start -W -n $launchActivity | Out-Null
+    & $AdbPath -s $DeviceSerial shell am start -S -W -n $launchActivity | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Da cai app xong nhung khong mo duoc app tren emulator."
     }
