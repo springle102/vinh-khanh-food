@@ -119,12 +119,14 @@ Mobile App -------------------> Backend API
 ```powershell
 npm run install:admin
 npm run dev
-npm run dev:backend
+.\scripts\dev-backend.cmd
 npm run dev:mobile:android
 npm run build
-npm run build:backend
+.\scripts\build-backend.cmd
 npm run lint
 ```
+
+Nếu dùng PowerShell và gặp lỗi `npm.ps1` do execution policy, hãy thay `npm` bằng `npm.cmd`.
 
 ## Cách chạy local
 
@@ -138,7 +140,13 @@ npm run lint
 ### 2. Chạy backend API
 
 ```powershell
-npm run dev:backend
+.\scripts\dev-backend.cmd
+```
+
+Hoặc dùng trực tiếp:
+
+```powershell
+node .\scripts\run-backend.cjs dev
 ```
 
 Mặc định backend chạy tại:

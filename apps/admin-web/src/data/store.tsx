@@ -26,6 +26,19 @@ import type {
 
 const SESSION_KEY = "vinh-khanh-admin-web:session";
 
+const normalizeTtsProvider = (value: string | undefined): SystemSetting["ttsProvider"] => {
+  if (value === "native") {
+    return "native";
+  }
+
+  return "google_translate";
+};
+
+const normalizeSystemSetting = (settings: SystemSetting): SystemSetting => ({
+  ...settings,
+  ttsProvider: normalizeTtsProvider(settings.ttsProvider),
+});
+
 const EMPTY_ADMIN_STATE: AdminDataState = {
   users: [],
   customerUsers: [],
@@ -51,7 +64,7 @@ const EMPTY_ADMIN_STATE: AdminDataState = {
     premiumUnlockPriceUsd: 0,
     mapProvider: "openstreetmap",
     storageProvider: "cloudinary",
-    ttsProvider: "native",
+    ttsProvider: "google_translate",
     geofenceRadiusMeters: 0,
     guestReviewEnabled: false,
     analyticsRetentionDays: 0,
@@ -75,7 +88,7 @@ const toState = (payload: Partial<AdminDataState>): AdminDataState => ({
   viewLogs: payload.viewLogs ?? [],
   audioListenLogs: payload.audioListenLogs ?? [],
   auditLogs: payload.auditLogs ?? [],
-  settings: payload.settings ?? EMPTY_ADMIN_STATE.settings,
+  settings: normalizeSystemSetting(payload.settings ?? EMPTY_ADMIN_STATE.settings),
 });
 
 const readScopeParams = () => {
@@ -478,7 +491,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
   const saveSettings = useCallback(
     async (settingsDraft: SystemSetting, actor: AdminUser) => {
       await adminApi.saveSettings({
-        ...settingsDraft,
+        ...normalizeSystemSetting(settingsDraft),
         actorName: actor.name,
         actorRole: actor.role,
       });

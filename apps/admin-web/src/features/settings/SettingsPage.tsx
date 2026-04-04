@@ -177,7 +177,7 @@ export const SettingsPage = () => {
                 </Select>
               </div>
               <div>
-                <label className="field-label">TTS provider</label>
+                <label className="field-label">Fallback TTS</label>
                 <Select
                   value={form.ttsProvider}
                   onChange={(event) =>
@@ -188,9 +188,14 @@ export const SettingsPage = () => {
                   }
                   disabled={!canManageSettings}
                 >
-                  <option value="azure">Azure Cognitive Services</option>
-                  <option value="native">Native device TTS</option>
+                  <option value="google_translate">Google Translate TTS (mobile fallback)</option>
+                  <option value="native">Native device/browser TTS</option>
                 </Select>
+                <p className="mt-2 text-xs leading-5 text-ink-500">
+                  Audio guide cÃ³ sẵn luÃ´n Ä‘Æ°á»£c Æ°u tiÃªn phÃ¡t trÆ°á»›c. Thiáº¿t láº­p nÃ y chá»‰ mÃ´ táº£
+                  nguá»“n TTS fallback Ä‘ang dÃ¹ng trong Ä‘á»“ Ã¡n: mobile fallback qua Google Translate TTS,
+                  cÃ²n web preview/luá»“ng legacy cÃ³ thá»ƒ dÃ¹ng TTS native cá»§a thiáº¿t bá»‹ hoáº·c trÃ¬nh duyá»‡t.
+                </p>
               </div>
             </div>
           </Card>

@@ -40,6 +40,7 @@ export type LoginAccountOption = {
   userId: string;
   name: string;
   email: string;
+  password: string;
   role: AdminUser["role"];
   status: "active" | "locked";
   managedPoiId: string | null;

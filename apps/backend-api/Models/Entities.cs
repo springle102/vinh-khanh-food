@@ -229,7 +229,7 @@ public sealed class SystemSetting
     public int PremiumUnlockPriceUsd { get; set; }
     public string MapProvider { get; set; } = "openstreetmap";
     public string StorageProvider { get; set; } = "cloudinary";
-    public string TtsProvider { get; set; } = "native";
+    public string TtsProvider { get; set; } = "google_translate";
     public int GeofenceRadiusMeters { get; set; }
     public bool GuestReviewEnabled { get; set; }
     public int AnalyticsRetentionDays { get; set; }

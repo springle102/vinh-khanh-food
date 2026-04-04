@@ -45,7 +45,9 @@ export const LoginPage = () => {
         }
 
         setLoginAccounts(nextAccounts);
-        setEmail((currentEmail) => currentEmail || nextAccounts[0]?.email || "");
+        const firstAccount = nextAccounts[0];
+        setEmail((currentEmail) => currentEmail || firstAccount?.email || "");
+        setPassword((currentPassword) => currentPassword || firstAccount?.password || "");
       } catch (nextError) {
         if (!isMounted) {
           return;
@@ -88,8 +90,9 @@ export const LoginPage = () => {
     navigate(redirectTo ?? "/dashboard", { replace: true });
   };
 
-  const handleSelectDatabaseAccount = (selectedEmail: string) => {
-    setEmail(selectedEmail);
+  const handleSelectDatabaseAccount = (account: LoginAccountOption) => {
+    setEmail(account.email);
+    setPassword(account.password);
     setError("");
   };
 
@@ -141,7 +144,7 @@ export const LoginPage = () => {
           <div className="mt-6 rounded-3xl bg-sand-50 p-4 text-sm text-ink-500">
             <p className="font-semibold text-ink-700">Tai khoan trong database</p>
             <p className="mt-1 text-xs text-ink-500">
-              Danh sach nay duoc lay tu bang AdminUsers. Nhan vao de dien email dang nhap.
+              Danh sach nay duoc lay tu bang AdminUsers. Nhan vao de dien san email va mat khau.
             </p>
 
             {accountsError ? (
@@ -171,7 +174,7 @@ export const LoginPage = () => {
                     key={account.userId}
                     variant={isSelected ? "primary" : "secondary"}
                     className="w-full justify-between text-left"
-                    onClick={() => handleSelectDatabaseAccount(account.email)}
+                    onClick={() => handleSelectDatabaseAccount(account)}
                   >
                     <span>
                       {account.name} • {getAccountRoleLabel(account.role)}

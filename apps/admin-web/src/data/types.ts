@@ -12,6 +12,7 @@ export type MediaType = "image" | "video";
 export type PromotionStatus = "upcoming" | "active" | "expired";
 export type ReviewStatus = "pending" | "approved" | "hidden";
 export type DeviceType = "ios" | "android" | "web";
+export type TtsProvider = "google_translate" | "native" | "azure";
 
 export interface GeocodingLocation {
   address: string;
@@ -256,7 +257,7 @@ export interface SystemSetting {
   premiumUnlockPriceUsd: number;
   mapProvider: "google" | "mapbox" | "openstreetmap";
   storageProvider: "cloudinary" | "s3";
-  ttsProvider: "native" | "azure";
+  ttsProvider: TtsProvider;
   geofenceRadiusMeters: number;
   guestReviewEnabled: boolean;
   analyticsRetentionDays: number;

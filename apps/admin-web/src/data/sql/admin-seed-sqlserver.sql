@@ -490,7 +490,7 @@ INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, Crea
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-3', N'Lê Quốc Bảo', N'PLACE_OWNER', N'Cập nhật mô tả món ăn đặc trưng', N'poi-snail-signature', CAST(N'2026-03-18T07:12:00+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-4', N'Ánh Xuân', N'SUPER_ADMIN', N'Khóa tài khoản chủ quán Hẻm Chè', N'user-owner-dessert', CAST(N'2026-03-16T09:00:00+00:00' AS datetimeoffset(7)));
 GO
-INSERT INTO dbo.SystemSettings (Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd, MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, GuestReviewEnabled, AnalyticsRetentionDays) VALUES (1, N'Hệ thống quản trị thuyết minh Vĩnh Khánh', N'support@vinhkhanh.vn', N'vi', N'en', 20, N'openstreetmap', N'cloudinary', N'azure', 60, 1, 180);
+INSERT INTO dbo.SystemSettings (Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd, MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, GuestReviewEnabled, AnalyticsRetentionDays) VALUES (1, N'Hệ thống quản trị thuyết minh Vĩnh Khánh', N'support@vinhkhanh.vn', N'vi', N'en', 20, N'openstreetmap', N'cloudinary', N'google_translate', 60, 1, 180);
 GO
 INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'free', N'vi');
 INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'free', N'en');

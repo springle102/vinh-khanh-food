@@ -22,6 +22,7 @@ public sealed record LoginAccountOptionResponse(
     string UserId,
     string Name,
     string Email,
+    string Password,
     string Role,
     string Status,
     string? ManagedPoiId);

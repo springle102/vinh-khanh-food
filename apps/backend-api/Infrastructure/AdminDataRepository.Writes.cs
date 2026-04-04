@@ -20,6 +20,7 @@ public sealed partial class AdminDataRepository
                 user.Id,
                 user.Name,
                 user.Email,
+                user.Password,
                 user.Role,
                 user.Status,
                 user.ManagedPoiId))
