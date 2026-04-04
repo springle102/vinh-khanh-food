@@ -65,6 +65,75 @@
         </Setter>
     </Style>
 
+    <Style x:Key="MapSearchContainerStyle" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource BrandSurface}" />
+        <Setter Property="Padding" Value="16,0" />
+        <Setter Property="HeightRequest" Value="56" />
+        <Setter Property="MinimumHeightRequest" Value="56" />
+        <Setter Property="Stroke" Value="#E9DFD3" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 20" />
+        <Setter Property="Shadow">
+            <Setter.Value>
+                <Shadow Brush="{StaticResource BrandShadow}" Offset="0,6" Radius="16" Opacity="0.10" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MapChipStyle" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource BrandSurface}" />
+        <Setter Property="Padding" Value="14,0" />
+        <Setter Property="HeightRequest" Value="44" />
+        <Setter Property="MinimumHeightRequest" Value="44" />
+        <Setter Property="Stroke" Value="#ECE2D7" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 18" />
+        <Setter Property="Shadow">
+            <Setter.Value>
+                <Shadow Brush="{StaticResource BrandShadow}" Offset="0,4" Radius="12" Opacity="0.08" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MapRoundActionStyle" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource BrandSurface}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="WidthRequest" Value="50" />
+        <Setter Property="HeightRequest" Value="50" />
+        <Setter Property="MinimumWidthRequest" Value="50" />
+        <Setter Property="MinimumHeightRequest" Value="50" />
+        <Setter Property="Stroke" Value="#ECE2D7" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 18" />
+        <Setter Property="Shadow">
+            <Setter.Value>
+                <Shadow Brush="{StaticResource BrandShadow}" Offset="0,5" Radius="12" Opacity="0.10" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MapPrimaryFloatingActionStyle" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource BrandPrimary}" />
+        <Setter Property="Padding" Value="18,0" />
+        <Setter Property="HeightRequest" Value="54" />
+        <Setter Property="MinimumHeightRequest" Value="54" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 20" />
+        <Setter Property="Shadow">
+            <Setter.Value>
+                <Shadow Brush="#30F48A22" Offset="0,8" Radius="18" Opacity="0.22" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MapOverlayCaptionStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="OpenSansSemibold" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="TextColor" Value="{StaticResource BrandTextPrimary}" />
+        <Setter Property="VerticalTextAlignment" Value="Center" />
+        <Setter Property="LineBreakMode" Value="NoWrap" />
+    </Style>
+
     <Style x:Key="ScreenTitleStyle" TargetType="Label">
         <Setter Property="FontFamily" Value="OpenSansSemibold" />
         <Setter Property="FontSize" Value="28" />

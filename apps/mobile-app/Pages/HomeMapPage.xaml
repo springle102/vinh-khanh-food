@@ -16,80 +16,141 @@
                 Navigated="OnMapNavigated"
                 Navigating="OnMapNavigating" />
 
-            <VerticalStackLayout Margin="16,16,16,0" Spacing="10" VerticalOptions="Start">
-                <Border Padding="14,12" BackgroundColor="White" Stroke="#EEE6DA" StrokeThickness="1" StrokeShape="RoundRectangle 16">
-                    <Border.Shadow>
-                        <Shadow Brush="#16000000" Offset="0,5" Radius="14" Opacity="0.10" />
-                    </Border.Shadow>
-                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-                        <Label FontSize="18" Text="⌕" VerticalOptions="Center" TextColor="{StaticResource BrandTextMuted}" />
-                        <Entry Placeholder="{Binding SearchPlaceholderText}" Text="{Binding SearchText}" />
-                    </Grid>
-                </Border>
+            <Grid>
+                <Grid.Padding>
+                    <OnPlatform x:TypeArguments="Thickness">
+                        <On Platform="iOS" Value="16,18,16,8" />
+                        <On Platform="Android" Value="16,18,16,8" />
+                        <On Platform="WinUI" Value="16,18,16,8" />
+                    </OnPlatform>
+                </Grid.Padding>
 
-                <Border Padding="10,7" BackgroundColor="White" HorizontalOptions="Start" Stroke="#EEE6DA" StrokeThickness="1" StrokeShape="RoundRectangle 16">
-                    <Border.Shadow>
-                        <Shadow Brush="#14000000" Offset="0,4" Radius="10" Opacity="0.08" />
-                    </Border.Shadow>
-                    <HorizontalStackLayout Spacing="6">
-                        <Label FontSize="15" Text="📍" />
-                        <Label FontFamily="OpenSansSemibold" Text="{Binding PoiChipText}" />
-                    </HorizontalStackLayout>
-                </Border>
-            </VerticalStackLayout>
+                <Grid
+                    ColumnDefinitions="*,Auto"
+                    RowDefinitions="Auto,Auto,*,Auto"
+                    ColumnSpacing="12"
+                    RowSpacing="12">
 
-            <VerticalStackLayout Margin="0,102,16,0" HorizontalOptions="End" Spacing="10" VerticalOptions="Start">
-                <Border WidthRequest="46" HeightRequest="46" Padding="0" BackgroundColor="White" Stroke="#EEE6DA" StrokeThickness="1" StrokeShape="RoundRectangle 23">
-                    <Border.Shadow>
-                        <Shadow Brush="#16000000" Offset="0,5" Radius="12" Opacity="0.10" />
-                    </Border.Shadow>
-                    <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding LayerButtonText}" />
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnToggleHeatmapTapped" />
-                    </Border.GestureRecognizers>
-                </Border>
+                    <Border
+                        Grid.Row="0"
+                        Grid.ColumnSpan="2"
+                        Style="{StaticResource MapSearchContainerStyle}">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" HeightRequest="56">
+                            <Label
+                                FontSize="17"
+                                HorizontalTextAlignment="Center"
+                                Text="⌕"
+                                TextColor="{StaticResource BrandTextMuted}"
+                                VerticalTextAlignment="Center"
+                                WidthRequest="18" />
+                            <Entry
+                                Grid.Column="1"
+                                Margin="0,-1,0,0"
+                                Placeholder="{Binding SearchPlaceholderText}"
+                                Text="{Binding SearchText}"
+                                VerticalOptions="Center" />
+                        </Grid>
+                    </Border>
 
-                <Border WidthRequest="46" HeightRequest="46" Padding="0" BackgroundColor="White" Stroke="#EEE6DA" StrokeThickness="1" StrokeShape="RoundRectangle 23">
-                    <Border.Shadow>
-                        <Shadow Brush="#16000000" Offset="0,5" Radius="12" Opacity="0.10" />
-                    </Border.Shadow>
-                    <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="17" Text="◎" TextColor="{StaticResource BrandTextSecondary}" />
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnCenterTapped" />
-                    </Border.GestureRecognizers>
-                </Border>
+                    <Border
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        HorizontalOptions="Start"
+                        Style="{StaticResource MapChipStyle}">
+                        <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="8" HeightRequest="44">
+                            <Border
+                                WidthRequest="8"
+                                HeightRequest="8"
+                                BackgroundColor="{StaticResource BrandPrimary}"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 4"
+                                VerticalOptions="Center" />
+                            <Label
+                                Grid.Column="1"
+                                Style="{StaticResource MapOverlayCaptionStyle}"
+                                Text="{Binding PoiChipText}" />
+                        </Grid>
+                    </Border>
 
-                <Border WidthRequest="46" HeightRequest="46" Padding="0" BackgroundColor="White" Stroke="#EEE6DA" StrokeThickness="1" StrokeShape="RoundRectangle 23">
-                    <Border.Shadow>
-                        <Shadow Brush="#16000000" Offset="0,5" Radius="12" Opacity="0.10" />
-                    </Border.Shadow>
-                    <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="18" Text="➤" TextColor="{StaticResource BrandPrimary}" />
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnNextPoiTapped" />
-                    </Border.GestureRecognizers>
-                </Border>
-            </VerticalStackLayout>
+                    <Border
+                        Grid.Row="1"
+                        Grid.Column="1"
+                        HorizontalOptions="End"
+                        MinimumWidthRequest="74"
+                        Style="{StaticResource MapChipStyle}">
+                        <Grid HeightRequest="44">
+                            <Label
+                                HorizontalTextAlignment="Center"
+                                Style="{StaticResource MapOverlayCaptionStyle}"
+                                Text="{Binding LayerButtonText}"
+                                VerticalTextAlignment="Center" />
+                        </Grid>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnToggleHeatmapTapped" />
+                        </Border.GestureRecognizers>
+                    </Border>
 
-            <Border
-                Margin="0,0,18,122"
-                Padding="18,11"
-                BackgroundColor="{StaticResource BrandPrimary}"
-                HorizontalOptions="End"
-                IsVisible="{Binding IsFloatingPoiActionVisible}"
-                StrokeThickness="0"
-                StrokeShape="RoundRectangle 22"
-                VerticalOptions="End">
-                <Border.Shadow>
-                    <Shadow Brush="#36F48A22" Offset="0,8" Radius="18" Opacity="0.26" />
-                </Border.Shadow>
-                <HorizontalStackLayout Spacing="8">
-                    <Label Text="⌕" TextColor="White" FontSize="18" />
-                    <Label Text="{Binding PoiActionText}" TextColor="White" FontFamily="OpenSansSemibold" />
-                </HorizontalStackLayout>
-                <Border.GestureRecognizers>
-                    <TapGestureRecognizer Tapped="OnNextPoiTapped" />
-                </Border.GestureRecognizers>
-            </Border>
+                    <VerticalStackLayout
+                        Grid.Row="2"
+                        Grid.Column="1"
+                        Margin="0,0,0,12"
+                        HorizontalOptions="End"
+                        Spacing="12"
+                        VerticalOptions="End">
+                        <Border Style="{StaticResource MapRoundActionStyle}">
+                            <Label
+                                FontSize="17"
+                                HorizontalTextAlignment="Center"
+                                Text="◎"
+                                TextColor="{StaticResource BrandTextSecondary}"
+                                VerticalTextAlignment="Center" />
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnCenterTapped" />
+                            </Border.GestureRecognizers>
+                        </Border>
+
+                        <Border Style="{StaticResource MapRoundActionStyle}">
+                            <Label
+                                FontSize="18"
+                                HorizontalTextAlignment="Center"
+                                Text="➜"
+                                TextColor="{StaticResource BrandPrimary}"
+                                VerticalTextAlignment="Center" />
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnNextPoiTapped" />
+                            </Border.GestureRecognizers>
+                        </Border>
+                    </VerticalStackLayout>
+
+                    <Border
+                        Grid.Row="3"
+                        Grid.Column="1"
+                        Margin="0,0,0,12"
+                        HorizontalOptions="End"
+                        IsVisible="{Binding IsFloatingPoiActionVisible}"
+                        MinimumWidthRequest="132"
+                        Style="{StaticResource MapPrimaryFloatingActionStyle}">
+                        <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="8" HeightRequest="54">
+                            <Label
+                                FontSize="17"
+                                HorizontalTextAlignment="Center"
+                                Text="⌕"
+                                TextColor="White"
+                                VerticalTextAlignment="Center" />
+                            <Label
+                                Grid.Column="1"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="15"
+                                Text="{Binding PoiActionText}"
+                                TextColor="White"
+                                VerticalTextAlignment="Center" />
+                        </Grid>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnNextPoiTapped" />
+                        </Border.GestureRecognizers>
+                    </Border>
+                </Grid>
+            </Grid>
 
             <controls:POIDetailBottomSheet
                 x:Name="PoiDetailBottomSheet"
@@ -97,6 +158,6 @@
 
         </Grid>
 
-        <controls:AppBottomBar Grid.Row="1" CurrentRoute="HomeMapPage" />
+        <controls:AppBottomBar Grid.Row="1" />
     </Grid>
 </ContentPage>
