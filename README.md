@@ -6,6 +6,17 @@ README này là tài liệu tổng hợp duy nhất cho toàn bộ đồ án. Re
 - `apps/backend-api`: Web API viết bằng ASP.NET Core, làm trung tâm xử lý dữ liệu và kết nối SQL Server
 - `apps/mobile-app`: ứng dụng .NET MAUI Android dành cho người dùng cuối
 
+## Các lỗi đang phát sinh
+- Lỗi map hiện thành phố Thủ Đức, không hiện TPHCM
+- Lỗi chưa hiện hết thông tin về POI trên app (khoảng giá, món ăn, ưu đãi)
+- Lỗi chưa kéo, đóng trang chi tiết POI trên app
+- Quản lý tour chưa hợp lí
+- Lỗi khách hàng chưa sửa được thông tin cá nhân
+- Chưa làm backend xử lí đăng nhập trên app và và đăng kí
+- Chưa xử lí backend đăng nhập bằng google, facebook
+- Cần thêm chatbox AI cho app (xài API key của Gemini)
+- Chưa làm giới hạn ngôn ngữ được nghe khi xài bản free
+
 ## Tổng quan kiến trúc
 
 ```text
