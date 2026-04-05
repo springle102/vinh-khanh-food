@@ -18,7 +18,7 @@ public sealed class AdminUsersController(AdminDataRepository repository) : Contr
     {
         var user = repository.GetUsers().FirstOrDefault(item => item.Id == id);
         return user is null
-            ? NotFound(ApiResponse<AdminUser>.Fail("Khong tim thay tai khoan admin."))
+            ? NotFound(ApiResponse<AdminUser>.Fail("Không tìm thấy tài khoản admin."))
             : Ok(ApiResponse<AdminUser>.Ok(user));
     }
 
@@ -27,11 +27,11 @@ public sealed class AdminUsersController(AdminDataRepository repository) : Contr
     {
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Email))
         {
-            return BadRequest(ApiResponse<AdminUser>.Fail("Ten va email la bat buoc."));
+            return BadRequest(ApiResponse<AdminUser>.Fail("Tên và email là bắt buộc."));
         }
 
         var saved = repository.SaveUser(null, request);
-        return CreatedAtAction(nameof(GetUserById), new { id = saved.Id }, ApiResponse<AdminUser>.Ok(saved, "Tao tai khoan admin thanh cong."));
+        return CreatedAtAction(nameof(GetUserById), new { id = saved.Id }, ApiResponse<AdminUser>.Ok(saved, "Tạo tài khoản admin thành công."));
     }
 
     [HttpPut("{id}")]
@@ -40,10 +40,10 @@ public sealed class AdminUsersController(AdminDataRepository repository) : Contr
         var existing = repository.GetUsers().Any(item => item.Id == id);
         if (!existing)
         {
-            return NotFound(ApiResponse<AdminUser>.Fail("Khong tim thay tai khoan admin."));
+            return NotFound(ApiResponse<AdminUser>.Fail("Không tìm thấy tài khoản admin."));
         }
 
         var saved = repository.SaveUser(id, request);
-        return Ok(ApiResponse<AdminUser>.Ok(saved, "Cap nhat tai khoan admin thanh cong."));
+        return Ok(ApiResponse<AdminUser>.Ok(saved, "Cập nhật tài khoản admin thành công."));
     }
 }

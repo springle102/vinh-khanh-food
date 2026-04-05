@@ -6,7 +6,6 @@ namespace VinhKhanh.MobileApp;
 public partial class LanguageSelectionPage : ContentPage
 {
     private readonly LanguageSelectionViewModel _viewModel;
-    private bool _loaded;
 
     public LanguageSelectionPage()
     {
@@ -18,12 +17,6 @@ public partial class LanguageSelectionPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
-        if (_loaded)
-        {
-            return;
-        }
-
-        _loaded = true;
         await _viewModel.LoadAsync();
     }
 }

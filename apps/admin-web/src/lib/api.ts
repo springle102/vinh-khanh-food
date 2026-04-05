@@ -40,6 +40,7 @@ export type LoginAccountOption = {
   userId: string;
   name: string;
   email: string;
+  password: string;
   role: AdminUser["role"];
   status: "active" | "locked";
   managedPoiId: string | null;
@@ -145,7 +146,7 @@ const buildHeaders = (headers?: HeadersInit) => {
   return nextHeaders;
 };
 
-const resolveRequestUrl = (path: string) => {
+export const resolveApiUrl = (path: string) => {
   if (!API_BASE_URL || ABSOLUTE_URL_PATTERN.test(path)) {
     return path;
   }
@@ -186,8 +187,9 @@ const parseResponse = async <T>(response: Response) => {
 };
 
 const request = async <T>(path: string, init?: RequestInit) => {
-  const response = await fetch(resolveRequestUrl(path), {
+  const response = await fetch(resolveApiUrl(path), {
     ...init,
+    cache: "no-store",
     headers: buildHeaders(init?.headers),
   });
 
@@ -263,6 +265,7 @@ export const adminApi = {
   },
   savePoi: (poi: {
     id?: string;
+    requestedId?: string;
     slug: string;
     address: string;
     lat: number;
@@ -270,7 +273,6 @@ export const adminApi = {
     categoryId: string;
     status: Poi["status"];
     featured: boolean;
-    defaultLanguageCode: Poi["defaultLanguageCode"];
     district: string;
     ward: string;
     priceRange: string;
@@ -335,7 +337,9 @@ export const adminApi = {
     theme: string;
     description: string;
     durationMinutes: number;
+    difficulty: string;
     coverImageUrl: string;
+    isFeatured: boolean;
     stopPoiIds: string[];
     isActive: boolean;
     actorName: string;

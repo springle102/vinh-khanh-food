@@ -22,6 +22,7 @@ public sealed record LoginAccountOptionResponse(
     string UserId,
     string Name,
     string Email,
+    string Password,
     string Role,
     string Status,
     string? ManagedPoiId);
@@ -38,7 +39,6 @@ public sealed record PoiUpsertRequest(
     string CategoryId,
     string Status,
     bool Featured,
-    string DefaultLanguageCode,
     string District,
     string Ward,
     string PriceRange,
@@ -48,7 +48,8 @@ public sealed record PoiUpsertRequest(
     string? OwnerUserId,
     string UpdatedBy,
     string ActorRole,
-    string ActorUserId);
+    string ActorUserId,
+    string? RequestedId);
 
 public sealed record AdminUserUpsertRequest(
     string Name,
@@ -127,7 +128,9 @@ public sealed record TourRouteUpsertRequest(
     string Theme,
     string Description,
     int DurationMinutes,
+    string Difficulty,
     string CoverImageUrl,
+    bool IsFeatured,
     List<string> StopPoiIds,
     bool IsActive,
     string ActorName,
@@ -182,6 +185,11 @@ public sealed record DashboardSummaryResponse(
     int PendingReviews,
     int PremiumLanguageCount);
 
+public sealed record DataSyncState(
+    string Version,
+    DateTimeOffset GeneratedAt,
+    DateTimeOffset LastChangedAt);
+
 public sealed record AdminBootstrapResponse(
     IReadOnlyList<Models.AdminUser> Users,
     IReadOnlyList<Models.CustomerUser> CustomerUsers,
@@ -197,7 +205,8 @@ public sealed record AdminBootstrapResponse(
     IReadOnlyList<Models.ViewLog> ViewLogs,
     IReadOnlyList<Models.AudioListenLog> AudioListenLogs,
     IReadOnlyList<Models.AuditLog> AuditLogs,
-    Models.SystemSetting Settings);
+    Models.SystemSetting Settings,
+    DataSyncState? SyncState = null);
 
 public sealed record PoiDetailResponse(
     Models.Poi Poi,

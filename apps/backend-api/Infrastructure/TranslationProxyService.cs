@@ -15,12 +15,12 @@ public sealed class TranslationProxyService(HttpClient httpClient, ILogger<Trans
 
         if (string.IsNullOrWhiteSpace(request.TargetLanguageCode))
         {
-            throw new InvalidOperationException("TargetLanguageCode la bat buoc.");
+            throw new InvalidOperationException("TargetLanguageCode là bắt buộc.");
         }
 
         if (request.Texts is null || request.Texts.Count == 0)
         {
-            throw new InvalidOperationException("Can it nhat mot doan text de dich.");
+            throw new InvalidOperationException("Cần ít nhất một đoạn văn bản để dịch.");
         }
 
         var targetLanguageCode = NormalizeLanguageCode(request.TargetLanguageCode);
@@ -89,7 +89,7 @@ public sealed class TranslationProxyService(HttpClient httpClient, ILogger<Trans
                 "Translation proxy request failed with status {StatusCode} for target language {TargetLanguageCode}.",
                 response.StatusCode,
                 targetLanguageCode);
-            throw new InvalidOperationException("Khong the dich noi dung sang ngon ngu da chon.");
+            throw new InvalidOperationException("Không thể dịch nội dung sang ngôn ngữ đã chọn.");
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -103,7 +103,7 @@ public sealed class TranslationProxyService(HttpClient httpClient, ILogger<Trans
         logger.LogWarning(
             "Translation proxy returned an empty translation for target language {TargetLanguageCode}.",
             targetLanguageCode);
-        throw new InvalidOperationException("Khong nhan duoc noi dung da dich tu dich vu dich.");
+        throw new InvalidOperationException("Không nhận được nội dung đã dịch từ dịch vụ dịch.");
     }
 
     private static string ReadTranslatedText(JsonElement root)

@@ -10,7 +10,6 @@ public sealed class MyTourViewModel : BaseViewModel
 {
     private readonly IFoodStreetDataService _dataService;
     private readonly IAppLanguageService _languageService;
-    private string _loadedLanguage = string.Empty;
     private TourPlan? _tour;
 
     public MyTourViewModel(
@@ -49,14 +48,9 @@ public sealed class MyTourViewModel : BaseViewModel
 
     public async Task LoadAsync()
     {
-        if (Tour is null || !string.Equals(_loadedLanguage, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase))
-        {
-            Tour = await _dataService.GetTourPlanAsync();
-            Stops.ReplaceRange(Tour.Stops);
-            Checkpoints.ReplaceRange(Tour.Checkpoints);
-            _loadedLanguage = _languageService.CurrentLanguage;
-        }
-
+        Tour = await _dataService.GetTourPlanAsync();
+        Stops.ReplaceRange(Tour.Stops);
+        Checkpoints.ReplaceRange(Tour.Checkpoints);
         RefreshLocalizedTexts();
     }
 

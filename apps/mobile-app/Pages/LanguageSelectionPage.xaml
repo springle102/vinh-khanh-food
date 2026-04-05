@@ -27,7 +27,7 @@
             <VerticalStackLayout Padding="24,28,24,36" Spacing="20">
                 <Label
                     HorizontalTextAlignment="End"
-                    Text="Vinh Khanh&#10;Food Street"
+                    Text="{Binding BrandTitleText}"
                     TextColor="{StaticResource BrandGold}"
                     FontFamily="OpenSansSemibold"
                     FontSize="18" />
@@ -48,7 +48,7 @@
                             Stroke="{StaticResource BrandStrokeStrong}"
                             StrokeShape="RoundRectangle 16">
                             <VerticalStackLayout Spacing="6">
-                                <Label FontFamily="OpenSansSemibold" Text="QR" TextColor="{StaticResource BrandPrimary}" />
+                                <Label FontFamily="OpenSansSemibold" Text="{Binding PendingLabelText}" TextColor="{StaticResource BrandPrimary}" />
                                 <Label LineBreakMode="TailTruncation" MaxLines="2" Text="{Binding PendingQrCodeText}" TextColor="{StaticResource BrandTextSecondary}" />
                             </VerticalStackLayout>
                         </Border>

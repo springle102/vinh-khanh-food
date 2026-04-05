@@ -79,7 +79,7 @@ public sealed class MobileSettingsModel
     public string DefaultLanguage { get; set; } = "vi";
     public string FallbackLanguage { get; set; } = "en";
     public string MapProvider { get; set; } = "google-maps";
-    public string TtsProvider { get; set; } = "native";
+    public string TtsProvider { get; set; } = "google_translate";
     public int GeofenceRadiusMeters { get; set; } = 10;
     public int GeofenceCooldownMinutes { get; set; } = 20;
     public List<AppLanguage> SupportedLanguages { get; set; } = [];

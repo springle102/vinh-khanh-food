@@ -1,16 +1,22 @@
-import type { InputHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "../../lib/utils";
 
-export const Input = ({
-  className,
-  ...props
-}: InputHTMLAttributes<HTMLInputElement>) => (
-  <input className={cn("field-input", className)} {...props} />
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  ({ className, ...props }, ref) => (
+    <input ref={ref} className={cn("field-input", className)} {...props} />
+  ),
 );
 
-export const Textarea = ({
-  className,
-  ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement>) => (
-  <textarea className={cn("field-input min-h-[120px] resize-y", className)} {...props} />
+Input.displayName = "Input";
+
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
+  ({ className, ...props }, ref) => (
+    <textarea
+      ref={ref}
+      className={cn("field-input min-h-[120px] resize-y", className)}
+      {...props}
+    />
+  ),
 );
+
+Textarea.displayName = "Textarea";

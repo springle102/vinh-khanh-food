@@ -18,10 +18,10 @@ public sealed class SettingsController(AdminDataRepository repository) : Control
     {
         if (string.IsNullOrWhiteSpace(request.AppName) || string.IsNullOrWhiteSpace(request.SupportEmail))
         {
-            return BadRequest(ApiResponse<SystemSetting>.Fail("AppName va supportEmail la bat buoc."));
+            return BadRequest(ApiResponse<SystemSetting>.Fail("AppName và supportEmail là bắt buộc."));
         }
 
         var saved = repository.SaveSettings(request);
-        return Ok(ApiResponse<SystemSetting>.Ok(saved, "Cap nhat cai dat he thong thanh cong."));
+        return Ok(ApiResponse<SystemSetting>.Ok(saved, "Cập nhật cài đặt hệ thống thành công."));
     }
 }

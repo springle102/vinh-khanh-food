@@ -40,11 +40,11 @@ public sealed class MediaAssetsController(AdminDataRepository repository) : Cont
     {
         if (string.IsNullOrWhiteSpace(request.EntityId) || string.IsNullOrWhiteSpace(request.Url))
         {
-            return BadRequest(ApiResponse<MediaAsset>.Fail("EntityId va url la bat buoc."));
+            return BadRequest(ApiResponse<MediaAsset>.Fail("EntityId và url là bắt buộc."));
         }
 
         var saved = repository.SaveMediaAsset(null, request);
-        return Ok(ApiResponse<MediaAsset>.Ok(saved, "Tao media asset thanh cong."));
+        return Ok(ApiResponse<MediaAsset>.Ok(saved, "Tạo media asset thành công."));
     }
 
     [HttpPut("{id}")]
@@ -53,11 +53,11 @@ public sealed class MediaAssetsController(AdminDataRepository repository) : Cont
         var existing = repository.GetMediaAssets().Any(item => item.Id == id);
         if (!existing)
         {
-            return NotFound(ApiResponse<MediaAsset>.Fail("Khong tim thay media asset."));
+            return NotFound(ApiResponse<MediaAsset>.Fail("Không tìm thấy media asset."));
         }
 
         var saved = repository.SaveMediaAsset(id, request);
-        return Ok(ApiResponse<MediaAsset>.Ok(saved, "Cap nhat media asset thanh cong."));
+        return Ok(ApiResponse<MediaAsset>.Ok(saved, "Cập nhật media asset thành công."));
     }
 
     [HttpDelete("{id}")]
@@ -65,7 +65,7 @@ public sealed class MediaAssetsController(AdminDataRepository repository) : Cont
     {
         var deleted = repository.DeleteMediaAsset(id);
         return deleted
-            ? Ok(ApiResponse<string>.Ok(id, "Xoa media asset thanh cong."))
-            : NotFound(ApiResponse<string>.Fail("Khong tim thay media asset."));
+            ? Ok(ApiResponse<string>.Ok(id, "Xóa media asset thành công."))
+            : NotFound(ApiResponse<string>.Fail("Không tìm thấy media asset."));
     }
 }

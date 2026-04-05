@@ -114,17 +114,25 @@ Mobile App -------------------> Backend API
   - `ApiBaseUrl` cho môi trường local
   - `PlatformApiBaseUrls.Android` nên đổi thành IP của máy đang chạy backend trong cùng mạng hoặc emulator
 
+## Google Translate TTS
+
+- Audio guide đã upload vẫn được ưu tiên cho admin web và mobile app
+- Khi không có audio sẵn, admin web và mobile app đều fallback sang Google Translate TTS từ cùng một nội dung narration đã resolve từ backend
+- Backend `api/v1/pois/{id}/narration` tiếp tục đồng bộ text, ngôn ngữ hiệu lực và audio guide giữa admin và app
+
 ## Các lệnh root thường dùng
 
 ```powershell
 npm run install:admin
 npm run dev
-npm run dev:backend
+.\scripts\dev-backend.cmd
 npm run dev:mobile:android
 npm run build
-npm run build:backend
+.\scripts\build-backend.cmd
 npm run lint
 ```
+
+Nếu dùng PowerShell và gặp lỗi `npm.ps1` do execution policy, hãy thay `npm` bằng `npm.cmd`.
 
 ## Cách chạy local
 
@@ -138,7 +146,13 @@ npm run lint
 ### 2. Chạy backend API
 
 ```powershell
-npm run dev:backend
+.\scripts\dev-backend.cmd
+```
+
+Hoặc dùng trực tiếp:
+
+```powershell
+node .\scripts\run-backend.cjs dev
 ```
 
 Mặc định backend chạy tại:

@@ -6,6 +6,7 @@ import { Select } from "../../components/ui/Select";
 import { useAdminData } from "../../data/store";
 import type { LanguageCode, SystemSetting } from "../../data/types";
 import { getErrorMessage } from "../../lib/api";
+import { preventImplicitFormSubmit } from "../../lib/forms";
 import { languageLabels } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
 
@@ -83,7 +84,7 @@ export const SettingsPage = () => {
         </Card>
       ) : null}
 
-      <form className="space-y-6" onSubmit={handleSubmit}>
+      <form className="space-y-6" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit}>
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <Card>
             <h2 className="section-heading">Thông tin nền tảng</h2>
@@ -177,7 +178,7 @@ export const SettingsPage = () => {
                 </Select>
               </div>
               <div>
-                <label className="field-label">TTS provider</label>
+                <label className="field-label">Fallback TTS</label>
                 <Select
                   value={form.ttsProvider}
                   onChange={(event) =>
@@ -188,9 +189,12 @@ export const SettingsPage = () => {
                   }
                   disabled={!canManageSettings}
                 >
-                  <option value="azure">Azure Cognitive Services</option>
-                  <option value="native">Native device TTS</option>
+                  <option value="google_translate">Google Translate TTS</option>
                 </Select>
+                <p className="mt-2 text-xs leading-5 text-ink-500">
+                  Audio guide đã upload vẫn được ưu tiên phát trước. Khi chưa có audio sẵn, trang admin và app
+                  sẽ cùng fallback sang Google Translate TTS để giữ đồng bộ nội dung và cách phát.
+                </p>
               </div>
             </div>
           </Card>

@@ -9,7 +9,8 @@ namespace VinhKhanh.BackendApi.Controllers;
 [Route("api/v1/translations")]
 public sealed class TranslationsController(
     AdminDataRepository repository,
-    TranslationProxyService translationProxyService) : ControllerBase
+    TranslationProxyService translationProxyService,
+    ILogger<TranslationsController> logger) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<Translation>>> GetTranslations(
@@ -40,26 +41,45 @@ public sealed class TranslationsController(
     [HttpPost]
     public ActionResult<ApiResponse<Translation>> CreateTranslation([FromBody] TranslationUpsertRequest request)
     {
+        logger.LogInformation(
+            "CreateTranslation request received. entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, title={Title}, shortTextLength={ShortTextLength}, fullTextLength={FullTextLength}",
+            request.EntityType,
+            request.EntityId,
+            request.LanguageCode,
+            request.Title,
+            request.ShortText?.Length ?? 0,
+            request.FullText?.Length ?? 0);
+
         if (string.IsNullOrWhiteSpace(request.EntityId) || string.IsNullOrWhiteSpace(request.LanguageCode))
         {
-            return BadRequest(ApiResponse<Translation>.Fail("EntityId va languageCode la bat buoc."));
+            return BadRequest(ApiResponse<Translation>.Fail("EntityId và languageCode là bắt buộc."));
         }
 
         var saved = repository.SaveTranslation(null, request);
-        return Ok(ApiResponse<Translation>.Ok(saved, "Tao noi dung thuyet minh thanh cong."));
+        return Ok(ApiResponse<Translation>.Ok(saved, "Tạo nội dung thuyết minh thành công."));
     }
 
     [HttpPut("{id}")]
     public ActionResult<ApiResponse<Translation>> UpdateTranslation(string id, [FromBody] TranslationUpsertRequest request)
     {
+        logger.LogInformation(
+            "UpdateTranslation request received. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, title={Title}, shortTextLength={ShortTextLength}, fullTextLength={FullTextLength}",
+            id,
+            request.EntityType,
+            request.EntityId,
+            request.LanguageCode,
+            request.Title,
+            request.ShortText?.Length ?? 0,
+            request.FullText?.Length ?? 0);
+
         var existing = repository.GetTranslations().Any(item => item.Id == id);
         if (!existing)
         {
-            return NotFound(ApiResponse<Translation>.Fail("Khong tim thay noi dung thuyet minh."));
+            return NotFound(ApiResponse<Translation>.Fail("Không tìm thấy nội dung thuyết minh."));
         }
 
         var saved = repository.SaveTranslation(id, request);
-        return Ok(ApiResponse<Translation>.Ok(saved, "Cap nhat noi dung thuyet minh thanh cong."));
+        return Ok(ApiResponse<Translation>.Ok(saved, "Cập nhật nội dung thuyết minh thành công."));
     }
 
     [HttpDelete("{id}")]
@@ -67,8 +87,8 @@ public sealed class TranslationsController(
     {
         var deleted = repository.DeleteTranslation(id);
         return deleted
-            ? Ok(ApiResponse<string>.Ok(id, "Xoa noi dung thuyet minh thanh cong."))
-            : NotFound(ApiResponse<string>.Fail("Khong tim thay noi dung thuyet minh."));
+            ? Ok(ApiResponse<string>.Ok(id, "Xóa nội dung thuyết minh thành công."))
+            : NotFound(ApiResponse<string>.Fail("Không tìm thấy nội dung thuyết minh."));
     }
 
     [HttpPost("translate")]
@@ -78,12 +98,12 @@ public sealed class TranslationsController(
     {
         if (request.Texts is null || request.Texts.Count == 0)
         {
-            return BadRequest(ApiResponse<TextTranslationResponse>.Fail("Can it nhat mot doan text de dich."));
+            return BadRequest(ApiResponse<TextTranslationResponse>.Fail("Cần ít nhất một đoạn văn bản để dịch."));
         }
 
         if (string.IsNullOrWhiteSpace(request.TargetLanguageCode))
         {
-            return BadRequest(ApiResponse<TextTranslationResponse>.Fail("TargetLanguageCode la bat buoc."));
+            return BadRequest(ApiResponse<TextTranslationResponse>.Fail("TargetLanguageCode là bắt buộc."));
         }
 
         var translated = await translationProxyService.TranslateAsync(request, cancellationToken);

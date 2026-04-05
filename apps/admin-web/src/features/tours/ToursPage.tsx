@@ -11,6 +11,7 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import type { Poi, TourRoute } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
+import { preventImplicitFormSubmit } from "../../lib/forms";
 import { getCategoryName, getPoiById, getPoiTitle } from "../../lib/selectors";
 import { formatDateTime, formatNumber, normalizeSearchText } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
@@ -47,14 +48,25 @@ const getTourThemeLabel = (value: string) =>
 
 const getTourCopy = (value: string) => legacyTourCopy[value.trim()] ?? value.trim();
 
+const routeDifficultyLabels: Record<string, string> = {
+  custom: "Tùy chỉnh",
+  easy: "Dễ",
+  foodie: "Ẩm thực",
+};
+
+const getRouteDifficultyLabel = (value: string) =>
+  routeDifficultyLabels[normalizeSearchText(value)] ?? value.trim();
+
 type TourForm = {
   id?: string;
   name: string;
   theme: string;
   description: string;
   durationMinutes: string;
+  difficulty: string;
   coverImageUrl: string;
   stopPoiIds: string[];
+  isFeatured: boolean;
   isActive: boolean;
 };
 
@@ -63,8 +75,10 @@ const createDefaultTourForm = (): TourForm => ({
   theme: suggestedThemes[0],
   description: "",
   durationMinutes: "90",
+  difficulty: "custom",
   coverImageUrl: "",
   stopPoiIds: [],
+  isFeatured: false,
   isActive: true,
 });
 
@@ -158,12 +172,18 @@ export const ToursPage = () => {
             getTourCopy(route.name),
             getTourThemeLabel(route.theme),
             getTourCopy(route.description),
+            getRouteDifficultyLabel(route.difficulty),
             stopTitles,
           ].join(" "),
         );
         return haystack.includes(normalizedKeyword);
       })
       .sort((left, right) => {
+        const featuredCompare = Number(right.isFeatured) - Number(left.isFeatured);
+        if (featuredCompare !== 0) {
+          return featuredCompare;
+        }
+
         const activeCompare = Number(right.isActive) - Number(left.isActive);
         if (activeCompare !== 0) {
           return activeCompare;
@@ -232,8 +252,10 @@ export const ToursPage = () => {
             theme: getTourThemeLabel(route.theme),
             description: getTourCopy(route.description),
             durationMinutes: route.durationMinutes.toString(),
+            difficulty: route.difficulty,
             coverImageUrl: route.coverImageUrl,
             stopPoiIds: [...route.stopPoiIds],
+            isFeatured: route.isFeatured,
             isActive: route.isActive,
           }
         : createDefaultTourForm(),
@@ -258,8 +280,10 @@ export const ToursPage = () => {
           theme: getTourThemeLabel(form.theme.trim()),
           description: getTourCopy(form.description.trim()),
           durationMinutes: Number(form.durationMinutes),
+          difficulty: form.difficulty,
           coverImageUrl: form.coverImageUrl.trim(),
           stopPoiIds: form.stopPoiIds,
+          isFeatured: form.isFeatured,
           isActive: form.isActive,
         },
         user,
@@ -289,8 +313,10 @@ export const ToursPage = () => {
           theme: getTourThemeLabel(route.theme),
           description: getTourCopy(route.description),
           durationMinutes: route.durationMinutes,
+          difficulty: route.difficulty,
           coverImageUrl: route.coverImageUrl,
           stopPoiIds: route.stopPoiIds,
+          isFeatured: route.isFeatured,
           isActive: !route.isActive,
         },
         user,
@@ -337,6 +363,8 @@ export const ToursPage = () => {
     });
   };
 
+  const editingRoute = form.id ? state.routes.find((item) => item.id === form.id) ?? null : null;
+
   const columns: DataColumn<TourRoute>[] = [
     {
       key: "tour",
@@ -359,8 +387,10 @@ export const ToursPage = () => {
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-semibold text-ink-900">{getTourCopy(item.name)}</p>
               <StatusBadge status="draft" label={getTourThemeLabel(item.theme)} />
+              {item.isFeatured ? <StatusBadge status="published" label="Nổi bật" /> : null}
             </div>
             <p className="mt-1 text-sm text-ink-500">{getTourCopy(item.description)}</p>
+            <p className="mt-1 text-xs text-ink-500">ID: {item.id}</p>
           </div>
         </div>
       ),
@@ -412,17 +442,25 @@ export const ToursPage = () => {
       key: "duration",
       header: "Thời lượng",
       widthClassName: "min-w-[120px]",
-      render: (item) => <p className="font-medium text-ink-800">{formatNumber(item.durationMinutes)} phút</p>,
+      render: (item) => (
+        <div>
+          <p className="font-medium text-ink-800">{formatNumber(item.durationMinutes)} phút</p>
+          <p className="mt-1 text-xs text-ink-500">Độ khó: {getRouteDifficultyLabel(item.difficulty)}</p>
+        </div>
+      ),
     },
     {
       key: "status",
       header: "Trạng thái",
       widthClassName: "min-w-[180px]",
       render: (item) => (
-        <StatusBadge
-          status={item.isActive ? "active" : "inactive"}
-          label={item.isActive ? "Đang hoạt động" : "Tạm dừng"}
-        />
+        <div className="space-y-2">
+          <StatusBadge
+            status={item.isActive ? "active" : "inactive"}
+            label={item.isActive ? "Đang hoạt động" : "Tạm dừng"}
+          />
+          <StatusBadge status={item.isFeatured ? "published" : "draft"} label={item.isFeatured ? "Nổi bật" : "Thường"} />
+        </div>
       ),
     },
     {
@@ -553,7 +591,7 @@ export const ToursPage = () => {
         description="Gắn nhiều địa điểm vào một tour, sắp xếp thứ tự điểm đến và bật hoặc tắt tour khi cần."
         maxWidthClassName="max-w-6xl"
       >
-        <form className="space-y-6" onSubmit={handleSubmit}>
+        <form className="space-y-6" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit}>
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <div className="xl:col-span-2">
               <label className="field-label">Tên tour</label>
@@ -587,6 +625,19 @@ export const ToursPage = () => {
                 required
               />
             </div>
+            <div>
+              <label className="field-label">Độ khó</label>
+              <Select
+                value={form.difficulty}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, difficulty: event.target.value }))
+                }
+              >
+                <option value="custom">Tùy chỉnh</option>
+                <option value="easy">Dễ</option>
+                <option value="foodie">Ẩm thực</option>
+              </Select>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -601,7 +652,7 @@ export const ToursPage = () => {
             ))}
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
             <div>
               <label className="field-label">Mô tả tour</label>
               <Textarea
@@ -613,18 +664,47 @@ export const ToursPage = () => {
               />
             </div>
             <div className="flex items-end">
-              <label className="flex w-full items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
-                <input
-                  type="checkbox"
-                  checked={form.isActive}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, isActive: event.target.checked }))
-                  }
-                />
-                Đang hoạt động
-              </label>
+              <div className="w-full space-y-3">
+                <label className="flex w-full items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
+                  <input
+                    type="checkbox"
+                    checked={form.isActive}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, isActive: event.target.checked }))
+                    }
+                  />
+                  Đang hoạt động
+                </label>
+                <label className="flex w-full items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
+                  <input
+                    type="checkbox"
+                    checked={form.isFeatured}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, isFeatured: event.target.checked }))
+                    }
+                  />
+                  Tour nổi bật
+                </label>
+              </div>
             </div>
           </div>
+
+          {editingRoute ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              <Card className="border border-sand-100 bg-sand-50">
+                <p className="text-sm text-ink-500">Route ID</p>
+                <p className="mt-2 break-all font-semibold text-ink-900">{editingRoute.id}</p>
+              </Card>
+              <Card className="border border-sand-100 bg-sand-50">
+                <p className="text-sm text-ink-500">Cập nhật bởi</p>
+                <p className="mt-2 font-semibold text-ink-900">{getTourCopy(editingRoute.updatedBy)}</p>
+              </Card>
+              <Card className="border border-sand-100 bg-sand-50">
+                <p className="text-sm text-ink-500">Cập nhật lúc</p>
+                <p className="mt-2 font-semibold text-ink-900">{formatDateTime(editingRoute.updatedAt)}</p>
+              </Card>
+            </div>
+          ) : null}
 
           <ImageSourceField
             label="Ảnh đại diện tour"

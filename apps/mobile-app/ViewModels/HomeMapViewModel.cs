@@ -15,7 +15,6 @@ public sealed class HomeMapViewModel : BaseViewModel
     private readonly IPoiNarrationService _poiNarrationService;
     private readonly IPoiTourStoreService _poiTourStoreService;
 
-    private string _loadedLanguage = string.Empty;
     private string _searchText = string.Empty;
     private PoiLocation? _selectedPoi;
     private PoiExperienceDetail? _selectedPoiDetail;
@@ -240,24 +239,17 @@ public sealed class HomeMapViewModel : BaseViewModel
 
     public async Task LoadAsync(bool autoPlayNarrationForSelection)
     {
-        var languageCode = _languageService.CurrentLanguage;
-        var shouldReload = Pois.Count == 0 || !string.Equals(_loadedLanguage, languageCode, StringComparison.OrdinalIgnoreCase);
+        var currentPoiId = SelectedPoi?.Id;
 
-        if (shouldReload)
-        {
-            var currentPoiId = SelectedPoi?.Id;
+        Pois.ReplaceRange(await _dataService.GetPoisAsync());
+        SearchResults.ReplaceRange(Pois);
+        HeatPoints.ReplaceRange(await _dataService.GetHeatPointsAsync());
 
-            Pois.ReplaceRange(await _dataService.GetPoisAsync());
-            SearchResults.ReplaceRange(Pois);
-            HeatPoints.ReplaceRange(await _dataService.GetHeatPointsAsync());
+        SelectedPoi = currentPoiId is null
+            ? null
+            : Pois.FirstOrDefault(item => string.Equals(item.Id, currentPoiId, StringComparison.OrdinalIgnoreCase));
 
-            SelectedPoi = currentPoiId is null
-                ? null
-                : Pois.FirstOrDefault(item => string.Equals(item.Id, currentPoiId, StringComparison.OrdinalIgnoreCase));
-
-            _loadedLanguage = languageCode;
-            MapDataVersion++;
-        }
+        MapDataVersion++;
 
         if (SelectedPoi is not null && (IsBottomSheetVisible || SelectedPoiDetail is not null))
         {
@@ -574,7 +566,7 @@ public sealed class HomeMapViewModel : BaseViewModel
             return;
         }
 
-        var normalizedLanguage = NormalizeLanguageCode(_languageService.CurrentLanguage);
+        var normalizedLanguage = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
         target.Set(normalizedLanguage, value);
 
         var separatorIndex = normalizedLanguage.IndexOf('-');
@@ -582,24 +574,6 @@ public sealed class HomeMapViewModel : BaseViewModel
         {
             target.Set(normalizedLanguage[..separatorIndex], value);
         }
-    }
-
-    private static string NormalizeLanguageCode(string? languageCode)
-    {
-        if (string.IsNullOrWhiteSpace(languageCode))
-        {
-            return "vi";
-        }
-
-        return languageCode.Trim() switch
-        {
-            "zh" => "zh-CN",
-            "fr-FR" => "fr",
-            "en-US" => "en",
-            "ja-JP" => "ja",
-            "ko-KR" => "ko",
-            _ => languageCode.Trim()
-        };
     }
 
     private static string FirstNonEmpty(params string?[] values)

@@ -9,6 +9,7 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import { useAuth } from "../auth/AuthContext";
 import type { Promotion } from "../../data/types";
+import { preventImplicitFormSubmit } from "../../lib/forms";
 import { formatDateTime } from "../../lib/utils";
 import { getPoiTitle } from "../../lib/selectors";
 
@@ -145,7 +146,7 @@ export const PromotionsPage = () => {
         title={form.id ? "Cập nhật ưu đãi" : "Tạo ưu đãi mới"}
         description="Thông tin khuyến mãi có thể dùng cho banner, push notification và poi detail."
       >
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-5" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit}>
           <div>
             <label className="field-label">POI</label>
             <Select

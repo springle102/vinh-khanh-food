@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdminDataState, AudioGuide } from "../../data/types";
 import {
+  buildGoogleTtsAudioUrls,
   hasValidAudioUrl,
-  languageLocales,
-  logNarrationDebug,
   resolvePoiNarration,
-  selectSpeechVoice,
 } from "../../lib/narration";
 
 type PreviewStatus = "idle" | "playing" | "error";
@@ -34,26 +32,20 @@ const DEFAULT_PREVIEW_STATE: PreviewState = {
 
 export const useNarrationPreview = (state: AdminDataState) => {
   const [previewState, setPreviewState] = useState<PreviewState>(DEFAULT_PREVIEW_STATE);
-  const availableVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const requestIdRef = useRef(0);
   const resolveAbortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      return;
+  const resetAudioElement = useCallback(() => {
+    audioRef.current?.pause();
+
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.onplay = null;
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current = null;
     }
-
-    const loadVoices = () => {
-      availableVoicesRef.current = window.speechSynthesis.getVoices();
-    };
-
-    loadVoices();
-    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
-
-    return () => {
-      window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
-    };
   }, []);
 
   const stopPreview = useCallback((message = "") => {
@@ -61,71 +53,51 @@ export const useNarrationPreview = (state: AdminDataState) => {
     resolveAbortRef.current?.abort();
     resolveAbortRef.current = null;
 
-    audioRef.current?.pause();
-
-    if (audioRef.current) {
-      audioRef.current.currentTime = 0;
-      audioRef.current = null;
-    }
-
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    resetAudioElement();
 
     setPreviewState({
       ...DEFAULT_PREVIEW_STATE,
       message,
     });
-  }, []);
+  }, [resetAudioElement]);
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 
-  const playBrowserTts = useCallback(
+  const playAudioSequence = useCallback(
     async ({
       audioGuideId,
-      text,
-      languageCode,
-      voiceType,
-      fallbackMessage,
+      audioUrls,
+      kind,
+      startMessage,
       requestId,
+      onPlaybackError,
     }: {
       audioGuideId: string;
-      text: string;
-      languageCode: AudioGuide["languageCode"];
-      voiceType: AudioGuide["voiceType"];
-      fallbackMessage?: string | null;
+      audioUrls: string[];
+      kind: Exclude<PreviewKind, null>;
+      startMessage: string;
       requestId: number;
+      onPlaybackError?: () => void | Promise<void>;
     }) => {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        setPreviewState({
-          audioGuideId,
-          status: "error",
-          kind: "tts",
-          message: "Trinh duyet hien tai khong ho tro Text-to-Speech preview.",
-        });
-        return;
-      }
+      const previewAudio = new Audio();
+      previewAudio.preload = "auto";
+      audioRef.current = previewAudio;
+      let currentSegmentIndex = 0;
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = languageLocales[languageCode];
+      const playSegment = async (segmentIndex: number) => {
+        if (
+          segmentIndex >= audioUrls.length ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
+        }
 
-      const selectedVoice = selectSpeechVoice(
-        availableVoicesRef.current,
-        languageCode,
-        voiceType,
-      );
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-      }
+        currentSegmentIndex = segmentIndex;
+        previewAudio.src = audioUrls[segmentIndex];
+        await previewAudio.play();
+      };
 
-      logNarrationDebug("preview-voice", {
-        audioGuideId,
-        languageSelected: languageCode,
-        selectedVoicePreference: voiceType,
-        selectedVoice: selectedVoice?.name ?? null,
-      });
-
-      utterance.onstart = () => {
+      previewAudio.onplay = () => {
         if (requestId !== requestIdRef.current) {
           return;
         }
@@ -133,41 +105,94 @@ export const useNarrationPreview = (state: AdminDataState) => {
         setPreviewState({
           audioGuideId,
           status: "playing",
-          kind: "tts",
-          message: fallbackMessage
-            ? `Dang doc bang TTS. ${fallbackMessage}`
-            : "Dang doc noi dung bang Text-to-Speech.",
+          kind,
+          message: startMessage,
         });
       };
 
-      utterance.onend = () => {
+      previewAudio.onended = () => {
         if (requestId !== requestIdRef.current) {
           return;
         }
 
+        if (currentSegmentIndex + 1 < audioUrls.length) {
+          void playSegment(currentSegmentIndex + 1).catch(() => {
+            previewAudio.onerror?.(new Event("error"));
+          });
+          return;
+        }
+
+        resetAudioElement();
         setPreviewState({
           ...DEFAULT_PREVIEW_STATE,
-          message: "Da phat xong TTS preview.",
+          message: kind === "tts" ? "Đã phát xong bản xem thử TTS." : "Đã phát xong audio.",
         });
       };
 
-      utterance.onerror = () => {
+      previewAudio.onerror = () => {
         if (requestId !== requestIdRef.current) {
+          return;
+        }
+
+        resetAudioElement();
+
+        if (onPlaybackError) {
+          void onPlaybackError();
           return;
         }
 
         setPreviewState({
           audioGuideId,
           status: "error",
-          kind: "tts",
-          message: "Khong the khoi dong TTS preview tren trinh duyet nay.",
+          kind,
+          message:
+            kind === "tts"
+              ? "Không thể phát bản xem thử Google Translate TTS."
+              : "Không thể phát file audio từ URL hiện tại.",
         });
       };
 
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
+      await playSegment(0);
     },
-    [],
+    [resetAudioElement],
+  );
+
+  const playGoogleTts = useCallback(
+    async ({
+      audioGuideId,
+      text,
+      languageCode,
+      fallbackMessage,
+      requestId,
+    }: {
+      audioGuideId: string;
+      text: string;
+      languageCode: AudioGuide["languageCode"];
+      fallbackMessage?: string | null;
+      requestId: number;
+    }) => {
+      const audioUrls = buildGoogleTtsAudioUrls(text, languageCode);
+      if (audioUrls.length === 0) {
+        setPreviewState({
+          audioGuideId,
+          status: "error",
+          kind: "tts",
+          message: "Không có nội dung hợp lệ để tạo bản xem thử Google Translate TTS.",
+        });
+        return;
+      }
+
+      await playAudioSequence({
+        audioGuideId,
+        audioUrls,
+        kind: "tts",
+        requestId,
+        startMessage: fallbackMessage
+          ? `Đang phát Google Translate TTS. ${fallbackMessage}`
+          : "Đang phát Google Translate TTS.",
+      });
+    },
+    [playAudioSequence],
   );
 
   const previewAudioGuide = useCallback(
@@ -176,7 +201,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
         previewState.audioGuideId === guide.id &&
         previewState.status === "playing"
       ) {
-        stopPreview("Da dung phat thu.");
+        stopPreview("Đã dừng phát thử.");
         return;
       }
 
@@ -190,6 +215,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
       let narrationText = guide.previewText?.trim() ?? "";
       let effectiveLanguage = guide.languageCode;
       let fallbackMessage: string | null = null;
+      let resolvedAudioUrl = guide.sourceType === "uploaded" ? guide.audioUrl.trim() : "";
 
       if (!narrationText && poi) {
         try {
@@ -208,6 +234,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
           narrationText = resolved.ttsInputText;
           effectiveLanguage = resolved.effectiveLanguageCode;
           fallbackMessage = resolved.fallbackMessage;
+          resolvedAudioUrl = resolved.audioGuide?.audioUrl?.trim() ?? resolvedAudioUrl;
         } catch (error) {
           if (error instanceof DOMException && error.name === "AbortError") {
             return;
@@ -215,93 +242,84 @@ export const useNarrationPreview = (state: AdminDataState) => {
         }
       }
 
-      if (guide.sourceType === "uploaded" && hasValidAudioUrl(guide.audioUrl)) {
-        try {
-          const previewAudio = new Audio(guide.audioUrl);
-          audioRef.current = previewAudio;
-
-          previewAudio.onplay = () => {
-            if (requestId !== requestIdRef.current) {
-              return;
-            }
-
-            setPreviewState({
-              audioGuideId: guide.id,
-              status: "playing",
-              kind: "audio",
-              message: fallbackMessage
-                ? `Dang phat file audio. ${fallbackMessage}`
-                : "Dang phat file audio da upload.",
-            });
-          };
-
-          previewAudio.onended = () => {
-            if (requestId !== requestIdRef.current) {
-              return;
-            }
-
-            setPreviewState({
-              ...DEFAULT_PREVIEW_STATE,
-              message: "Da phat xong audio.",
-            });
-          };
-
-          previewAudio.onerror = () => {
-            if (!narrationText) {
-              setPreviewState({
-                audioGuideId: guide.id,
-                status: "error",
-                kind: "audio",
-                message: "Khong the phat file audio tu URL hien tai.",
-              });
-              return;
-            }
-
-            void playBrowserTts({
-              audioGuideId: guide.id,
-              text: narrationText,
-              languageCode: effectiveLanguage,
-              voiceType: guide.voiceType,
-              fallbackMessage: "File audio loi, dang fallback sang TTS.",
-              requestId,
-            });
-          };
-
-          await previewAudio.play();
+      const playGoogleTtsAudio = async () => {
+        if (!narrationText) {
+          setPreviewState({
+            audioGuideId: guide.id,
+            status: "error",
+            kind: "tts",
+            message: "Chưa có nội dung để đọc TTS cho POI và ngôn ngữ này.",
+          });
           return;
-        } catch {
-          if (!narrationText) {
-            setPreviewState({
-              audioGuideId: guide.id,
-              status: "error",
-              kind: "audio",
-              message: "Khong the phat file audio tu URL hien tai.",
-            });
+        }
+
+        try {
+          await playGoogleTts({
+            audioGuideId: guide.id,
+            text: narrationText,
+            languageCode: effectiveLanguage,
+            fallbackMessage,
+            requestId,
+          });
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
             return;
           }
         }
+      };
+
+      if (guide.sourceType === "uploaded" && hasValidAudioUrl(guide.audioUrl)) {
+        try {
+          await playAudioSequence({
+            audioGuideId: guide.id,
+            audioUrls: [guide.audioUrl],
+            kind: "audio",
+            requestId,
+            startMessage: fallbackMessage
+              ? `Đang phát file audio. ${fallbackMessage}`
+              : "Đang phát file audio đã tải lên.",
+            onPlaybackError: () => {
+              void playGoogleTtsAudio();
+            },
+          });
+          return;
+        } catch {
+          await playGoogleTtsAudio();
+          return;
+        }
       }
 
-      if (!narrationText) {
-        setPreviewState({
-          audioGuideId: guide.id,
-          status: "error",
-          kind: "tts",
-          message: "Chua co noi dung de doc TTS cho POI va ngon ngu nay.",
-        });
-        return;
+      if (!guide.previewText?.trim() && hasValidAudioUrl(resolvedAudioUrl)) {
+        try {
+          await playAudioSequence({
+            audioGuideId: guide.id,
+            audioUrls: [resolvedAudioUrl],
+            kind: "audio",
+            requestId,
+            startMessage: fallbackMessage
+              ? `Đang phát audio của POI. ${fallbackMessage}`
+              : "Đang phát audio của POI.",
+            onPlaybackError: () => {
+              void playGoogleTtsAudio();
+            },
+          });
+          return;
+        } catch {
+          await playGoogleTtsAudio();
+          return;
+        }
       }
 
-      await playBrowserTts({
-        audioGuideId: guide.id,
-        text: narrationText,
-        languageCode: effectiveLanguage,
-        voiceType: guide.voiceType,
-        fallbackMessage,
-        requestId,
-      });
+      await playGoogleTtsAudio();
     },
-    [playBrowserTts, previewState.audioGuideId, previewState.status, state, stopPreview],
+    [
+      playAudioSequence,
+      playGoogleTts,
+      previewState.audioGuideId,
+      previewState.status,
+      state,
+      stopPreview,
+    ],
   );
 
   return {

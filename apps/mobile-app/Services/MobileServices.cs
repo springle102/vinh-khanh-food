@@ -199,7 +199,7 @@ public sealed class LocalizationService(IAppSettingsService settingsService, ILo
         }
         catch (Exception exception)
         {
-            logger.LogWarning(exception, "Khong tai duoc goi localization {LanguageCode}", languageCode);
+            logger.LogWarning(exception, "Không tải được gói localization {LanguageCode}", languageCode);
         }
     }
 
@@ -326,7 +326,7 @@ public sealed class GuideApiService(
         var envelope = await client.GetFromJsonAsync<ApiEnvelope<T>>(relativeUrl, _serializerOptions);
         if (envelope?.Success != true || envelope.Data is null)
         {
-            throw new InvalidOperationException(envelope?.Message ?? "API khong tra ve du lieu hop le.");
+            throw new InvalidOperationException(envelope?.Message ?? "API không trả về dữ liệu hợp lệ.");
         }
 
         return envelope.Data;
@@ -374,7 +374,7 @@ public sealed class GuideApiService(
         }
         catch (Exception exception)
         {
-            logger.LogWarning(exception, "Khong goi duoc API {CacheKey}, su dung cache offline neu co.", key);
+            logger.LogWarning(exception, "Không gọi được API {CacheKey}, sử dụng cache offline nếu có.", key);
             return await offlineAction() ?? defaultValue;
         }
     }
@@ -445,7 +445,7 @@ public sealed class NarrationService(
             DurationInSeconds = 30
         });
 
-        logger.LogInformation("Dang phat narration cho POI {PoiId} bang ngon ngu {LanguageCode}", detail.Id, languageCode);
+        logger.LogInformation("Đang phát narration cho POI {PoiId} bằng ngôn ngữ {LanguageCode}", detail.Id, languageCode);
     }
 
     public Task PauseAsync()

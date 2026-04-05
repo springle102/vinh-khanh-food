@@ -46,11 +46,11 @@ public sealed class AudioGuidesController(AdminDataRepository repository) : Cont
     {
         if (string.IsNullOrWhiteSpace(request.EntityId) || string.IsNullOrWhiteSpace(request.LanguageCode))
         {
-            return BadRequest(ApiResponse<AudioGuide>.Fail("EntityId va languageCode la bat buoc."));
+            return BadRequest(ApiResponse<AudioGuide>.Fail("EntityId và languageCode là bắt buộc."));
         }
 
         var saved = repository.SaveAudioGuide(null, request);
-        return Ok(ApiResponse<AudioGuide>.Ok(saved, "Tao audio guide thanh cong."));
+        return Ok(ApiResponse<AudioGuide>.Ok(saved, "Tạo audio guide thành công."));
     }
 
     [HttpPut("{id}")]
@@ -59,11 +59,11 @@ public sealed class AudioGuidesController(AdminDataRepository repository) : Cont
         var existing = repository.GetAudioGuides().Any(item => item.Id == id);
         if (!existing)
         {
-            return NotFound(ApiResponse<AudioGuide>.Fail("Khong tim thay audio guide."));
+            return NotFound(ApiResponse<AudioGuide>.Fail("Không tìm thấy audio guide."));
         }
 
         var saved = repository.SaveAudioGuide(id, request);
-        return Ok(ApiResponse<AudioGuide>.Ok(saved, "Cap nhat audio guide thanh cong."));
+        return Ok(ApiResponse<AudioGuide>.Ok(saved, "Cập nhật audio guide thành công."));
     }
 
     [HttpDelete("{id}")]
@@ -71,7 +71,7 @@ public sealed class AudioGuidesController(AdminDataRepository repository) : Cont
     {
         var deleted = repository.DeleteAudioGuide(id);
         return deleted
-            ? Ok(ApiResponse<string>.Ok(id, "Xoa audio guide thanh cong."))
-            : NotFound(ApiResponse<string>.Fail("Khong tim thay audio guide."));
+            ? Ok(ApiResponse<string>.Ok(id, "Xóa audio guide thành công."))
+            : NotFound(ApiResponse<string>.Fail("Không tìm thấy audio guide."));
     }
 }

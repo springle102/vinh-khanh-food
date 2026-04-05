@@ -20,7 +20,8 @@ const DEFAULT_EDITABLE_ZOOM = 16;
 const DEFAULT_BROWSE_ZOOM = 15;
 const SELECTION_RADIUS_METERS = 180;
 
-const isValidCoordinate = (value: number) => Number.isFinite(value);
+const isValidLatitude = (value: number) => Number.isFinite(value) && value >= -90 && value <= 90;
+const isValidLongitude = (value: number) => Number.isFinite(value) && value >= -180 && value <= 180;
 
 const normalizeAddress = (value: string) => value.trim().replace(/\s+/g, " ");
 
@@ -171,12 +172,45 @@ const MapInstanceBinder = ({
 
   useEffect(() => {
     mapRef.current = map;
+    const container = map.getContainer();
+    let frameId: number | null = null;
+    let timeoutId: number | null = null;
 
-    requestAnimationFrame(() => {
-      map.invalidateSize();
-    });
+    const invalidateSize = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        map.invalidateSize({ pan: false });
+        frameId = null;
+      });
+    };
+
+    invalidateSize();
+    timeoutId = window.setTimeout(invalidateSize, 150);
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            invalidateSize();
+          });
+    resizeObserver?.observe(container);
+    window.addEventListener("resize", invalidateSize);
 
     return () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", invalidateSize);
+
       if (mapRef.current === map) {
         mapRef.current = null;
       }
@@ -230,14 +264,27 @@ const BrowseMapClickHandler = ({
 
 const BrowseMapViewport = ({
   pois,
+  selectedPoiId,
   onVisiblePoiIdsChange,
 }: {
   pois: PoiMapItem[];
+  selectedPoiId?: string | null;
   onVisiblePoiIdsChange?: (poiIds: string[]) => void;
 }) => {
   const map = useMap();
 
   useEffect(() => {
+    const selectedPoi = selectedPoiId
+      ? pois.find((poi) => poi.id === selectedPoiId) ?? null
+      : null;
+
+    if (selectedPoi) {
+      map.setView([selectedPoi.lat, selectedPoi.lng], Math.max(map.getZoom(), 16), {
+        animate: false,
+      });
+      return;
+    }
+
     if (!pois.length) {
       map.setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM, { animate: false });
       return;
@@ -253,7 +300,7 @@ const BrowseMapViewport = ({
       animate: false,
       maxZoom: 16,
     });
-  }, [map, pois]);
+  }, [map, pois, selectedPoiId]);
 
   useEffect(() => {
     if (!onVisiblePoiIdsChange) {
@@ -311,13 +358,13 @@ export const OpenStreetMapPicker = ({
 
   const selectedPosition = useMemo(
     () =>
-      isValidCoordinate(lat) && isValidCoordinate(lng)
+      isValidLatitude(lat) && isValidLongitude(lng)
         ? { lat, lng }
         : DEFAULT_CENTER,
     [lat, lng],
   );
   const selectablePois = useMemo(
-    () => pois.filter((item) => isValidCoordinate(item.lat) && isValidCoordinate(item.lng)),
+    () => pois.filter((item) => isValidLatitude(item.lat) && isValidLongitude(item.lng)),
     [pois],
   );
   const { reverseGeocode, forwardGeocode } = useGeocoding();
@@ -631,6 +678,7 @@ export const OpenStreetMapPicker = ({
               <BrowseMapClickHandler pois={selectablePois} onPoiSelect={onPoiSelectRef.current} />
               <BrowseMapViewport
                 pois={selectablePois}
+                selectedPoiId={selectedPoiId}
                 onVisiblePoiIdsChange={handleVisiblePoiIdsChange}
               />
               {selectablePois.map((poi) => (

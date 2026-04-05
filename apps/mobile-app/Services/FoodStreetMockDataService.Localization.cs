@@ -401,7 +401,7 @@ public sealed partial class FoodStreetMockDataService
     private string SelectLocalizedText(IReadOnlyDictionary<string, string> values)
         => LocalizedTextHelper.GetLocalizedText(values, CurrentLanguageCode);
 
-    private string CurrentLanguageCode => NormalizeLanguageCode(_languageService.CurrentLanguage);
+    private string CurrentLanguageCode => AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
 
     private static IReadOnlyDictionary<string, string> CreateLocalizedMap(
         string vietnameseText,
@@ -441,24 +441,6 @@ public sealed partial class FoodStreetMockDataService
         }
 
         return result;
-    }
-
-    private static string NormalizeLanguageCode(string? languageCode)
-    {
-        if (string.IsNullOrWhiteSpace(languageCode))
-        {
-            return "vi";
-        }
-
-        return languageCode.Trim() switch
-        {
-            "zh" => "zh-CN",
-            "fr-FR" => "fr",
-            "en-US" => "en",
-            "ja-JP" => "ja",
-            "ko-KR" => "ko",
-            _ => languageCode.Trim()
-        };
     }
 
     private static string NormalizeLookupKey(string value)

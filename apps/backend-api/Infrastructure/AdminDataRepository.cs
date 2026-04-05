@@ -1,4 +1,5 @@
 using Microsoft.Data.SqlClient;
+using System.Globalization;
 using System.Linq;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
@@ -10,9 +11,14 @@ public sealed partial class AdminDataRepository
     private const int MaxAuditLogs = 120;
     private readonly string _connectionString;
     private readonly string _seedSqlServerPath;
+    private readonly ILogger<AdminDataRepository> _logger;
 
-    public AdminDataRepository(IConfiguration configuration, IWebHostEnvironment environment)
+    public AdminDataRepository(
+        IConfiguration configuration,
+        IWebHostEnvironment environment,
+        ILogger<AdminDataRepository> logger)
     {
+        _logger = logger;
         _connectionString = ResolveConnectionString(configuration);
         _seedSqlServerPath = ResolveSeedSqlPath(configuration, environment);
         InitializeDatabase();
@@ -263,6 +269,8 @@ public sealed partial class AdminDataRepository
                 .ToList();
         }
 
+        var syncState = GetSyncState(connection, null);
+
         return new AdminBootstrapResponse(
             users,
             customerUsers,
@@ -278,7 +286,8 @@ public sealed partial class AdminDataRepository
             viewLogs,
             audioListenLogs,
             auditLogs,
-            settings);
+            settings,
+            syncState);
     }
 
     public DashboardSummaryResponse GetDashboardSummary()
@@ -309,9 +318,11 @@ public sealed partial class AdminDataRepository
             }
 
             using var verifiedConnection = OpenConnection();
+            RemoveLegacyPoiDefaultLanguageColumn(verifiedConnection);
             EnsureRefreshSessionsTable(verifiedConnection);
             EnsureEndUserManagementSchema(verifiedConnection);
             EnsureTourManagementSchema(verifiedConnection);
+            NormalizeLegacyEntityTypes(verifiedConnection);
         }
         catch (SqlException exception)
         {
@@ -557,6 +568,44 @@ public sealed partial class AdminDataRepository
                 CREATE INDEX IX_UserPoiVisits_UserId_VisitedAt
                 ON dbo.UserPoiVisits (UserId, VisitedAt DESC);
             END;
+            """);
+    }
+
+    private void RemoveLegacyPoiDefaultLanguageColumn(SqlConnection connection)
+    {
+        const string columnExistsSql = """
+            SELECT COL_LENGTH(N'dbo.Pois', N'DefaultLanguageCode');
+            """;
+        using var columnExistsCommand = CreateCommand(connection, null, columnExistsSql);
+        if (columnExistsCommand.ExecuteScalar() is null or DBNull)
+        {
+            return;
+        }
+
+        const string defaultConstraintSql = """
+            SELECT TOP 1 dc.name
+            FROM sys.default_constraints dc
+            INNER JOIN sys.columns c
+                ON c.default_object_id = dc.object_id
+            WHERE dc.parent_object_id = OBJECT_ID(N'dbo.Pois')
+              AND c.name = N'DefaultLanguageCode';
+            """;
+        using var defaultConstraintCommand = CreateCommand(connection, null, defaultConstraintSql);
+        var defaultConstraintName = Convert.ToString(defaultConstraintCommand.ExecuteScalar(), CultureInfo.InvariantCulture);
+
+        if (!string.IsNullOrWhiteSpace(defaultConstraintName))
+        {
+            ExecuteNonQuery(
+                connection,
+                null,
+                $"ALTER TABLE dbo.Pois DROP CONSTRAINT {QuoteSqlIdentifier(defaultConstraintName)};");
+        }
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            ALTER TABLE dbo.Pois DROP COLUMN DefaultLanguageCode;
             """);
     }
 
@@ -837,5 +886,95 @@ public sealed partial class AdminDataRepository
             .Any((link) =>
                 string.Equals(link.UserId, endUserId, StringComparison.OrdinalIgnoreCase) &&
                 ownerPoiIds.Contains(link.PoiId));
+    }
+
+    private void NormalizeLegacyEntityTypes(SqlConnection connection)
+    {
+        var migratedTranslations = ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE legacy
+            SET EntityType = N'poi'
+            FROM dbo.PoiTranslations legacy
+            WHERE legacy.EntityType = N'place'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM dbo.PoiTranslations normalized
+                  WHERE normalized.EntityType = N'poi'
+                    AND normalized.EntityId = legacy.EntityId
+                    AND normalized.LanguageCode = legacy.LanguageCode
+              );
+            """);
+
+        var deletedDuplicateTranslations = ExecuteNonQuery(
+            connection,
+            null,
+            """
+            DELETE legacy
+            FROM dbo.PoiTranslations legacy
+            WHERE legacy.EntityType = N'place'
+              AND EXISTS (
+                  SELECT 1
+                  FROM dbo.PoiTranslations normalized
+                  WHERE normalized.EntityType = N'poi'
+                    AND normalized.EntityId = legacy.EntityId
+                    AND normalized.LanguageCode = legacy.LanguageCode
+              );
+            """);
+
+        var migratedAudioGuides = ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE legacy
+            SET EntityType = N'poi'
+            FROM dbo.AudioGuides legacy
+            WHERE legacy.EntityType = N'place'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM dbo.AudioGuides normalized
+                  WHERE normalized.EntityType = N'poi'
+                    AND normalized.EntityId = legacy.EntityId
+                    AND normalized.LanguageCode = legacy.LanguageCode
+              );
+            """);
+
+        var deletedDuplicateAudioGuides = ExecuteNonQuery(
+            connection,
+            null,
+            """
+            DELETE legacy
+            FROM dbo.AudioGuides legacy
+            WHERE legacy.EntityType = N'place'
+              AND EXISTS (
+                  SELECT 1
+                  FROM dbo.AudioGuides normalized
+                  WHERE normalized.EntityType = N'poi'
+                    AND normalized.EntityId = legacy.EntityId
+                    AND normalized.LanguageCode = legacy.LanguageCode
+              );
+            """);
+
+        var migratedMediaAssets = ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE dbo.MediaAssets
+            SET EntityType = N'poi'
+            WHERE EntityType = N'place';
+            """);
+
+        if (migratedTranslations > 0 || deletedDuplicateTranslations > 0 ||
+            migratedAudioGuides > 0 || deletedDuplicateAudioGuides > 0 || migratedMediaAssets > 0)
+        {
+            _logger.LogInformation(
+                "Normalized legacy POI entity types. translationsMigrated={TranslationsMigrated}, translationsDeleted={TranslationsDeleted}, audioMigrated={AudioMigrated}, audioDeleted={AudioDeleted}, mediaMigrated={MediaMigrated}",
+                migratedTranslations,
+                deletedDuplicateTranslations,
+                migratedAudioGuides,
+                deletedDuplicateAudioGuides,
+                migratedMediaAssets);
+        }
     }
 }

@@ -60,7 +60,7 @@ function Resolve-AndroidSdkRoot {
         }
     }
 
-    throw "Khong tim thay Android SDK hop le. Hay cai Android SDK truoc khi chay."
+    throw "Không tìm thấy Android SDK hợp lệ. Hãy cài Android SDK trước khi chạy."
 }
 
 $resolvedAndroidSdkRoot = Resolve-AndroidSdkRoot
@@ -89,7 +89,7 @@ function Resolve-AdbPath {
         }
     }
 
-    throw "Khong tim thay adb.exe. Hay mo Android SDK hoac cai dat platform-tools truoc khi chay."
+    throw "Không tìm thấy adb.exe. Hãy mở Android SDK hoặc cài đặt platform-tools trước khi chạy."
 }
 
 function Get-ConnectedDevice {
@@ -100,7 +100,7 @@ function Get-ConnectedDevice {
 
     $output = & $AdbPath devices
     if ($LASTEXITCODE -ne 0) {
-        throw "Khong doc duoc danh sach thiet bi Android tu adb."
+        throw "Không đọc được danh sách thiết bị Android từ adb."
     }
 
     $devices = foreach ($line in ($output | Select-Object -Skip 1)) {
@@ -124,7 +124,7 @@ function Get-ConnectedDevice {
         Select-Object -First 1
 
     if ($null -eq $selectedDevice) {
-        throw "Chua co emulator Android dang online. Hay mo may ao truoc, sau do chay lai script nay."
+        throw "Chưa có emulator Android đang online. Hãy mở máy ảo trước, sau đó chạy lại script này."
     }
 
     return $selectedDevice
@@ -142,7 +142,7 @@ function Resolve-LaunchActivity {
 
     $output = & $AdbPath -s $DeviceSerial shell cmd package resolve-activity --brief $AndroidPackageId
     if ($LASTEXITCODE -ne 0) {
-        throw "Khong xac dinh duoc launcher activity cua app Android."
+        throw "Không xác định được launcher activity của app Android."
     }
 
     $launchActivity = $output |
@@ -151,7 +151,7 @@ function Resolve-LaunchActivity {
         Select-Object -Last 1
 
     if ([string]::IsNullOrWhiteSpace($launchActivity)) {
-        throw "Khong tim thay launcher activity hop le cua app Android."
+        throw "Không tìm thấy launcher activity hợp lệ của app Android."
     }
 
     return $launchActivity
@@ -182,7 +182,9 @@ function Invoke-Deploy {
         "--no-restore",
         "-p:Device=$DeviceSerial",
         "-p:AppSettingsDirectory=$androidSettingsDirectory\",
-        "-p:NuGetAudit=false"
+        "-p:NuGetAudit=false",
+        "-p:EmbedAssembliesIntoApk=true",
+        "-p:AndroidFastDeploymentType=None"
     )
 
     & dotnet @dotnetArguments
@@ -210,7 +212,7 @@ function Invoke-Deploy {
 $adbPath = Resolve-AdbPath
 $device = Get-ConnectedDevice -AdbPath $adbPath
 
-Write-Host "[watch] Dang theo doi thay doi trong $projectDirectory" -ForegroundColor Yellow
+Write-Host "[watch] Đang theo dõi thay đổi trong $projectDirectory" -ForegroundColor Yellow
 Write-Host "[watch] Emulator duoc chon: $($device.Serial)" -ForegroundColor Yellow
 Write-Host "[watch] Android SDK duoc chon: $resolvedAndroidSdkRoot" -ForegroundColor Yellow
 
@@ -272,7 +274,7 @@ Register-ObjectEvent -InputObject $watcher -EventName Renamed -SourceIdentifier 
 
 try {
     Invoke-Deploy -AdbPath $adbPath -ProjectFile $resolvedProjectPath -TargetFramework $Framework -DeviceSerial $device.Serial -AndroidPackageId $PackageId
-    Write-Host "[watch] Dang cho thay doi tiep theo. Nhan Ctrl+C de dung." -ForegroundColor Yellow
+    Write-Host "[watch] Đang chờ thay đổi tiếp theo. Nhấn Ctrl+C để dừng." -ForegroundColor Yellow
 
     while ($true) {
         if ($watchState.Dirty) {

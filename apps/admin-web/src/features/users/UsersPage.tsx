@@ -8,6 +8,7 @@ import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import type { AdminUser } from "../../data/types";
+import { preventImplicitFormSubmit } from "../../lib/forms";
 import { getPoiTitle } from "../../lib/selectors";
 import { formatDateTime, getInitials, roleLabels } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
@@ -204,7 +205,11 @@ export const UsersPage = () => {
         title={form.id ? "Cập nhật tài khoản admin" : "Tạo tài khoản chủ quán"}
         description="Super Admin có thể gán mỗi tài khoản PLACE_OWNER cho một POI cụ thể trong hệ thống."
       >
-        <form className="space-y-5" onSubmit={(event) => void handleSubmit(event)}>
+        <form
+          className="space-y-5"
+          onSubmit={(event) => void handleSubmit(event)}
+          onKeyDown={preventImplicitFormSubmit}
+        >
           <div className="grid gap-5 md:grid-cols-2">
             <div>
               <label className="field-label">Họ tên</label>

@@ -1,3 +1,5 @@
+using Microsoft.Data.SqlClient;
+using System.Linq;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
 
@@ -20,6 +22,7 @@ public sealed partial class AdminDataRepository
                 user.Id,
                 user.Name,
                 user.Email,
+                user.Password,
                 user.Role,
                 user.Status,
                 user.ManagedPoiId))
@@ -47,7 +50,7 @@ public sealed partial class AdminDataRepository
             user.Id);
 
         user.LastLoginAt = now;
-        AppendAuditLog(connection, transaction, user.Name, user.Role, "Dang nhap admin", user.Email);
+        AppendAuditLog(connection, transaction, user.Name, user.Role, "Đăng nhập admin", user.Email);
         var session = CreateSession(connection, transaction, user);
 
         transaction.Commit();
@@ -100,7 +103,7 @@ public sealed partial class AdminDataRepository
             "DELETE FROM dbo.RefreshSessions WHERE RefreshToken = ?;",
             refreshToken);
 
-        AppendAuditLog(connection, transaction, user.Name, user.Role, "Lam moi phien dang nhap", user.Email);
+        AppendAuditLog(connection, transaction, user.Name, user.Role, "Làm mới phiên đăng nhập", user.Email);
         var refreshed = CreateSession(connection, transaction, user);
 
         transaction.Commit();
@@ -135,6 +138,12 @@ public sealed partial class AdminDataRepository
 
         if (isNew)
         {
+            _logger.LogDebug(
+                "Executing admin user insert. userId={UserId}, role={Role}, status={Status}, managedPoiId={ManagedPoiId}",
+                userId,
+                request.Role,
+                request.Status,
+                managedPoiId);
             ExecuteNonQuery(
                 connection,
                 transaction,
@@ -158,6 +167,12 @@ public sealed partial class AdminDataRepository
         }
         else
         {
+            _logger.LogDebug(
+                "Executing admin user update. userId={UserId}, role={Role}, status={Status}, managedPoiId={ManagedPoiId}",
+                userId,
+                request.Role,
+                request.Status,
+                managedPoiId);
             ExecuteNonQuery(
                 connection,
                 transaction,
@@ -189,11 +204,17 @@ public sealed partial class AdminDataRepository
             transaction,
             request.ActorName,
             request.ActorRole,
-            isNew ? "Tao tai khoan admin" : "Cap nhat tai khoan admin",
+            isNew ? "Tạo tài khoản admin" : "Cập nhật tài khoản admin",
             request.Email);
 
         var saved = GetUserById(connection, transaction, userId)
-            ?? throw new InvalidOperationException("Khong the doc lai tai khoan admin sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại tài khoản admin sau khi lưu.");
+
+        _logger.LogInformation(
+            "SaveUser completed. userId={UserId}, role={Role}, status={Status}",
+            saved.Id,
+            saved.Role,
+            saved.Status);
 
         transaction.Commit();
         return saved;
@@ -207,7 +228,8 @@ public sealed partial class AdminDataRepository
         var now = DateTimeOffset.UtcNow;
         var existing = !string.IsNullOrWhiteSpace(id) ? GetPoiById(connection, transaction, id) : null;
         var isNew = existing is null;
-        var poiId = existing?.Id ?? id ?? CreateId("poi");
+        var currentPoiId = existing?.Id ?? id;
+        var poiId = ResolveRequestedPoiId(request.RequestedId, currentPoiId);
         var createdAt = existing?.CreatedAt ?? now;
         var actorRole = request.ActorRole?.Trim() ?? string.Empty;
         var isOwnerActor = string.Equals(actorRole, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase);
@@ -220,13 +242,13 @@ public sealed partial class AdminDataRepository
         {
             if (actorUser is null || !string.Equals(actorUser.Role, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("Khong xac dinh duoc chu quan thuc hien thao tac POI.");
+                throw new InvalidOperationException("Không xác định được chủ quán thực hiện thao tác POI.");
             }
 
             var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actorUser.Id);
-            if (!isNew && !ownerPoiIds.Contains(poiId))
+            if (!isNew && !ownerPoiIds.Contains(existing!.Id))
             {
-                throw new InvalidOperationException("Chu quan chi duoc cap nhat POI cua chinh minh.");
+                throw new InvalidOperationException("Chủ quán chỉ được cập nhật POI của chính mình.");
             }
         }
 
@@ -234,79 +256,69 @@ public sealed partial class AdminDataRepository
         var nextFeatured = isOwnerActor ? false : request.Featured;
         var nextOwnerUserId = isOwnerActor ? actorUserId : request.OwnerUserId;
 
+        _logger.LogInformation(
+            "SavePoi request received. currentPoiId={CurrentPoiId}, requestedPoiId={RequestedPoiId}, resolvedPoiId={ResolvedPoiId}, slug={Slug}, address={Address}, tags={Tags}, actorRole={ActorRole}, isNew={IsNew}",
+            currentPoiId,
+            request.RequestedId,
+            poiId,
+            request.Slug,
+            request.Address,
+            string.Join(", ", request.Tags ?? []),
+            actorRole,
+            isNew);
+
         if (isNew)
         {
-            ExecuteNonQuery(
+            EnsurePoiIdAvailable(connection, transaction, poiId);
+            _logger.LogDebug(
+                "Executing POI insert. poiId={PoiId}, ownerUserId={OwnerUserId}, status={Status}, featured={Featured}",
+                poiId,
+                nextOwnerUserId,
+                nextStatus,
+                nextFeatured);
+            InsertPoiRecord(
                 connection,
                 transaction,
-                """
-                INSERT INTO dbo.Pois (
-                    Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, DefaultLanguageCode,
-                    District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
                 poiId,
-                request.Slug,
-                request.Address,
-                request.Lat,
-                request.Lng,
-                request.CategoryId,
+                request,
                 nextStatus,
                 nextFeatured,
-                request.DefaultLanguageCode,
-                request.District,
-                request.Ward,
-                request.PriceRange,
-                request.AverageVisitDuration,
-                request.PopularityScore,
                 nextOwnerUserId,
-                request.UpdatedBy,
                 createdAt,
+                now);
+        }
+        else if (!string.Equals(poiId, existing!.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            EnsurePoiIdAvailable(connection, transaction, poiId, existing.Id);
+            RenamePoiRecord(
+                connection,
+                transaction,
+                existing,
+                poiId,
+                request,
+                nextStatus,
+                nextFeatured,
+                nextOwnerUserId,
                 now);
         }
         else
         {
-            ExecuteNonQuery(
-                connection,
-                transaction,
-                """
-                UPDATE dbo.Pois
-                SET Slug = ?,
-                    AddressLine = ?,
-                    Latitude = ?,
-                    Longitude = ?,
-                    CategoryId = ?,
-                    [Status] = ?,
-                    IsFeatured = ?,
-                    DefaultLanguageCode = ?,
-                    District = ?,
-                    Ward = ?,
-                    PriceRange = ?,
-                    AverageVisitDurationMinutes = ?,
-                    PopularityScore = ?,
-                    OwnerUserId = ?,
-                    UpdatedBy = ?,
-                    UpdatedAt = ?
-                WHERE Id = ?;
-                """,
-                request.Slug,
-                request.Address,
-                request.Lat,
-                request.Lng,
-                request.CategoryId,
+            _logger.LogDebug(
+                "Executing POI update. poiId={PoiId}, ownerUserId={OwnerUserId}, status={Status}, featured={Featured}, updatedBy={UpdatedBy}",
+                poiId,
+                nextOwnerUserId,
                 nextStatus,
                 nextFeatured,
-                request.DefaultLanguageCode,
-                request.District,
-                request.Ward,
-                request.PriceRange,
-                request.AverageVisitDuration,
-                request.PopularityScore,
+                request.UpdatedBy);
+            UpdatePoiRecord(
+                connection,
+                transaction,
+                poiId,
+                request,
+                nextStatus,
+                nextFeatured,
                 nextOwnerUserId,
-                request.UpdatedBy,
-                now,
-                poiId);
+                now);
         }
 
         ReplacePoiTags(connection, transaction, poiId, request.Tags);
@@ -320,7 +332,13 @@ public sealed partial class AdminDataRepository
             request.Slug);
 
         var saved = GetPoiById(connection, transaction, poiId)
-            ?? throw new InvalidOperationException("Khong the doc lai POI sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại POI sau khi lưu.");
+
+        _logger.LogInformation(
+            "SavePoi completed. poiId={PoiId}, slug={Slug}, updatedAt={UpdatedAt}",
+            saved.Id,
+            saved.Slug,
+            saved.UpdatedAt);
 
         transaction.Commit();
         return saved;
@@ -347,17 +365,228 @@ public sealed partial class AdminDataRepository
     {
         if (isOwnerActor)
         {
-            return existing is null ? "Gui duyet POI moi" : "Cap nhat POI cho duyet";
+            return existing is null ? "Gửi duyệt POI mới" : "Cập nhật POI chờ duyệt";
         }
 
         if (!string.Equals(existing?.Status, "published", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(nextStatus, "published", StringComparison.OrdinalIgnoreCase))
         {
-            return "Duyet POI";
+            return "Duyệt POI";
         }
 
-        return existing is null ? "Tao POI" : "Cap nhat POI";
+        return existing is null ? "Tạo POI" : "Cập nhật POI";
     }
+
+    private static string ResolveRequestedPoiId(string? requestedId, string? currentPoiId)
+    {
+        var normalizedRequestedId = requestedId?.Trim();
+        if (!string.IsNullOrWhiteSpace(normalizedRequestedId))
+        {
+            ValidatePoiId(normalizedRequestedId);
+            return normalizedRequestedId;
+        }
+
+        return !string.IsNullOrWhiteSpace(currentPoiId)
+            ? currentPoiId
+            : CreateId("poi");
+    }
+
+    private static void ValidatePoiId(string poiId)
+    {
+        if (poiId.All(character => char.IsLetterOrDigit(character) || character is '-' or '_'))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException("ID quan chi duoc chua chu cai, so, dau gach ngang hoac gach duoi.");
+    }
+
+    private void EnsurePoiIdAvailable(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string poiId,
+        string? ignorePoiId = null)
+    {
+        var existingPoi = GetPoiById(connection, transaction, poiId);
+        if (existingPoi is null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ignorePoiId) &&
+            string.Equals(existingPoi.Id, ignorePoiId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"ID quan '{poiId}' da ton tai.");
+    }
+
+    private void InsertPoiRecord(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string poiId,
+        PoiUpsertRequest request,
+        string status,
+        bool featured,
+        string? ownerUserId,
+        DateTimeOffset createdAt,
+        DateTimeOffset updatedAt)
+    {
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            INSERT INTO dbo.Pois (
+                Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured,
+                District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            poiId,
+            request.Slug,
+            request.Address,
+            request.Lat,
+            request.Lng,
+            request.CategoryId,
+            status,
+            featured,
+            request.District,
+            request.Ward,
+            request.PriceRange,
+            request.AverageVisitDuration,
+            request.PopularityScore,
+            ownerUserId,
+            request.UpdatedBy,
+            createdAt,
+            updatedAt);
+    }
+
+    private void UpdatePoiRecord(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string poiId,
+        PoiUpsertRequest request,
+        string status,
+        bool featured,
+        string? ownerUserId,
+        DateTimeOffset updatedAt)
+    {
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.Pois
+            SET Slug = ?,
+                AddressLine = ?,
+                Latitude = ?,
+                Longitude = ?,
+                CategoryId = ?,
+                [Status] = ?,
+                IsFeatured = ?,
+                District = ?,
+                Ward = ?,
+                PriceRange = ?,
+                AverageVisitDurationMinutes = ?,
+                PopularityScore = ?,
+                OwnerUserId = ?,
+                UpdatedBy = ?,
+                UpdatedAt = ?
+            WHERE Id = ?;
+            """,
+            request.Slug,
+            request.Address,
+            request.Lat,
+            request.Lng,
+            request.CategoryId,
+            status,
+            featured,
+            request.District,
+            request.Ward,
+            request.PriceRange,
+            request.AverageVisitDuration,
+            request.PopularityScore,
+            ownerUserId,
+            request.UpdatedBy,
+            updatedAt,
+            poiId);
+    }
+
+    private void RenamePoiRecord(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        Poi existing,
+        string nextPoiId,
+        PoiUpsertRequest request,
+        string status,
+        bool featured,
+        string? ownerUserId,
+        DateTimeOffset updatedAt)
+    {
+        _logger.LogDebug(
+            "Executing POI rename. oldPoiId={OldPoiId}, newPoiId={NewPoiId}, ownerUserId={OwnerUserId}, status={Status}, featured={Featured}, updatedBy={UpdatedBy}",
+            existing.Id,
+            nextPoiId,
+            ownerUserId,
+            status,
+            featured,
+            request.UpdatedBy);
+
+        InsertPoiRecord(
+            connection,
+            transaction,
+            nextPoiId,
+            request,
+            status,
+            featured,
+            ownerUserId,
+            existing.CreatedAt,
+            updatedAt);
+
+        UpdatePoiReferenceIds(connection, transaction, existing.Id, nextPoiId);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Pois WHERE Id = ?;", existing.Id);
+    }
+
+    private void UpdatePoiReferenceIds(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string currentPoiId,
+        string nextPoiId)
+    {
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.CustomerFavoritePois SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.UserPoiVisits SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.PoiTags SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.FoodItems SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.RouteStops SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.Promotions SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.Reviews SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.ViewLogs SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.AudioListenLogs SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.AdminUsers SET ManagedPoiId = ? WHERE ManagedPoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            "UPDATE dbo.PoiTranslations SET EntityId = ? WHERE EntityType IN (N'poi', N'place') AND EntityId = ?;",
+            nextPoiId,
+            currentPoiId);
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            "UPDATE dbo.AudioGuides SET EntityId = ? WHERE EntityType IN (N'poi', N'place') AND EntityId = ?;",
+            nextPoiId,
+            currentPoiId);
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            "UPDATE dbo.MediaAssets SET EntityId = ? WHERE EntityType IN (N'poi', N'place') AND EntityId = ?;",
+            nextPoiId,
+            currentPoiId);
+    }
+
+    private static string NormalizeEntityType(string entityType) =>
+        string.Equals(entityType?.Trim(), "place", StringComparison.OrdinalIgnoreCase)
+            ? "poi"
+            : entityType?.Trim() ?? string.Empty;
 
     public bool DeletePoi(string id)
     {
@@ -386,7 +615,7 @@ public sealed partial class AdminDataRepository
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioListenLogs WHERE PoiId = ?;", id);
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Pois WHERE Id = ?;", id);
 
-        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa POI", poi.Slug);
+        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa POI", poi.Slug);
 
         transaction.Commit();
         return true;
@@ -398,17 +627,35 @@ public sealed partial class AdminDataRepository
         using var transaction = connection.BeginTransaction();
 
         var now = DateTimeOffset.UtcNow;
+        var normalizedEntityType = NormalizeEntityType(request.EntityType);
         var existing = !string.IsNullOrWhiteSpace(id)
             ? GetTranslationById(connection, transaction, id)
             : null;
 
-        existing ??= GetTranslationByKey(connection, transaction, request.EntityType, request.EntityId, request.LanguageCode);
+        existing ??= GetTranslationByKey(connection, transaction, normalizedEntityType, request.EntityId, request.LanguageCode);
 
         var isNew = existing is null;
         var translationId = existing?.Id ?? id ?? CreateId("trans");
 
+        _logger.LogInformation(
+            "SaveTranslation request received. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, title={Title}, shortTextLength={ShortTextLength}, fullTextLength={FullTextLength}, isNew={IsNew}",
+            translationId,
+            normalizedEntityType,
+            request.EntityId,
+            request.LanguageCode,
+            request.Title,
+            request.ShortText?.Length ?? 0,
+            request.FullText?.Length ?? 0,
+            isNew);
+
         if (isNew)
         {
+            _logger.LogDebug(
+                "Executing translation insert. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}",
+                translationId,
+                normalizedEntityType,
+                request.EntityId,
+                request.LanguageCode);
             ExecuteNonQuery(
                 connection,
                 transaction,
@@ -419,7 +666,7 @@ public sealed partial class AdminDataRepository
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 translationId,
-                request.EntityType,
+                normalizedEntityType,
                 request.EntityId,
                 request.LanguageCode,
                 request.Title,
@@ -433,6 +680,13 @@ public sealed partial class AdminDataRepository
         }
         else
         {
+            _logger.LogDebug(
+                "Executing translation update. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, updatedBy={UpdatedBy}",
+                translationId,
+                normalizedEntityType,
+                request.EntityId,
+                request.LanguageCode,
+                request.UpdatedBy);
             ExecuteNonQuery(
                 connection,
                 transaction,
@@ -451,7 +705,7 @@ public sealed partial class AdminDataRepository
                     UpdatedAt = ?
                 WHERE Id = ?;
                 """,
-                request.EntityType,
+                normalizedEntityType,
                 request.EntityId,
                 request.LanguageCode,
                 request.Title,
@@ -470,11 +724,19 @@ public sealed partial class AdminDataRepository
             transaction,
             request.UpdatedBy,
             "SYSTEM",
-            isNew ? "Tao noi dung thuyet minh" : "Cap nhat noi dung thuyet minh",
-            $"{request.EntityType}:{request.LanguageCode}:{request.EntityId}");
+            isNew ? "Tạo nội dung thuyết minh" : "Cập nhật nội dung thuyết minh",
+            $"{normalizedEntityType}:{request.LanguageCode}:{request.EntityId}");
 
         var saved = GetTranslationById(connection, transaction, translationId)
-            ?? throw new InvalidOperationException("Khong the doc lai noi dung thuyet minh sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại nội dung thuyết minh sau khi lưu.");
+
+        _logger.LogInformation(
+            "SaveTranslation completed. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, updatedAt={UpdatedAt}",
+            saved.Id,
+            saved.EntityType,
+            saved.EntityId,
+            saved.LanguageCode,
+            saved.UpdatedAt);
 
         transaction.Commit();
         return saved;
@@ -488,7 +750,7 @@ public sealed partial class AdminDataRepository
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTranslations WHERE Id = ?;", id) > 0;
         if (deleted)
         {
-            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa noi dung thuyet minh", id);
+            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa nội dung thuyết minh", id);
         }
 
         transaction.Commit();
@@ -501,17 +763,34 @@ public sealed partial class AdminDataRepository
         using var transaction = connection.BeginTransaction();
 
         var now = DateTimeOffset.UtcNow;
+        var normalizedEntityType = NormalizeEntityType(request.EntityType);
         var existing = !string.IsNullOrWhiteSpace(id)
             ? GetAudioGuideById(connection, transaction, id)
             : null;
 
-        existing ??= GetAudioGuideByKey(connection, transaction, request.EntityType, request.EntityId, request.LanguageCode);
+        existing ??= GetAudioGuideByKey(connection, transaction, normalizedEntityType, request.EntityId, request.LanguageCode);
 
         var isNew = existing is null;
         var audioId = existing?.Id ?? id ?? CreateId("audio");
 
+        _logger.LogInformation(
+            "SaveAudioGuide request received. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, sourceType={SourceType}, status={Status}, isNew={IsNew}",
+            audioId,
+            normalizedEntityType,
+            request.EntityId,
+            request.LanguageCode,
+            request.SourceType,
+            request.Status,
+            isNew);
+
         if (isNew)
         {
+            _logger.LogDebug(
+                "Executing audio guide insert. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}",
+                audioId,
+                normalizedEntityType,
+                request.EntityId,
+                request.LanguageCode);
             ExecuteNonQuery(
                 connection,
                 transaction,
@@ -522,7 +801,7 @@ public sealed partial class AdminDataRepository
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 audioId,
-                request.EntityType,
+                normalizedEntityType,
                 request.EntityId,
                 request.LanguageCode,
                 request.AudioUrl,
@@ -534,6 +813,13 @@ public sealed partial class AdminDataRepository
         }
         else
         {
+            _logger.LogDebug(
+                "Executing audio guide update. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, status={Status}",
+                audioId,
+                normalizedEntityType,
+                request.EntityId,
+                request.LanguageCode,
+                request.Status);
             ExecuteNonQuery(
                 connection,
                 transaction,
@@ -550,7 +836,7 @@ public sealed partial class AdminDataRepository
                     UpdatedAt = ?
                 WHERE Id = ?;
                 """,
-                request.EntityType,
+                normalizedEntityType,
                 request.EntityId,
                 request.LanguageCode,
                 request.AudioUrl,
@@ -567,11 +853,19 @@ public sealed partial class AdminDataRepository
             transaction,
             request.UpdatedBy,
             "SYSTEM",
-            isNew ? "Tao audio guide" : "Cap nhat audio guide",
-            $"{request.EntityType}:{request.LanguageCode}:{request.EntityId}");
+            isNew ? "Tạo audio guide" : "Cập nhật audio guide",
+            $"{normalizedEntityType}:{request.LanguageCode}:{request.EntityId}");
 
         var saved = GetAudioGuideById(connection, transaction, audioId)
-            ?? throw new InvalidOperationException("Khong the doc lai audio guide sau khi luu.");
+            ?? throw new InvalidOperationException("Không thể đọc lại audio guide sau khi lưu.");
+
+        _logger.LogInformation(
+            "SaveAudioGuide completed. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, updatedAt={UpdatedAt}",
+            saved.Id,
+            saved.EntityType,
+            saved.EntityId,
+            saved.LanguageCode,
+            saved.UpdatedAt);
 
         transaction.Commit();
         return saved;
@@ -585,7 +879,7 @@ public sealed partial class AdminDataRepository
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioGuides WHERE Id = ?;", id) > 0;
         if (deleted)
         {
-            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xoa audio guide", id);
+            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa audio guide", id);
         }
 
         transaction.Commit();
