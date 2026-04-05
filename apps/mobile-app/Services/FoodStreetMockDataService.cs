@@ -18,6 +18,8 @@ public interface IFoodStreetDataService
     Task<PoiExperienceDetail?> GetPoiDetailAsync(string poiId);
     Task<TourPlan> GetTourPlanAsync();
     Task<UserProfileCard> GetUserProfileAsync();
+    Task<UserProfileCard?> SelectUserProfileAsync(string identifier);
+    Task<UserProfileCard> UpdateUserProfileAsync(UserProfileUpdateRequest request);
     Task<IReadOnlyList<SettingsMenuItem>> GetSettingsMenuAsync();
     string GetBackdropImageUrl();
 }
@@ -249,6 +251,12 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
 
     public async Task<UserProfileCard> GetUserProfileAsync()
     {
+        var customer = await GetResolvedCurrentCustomerAsync();
+        if (customer is not null)
+        {
+            return MapUserProfile(customer);
+        }
+
         var snapshot = await GetBootstrapSnapshotAsync();
         if (snapshot?.UserProfile is not null)
         {
@@ -1144,9 +1152,12 @@ public sealed partial class FoodStreetApiDataService
         public string Phone { get; set; } = string.Empty;
         public string PreferredLanguage { get; set; } = "vi";
         public string? Username { get; set; }
+        public string? DeviceId { get; set; }
+        public string Country { get; set; } = string.Empty;
         public string DeviceType { get; set; } = "android";
         public bool IsActive { get; set; }
         public bool IsBanned { get; set; }
+        public bool IsPremium { get; set; }
         public int TotalScans { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset? LastActiveAt { get; set; }

@@ -6,6 +6,51 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed partial class AdminDataRepository
 {
+    public CustomerUser? UpdateCustomerProfile(string id, CustomerProfileUpdateRequest request)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var existing = GetCustomerUserById(connection, transaction, id);
+        if (existing is null)
+        {
+            transaction.Rollback();
+            return null;
+        }
+
+        var normalizedName = NormalizeCustomerProfileValue(request.Name, "Tên", 120);
+        var normalizedEmail = NormalizeCustomerProfileValue(request.Email, "Email", 200);
+        var normalizedPhone = NormalizeCustomerProfileValue(request.Phone, "Số điện thoại", 30);
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.CustomerUsers
+            SET Name = ?,
+                Email = ?,
+                Phone = ?
+            WHERE Id = ?;
+            """,
+            normalizedName,
+            normalizedEmail,
+            normalizedPhone,
+            id);
+
+        AppendAuditLog(
+            connection,
+            transaction,
+            normalizedName,
+            "CUSTOMER",
+            "Cập nhật hồ sơ khách hàng",
+            id);
+
+        var saved = GetCustomerUserById(connection, transaction, id);
+
+        transaction.Commit();
+        return saved;
+    }
+
     public EndUser? UpdateEndUserStatus(string id, EndUserStatusUpdateRequest request)
     {
         using var connection = OpenConnection();
@@ -709,5 +754,21 @@ public sealed partial class AdminDataRepository
             );
             """,
             MaxAuditLogs);
+    }
+
+    private static string NormalizeCustomerProfileValue(string? value, string fieldName, int maxLength)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new ArgumentException($"{fieldName} là bắt buộc.");
+        }
+
+        if (normalized.Length > maxLength)
+        {
+            throw new ArgumentException($"{fieldName} không được vượt quá {maxLength} ký tự.");
+        }
+
+        return normalized;
     }
 }
