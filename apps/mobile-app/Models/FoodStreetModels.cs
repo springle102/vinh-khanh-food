@@ -165,6 +165,13 @@ public sealed class UserProfileCard
     public string MetaLine { get; set; } = string.Empty;
 }
 
+public sealed class UserProfileUpdateRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+}
+
 public sealed class SettingsMenuItem
 {
     public string Icon { get; set; } = string.Empty;

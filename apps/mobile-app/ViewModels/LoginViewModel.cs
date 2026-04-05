@@ -95,8 +95,28 @@ public sealed class LoginViewModel : LocalizedViewModelBase
         return Task.CompletedTask;
     }
 
-    private Task GoToHomeAsync()
-        => Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.HomeMap));
+    private async Task GoToHomeAsync()
+    {
+        var normalizedIdentifier = Identifier?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(normalizedIdentifier))
+        {
+            var selectedProfile = await _dataService.SelectUserProfileAsync(normalizedIdentifier);
+            if (selectedProfile is null)
+            {
+                await Shell.Current.DisplayAlertAsync(
+                    LanguageService.GetText("login_tab"),
+                    LanguageService.GetText("login_identifier_not_found"),
+                    LanguageService.GetText("common_ok"));
+                return;
+            }
+
+            Identifier = !string.IsNullOrWhiteSpace(selectedProfile.Email)
+                ? selectedProfile.Email
+                : selectedProfile.Phone;
+        }
+
+        await Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.HomeMap));
+    }
 
     private Task OpenLanguageSelectionAsync()
         => Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.LanguageSelection));

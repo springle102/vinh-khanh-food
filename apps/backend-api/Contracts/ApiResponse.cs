@@ -68,6 +68,11 @@ public sealed record EndUserStatusUpdateRequest(
     string ActorName,
     string ActorRole);
 
+public sealed record CustomerProfileUpdateRequest(
+    string Name,
+    string Email,
+    string Phone);
+
 public sealed record GeocodingLocationResponse(
     string Address,
     string District,

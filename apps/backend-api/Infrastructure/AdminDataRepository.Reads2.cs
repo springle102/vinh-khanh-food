@@ -272,6 +272,16 @@ public sealed partial class AdminDataRepository
         return reader.Read() ? MapAdminUser(reader) : null;
     }
 
+    public CustomerUser? GetCustomerUserById(string id)
+    {
+        using var connection = OpenConnection();
+        return GetCustomerUserById(connection, null, id);
+    }
+
+    private CustomerUser? GetCustomerUserById(SqlConnection connection, SqlTransaction? transaction, string id)
+        => GetCustomerUsers(connection, transaction)
+            .FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+
     private EndUser? GetEndUserById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
