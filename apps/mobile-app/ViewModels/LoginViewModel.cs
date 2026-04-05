@@ -3,10 +3,9 @@ using VinhKhanh.MobileApp.Services;
 
 namespace VinhKhanh.MobileApp.ViewModels;
 
-public sealed class LoginViewModel : BaseViewModel
+public sealed class LoginViewModel : LocalizedViewModelBase
 {
     private readonly IFoodStreetDataService _dataService;
-    private readonly IAppLanguageService _languageService;
     private bool _isLoginMode = true;
     private string _identifier = string.Empty;
     private string _password = string.Empty;
@@ -15,10 +14,9 @@ public sealed class LoginViewModel : BaseViewModel
     public LoginViewModel(
         IFoodStreetDataService dataService,
         IAppLanguageService languageService)
+        : base(languageService)
     {
         _dataService = dataService;
-        _languageService = languageService;
-        _languageService.LanguageChanged += (_, _) => RefreshLocalizedTexts();
     }
 
     public bool IsLoginMode
@@ -48,22 +46,22 @@ public sealed class LoginViewModel : BaseViewModel
         set => SetProperty(ref _password, value);
     }
 
-    public string BrandTitleText => _languageService.GetText("brand_title");
-    public string PortalSubtitleText => _languageService.GetText("login_portal_subtitle");
-    public string LoginTabText => _languageService.GetText("login_tab");
-    public string SignUpTabText => _languageService.GetText("signup_tab");
-    public string IdentifierPlaceholderText => _languageService.GetText("login_identifier_placeholder");
-    public string PasswordPlaceholderText => _languageService.GetText("login_password_placeholder");
-    public string ForgotPasswordText => _languageService.GetText("login_forgot_password");
+    public string BrandTitleText => LanguageService.GetText("brand_title");
+    public string PortalSubtitleText => LanguageService.GetText("login_portal_subtitle");
+    public string LoginTabText => LanguageService.GetText("login_tab");
+    public string SignUpTabText => LanguageService.GetText("signup_tab");
+    public string IdentifierPlaceholderText => LanguageService.GetText("login_identifier_placeholder");
+    public string PasswordPlaceholderText => LanguageService.GetText("login_password_placeholder");
+    public string ForgotPasswordText => LanguageService.GetText("login_forgot_password");
     public string PrimaryButtonText => IsLoginMode
-        ? _languageService.GetText("login_button")
-        : _languageService.GetText("signup_button");
-    public string GoogleLoginText => _languageService.GetText("login_google");
-    public string FacebookLoginText => _languageService.GetText("login_facebook");
-    public string AppleLoginText => _languageService.GetText("login_apple");
-    public string CreateAccountText => _languageService.GetText("login_create_account");
-    public string CurrentLanguageDisplayName => _languageService.GetLanguageDefinition(_languageService.CurrentLanguage).DisplayName;
-    public string CurrentLanguageFlag => _languageService.GetLanguageDefinition(_languageService.CurrentLanguage).Flag;
+        ? LanguageService.GetText("login_button")
+        : LanguageService.GetText("signup_button");
+    public string GoogleLoginText => LanguageService.GetText("login_google");
+    public string FacebookLoginText => LanguageService.GetText("login_facebook");
+    public string AppleLoginText => LanguageService.GetText("login_apple");
+    public string CreateAccountText => LanguageService.GetText("login_create_account");
+    public string CurrentLanguageDisplayName => LanguageService.GetLanguageDefinition(LanguageService.CurrentLanguage).DisplayName;
+    public string CurrentLanguageFlag => LanguageService.GetLanguageDefinition(LanguageService.CurrentLanguage).Flag;
 
     public AsyncCommand<string> SwitchModeCommand => new(SwitchModeAsync);
     public AsyncCommand LoginCommand => new(GoToHomeAsync);
@@ -88,7 +86,7 @@ public sealed class LoginViewModel : BaseViewModel
             _isLoaded = true;
         }
 
-        RefreshLocalizedTexts();
+        RefreshLocalizedBindings();
     }
 
     private Task SwitchModeAsync(string? mode)
@@ -102,22 +100,4 @@ public sealed class LoginViewModel : BaseViewModel
 
     private Task OpenLanguageSelectionAsync()
         => Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.LanguageSelection));
-
-    private void RefreshLocalizedTexts()
-    {
-        OnPropertyChanged(nameof(BrandTitleText));
-        OnPropertyChanged(nameof(PortalSubtitleText));
-        OnPropertyChanged(nameof(LoginTabText));
-        OnPropertyChanged(nameof(SignUpTabText));
-        OnPropertyChanged(nameof(IdentifierPlaceholderText));
-        OnPropertyChanged(nameof(PasswordPlaceholderText));
-        OnPropertyChanged(nameof(ForgotPasswordText));
-        OnPropertyChanged(nameof(PrimaryButtonText));
-        OnPropertyChanged(nameof(GoogleLoginText));
-        OnPropertyChanged(nameof(FacebookLoginText));
-        OnPropertyChanged(nameof(AppleLoginText));
-        OnPropertyChanged(nameof(CreateAccountText));
-        OnPropertyChanged(nameof(CurrentLanguageDisplayName));
-        OnPropertyChanged(nameof(CurrentLanguageFlag));
-    }
 }

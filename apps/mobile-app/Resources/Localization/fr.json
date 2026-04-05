@@ -62,5 +62,12 @@
   "qr_manual_prompt_message": "Saisissez un code QR ou un identifiant POI pour tester",
   "qr_manual_prompt_accept": "Ouvrir",
   "qr_manual_prompt_cancel": "Annuler",
-  "qr_manual_prompt_placeholder": "ex. poi-bbq-night"
+  "qr_manual_prompt_placeholder": "ex. poi-bbq-night",
+  "poi_detail_price_range": "Price range",
+  "poi_detail_food_items": "Dishes",
+  "poi_detail_promotions": "Promotions",
+  "poi_detail_opening_hours": "Opening hours",
+  "poi_detail_tags": "Tags",
+  "poi_detail_no_food_items": "No dishes are available for this place yet.",
+  "poi_detail_no_promotions": "No promotions are available right now."
 }

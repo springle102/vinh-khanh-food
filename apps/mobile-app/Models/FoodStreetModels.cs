@@ -55,16 +55,69 @@ public sealed class PoiExperienceDetail
     public string Id { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
     public string Address { get; set; } = string.Empty;
+    public string PriceRange { get; set; } = string.Empty;
+    public string OpeningHours { get; set; } = string.Empty;
     public double Latitude { get; set; }
     public double Longitude { get; set; }
     public double Rating { get; set; }
     public int ReviewCount { get; set; }
     public bool IsFeatured { get; set; }
+    public List<string> Tags { get; set; } = [];
+    public List<PoiFoodItemDetail> FoodItems { get; set; } = [];
+    public List<PoiPromotionDetail> Promotions { get; set; } = [];
     public LocalizedTextSet Name { get; } = new();
     public LocalizedTextSet Summary { get; } = new();
     public LocalizedTextSet Description { get; } = new();
     public LocalizedTextSet AudioUrls { get; } = new();
     public List<string> Images { get; set; } = [];
+}
+
+public sealed class PoiFoodItemDetail
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string PriceRange { get; set; } = string.Empty;
+    public string ImageUrl { get; set; } = string.Empty;
+    public string SpicyLevel { get; set; } = string.Empty;
+    public string SpicyLevelLabel { get; set; } = string.Empty;
+
+    public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+    public bool HasPriceRange => !string.IsNullOrWhiteSpace(PriceRange);
+    public bool HasImage => !string.IsNullOrWhiteSpace(ImageUrl);
+    public bool HasSpicyLevel => !string.IsNullOrWhiteSpace(SpicyLevelLabel);
+}
+
+public sealed class PoiPromotionDetail
+{
+    public string Id { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTimeOffset StartAt { get; set; }
+    public DateTimeOffset EndAt { get; set; }
+    public string StatusLabel { get; set; } = string.Empty;
+    public string PeriodText { get; set; } = string.Empty;
+
+    public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+    public bool HasPeriod => !string.IsNullOrWhiteSpace(PeriodText);
+
+    public string StatusBackgroundColor => Status.Trim().ToLowerInvariant() switch
+    {
+        "active" => "#E6F6EC",
+        "upcoming" => "#EEF4FF",
+        "expired" => "#F3F4F6",
+        _ => "#F8F3EC"
+    };
+
+    public string StatusTextColor => Status.Trim().ToLowerInvariant() switch
+    {
+        "active" => "#0F7B45",
+        "upcoming" => "#3159B8",
+        "expired" => "#6B7280",
+        _ => "#7A5130"
+    };
+
 }
 
 public sealed class MapHeatPoint

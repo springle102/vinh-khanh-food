@@ -24,9 +24,9 @@
             <ScrollView>
                 <VerticalStackLayout Padding="22,18,22,124" Spacing="14">
                     <Grid ColumnDefinitions="32,*,32" HeightRequest="34" VerticalOptions="Center">
-                        <Label FontSize="22" HorizontalTextAlignment="Center" Text="‹" VerticalTextAlignment="Center" />
+                        <Label FontSize="22" HorizontalTextAlignment="Center" Text="&#x2039;" VerticalTextAlignment="Center" />
                         <Label Grid.Column="1" HorizontalTextAlignment="Center" Text="{Binding HeaderTitleText}" FontFamily="OpenSansSemibold" FontSize="22" VerticalTextAlignment="Center" />
-                        <Label Grid.Column="2" Opacity="0" Text="‹" />
+                        <Label Grid.Column="2" Opacity="0" Text="&#x2039;" />
                     </Grid>
 
                     <Border
@@ -58,7 +58,7 @@
                                         StrokeThickness="1"
                                         StrokeShape="RoundRectangle 15"
                                         VerticalOptions="End">
-                                        <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="13" Text="✎" TextColor="{StaticResource BrandPrimary}" />
+                                        <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="13" Text="&#x270E;" TextColor="{StaticResource BrandPrimary}" />
                                     </Border>
                                 </Grid>
 
@@ -68,7 +68,7 @@
                                             <Label Style="{StaticResource MetaTextStyle}" Text="{Binding UserNameLabelText}" />
                                             <Label FontFamily="OpenSansSemibold" FontSize="18" Text="{Binding Profile.FullName}" />
                                         </VerticalStackLayout>
-                                        <Label Grid.Column="1" FontSize="14" Text="✎" TextColor="{StaticResource BrandPrimary}" VerticalOptions="Center" />
+                                        <Label Grid.Column="1" FontSize="14" Text="&#x270E;" TextColor="{StaticResource BrandPrimary}" VerticalOptions="Center" />
                                     </Grid>
 
                                     <BoxView HeightRequest="1" Color="#F0E8DE" />
@@ -80,7 +80,7 @@
                                             <Label FontFamily="OpenSansSemibold" FontSize="15" Text="{Binding Profile.Phone}" />
                                             <Label FontSize="12" Text="{Binding Profile.MetaLine}" TextColor="{StaticResource BrandTextMuted}" />
                                         </VerticalStackLayout>
-                                        <Label Grid.Column="1" FontSize="14" Text="✎" TextColor="{StaticResource BrandPrimary}" VerticalOptions="Center" />
+                                        <Label Grid.Column="1" FontSize="14" Text="&#x270E;" TextColor="{StaticResource BrandPrimary}" VerticalOptions="Center" />
                                     </Grid>
                                 </VerticalStackLayout>
                             </Grid>
@@ -145,7 +145,7 @@
                                         <Grid Padding="16,14" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
                                             <Label FontSize="19" Text="{Binding Icon}" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
                                             <Label Grid.Column="1" FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding Title}" VerticalOptions="Center" />
-                                            <Label Grid.Column="2" FontSize="22" Text="›" TextColor="{StaticResource BrandTextMuted}" VerticalOptions="Center" />
+                                            <Label Grid.Column="2" FontSize="22" Text="&#x203A;" TextColor="{StaticResource BrandTextMuted}" VerticalOptions="Center" />
                                         </Grid>
                                         <BoxView Grid.Row="1" Margin="16,0" HeightRequest="1" Color="#F2ECE4" />
                                     </Grid>

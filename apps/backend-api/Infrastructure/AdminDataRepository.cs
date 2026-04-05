@@ -11,6 +11,9 @@ public sealed partial class AdminDataRepository
     private const int MaxAuditLogs = 120;
     private readonly string _connectionString;
     private readonly string _seedSqlServerPath;
+    private readonly bool _allowCreateDatabase;
+    private readonly bool _allowSeedDatabase;
+    private readonly bool _allowSchemaUpdates;
     private readonly ILogger<AdminDataRepository> _logger;
 
     public AdminDataRepository(
@@ -21,6 +24,9 @@ public sealed partial class AdminDataRepository
         _logger = logger;
         _connectionString = ResolveConnectionString(configuration);
         _seedSqlServerPath = ResolveSeedSqlPath(configuration, environment);
+        _allowCreateDatabase = ResolveDatabaseInitializationFlag(configuration, "AllowCreateDatabase");
+        _allowSeedDatabase = ResolveDatabaseInitializationFlag(configuration, "AllowSeedDatabase");
+        _allowSchemaUpdates = ResolveDatabaseInitializationFlag(configuration, "AllowSchemaUpdates");
         InitializeDatabase();
     }
 
@@ -313,8 +319,21 @@ public sealed partial class AdminDataRepository
 
             if (!hasCoreTables)
             {
+                if (!_allowSeedDatabase)
+                {
+                    throw new InvalidOperationException(
+                        "Database hiện tại không có đủ bảng lõi và chế độ tự khởi tạo đang tắt. Hãy trỏ ConnectionStrings:AdminSqlServer tới đúng shared database hiện có hoặc chỉ bật DatabaseInitialization:AllowSeedDatabase khi thực sự cần.");
+                }
+
                 connection.Close();
                 EnsureDatabaseSeeded();
+            }
+
+            if (!_allowSchemaUpdates)
+            {
+                _logger.LogInformation(
+                    "Automatic database schema updates are disabled. Backend will use the existing shared database schema as-is.");
+                return;
             }
 
             using var verifiedConnection = OpenConnection();

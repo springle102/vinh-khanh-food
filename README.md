@@ -1,10 +1,20 @@
-﻿# Vinh Khanh Food
+# Vinh Khanh Food
 
 README này là tài liệu tổng hợp duy nhất cho toàn bộ đồ án. Repository hiện tại gồm 3 phần chính:
 
 - `apps/admin-web`: trang quản trị viết bằng React + TypeScript + Vite, dành cho `SUPER_ADMIN` và `PLACE_OWNER`
 - `apps/backend-api`: Web API viết bằng ASP.NET Core, làm trung tâm xử lý dữ liệu và kết nối SQL Server
 - `apps/mobile-app`: ứng dụng .NET MAUI Android dành cho người dùng cuối
+
+## Các lỗi đang phát sinh
+- Lỗi map hiện thành phố Thủ Đức, không hiện TPHCM
+-Chưa dịch được triệt để ngôn ngữ. (vẫn còn lẫn lộn ngôn ngữ)
+- Quản lý tour chưa hợp lí
+- Lỗi khách hàng chưa sửa được thông tin cá nhân
+- Chưa làm backend xử lí đăng nhập trên app và và đăng kí
+- Chưa xử lí backend đăng nhập bằng google, facebook
+- Cần thêm chatbox AI cho app (xài API key của Gemini)
+- Chưa làm giới hạn ngôn ngữ được nghe khi xài bản free
 
 ## Tổng quan kiến trúc
 

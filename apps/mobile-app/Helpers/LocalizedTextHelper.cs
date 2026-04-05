@@ -14,7 +14,7 @@ public static class LocalizedTextHelper
 
         return source switch
         {
-            string text => text,
+            string text => TextEncodingHelper.NormalizeDisplayText(text),
             LocalizedTextSet set => Resolve(set.Values, languageCode),
             IReadOnlyDictionary<string, string> values => Resolve(values, languageCode),
             IDictionary<string, string> values => Resolve(values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase), languageCode),
@@ -33,11 +33,12 @@ public static class LocalizedTextHelper
         {
             if (values.TryGetValue(candidate, out var value) && !string.IsNullOrWhiteSpace(value))
             {
-                return value.Trim();
+                return TextEncodingHelper.NormalizeDisplayText(value);
             }
         }
 
-        return values.Values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+        return TextEncodingHelper.NormalizeDisplayText(
+            values.Values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)));
     }
 
     private static IReadOnlyDictionary<string, string> ReadFromObject(object source)
@@ -53,7 +54,7 @@ public static class LocalizedTextHelper
             var value = property.GetValue(source) as string;
             if (!string.IsNullOrWhiteSpace(value))
             {
-                dictionary[property.Name] = value.Trim();
+                dictionary[property.Name] = TextEncodingHelper.NormalizeDisplayText(value);
             }
         }
 

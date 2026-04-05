@@ -1,43 +1,35 @@
 using System.Collections.ObjectModel;
-using Microsoft.Maui.ApplicationModel;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 using VinhKhanh.MobileApp.Services;
 
 namespace VinhKhanh.MobileApp.ViewModels;
 
-public sealed class LanguageSelectionViewModel : BaseViewModel
+public sealed class LanguageSelectionViewModel : LocalizedViewModelBase
 {
     private readonly IFoodStreetDataService _dataService;
-    private readonly IAppLanguageService _languageService;
     private string? _pendingQrCode;
 
     public LanguageSelectionViewModel(
         IFoodStreetDataService dataService,
         IAppLanguageService languageService)
+        : base(languageService)
     {
         _dataService = dataService;
-        _languageService = languageService;
-        _languageService.LanguageChanged += (_, _) =>
-            MainThread.BeginInvokeOnMainThread(async () =>
-            {
-                await LoadAsync();
-                RefreshLocalizedTexts();
-            });
     }
 
     public ObservableCollection<LanguageOption> Languages { get; } = [];
 
     public string BackgroundImageUrl => _dataService.GetBackdropImageUrl();
-    public string BrandTitleText => _languageService.GetText("brand_title");
+    public string BrandTitleText => LanguageService.GetText("brand_title");
     public string ScanSuccessText => HasPendingQrCode
-        ? _languageService.GetText("qr_success_title")
-        : _languageService.GetText("language_selection_title");
+        ? LanguageService.GetText("qr_success_title")
+        : LanguageService.GetText("language_selection_title");
     public string ChooseLanguageText => HasPendingQrCode
-        ? _languageService.GetText("qr_choose_language")
-        : _languageService.GetText("language_selection_subtitle");
-    public string ContinueText => _languageService.GetText("qr_continue");
-    public string PendingLabelText => _languageService.GetText("language_selection_pending_label");
+        ? LanguageService.GetText("qr_choose_language")
+        : LanguageService.GetText("language_selection_subtitle");
+    public string ContinueText => LanguageService.GetText("qr_continue");
+    public string PendingLabelText => LanguageService.GetText("language_selection_pending_label");
     public bool HasPendingQrCode => !string.IsNullOrWhiteSpace(_pendingQrCode);
     public string PendingQrCodeText => _pendingQrCode ?? string.Empty;
 
@@ -55,7 +47,7 @@ public sealed class LanguageSelectionViewModel : BaseViewModel
         _pendingQrCode = string.IsNullOrWhiteSpace(qrCode)
             ? null
             : Uri.UnescapeDataString(qrCode.Trim());
-        RefreshLocalizedTexts();
+        RefreshLocalizedBindings();
     }
 
     private async Task SelectLanguageAsync(LanguageOption? language)
@@ -70,15 +62,15 @@ public sealed class LanguageSelectionViewModel : BaseViewModel
             item.IsSelected = string.Equals(item.Code, language.Code, StringComparison.OrdinalIgnoreCase);
         }
 
-        await _languageService.SetLanguageAsync(language.Code);
+        await LanguageService.SetLanguageAsync(language.Code);
     }
 
     private async Task ContinueAsync()
     {
-        if (!_languageService.HasSavedLanguageSelection)
+        if (!LanguageService.HasSavedLanguageSelection)
         {
-            var selectedLanguageCode = Languages.FirstOrDefault(item => item.IsSelected)?.Code ?? _languageService.CurrentLanguage;
-            await _languageService.SetLanguageAsync(selectedLanguageCode);
+            var selectedLanguageCode = Languages.FirstOrDefault(item => item.IsSelected)?.Code ?? LanguageService.CurrentLanguage;
+            await LanguageService.SetLanguageAsync(selectedLanguageCode);
         }
 
         var route = AppRoutes.Root(AppRoutes.Login);
@@ -91,16 +83,8 @@ public sealed class LanguageSelectionViewModel : BaseViewModel
         await Shell.Current.GoToAsync(route);
     }
 
-    private void RefreshLocalizedTexts()
-    {
-        OnPropertyChanged(nameof(BrandTitleText));
-        OnPropertyChanged(nameof(ScanSuccessText));
-        OnPropertyChanged(nameof(ChooseLanguageText));
-        OnPropertyChanged(nameof(ContinueText));
-        OnPropertyChanged(nameof(PendingLabelText));
-        OnPropertyChanged(nameof(HasPendingQrCode));
-        OnPropertyChanged(nameof(PendingQrCodeText));
-    }
+    protected override async Task ReloadLocalizedStateAsync()
+        => await LoadAsync();
 
     private static string? ResolvePoiId(string? qrCode)
     {
