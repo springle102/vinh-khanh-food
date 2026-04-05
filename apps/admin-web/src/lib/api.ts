@@ -265,6 +265,7 @@ export const adminApi = {
   },
   savePoi: (poi: {
     id?: string;
+    requestedId?: string;
     slug: string;
     address: string;
     lat: number;
@@ -272,7 +273,6 @@ export const adminApi = {
     categoryId: string;
     status: Poi["status"];
     featured: boolean;
-    defaultLanguageCode: Poi["defaultLanguageCode"];
     district: string;
     ward: string;
     priceRange: string;
@@ -337,7 +337,9 @@ export const adminApi = {
     theme: string;
     description: string;
     durationMinutes: number;
+    difficulty: string;
     coverImageUrl: string;
+    isFeatured: boolean;
     stopPoiIds: string[];
     isActive: boolean;
     actorName: string;

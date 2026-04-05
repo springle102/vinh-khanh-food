@@ -81,7 +81,6 @@ public sealed class Poi
     public string CategoryId { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool Featured { get; set; }
-    public string DefaultLanguageCode { get; set; } = "vi";
     public string District { get; set; } = string.Empty;
     public string Ward { get; set; } = string.Empty;
     public string PriceRange { get; set; } = string.Empty;
@@ -183,7 +182,9 @@ public sealed class TourRoute
     public string Theme { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public int DurationMinutes { get; set; }
+    public string Difficulty { get; set; } = "custom";
     public string CoverImageUrl { get; set; } = string.Empty;
+    public bool IsFeatured { get; set; }
     public List<string> StopPoiIds { get; set; } = [];
     public bool IsActive { get; set; }
     public string UpdatedBy { get; set; } = string.Empty;

@@ -516,7 +516,7 @@ public sealed partial class FoodStreetMockDataService
         var poiLocations = orderedPois.Select(poi =>
         {
             translationsByPoiId.TryGetValue(poi.Id, out var poiTranslations);
-            var translation = SelectTranslation(poi, poiTranslations, _languageService.CurrentLanguage);
+            var translation = SelectTranslation(poiTranslations, _languageService.CurrentLanguage);
             var title = FirstNonEmpty(translation?.Title, CreateTitleFromSlug(poi.Slug), poi.Id);
             var category = LocalizeCategory(GetCategoryName(categoriesById, poi.CategoryId));
             var shortDescription = FirstNonEmpty(translation?.ShortText, translation?.FullText);
@@ -978,7 +978,6 @@ public sealed partial class FoodStreetMockDataService
     }
 
     private static TranslationDto? SelectTranslation(
-        PoiDto poi,
         IReadOnlyList<TranslationDto>? translations,
         string currentLanguage)
     {
@@ -998,10 +997,7 @@ public sealed partial class FoodStreetMockDataService
             }
         }
 
-        return translations.FirstOrDefault(item =>
-                   !string.IsNullOrWhiteSpace(item.Title) &&
-                   string.Equals(item.LanguageCode, AppLanguage.NormalizeCode(poi.DefaultLanguageCode), StringComparison.OrdinalIgnoreCase))
-               ?? translations.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.Title))
+        return translations.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.Title))
                ?? translations[0];
     }
 
@@ -1141,7 +1137,6 @@ public sealed partial class FoodStreetMockDataService
         public string CategoryId { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public bool Featured { get; set; }
-        public string DefaultLanguageCode { get; set; } = "vi";
         public string PriceRange { get; set; } = string.Empty;
         public int AverageVisitDuration { get; set; }
         public int PopularityScore { get; set; }

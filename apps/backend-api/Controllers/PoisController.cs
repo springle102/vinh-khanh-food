@@ -9,7 +9,8 @@ namespace VinhKhanh.BackendApi.Controllers;
 [Route("api/v1/pois")]
 public sealed class PoisController(
     AdminDataRepository repository,
-    PoiNarrationService poiNarrationService) : ControllerBase
+    PoiNarrationService poiNarrationService,
+    ILogger<PoisController> logger) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<Poi>>> GetPois(
@@ -116,6 +117,15 @@ public sealed class PoisController(
     [HttpPost]
     public ActionResult<ApiResponse<Poi>> CreatePoi([FromBody] PoiUpsertRequest request)
     {
+        logger.LogInformation(
+            "CreatePoi request received. requestedPoiId={RequestedPoiId}, slug={Slug}, address={Address}, tags={Tags}, actorRole={ActorRole}, actorUserId={ActorUserId}",
+            request.RequestedId,
+            request.Slug,
+            request.Address,
+            string.Join(", ", request.Tags ?? []),
+            request.ActorRole,
+            request.ActorUserId);
+
         if (string.IsNullOrWhiteSpace(request.Slug) || string.IsNullOrWhiteSpace(request.Address))
         {
             return BadRequest(ApiResponse<Poi>.Fail("Slug và địa chỉ POI là bắt buộc."));
@@ -128,6 +138,16 @@ public sealed class PoisController(
     [HttpPut("{id}")]
     public ActionResult<ApiResponse<Poi>> UpdatePoi(string id, [FromBody] PoiUpsertRequest request)
     {
+        logger.LogInformation(
+            "UpdatePoi request received. poiId={PoiId}, requestedPoiId={RequestedPoiId}, slug={Slug}, address={Address}, tags={Tags}, actorRole={ActorRole}, actorUserId={ActorUserId}",
+            id,
+            request.RequestedId,
+            request.Slug,
+            request.Address,
+            string.Join(", ", request.Tags ?? []),
+            request.ActorRole,
+            request.ActorUserId);
+
         var existing = repository.GetPois().Any(item => item.Id == id);
         if (!existing)
         {

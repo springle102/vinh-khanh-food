@@ -2,15 +2,17 @@ import { useState, type ChangeEvent, type FormEvent } from "react";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { DataTable, type DataColumn } from "../../components/ui/DataTable";
+import { ImageSourceField } from "../../components/ui/ImageSourceField";
 import { Input, Textarea } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
-import type { AudioGuide } from "../../data/types";
+import type { AudioGuide, MediaAsset } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
+import { preventImplicitFormSubmit } from "../../lib/forms";
 import { getPoiTitle, getPoiTranslation } from "../../lib/selectors";
-import { cn, languageLabels } from "../../lib/utils";
+import { cn, formatDateTime, languageLabels } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
 import { useNarrationPreview } from "./useNarrationPreview";
 
@@ -19,8 +21,18 @@ type AudioForm = {
   entityId: string;
   languageCode: AudioGuide["languageCode"];
   audioUrl: string;
+  voiceType: AudioGuide["voiceType"];
   sourceType: AudioGuide["sourceType"];
   status: AudioGuide["status"];
+};
+
+type MediaAssetForm = {
+  id?: string;
+  entityType: MediaAsset["entityType"];
+  entityId: string;
+  type: MediaAsset["type"];
+  url: string;
+  altText: string;
 };
 
 type NarrationForm = {
@@ -37,8 +49,23 @@ const defaultAudioForm: AudioForm = {
   entityId: "",
   languageCode: "vi",
   audioUrl: "",
+  voiceType: "standard",
   sourceType: "tts",
   status: "ready",
+};
+
+const defaultMediaAssetForm: MediaAssetForm = {
+  entityType: "poi",
+  entityId: "",
+  type: "image",
+  url: "",
+  altText: "",
+};
+
+const entityTypeLabels: Record<MediaAsset["entityType"], string> = {
+  poi: "POI",
+  food_item: "Món ăn",
+  route: "Tour",
 };
 
 const defaultNarrationForm: NarrationForm = {
@@ -73,15 +100,55 @@ const buildNarrationPreviewText = (title: string, shortText: string, fullText: s
 };
 
 export const MediaPage = () => {
-  const { state, saveAudioGuide, saveTranslation } = useAdminData();
+  const { state, saveAudioGuide, saveMediaAsset, saveTranslation } = useAdminData();
   const { user } = useAuth();
   const { previewState, previewAudioGuide, stopPreview } = useNarrationPreview(state);
   const [audioModalOpen, setAudioModalOpen] = useState(false);
+  const [mediaModalOpen, setMediaModalOpen] = useState(false);
   const [audioForm, setAudioForm] = useState<AudioForm>(defaultAudioForm);
+  const [mediaForm, setMediaForm] = useState<MediaAssetForm>(defaultMediaAssetForm);
   const [narrationForm, setNarrationForm] = useState<NarrationForm>(defaultNarrationForm);
   const [formError, setFormError] = useState("");
   const [isSaving, setSaving] = useState(false);
+  const [mediaFormError, setMediaFormError] = useState("");
+  const [isSavingMedia, setSavingMedia] = useState(false);
   const [isUploadingAudio, setUploadingAudio] = useState(false);
+
+  const getEntityOptions = (entityType: MediaAsset["entityType"]) => {
+    switch (entityType) {
+      case "food_item":
+        return state.foodItems.map((item) => ({
+          id: item.id,
+          label: item.name,
+        }));
+      case "route":
+        return state.routes.map((item) => ({
+          id: item.id,
+          label: item.name,
+        }));
+      case "poi":
+      default:
+        return state.pois.map((item) => ({
+          id: item.id,
+          label: getPoiTitle(state, item.id),
+        }));
+    }
+  };
+
+  const resolveDefaultEntityId = (entityType: MediaAsset["entityType"]) =>
+    getEntityOptions(entityType)[0]?.id ?? "";
+
+  const getEntityDisplayName = (entityType: MediaAsset["entityType"], entityId: string) => {
+    switch (entityType) {
+      case "food_item":
+        return state.foodItems.find((item) => item.id === entityId)?.name ?? entityId;
+      case "route":
+        return state.routes.find((item) => item.id === entityId)?.name ?? entityId;
+      case "poi":
+      default:
+        return getPoiTitle(state, entityId);
+    }
+  };
 
   const loadNarrationForm = (
     entityId: string,
@@ -136,10 +203,14 @@ export const MediaPage = () => {
           entityId: item.entityId,
           languageCode: item.languageCode,
           audioUrl: item.audioUrl,
+          voiceType: item.voiceType,
           sourceType: item.sourceType,
           status: item.status,
         }
-      : { ...defaultAudioForm };
+      : {
+          ...defaultAudioForm,
+          entityId: state.pois[0]?.id ?? "",
+        };
 
     setAudioForm(nextAudioForm);
     setNarrationForm(
@@ -150,6 +221,34 @@ export const MediaPage = () => {
           ),
     );
     setAudioModalOpen(true);
+  };
+
+  const openMediaModal = (item?: MediaAsset) => {
+    setMediaFormError("");
+    setMediaForm(
+      item
+        ? {
+            id: item.id,
+            entityType: item.entityType,
+            entityId: item.entityId,
+            type: item.type,
+            url: item.url,
+            altText: item.altText,
+          }
+        : {
+            ...defaultMediaAssetForm,
+            entityId: resolveDefaultEntityId(defaultMediaAssetForm.entityType),
+          },
+    );
+    setMediaModalOpen(true);
+  };
+
+  const updateMediaEntityType = (entityType: MediaAsset["entityType"]) => {
+    setMediaForm((current) => ({
+      ...current,
+      entityType,
+      entityId: resolveDefaultEntityId(entityType),
+    }));
   };
 
   const handleAudioFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -186,6 +285,12 @@ export const MediaPage = () => {
     setSaving(true);
     setFormError("");
 
+    if (audioForm.sourceType === "uploaded" && !audioForm.audioUrl.trim()) {
+      setFormError("Hãy tải file MP3 từ thiết bị trước khi lưu audio guide.");
+      setSaving(false);
+      return;
+    }
+
     try {
       await saveAudioGuide(
         {
@@ -194,7 +299,7 @@ export const MediaPage = () => {
           entityId: audioForm.entityId,
           languageCode: audioForm.languageCode,
           audioUrl: audioForm.audioUrl,
-          voiceType: "standard",
+          voiceType: audioForm.voiceType,
           sourceType: audioForm.sourceType,
           status: audioForm.status,
         },
@@ -226,6 +331,42 @@ export const MediaPage = () => {
     }
   };
 
+  const handleMediaSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!user) {
+      return;
+    }
+
+    setSavingMedia(true);
+    setMediaFormError("");
+
+    if (!mediaForm.url.trim()) {
+      setMediaFormError("Hãy tải file media từ thiết bị trước khi lưu.");
+      setSavingMedia(false);
+      return;
+    }
+
+    try {
+      await saveMediaAsset(
+        {
+          id: mediaForm.id,
+          entityType: mediaForm.entityType,
+          entityId: mediaForm.entityId,
+          type: mediaForm.type,
+          url: mediaForm.url,
+          altText: mediaForm.altText,
+        },
+        user,
+      );
+
+      setMediaModalOpen(false);
+    } catch (error) {
+      setMediaFormError(getErrorMessage(error));
+    } finally {
+      setSavingMedia(false);
+    }
+  };
+
   const audioRecordsWithNarration = state.audioGuides.filter((item) =>
     state.translations.some(
       (translation) =>
@@ -247,7 +388,7 @@ export const MediaPage = () => {
     entityId: audioForm.entityId,
     languageCode: audioForm.languageCode,
     audioUrl: audioForm.audioUrl,
-    voiceType: "standard",
+    voiceType: audioForm.voiceType,
     sourceType: audioForm.sourceType,
     status: audioForm.status,
     updatedBy: user?.name ?? "Preview",
@@ -262,6 +403,13 @@ export const MediaPage = () => {
   const draftPreviewMessage =
     previewState.audioGuideId === previewAudioDraft.id ? previewState.message : "";
 
+  const editingAudioRecord = audioForm.id
+    ? state.audioGuides.find((item) => item.id === audioForm.id) ?? null
+    : null;
+  const editingMediaAsset = mediaForm.id
+    ? state.mediaAssets.find((item) => item.id === mediaForm.id) ?? null
+    : null;
+
   const audioColumns: DataColumn<AudioGuide>[] = [
     {
       key: "entity",
@@ -271,6 +419,7 @@ export const MediaPage = () => {
         <div>
           <p className="font-semibold text-ink-900">{getPoiTitle(state, item.entityId)}</p>
           <p className="mt-1 text-xs text-ink-500">{languageLabels[item.languageCode]}</p>
+          <p className="mt-1 text-xs text-ink-500">ID: {item.id}</p>
         </div>
       ),
     },
@@ -308,8 +457,9 @@ export const MediaPage = () => {
           <p className="font-medium text-ink-800">
             {item.sourceType === "tts" ? "Text-to-speech" : "Upload audio"}
           </p>
+          <p className="mt-1 text-xs text-ink-500">Giọng đọc: {item.voiceType}</p>
           <p className="mt-1 truncate text-xs text-ink-500">
-            {item.audioUrl || "Chưa có URL audio"}
+            {item.audioUrl || "Chưa có file audio"}
           </p>
         </div>
       ),
@@ -319,7 +469,13 @@ export const MediaPage = () => {
       header: "Trạng thái",
       widthClassName: "min-w-[130px]",
       cellClassName: "whitespace-nowrap",
-      render: (item) => <StatusBadge status={item.status} />,
+      render: (item) => (
+        <div className="space-y-2">
+          <StatusBadge status={item.status} />
+          <p className="text-xs text-ink-500">{formatDateTime(item.updatedAt)}</p>
+          <p className="text-xs text-ink-500">{item.updatedBy}</p>
+        </div>
+      ),
     },
     {
       key: "actions",
@@ -341,6 +497,73 @@ export const MediaPage = () => {
             Chỉnh sửa
           </Button>
         </div>
+      ),
+    },
+  ];
+
+  const mediaAssetColumns: DataColumn<MediaAsset>[] = [
+    {
+      key: "asset",
+      header: "Media",
+      widthClassName: "min-w-[280px]",
+      render: (item) => (
+        <div className="flex items-center gap-3">
+          {item.type === "image" ? (
+            <img
+              src={item.url}
+              alt={item.altText}
+              className="h-16 w-16 rounded-3xl object-cover"
+            />
+          ) : (
+            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-sand-100 text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-500">
+              Video
+            </div>
+          )}
+          <div>
+            <p className="font-semibold text-ink-900">{item.altText || "Chưa có alt text"}</p>
+            <p className="mt-1 text-xs text-ink-500">ID: {item.id}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "entity",
+      header: "Liên kết",
+      widthClassName: "min-w-[260px]",
+      render: (item) => (
+        <div>
+          <p className="font-medium text-ink-800">{getEntityDisplayName(item.entityType, item.entityId)}</p>
+          <p className="mt-1 text-xs text-ink-500">
+            {entityTypeLabels[item.entityType]} / {item.entityId}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "type",
+      header: "Loại",
+      widthClassName: "min-w-[180px]",
+      render: (item) => (
+        <div>
+          <StatusBadge status={item.type === "image" ? "published" : "processing"} label={item.type} />
+          <p className="mt-2 truncate text-xs text-ink-500">{item.url}</p>
+        </div>
+      ),
+    },
+    {
+      key: "createdAt",
+      header: "Tạo lúc",
+      widthClassName: "min-w-[160px]",
+      render: (item) => <p className="text-sm text-ink-600">{formatDateTime(item.createdAt)}</p>,
+    },
+    {
+      key: "actions",
+      header: "Thao tác",
+      widthClassName: "min-w-[160px]",
+      render: (item) => (
+        <Button variant="secondary" onClick={() => openMediaModal(item)}>
+          Chỉnh sửa
+        </Button>
       ),
     },
   ];
@@ -398,6 +621,26 @@ export const MediaPage = () => {
         </div>
       </Card>
 
+      <Card>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <h2 className="section-heading">Media assets</h2>
+            <p className="mt-2 text-sm text-ink-500">
+              Hiển thị đầy đủ các cột của bảng media asset để admin không bỏ sót dữ liệu liên kết.
+            </p>
+          </div>
+          <Button onClick={() => openMediaModal()}>Thêm media asset</Button>
+        </div>
+        <div className="mt-6">
+          <DataTable
+            data={state.mediaAssets}
+            columns={mediaAssetColumns}
+            rowKey={(row) => row.id}
+            tableClassName="min-w-[1200px]"
+          />
+        </div>
+      </Card>
+
       <Modal
         open={audioModalOpen}
         onClose={() => {
@@ -408,7 +651,7 @@ export const MediaPage = () => {
         description=""
         maxWidthClassName="max-w-6xl"
       >
-        <form className="space-y-6" onSubmit={handleAudioSubmit}>
+        <form className="space-y-6" onSubmit={handleAudioSubmit} onKeyDown={preventImplicitFormSubmit}>
           <div className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <div className="space-y-5">
               <div className="grid gap-5 md:grid-cols-2">
@@ -460,6 +703,23 @@ export const MediaPage = () => {
                   >
                     <option value="uploaded">Uploaded</option>
                     <option value="tts">Text-to-speech</option>
+                  </Select>
+                </div>
+                <div>
+                  <label className="field-label">Giọng đọc</label>
+                  <Select
+                    value={audioForm.voiceType}
+                    onChange={(event) =>
+                      setAudioForm((current) => ({
+                        ...current,
+                        voiceType: event.target.value as AudioGuide["voiceType"],
+                      }))
+                    }
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="north">North</option>
+                    <option value="central">Central</option>
+                    <option value="south">South</option>
                   </Select>
                 </div>
               </div>
@@ -530,6 +790,23 @@ export const MediaPage = () => {
                   </label>
                 </div>
               </div>
+
+              {editingAudioRecord ? (
+                <div className="grid gap-4 md:grid-cols-3">
+                  <Card className="border border-sand-100 bg-sand-50">
+                    <p className="text-sm text-ink-500">Audio ID</p>
+                    <p className="mt-2 break-all font-semibold text-ink-900">{editingAudioRecord.id}</p>
+                  </Card>
+                  <Card className="border border-sand-100 bg-sand-50">
+                    <p className="text-sm text-ink-500">Cập nhật bởi</p>
+                    <p className="mt-2 font-semibold text-ink-900">{editingAudioRecord.updatedBy}</p>
+                  </Card>
+                  <Card className="border border-sand-100 bg-sand-50">
+                    <p className="text-sm text-ink-500">Cập nhật lúc</p>
+                    <p className="mt-2 font-semibold text-ink-900">{formatDateTime(editingAudioRecord.updatedAt)}</p>
+                  </Card>
+                </div>
+              ) : null}
 
               <div className="rounded-3xl border border-sand-100 bg-sand-50 p-4">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -665,6 +942,125 @@ export const MediaPage = () => {
             </Button>
             <Button type="submit" disabled={isSaving || isUploadingAudio}>
               {isSaving ? "Đang lưu..." : "Lưu"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={mediaModalOpen}
+        onClose={() => setMediaModalOpen(false)}
+        title={mediaForm.id ? "Cập nhật media asset" : "Tạo media asset"}
+        description="Hiển thị và lưu đầy đủ các cột đang có trong bảng MediaAssets."
+        maxWidthClassName="max-w-4xl"
+      >
+        <form className="space-y-6" onSubmit={handleMediaSubmit} onKeyDown={preventImplicitFormSubmit}>
+          <div className="grid gap-5 md:grid-cols-2">
+            <div>
+              <label className="field-label">Entity type</label>
+              <Select
+                value={mediaForm.entityType}
+                onChange={(event) =>
+                  updateMediaEntityType(event.target.value as MediaAsset["entityType"])
+                }
+              >
+                {Object.entries(entityTypeLabels).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="field-label">Entity ID</label>
+              <Select
+                value={mediaForm.entityId}
+                onChange={(event) =>
+                  setMediaForm((current) => ({ ...current, entityId: event.target.value }))
+                }
+              >
+                {getEntityOptions(mediaForm.entityType).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="field-label">Media type</label>
+              <Select
+                value={mediaForm.type}
+                onChange={(event) =>
+                  setMediaForm((current) => ({
+                    ...current,
+                    type: event.target.value as MediaAsset["type"],
+                  }))
+                }
+              >
+                <option value="image">image</option>
+                <option value="video">video</option>
+              </Select>
+            </div>
+            <div>
+              <label className="field-label">Alt text</label>
+              <Input
+                value={mediaForm.altText}
+                onChange={(event) =>
+                  setMediaForm((current) => ({ ...current, altText: event.target.value }))
+                }
+              />
+            </div>
+          </div>
+
+          <ImageSourceField
+            label={mediaForm.type === "image" ? "Tải ảnh media" : "Tải video media"}
+            value={mediaForm.url}
+            onChange={(value) => setMediaForm((current) => ({ ...current, url: value }))}
+            onUpload={async (file) =>
+              (
+                await adminApi.uploadFile(
+                  file,
+                  mediaForm.type === "image" ? "images/media-assets" : "videos/media-assets",
+                )
+              ).url
+            }
+            accept={mediaForm.type === "image" ? "image/*" : "video/*"}
+            previewType={mediaForm.type === "image" ? "image" : "video"}
+            helperText={
+              mediaForm.type === "image"
+                ? "Ảnh từ thiết bị sẽ được upload lên backend storage trước khi lưu media asset."
+                : "Video từ thiết bị sẽ được upload lên backend storage trước khi lưu media asset."
+            }
+            emptyText={
+              mediaForm.type === "image"
+                ? "Chưa có ảnh nào được tải lên."
+                : "Chưa có video nào được tải lên."
+            }
+          />
+
+          {editingMediaAsset ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card className="border border-sand-100 bg-sand-50">
+                <p className="text-sm text-ink-500">Media ID</p>
+                <p className="mt-2 break-all font-semibold text-ink-900">{editingMediaAsset.id}</p>
+              </Card>
+              <Card className="border border-sand-100 bg-sand-50">
+                <p className="text-sm text-ink-500">Tạo lúc</p>
+                <p className="mt-2 font-semibold text-ink-900">{formatDateTime(editingMediaAsset.createdAt)}</p>
+              </Card>
+            </div>
+          ) : null}
+
+          {mediaFormError ? (
+            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{mediaFormError}</div>
+          ) : null}
+
+          <div className="flex justify-end gap-3 border-t border-sand-100 pt-5">
+            <Button variant="ghost" onClick={() => setMediaModalOpen(false)}>
+              Hủy
+            </Button>
+            <Button type="submit" disabled={isSavingMedia || !mediaForm.entityId || !mediaForm.url.trim()}>
+              {isSavingMedia ? "Đang lưu..." : "Lưu media asset"}
             </Button>
           </div>
         </form>

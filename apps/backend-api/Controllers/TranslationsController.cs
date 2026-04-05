@@ -9,7 +9,8 @@ namespace VinhKhanh.BackendApi.Controllers;
 [Route("api/v1/translations")]
 public sealed class TranslationsController(
     AdminDataRepository repository,
-    TranslationProxyService translationProxyService) : ControllerBase
+    TranslationProxyService translationProxyService,
+    ILogger<TranslationsController> logger) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<Translation>>> GetTranslations(
@@ -40,6 +41,15 @@ public sealed class TranslationsController(
     [HttpPost]
     public ActionResult<ApiResponse<Translation>> CreateTranslation([FromBody] TranslationUpsertRequest request)
     {
+        logger.LogInformation(
+            "CreateTranslation request received. entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, title={Title}, shortTextLength={ShortTextLength}, fullTextLength={FullTextLength}",
+            request.EntityType,
+            request.EntityId,
+            request.LanguageCode,
+            request.Title,
+            request.ShortText?.Length ?? 0,
+            request.FullText?.Length ?? 0);
+
         if (string.IsNullOrWhiteSpace(request.EntityId) || string.IsNullOrWhiteSpace(request.LanguageCode))
         {
             return BadRequest(ApiResponse<Translation>.Fail("EntityId và languageCode là bắt buộc."));
@@ -52,6 +62,16 @@ public sealed class TranslationsController(
     [HttpPut("{id}")]
     public ActionResult<ApiResponse<Translation>> UpdateTranslation(string id, [FromBody] TranslationUpsertRequest request)
     {
+        logger.LogInformation(
+            "UpdateTranslation request received. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, title={Title}, shortTextLength={ShortTextLength}, fullTextLength={FullTextLength}",
+            id,
+            request.EntityType,
+            request.EntityId,
+            request.LanguageCode,
+            request.Title,
+            request.ShortText?.Length ?? 0,
+            request.FullText?.Length ?? 0);
+
         var existing = repository.GetTranslations().Any(item => item.Id == id);
         if (!existing)
         {

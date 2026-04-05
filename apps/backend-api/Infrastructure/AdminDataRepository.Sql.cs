@@ -185,6 +185,16 @@ public sealed partial class AdminDataRepository
         return $"{prefix}-{suffix}";
     }
 
+    private static string QuoteSqlIdentifier(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException("Ten dinh danh SQL khong hop le.");
+        }
+
+        return $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";
+    }
+
     private static string ResolveConnectionString(IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("AdminSqlServer");

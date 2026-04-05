@@ -196,6 +196,8 @@ const applyOwnerScope = (nextState: AdminDataState) => {
 
 type PoiDraft = Omit<Poi, "id" | "createdAt" | "updatedAt" | "updatedBy"> & {
   id?: string;
+  requestedId?: string;
+  translationLanguageCode: Translation["languageCode"];
   title: string;
   shortText: string;
   fullText: string;
@@ -308,8 +310,21 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
 
   const savePoi = useCallback(
     async (draft: PoiDraft, actor: AdminUser) => {
-      const savedPoi = await adminApi.savePoi({
+      console.debug("[admin-poi] submit-form-draft", {
+        poiId: draft.id ?? null,
+        requestedPoiId: draft.requestedId ?? null,
+        slug: draft.slug,
+        translationLanguageCode: draft.translationLanguageCode,
+        title: draft.title,
+        shortTextLength: draft.shortText.length,
+        fullTextLength: draft.fullText.length,
+        address: draft.address,
+        tags: draft.tags,
+      });
+
+      const poiPayload = {
         id: draft.id,
+        requestedId: draft.requestedId,
         slug: draft.slug,
         address: draft.address,
         lat: draft.lat,
@@ -317,7 +332,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
         categoryId: draft.categoryId,
         status: draft.status,
         featured: draft.featured,
-        defaultLanguageCode: draft.defaultLanguageCode,
         district: draft.district,
         ward: draft.ward,
         priceRange: draft.priceRange,
@@ -328,31 +342,48 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
         updatedBy: actor.name,
         actorRole: actor.role,
         actorUserId: actor.id,
+      };
+      console.debug("[admin-poi] poi-api-payload", poiPayload);
+
+      const savedPoi = await adminApi.savePoi({
+        ...poiPayload,
       });
       let nextState = state;
 
       try {
-        await adminApi.saveTranslation({
+        const translationPayload: Parameters<typeof adminApi.saveTranslation>[0] = {
           entityType: "poi",
           entityId: savedPoi.id,
           id: state.translations.find(
             (item) =>
               item.entityType === "poi" &&
               item.entityId === savedPoi.id &&
-              item.languageCode === draft.defaultLanguageCode,
+              item.languageCode === draft.translationLanguageCode,
           )?.id,
-          languageCode: draft.defaultLanguageCode,
+          languageCode: draft.translationLanguageCode,
           title: draft.title,
           shortText: draft.shortText,
           fullText: draft.fullText,
           seoTitle: draft.seoTitle,
           seoDescription: draft.seoDescription,
-          isPremium: !state.settings.freeLanguages.includes(draft.defaultLanguageCode),
+          isPremium: !state.settings.freeLanguages.includes(draft.translationLanguageCode),
           updatedBy: actor.name,
-        });
+        };
+        console.debug("[admin-poi] translation-api-payload", translationPayload);
+        await adminApi.saveTranslation(translationPayload);
       } finally {
         nextState = await refreshData();
       }
+
+      console.debug("[admin-poi] saved-poi-result", {
+        poi: nextState.pois.find((item) => item.id === savedPoi.id) ?? savedPoi,
+        translation: nextState.translations.find(
+          (item) =>
+            item.entityType === "poi" &&
+            item.entityId === savedPoi.id &&
+            item.languageCode === draft.translationLanguageCode,
+        ) ?? null,
+      });
 
       return nextState.pois.find((item) => item.id === savedPoi.id) ?? savedPoi;
     },
@@ -407,21 +438,30 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       route: Omit<TourRoute, "id" | "updatedBy" | "updatedAt"> & { id?: string },
       actor: AdminUser,
     ) => {
-      await adminApi.saveRoute({
+      const routePayload = {
         id: route.id,
         name: route.name,
         theme: route.theme,
         description: route.description,
         durationMinutes: route.durationMinutes,
+        difficulty: route.difficulty,
         coverImageUrl: route.coverImageUrl,
+        isFeatured: route.isFeatured,
         stopPoiIds: route.stopPoiIds,
         isActive: route.isActive,
         actorName: actor.name,
         actorRole: actor.role,
         actorUserId: actor.id,
-      });
+      };
+      console.debug("[admin-route] route-api-payload", routePayload);
 
-      await refreshData();
+      await adminApi.saveRoute(routePayload);
+
+      const nextState = await refreshData();
+      console.debug(
+        "[admin-route] saved-route-result",
+        nextState.routes.find((item) => item.id === route.id) ?? null,
+      );
     },
     [refreshData],
   );
@@ -500,8 +540,13 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       asset: Omit<MediaAsset, "id" | "createdAt"> & { id?: string },
       _actor: AdminUser,
     ) => {
+      console.debug("[admin-media] media-asset-api-payload", asset);
       await adminApi.saveMediaAsset(asset);
-      await refreshData();
+      const nextState = await refreshData();
+      console.debug(
+        "[admin-media] saved-media-asset-result",
+        nextState.mediaAssets.find((item) => item.id === asset.id) ?? null,
+      );
     },
     [refreshData],
   );

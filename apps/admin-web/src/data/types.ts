@@ -97,7 +97,6 @@ export interface Poi {
   categoryId: string;
   status: ContentStatus;
   featured: boolean;
-  defaultLanguageCode: LanguageCode;
   district: string;
   ward: string;
   priceRange: string;
@@ -194,7 +193,9 @@ export interface TourRoute {
   theme: string;
   description: string;
   durationMinutes: number;
+  difficulty: string;
   coverImageUrl: string;
+  isFeatured: boolean;
   stopPoiIds: string[];
   isActive: boolean;
   updatedBy: string;

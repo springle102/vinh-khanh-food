@@ -10,6 +10,7 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import type { FoodItem } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
+import { preventImplicitFormSubmit } from "../../lib/forms";
 import { getPoiTitle } from "../../lib/selectors";
 import { useAuth } from "../auth/AuthContext";
 
@@ -173,7 +174,7 @@ export const ContentPage = () => {
       </Card>
 
       <Modal open={foodModalOpen} onClose={() => setFoodModalOpen(false)} title="Quản lý món ăn">
-        <form className="space-y-5" onSubmit={handleFoodSubmit}>
+        <form className="space-y-5" onSubmit={handleFoodSubmit} onKeyDown={preventImplicitFormSubmit}>
           <div>
             <label className="field-label">POI</label>
             <Select

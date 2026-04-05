@@ -39,7 +39,6 @@ public sealed record PoiUpsertRequest(
     string CategoryId,
     string Status,
     bool Featured,
-    string DefaultLanguageCode,
     string District,
     string Ward,
     string PriceRange,
@@ -49,7 +48,8 @@ public sealed record PoiUpsertRequest(
     string? OwnerUserId,
     string UpdatedBy,
     string ActorRole,
-    string ActorUserId);
+    string ActorUserId,
+    string? RequestedId);
 
 public sealed record AdminUserUpsertRequest(
     string Name,
@@ -128,7 +128,9 @@ public sealed record TourRouteUpsertRequest(
     string Theme,
     string Description,
     int DurationMinutes,
+    string Difficulty,
     string CoverImageUrl,
+    bool IsFeatured,
     List<string> StopPoiIds,
     bool IsActive,
     string ActorName,

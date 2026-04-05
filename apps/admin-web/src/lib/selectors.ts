@@ -6,14 +6,12 @@ export const getPoiTranslation = (
   poiId: string,
   preferredLanguage?: LanguageCode,
 ) => {
-  const poi = state.pois.find((item) => item.id === poiId);
-  if (!poi) {
+  if (!state.pois.some((item) => item.id === poiId)) {
     return null;
   }
 
   const languages = [
     preferredLanguage,
-    poi.defaultLanguageCode,
     state.settings.defaultLanguage,
     state.settings.fallbackLanguage,
   ].filter(Boolean) as LanguageCode[];

@@ -44,6 +44,7 @@ public sealed partial class AdminDataRepository
             id);
 
         var saved = GetEndUserById(connection, transaction, id);
+
         transaction.Commit();
         return saved;
     }
@@ -57,6 +58,14 @@ public sealed partial class AdminDataRepository
         var isNew = existing is null;
         var mediaId = existing?.Id ?? id ?? CreateId("media");
         var createdAt = existing?.CreatedAt ?? DateTimeOffset.UtcNow;
+
+        _logger.LogInformation(
+            "SaveMediaAsset request received. mediaId={MediaId}, entityType={EntityType}, entityId={EntityId}, mediaType={MediaType}, isNew={IsNew}",
+            mediaId,
+            request.EntityType,
+            request.EntityId,
+            request.Type,
+            isNew);
 
         if (isNew)
         {
@@ -101,6 +110,14 @@ public sealed partial class AdminDataRepository
 
         var saved = GetMediaAssetById(connection, transaction, mediaId)
             ?? throw new InvalidOperationException("Không thể đọc lại media asset sau khi lưu.");
+
+        _logger.LogInformation(
+            "SaveMediaAsset completed. mediaId={MediaId}, entityType={EntityType}, entityId={EntityId}, mediaType={MediaType}, createdAt={CreatedAt}",
+            saved.Id,
+            saved.EntityType,
+            saved.EntityId,
+            saved.Type,
+            saved.CreatedAt);
 
         transaction.Commit();
         return saved;
@@ -203,6 +220,7 @@ public sealed partial class AdminDataRepository
         var name = (request.Name ?? string.Empty).Trim();
         var theme = string.IsNullOrWhiteSpace(request.Theme) ? "Tổng hợp" : request.Theme.Trim();
         var description = (request.Description ?? string.Empty).Trim();
+        var difficulty = string.IsNullOrWhiteSpace(request.Difficulty) ? "custom" : request.Difficulty.Trim();
         var coverImageUrl = (request.CoverImageUrl ?? string.Empty).Trim();
         var existing = !string.IsNullOrWhiteSpace(id) ? GetRouteById(connection, transaction, id) : null;
         var isNew = existing is null;
@@ -233,6 +251,17 @@ public sealed partial class AdminDataRepository
         {
             throw new InvalidOperationException("Tour phải có ít nhất một điểm đến.");
         }
+
+        _logger.LogInformation(
+            "SaveRoute request received. routeId={RouteId}, name={Name}, theme={Theme}, difficulty={Difficulty}, isFeatured={IsFeatured}, stopCount={StopCount}, actorRole={ActorRole}, isNew={IsNew}",
+            routeId,
+            name,
+            theme,
+            difficulty,
+            request.IsFeatured,
+            normalizedStopPoiIds.Count,
+            actorRole,
+            isNew);
 
         var missingPoiIds = normalizedStopPoiIds
             .Where(stopPoiId => !availablePoiIds.Contains(stopPoiId))
@@ -283,8 +312,8 @@ public sealed partial class AdminDataRepository
                 description,
                 request.DurationMinutes,
                 coverImageUrl,
-                "custom",
-                false,
+                difficulty,
+                request.IsFeatured,
                 request.IsActive,
                 actorName,
                 now);
@@ -313,8 +342,8 @@ public sealed partial class AdminDataRepository
                 description,
                 request.DurationMinutes,
                 coverImageUrl,
-                "custom",
-                false,
+                difficulty,
+                request.IsFeatured,
                 request.IsActive,
                 actorName,
                 now,

@@ -55,8 +55,8 @@ public sealed class PoiNarrationService(
         var settings = repository.GetSettings();
         var normalizedRequestedLanguage = NormalizeLanguageCode(
             requestedLanguageCode,
-            poi.DefaultLanguageCode,
-            settings.DefaultLanguage);
+            settings.DefaultLanguage,
+            settings.FallbackLanguage);
         var normalizedVoiceType = NormalizeVoiceType(requestedVoiceType);
         var translations = repository.GetTranslations()
             .Where(item =>
@@ -74,7 +74,6 @@ public sealed class PoiNarrationService(
         var exactTranslation = FindExactPoiTranslation(translations, normalizedRequestedLanguage);
         var sourceTranslation = FindBestSourcePoiTranslation(
             translations,
-            poi,
             normalizedRequestedLanguage,
             settings.DefaultLanguage,
             settings.FallbackLanguage);
@@ -108,9 +107,9 @@ public sealed class PoiNarrationService(
         const string fallbackSourceStatus = "fallback_source";
         var translationStatus = storedStatus;
         string? sourceLanguageCode = sourceTranslation is not null && hasSourceNarration
-            ? NormalizeLanguageCode(sourceTranslation.LanguageCode, poi.DefaultLanguageCode, settings.DefaultLanguage)
+            ? NormalizeLanguageCode(sourceTranslation.LanguageCode, settings.DefaultLanguage, settings.FallbackLanguage)
             : hasExactNarration
-                ? NormalizeLanguageCode(exactTranslation?.LanguageCode, normalizedRequestedLanguage)
+                ? NormalizeLanguageCode(exactTranslation?.LanguageCode, normalizedRequestedLanguage, settings.DefaultLanguage, settings.FallbackLanguage)
                 : null;
         var effectiveLanguageCode = normalizedRequestedLanguage;
         string? fallbackMessage = null;
@@ -283,14 +282,12 @@ public sealed class PoiNarrationService(
 
     private static Translation? FindBestSourcePoiTranslation(
         IReadOnlyList<Translation> translations,
-        Poi poi,
         string languageCode,
         string defaultLanguageCode,
         string fallbackLanguageCode)
     {
         var preferredLanguages = new List<string>();
         AddPreferredLanguage(preferredLanguages, defaultLanguageCode);
-        AddPreferredLanguage(preferredLanguages, poi.DefaultLanguageCode);
         AddPreferredLanguage(preferredLanguages, fallbackLanguageCode);
 
         foreach (var currentLanguageCode in preferredLanguages)
@@ -398,22 +395,11 @@ public sealed class PoiNarrationService(
             return string.Empty;
         }
 
-        if (!HasNarrationContent(normalizedBody))
-        {
-            return normalizedTitle ?? string.Empty;
-        }
-
-        if (!HasNarrationContent(normalizedTitle))
-        {
-            return normalizedBody ?? string.Empty;
-        }
-
-        var narrationTitle = normalizedTitle!;
-        var narrationBody = normalizedBody!;
-
-        return narrationBody.StartsWith(narrationTitle, StringComparison.OrdinalIgnoreCase)
-            ? narrationBody
-            : $"{narrationTitle}. {narrationBody}";
+        // Keep the title separate from the narration body so the UI and TTS
+        // reflect the exact description text entered by the admin.
+        return HasNarrationContent(normalizedBody)
+            ? normalizedBody!
+            : normalizedTitle ?? string.Empty;
     }
 
     private static string BuildUiPlaybackKey(string poiId, string languageCode, string voiceType) =>

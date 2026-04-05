@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { DataTable, type DataColumn } from "../../components/ui/DataTable";
@@ -8,9 +8,10 @@ import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
-import type { AudioGuide, LanguageCode, Poi, PoiDetail, RegionVoice } from "../../data/types";
+import type { AdminDataState, AudioGuide, LanguageCode, Poi, PoiDetail, RegionVoice, Translation } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
-import { getCategoryName, getOwnerName, getPoiTranslation, searchPois } from "../../lib/selectors";
+import { preventImplicitFormSubmit } from "../../lib/forms";
+import { getCategoryName, getOwnerName, searchPois } from "../../lib/selectors";
 import { formatDateTime, formatNumber, languageLabels, slugify } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
 import { OpenStreetMapPicker, type PoiMapItem } from "./OpenStreetMapPicker";
@@ -32,6 +33,7 @@ const voiceLabels: Record<RegionVoice, string> = {
 
 type PoiFormState = {
   id?: string;
+  poiId: string;
   title: string;
   slug: string;
   address: string;
@@ -40,7 +42,7 @@ type PoiFormState = {
   categoryId: string;
   status: Poi["status"];
   featured: boolean;
-  defaultLanguageCode: Poi["defaultLanguageCode"];
+  contentLanguageCode: LanguageCode;
   district: string;
   ward: string;
   priceRange: string;
@@ -56,6 +58,7 @@ type PoiFormState = {
 };
 
 const createDefaultForm = (categoryId: string, status: Poi["status"] = "draft"): PoiFormState => ({
+  poiId: "",
   title: "",
   slug: "",
   address: "",
@@ -64,7 +67,7 @@ const createDefaultForm = (categoryId: string, status: Poi["status"] = "draft"):
   categoryId,
   status,
   featured: false,
-  defaultLanguageCode: "vi",
+  contentLanguageCode: "vi",
   district: "Quận 4",
   ward: "Khánh Hội",
   priceRange: "",
@@ -104,6 +107,75 @@ const findPoiAudioGuide = (
       item.languageCode === languageCode,
   ) ??
   null;
+
+const findPoiTranslationForLanguage = (
+  translations: Translation[],
+  poi: Poi,
+  languageCode: LanguageCode,
+) =>
+  translations.find(
+    (item) =>
+      item.entityType === "poi" &&
+      item.entityId === poi.id &&
+      item.languageCode === languageCode,
+  ) ?? null;
+
+const findPoiTranslationWithFallback = (
+  translations: Translation[],
+  poi: Poi,
+  preferredLanguage: LanguageCode | undefined,
+  settings: Pick<AdminDataState["settings"], "defaultLanguage" | "fallbackLanguage">,
+) => {
+  const languages = [
+    preferredLanguage,
+    settings.defaultLanguage,
+    settings.fallbackLanguage,
+  ].filter(Boolean) as LanguageCode[];
+
+  for (const language of languages) {
+    const matched = findPoiTranslationForLanguage(translations, poi, language);
+    if (matched) {
+      return matched;
+    }
+  }
+
+  return (
+    translations.find(
+      (item) => item.entityType === "poi" && item.entityId === poi.id,
+    ) ?? null
+  );
+};
+
+const buildPoiTranslationFields = (
+  poi: Poi | null,
+  translations: Translation[],
+  languageCode: LanguageCode,
+) => {
+  if (!poi) {
+    return {
+      title: "",
+      shortText: "",
+      fullText: "",
+    };
+  }
+
+  const exactTranslation = findPoiTranslationForLanguage(translations, poi, languageCode);
+  return {
+    title: exactTranslation?.title ?? "",
+    shortText: exactTranslation?.shortText ?? "",
+    fullText: exactTranslation?.fullText ?? "",
+  };
+};
+
+const resolvePoiTranslationLanguage = (
+  translations: Translation[],
+  poi: Poi,
+  preferredLanguage: LanguageCode | undefined,
+  settings: Pick<AdminDataState["settings"], "defaultLanguage" | "fallbackLanguage">,
+) =>
+  findPoiTranslationWithFallback(translations, poi, preferredLanguage, settings)?.languageCode ??
+  preferredLanguage ??
+  settings.defaultLanguage;
 
 const getSubmissionStatus = (role: "SUPER_ADMIN" | "PLACE_OWNER" | undefined, status: Poi["status"]) =>
   role === "PLACE_OWNER" ? "pending" : status;
@@ -192,6 +264,37 @@ export const PoisPage = () => {
   }, [filteredPois, selectedPoiId]);
 
   const selectedPoi = selectedPoiDetail?.poi ?? state.pois.find((item) => item.id === selectedPoiId) ?? null;
+  const selectedPoiTranslations = useMemo(
+    () =>
+      selectedPoi && selectedPoiDetail?.poi.id === selectedPoi.id
+        ? selectedPoiDetail.translations
+        : state.translations.filter(
+            (item) => item.entityType === "poi" && item.entityId === selectedPoi?.id,
+          ),
+    [selectedPoi, selectedPoiDetail, state.translations],
+  );
+  const selectedNarrationTranslation = useMemo(
+    () =>
+      selectedPoi
+        ? findPoiTranslationWithFallback(
+            selectedPoiTranslations,
+            selectedPoi,
+            selectedNarrationLanguage,
+            state.settings,
+          )
+        : null,
+    [selectedNarrationLanguage, selectedPoi, selectedPoiTranslations, state.settings],
+  );
+  const selectedDisplayTitle =
+    selectedNarration?.displayTitle ??
+    selectedNarrationTranslation?.title ??
+    selectedPoi?.slug ??
+    "";
+  const selectedDisplayText =
+    selectedNarration?.displayText ||
+    selectedNarrationTranslation?.fullText ||
+    selectedNarrationTranslation?.shortText ||
+    "";
   const availableNarrationLanguages = useMemo(
     () => (selectedPoi ? supportedNarrationLanguages : []),
     [selectedPoi],
@@ -206,12 +309,30 @@ export const PoisPage = () => {
   const isSelectedPoiNarrationPaused =
     selectedPlaybackKey === playbackState.playbackKey &&
     playbackState.status === "paused";
+  const getDisplayedPoiTranslation = useCallback(
+    (poi: Poi, preferredLanguage?: LanguageCode) => {
+      const translations =
+        selectedPoiDetail?.poi.id === poi.id
+          ? selectedPoiDetail.translations
+          : state.translations.filter(
+              (item) => item.entityType === "poi" && item.entityId === poi.id,
+            );
+
+      return findPoiTranslationWithFallback(
+        translations,
+        poi,
+        preferredLanguage,
+        state.settings,
+      );
+    },
+    [selectedPoiDetail, state.settings, state.translations],
+  );
 
   const mapPois = useMemo<PoiMapItem[]>(
     () =>
       filteredPois.map((poi) => ({
         id: poi.id,
-        title: getPoiTranslation(state, poi.id, poi.defaultLanguageCode)?.title ?? poi.slug,
+        title: getDisplayedPoiTranslation(poi, selectedNarrationLanguage)?.title ?? poi.slug,
         address: poi.address,
         category: getCategoryName(state, poi.categoryId),
         status: poi.status,
@@ -219,7 +340,7 @@ export const PoisPage = () => {
         lat: poi.lat,
         lng: poi.lng,
       })),
-    [filteredPois, state],
+    [filteredPois, getDisplayedPoiTranslation, selectedNarrationLanguage, state],
   );
 
   const handleVisiblePoiIdsChange = useCallback((nextVisiblePoiIds: string[]) => {
@@ -322,6 +443,7 @@ export const PoisPage = () => {
         state.categories[0]?.id ?? "",
         getSubmissionStatus(user?.role, "draft"),
       ),
+      contentLanguageCode: selectedNarrationLanguage,
       ownerUserId: isOwner ? user?.id ?? "" : "",
     });
     setModalOpen(true);
@@ -329,8 +451,30 @@ export const PoisPage = () => {
 
   const openEditModal = (poi: Poi) => {
     stopCurrentAudio();
-    const translation = getPoiTranslation(state, poi.id, poi.defaultLanguageCode);
-    const audioGuide = findPoiAudioGuide(state.audioGuides, poi.id, poi.defaultLanguageCode);
+    const translations =
+      selectedPoiDetail?.poi.id === poi.id
+        ? selectedPoiDetail.translations
+        : state.translations.filter(
+            (item) => item.entityType === "poi" && item.entityId === poi.id,
+          );
+    const editableLanguageCode = resolvePoiTranslationLanguage(
+      translations,
+      poi,
+      selectedNarrationLanguage,
+      state.settings,
+    );
+    const translationFields = buildPoiTranslationFields(
+      poi,
+      translations,
+      editableLanguageCode,
+    );
+    const audioGuides =
+      selectedPoiDetail?.poi.id === poi.id
+        ? selectedPoiDetail.audioGuides
+        : state.audioGuides.filter(
+            (item) => item.entityType === "poi" && item.entityId === poi.id,
+          );
+    const audioGuide = findPoiAudioGuide(audioGuides, poi.id, editableLanguageCode);
 
     setHasSlugBeenManuallyEdited(false);
     setFormError("");
@@ -338,7 +482,8 @@ export const PoisPage = () => {
     setSelectedPoiId(poi.id);
     setForm({
       id: poi.id,
-      title: translation?.title ?? "",
+      poiId: poi.id,
+      title: translationFields.title,
       slug: poi.slug,
       address: poi.address,
       lat: poi.lat.toString(),
@@ -346,7 +491,7 @@ export const PoisPage = () => {
       categoryId: poi.categoryId,
       status: getSubmissionStatus(user?.role, poi.status),
       featured: isOwner ? false : poi.featured,
-      defaultLanguageCode: poi.defaultLanguageCode,
+      contentLanguageCode: editableLanguageCode,
       district: poi.district,
       ward: poi.ward,
       priceRange: poi.priceRange,
@@ -354,14 +499,55 @@ export const PoisPage = () => {
       popularityScore: poi.popularityScore.toString(),
       tags: poi.tags.join(", "),
       ownerUserId: isOwner ? user?.id ?? "" : poi.ownerUserId ?? "",
-      shortText: translation?.shortText ?? "",
-      fullText: translation?.fullText ?? "",
+      shortText: translationFields.shortText,
+      fullText: translationFields.fullText,
       audioUrl: audioGuide?.audioUrl ?? "",
       audioSourceType: audioGuide?.sourceType ?? "tts",
       audioStatus: audioGuide?.status ?? "ready",
     });
     setModalOpen(true);
   };
+
+  const handleContentLanguageChange = useCallback(
+    (languageCode: LanguageCode) => {
+      setForm((current) => {
+        const currentPoi =
+          current.id ? state.pois.find((item) => item.id === current.id) ?? null : null;
+        const translations =
+          current.id && selectedPoiDetail?.poi.id === current.id
+            ? selectedPoiDetail.translations
+            : state.translations.filter(
+                (item) => item.entityType === "poi" && item.entityId === current.id,
+              );
+        const translationFields = buildPoiTranslationFields(
+          currentPoi,
+          translations,
+          languageCode,
+        );
+        const audioGuides =
+          current.id && selectedPoiDetail?.poi.id === current.id
+            ? selectedPoiDetail.audioGuides
+            : state.audioGuides.filter(
+                (item) => item.entityType === "poi" && item.entityId === current.id,
+              );
+        const audioGuide = currentPoi
+          ? findPoiAudioGuide(audioGuides, currentPoi.id, languageCode)
+          : null;
+
+        return {
+          ...current,
+          contentLanguageCode: languageCode,
+          title: translationFields.title,
+          shortText: translationFields.shortText,
+          fullText: translationFields.fullText,
+          audioUrl: audioGuide?.audioUrl ?? "",
+          audioSourceType: audioGuide?.sourceType ?? "tts",
+          audioStatus: audioGuide?.status ?? "ready",
+        };
+      });
+    },
+    [selectedPoiDetail, state.audioGuides, state.pois, state.translations],
+  );
 
   const triggerAddressSearch = useCallback(() => {
     setAddressSearchVersion((current) => current + 1);
@@ -474,6 +660,7 @@ export const PoisPage = () => {
     selectedNarrationLanguage,
     selectedPoi,
     selectedVoice,
+    syncVersion,
   ]);
 
   useEffect(() => {
@@ -608,17 +795,34 @@ export const PoisPage = () => {
     setFormError("");
 
     try {
+      console.debug("[admin-poi] edit-form-before-submit", {
+        poiId: form.id ?? null,
+        requestedPoiId: form.poiId.trim() || null,
+        title: form.title,
+        contentLanguageCode: form.contentLanguageCode,
+        address: form.address,
+        tags: form.tags,
+        shortTextLength: form.shortText.length,
+        fullTextLength: form.fullText.length,
+      });
+      const nextSlug = form.slug || slugify(form.title);
+      const existingDetail =
+        selectedPoiDetail?.poi.id === form.id
+          ? selectedPoiDetail
+          : form.id
+            ? poiDetailCacheRef.current.get(form.id)
+            : null;
       const savedPoi = await savePoi(
         {
           id: form.id,
-          slug: form.slug || slugify(form.title),
+          requestedId: form.poiId.trim() || undefined,
+          slug: nextSlug,
           address: form.address,
           lat: parseCoordinate(form.lat, DEFAULT_LAT),
           lng: parseCoordinate(form.lng, DEFAULT_LNG),
           categoryId: form.categoryId,
           status: getSubmissionStatus(user.role, form.status),
           featured: isOwner ? false : form.featured,
-          defaultLanguageCode: form.defaultLanguageCode,
           district: form.district,
           ward: form.ward,
           priceRange: form.priceRange,
@@ -626,6 +830,7 @@ export const PoisPage = () => {
           popularityScore: Number(form.popularityScore),
           tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
           ownerUserId: (isOwner ? user.id : form.ownerUserId) || null,
+          translationLanguageCode: form.contentLanguageCode,
           title: form.title,
           shortText: form.shortText,
           fullText: form.fullText,
@@ -635,13 +840,14 @@ export const PoisPage = () => {
         user,
       );
 
+      let optimisticAudioGuide: AudioGuide | null = null;
       if (form.audioUrl || form.audioSourceType === "tts") {
         await saveAudioGuide(
           {
-            id: findPoiAudioGuide(state.audioGuides, form.id, form.defaultLanguageCode)?.id,
+            id: findPoiAudioGuide(state.audioGuides, form.id, form.contentLanguageCode)?.id,
             entityType: "poi",
             entityId: savedPoi.id,
-            languageCode: form.defaultLanguageCode,
+            languageCode: form.contentLanguageCode,
             audioUrl: form.audioUrl,
             voiceType: "standard",
             sourceType: form.audioUrl ? form.audioSourceType : "tts",
@@ -649,11 +855,89 @@ export const PoisPage = () => {
           },
           user,
         );
+
+        const existingAudioGuide =
+          findPoiAudioGuide(
+            existingDetail?.audioGuides ?? [],
+            savedPoi.id,
+            form.contentLanguageCode,
+            "standard",
+          ) ??
+          findPoiAudioGuide(
+            state.audioGuides,
+            savedPoi.id,
+            form.contentLanguageCode,
+            "standard",
+          );
+
+        optimisticAudioGuide = {
+          id: existingAudioGuide?.id ?? `audio-${savedPoi.id}-${form.contentLanguageCode}`,
+          entityType: "poi",
+          entityId: savedPoi.id,
+          languageCode: form.contentLanguageCode,
+          audioUrl: form.audioUrl,
+          voiceType: "standard",
+          sourceType: form.audioUrl ? form.audioSourceType : "tts",
+          status: form.audioStatus,
+          updatedBy: user.name,
+          updatedAt: savedPoi.updatedAt,
+        };
       }
 
-      poiDetailCacheRef.current.delete(savedPoi.id);
-      setSelectedPoiDetail((current) => (current?.poi.id === savedPoi.id ? null : current));
+      const existingTranslation =
+        findPoiTranslationForLanguage(
+          existingDetail?.translations ?? [],
+          savedPoi,
+          form.contentLanguageCode,
+        ) ??
+        findPoiTranslationForLanguage(
+          state.translations.filter(
+            (item) => item.entityType === "poi" && item.entityId === savedPoi.id,
+          ),
+          savedPoi,
+          form.contentLanguageCode,
+        );
+      const optimisticTranslation: Translation = {
+        id: existingTranslation?.id ?? `trans-${savedPoi.id}-${form.contentLanguageCode}`,
+        entityType: "poi",
+        entityId: savedPoi.id,
+        languageCode: form.contentLanguageCode,
+        title: form.title,
+        shortText: form.shortText,
+        fullText: form.fullText,
+        seoTitle: form.title,
+        seoDescription: form.shortText || form.title,
+        isPremium: !state.settings.freeLanguages.includes(form.contentLanguageCode),
+        updatedBy: user.name,
+        updatedAt: savedPoi.updatedAt,
+      };
+      const nextDetail: PoiDetail = {
+        poi: savedPoi,
+        translations: [
+          optimisticTranslation,
+          ...(existingDetail?.translations ?? []).filter(
+            (item) => item.id !== optimisticTranslation.id,
+          ),
+        ],
+        audioGuides: optimisticAudioGuide
+          ? [
+              optimisticAudioGuide,
+              ...(existingDetail?.audioGuides ?? []).filter(
+                (item) => item.id !== optimisticAudioGuide?.id,
+              ),
+            ]
+          : existingDetail?.audioGuides ?? [],
+      };
+
+      if (form.id && form.id !== savedPoi.id) {
+        poiDetailCacheRef.current.delete(form.id);
+      }
+
+      poiDetailCacheRef.current.set(savedPoi.id, nextDetail);
+      setSelectedPoiDetail(nextDetail);
+      setSelectedNarration(null);
       setSelectedPoiId(savedPoi.id);
+      setSelectedNarrationLanguage(form.contentLanguageCode);
       void fetchPOIDetail(savedPoi.id, {
         useCache: false,
         updateSelected: true,
@@ -668,15 +952,28 @@ export const PoisPage = () => {
 
   const buildPoiSaveDraft = useCallback(
     (poi: Poi) => {
-      const detail = selectedPoiDetail?.poi.id === poi.id
-        ? selectedPoiDetail
-        : poiDetailCacheRef.current.get(poi.id);
-      const translation =
-        detail?.translations.find((item) => item.languageCode === poi.defaultLanguageCode) ??
-        getPoiTranslation(state, poi.id, poi.defaultLanguageCode);
+      const translations =
+        selectedPoiDetail?.poi.id === poi.id
+          ? selectedPoiDetail.translations
+          : state.translations.filter(
+              (item) => item.entityType === "poi" && item.entityId === poi.id,
+            );
+      const translationLanguageCode = resolvePoiTranslationLanguage(
+        translations,
+        poi,
+        selectedNarrationLanguage,
+        state.settings,
+      );
+      const translation = findPoiTranslationWithFallback(
+        translations,
+        poi,
+        translationLanguageCode,
+        state.settings,
+      );
 
       return {
         id: poi.id,
+        requestedId: poi.id,
         slug: poi.slug,
         address: poi.address,
         lat: poi.lat,
@@ -684,7 +981,6 @@ export const PoisPage = () => {
         categoryId: poi.categoryId,
         status: poi.status,
         featured: poi.featured,
-        defaultLanguageCode: poi.defaultLanguageCode,
         district: poi.district,
         ward: poi.ward,
         priceRange: poi.priceRange,
@@ -692,6 +988,7 @@ export const PoisPage = () => {
         popularityScore: poi.popularityScore,
         tags: poi.tags,
         ownerUserId: poi.ownerUserId,
+        translationLanguageCode,
         title: translation?.title ?? poi.slug,
         shortText: translation?.shortText ?? "",
         fullText: translation?.fullText ?? "",
@@ -699,7 +996,7 @@ export const PoisPage = () => {
         seoDescription: translation?.seoDescription ?? translation?.shortText ?? translation?.title ?? poi.slug,
       };
     },
-    [selectedPoiDetail, state],
+    [selectedNarrationLanguage, selectedPoiDetail, state.settings, state.translations],
   );
 
   const handleApprovePoi = useCallback(
@@ -742,7 +1039,7 @@ export const PoisPage = () => {
       header: "POI",
       widthClassName: "min-w-[260px]",
       render: (poi) => {
-        const translation = getPoiTranslation(state, poi.id, poi.defaultLanguageCode);
+        const translation = getDisplayedPoiTranslation(poi, selectedNarrationLanguage);
         return (
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -869,7 +1166,7 @@ export const PoisPage = () => {
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-xl font-semibold text-ink-900">
-                  {selectedNarration?.displayTitle ?? selectedPoi.slug}
+                  {selectedDisplayTitle}
                 </p>
                 <StatusBadge status={selectedPoi.status} />
               </div>
@@ -922,7 +1219,7 @@ export const PoisPage = () => {
               <div className="rounded-3xl border border-sand-100 bg-sand-50 p-4">
                 <p className="text-sm font-semibold text-ink-900">Mô tả POI</p>
                 <p className="mt-3 text-sm leading-6 text-ink-600">
-                  {selectedNarration?.displayText || "Chưa có bài thuyết minh cho POI này."}
+                  {selectedDisplayText || "Chưa có bài thuyết minh cho POI này."}
                 </p>
                 <p className="mt-3 text-xs text-ink-500">
                   Audio: {selectedAudio ? `${selectedAudio.sourceType} / ${selectedAudio.status}` : "Chưa có"}
@@ -1023,13 +1320,13 @@ export const PoisPage = () => {
         open={isModalOpen}
         onClose={() => setModalOpen(false)}
         title={isOwner ? (form.id ? "Cập nhật POI để gửi duyệt" : "Tạo POI để gửi duyệt") : form.id ? "Cập nhật POI" : "Tạo POI"}
-        description={isOwner ? "Điền thông tin POI và gửi cho super admin duyệt trước khi xuất bản." : "Điền thông tin POI, chỉnh vị trí trên bản đồ và lưu nội dung thuyết minh mặc định."}
+        description={isOwner ? "Điền thông tin POI và gửi cho super admin duyệt trước khi xuất bản." : "Điền thông tin POI, chỉnh vị trí trên bản đồ và lưu nội dung thuyết minh theo ngôn ngữ đang sửa."}
         maxWidthClassName="max-w-5xl"
       >
-        <form className="space-y-6" onSubmit={handleSubmit}>
+        <form className="space-y-6" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit}>
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
             <div className="space-y-5">
-              <div className="grid gap-5 md:grid-cols-2">
+              <div className="grid gap-5 md:grid-cols-3">
                 <div>
                   <label className="field-label">Tên POI</label>
                   <Input
@@ -1042,6 +1339,16 @@ export const PoisPage = () => {
                       }))
                     }
                     required
+                  />
+                </div>
+                <div>
+                  <label className="field-label">ID quán</label>
+                  <Input
+                    value={form.poiId}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, poiId: event.target.value }))
+                    }
+                    placeholder="Tự tạo nếu để trống"
                   />
                 </div>
                 <div>
@@ -1083,18 +1390,26 @@ export const PoisPage = () => {
                   {isOwner ? <p className="mt-2 text-xs text-ink-500">Chủ quán gửi POI lên để super admin duyệt trước khi xuất bản.</p> : null}
                 </div>
                 <div>
-                  <label className="field-label">Ngôn ngữ</label>
-                  <Select value={form.defaultLanguageCode} onChange={(event) => setForm((current) => ({ ...current, defaultLanguageCode: event.target.value as Poi["defaultLanguageCode"] }))}>
+                  <label className="field-label">Khoảng giá</label>
+                  <Input value={form.priceRange} onChange={(event) => setForm((current) => ({ ...current, priceRange: event.target.value }))} />
+                </div>
+              </div>
+
+              <div>
+                <div>
+                  <label className="field-label">Ngôn ngữ nội dung đang sửa</label>
+                  <Select
+                    value={form.contentLanguageCode}
+                    onChange={(event) =>
+                      handleContentLanguageChange(event.target.value as LanguageCode)
+                    }
+                  >
                     {Object.entries(languageLabels).map(([code, label]) => (
                       <option key={code} value={code}>
                         {label}
                       </option>
                     ))}
                   </Select>
-                </div>
-                <div>
-                  <label className="field-label">Khoảng giá</label>
-                  <Input value={form.priceRange} onChange={(event) => setForm((current) => ({ ...current, priceRange: event.target.value }))} />
                 </div>
               </div>
 
@@ -1174,7 +1489,7 @@ export const PoisPage = () => {
                 </div>
               </div>
 
-              <div className="grid gap-5 md:grid-cols-3">
+              <div className="grid gap-5 md:grid-cols-2">
                 <div>
                   <label className="field-label">Nguồn audio</label>
                   <Select value={form.audioSourceType} onChange={(event) => setForm((current) => ({ ...current, audioSourceType: event.target.value as AudioGuide["sourceType"] }))}>
@@ -1190,24 +1505,31 @@ export const PoisPage = () => {
                     <option value="missing">Missing</option>
                   </Select>
                 </div>
-                <div>
-                  <label className="field-label">Audio URL</label>
-                  <Input value={form.audioUrl} onChange={(event) => setForm((current) => ({ ...current, audioUrl: event.target.value }))} placeholder="https://..." />
-                </div>
               </div>
 
-              <div className="space-y-3">
-                <label className="field-label">Upload MP3</label>
-                <input
-                  type="file"
-                  accept=".mp3,audio/mpeg"
-                  onChange={(event) => {
-                    void handleAudioFileChange(event);
-                  }}
-                  className="field-input file:mr-4 file:rounded-2xl file:border-0 file:bg-primary-50 file:px-4 file:py-2 file:font-semibold file:text-primary-700"
-                />
-                {isUploadingAudio ? <p className="text-sm text-ink-500">Đang upload audio...</p> : null}
-              </div>
+              {form.audioSourceType === "uploaded" ? (
+                <div className="space-y-3">
+                  <label className="field-label">Upload MP3</label>
+                  <input
+                    type="file"
+                    accept=".mp3,audio/mpeg"
+                    onChange={(event) => {
+                      void handleAudioFileChange(event);
+                    }}
+                    className="field-input file:mr-4 file:rounded-2xl file:border-0 file:bg-primary-50 file:px-4 file:py-2 file:font-semibold file:text-primary-700"
+                  />
+                  {isUploadingAudio ? <p className="text-sm text-ink-500">Đang upload audio...</p> : null}
+                  {form.audioUrl ? (
+                    <div className="space-y-2">
+                      <audio controls src={form.audioUrl} className="w-full" />
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-sand-200 bg-sand-50 px-4 py-3 text-sm text-ink-500">
+                      Chưa có file MP3 nào được tải lên.
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <OpenStreetMapPicker
@@ -1251,6 +1573,7 @@ export const PoisPage = () => {
     </div>
   );
 };
+
 
 
 
