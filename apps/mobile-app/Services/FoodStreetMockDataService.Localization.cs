@@ -5,7 +5,7 @@ using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
 
-public sealed partial class FoodStreetMockDataService
+public sealed partial class FoodStreetApiDataService
 {
     private IReadOnlyList<PoiLocation> BuildLocalizedFallbackPois()
         => FallbackPois.Select(LocalizePoiLocation).ToList();
@@ -141,6 +141,7 @@ public sealed partial class FoodStreetMockDataService
             "ストリートスナック巡り",
             "Parcours street food"));
 
+    /*
     private string GetTourDescriptionText()
         => SelectLocalizedText(CreateLocalizedMap(
             "Tour ngắn ưu tiên các POI đang được quản lý trong admin và fallback mock khi backend chưa bật.",
@@ -149,6 +150,16 @@ public sealed partial class FoodStreetMockDataService
             "이 짧은 코스는 관리자에서 관리 중인 POI를 우선 사용하며, 백엔드가 꺼져 있으면 내장 목업 데이터로 대체됩니다.",
             "この短いコースでは管理画面で運用中の POI を優先し、バックエンドが使えない場合は内蔵モックデータに切り替えます。",
             "Ce parcours court privilégie les POI gérés dans l'admin et bascule sur des données fictives intégrées lorsque le backend est indisponible."));
+
+    */
+    private string GetTourDescriptionText()
+        => SelectLocalizedText(CreateLocalizedMap(
+            "Tour ngáº¯n Ä‘Æ°á»£c táº¡o tá»« cÃ¡c POI Ä‘ang Ä‘Æ°á»£c quáº£n lÃ½ trong admin.",
+            "A short route built from the POIs currently managed in admin.",
+            "è¿™æ¡çŸ­è·¯çº¿ç”±å½“å‰åœ¨ç®¡ç†åŽå°ä¸­ç»´æŠ¤çš„ POI ç»„æˆã€‚",
+            "ì´ ì§§ì€ ì½”ìŠ¤ëŠ” í˜„ìž¬ adminì—ì„œ ê´€ë¦¬ ì¤‘ì¸ POIë¡œ êµ¬ì„±ë©ë‹ˆë‹¤.",
+            "ã“ã®çŸ­ã„ã‚³ãƒ¼ã‚¹ã¯ç¾åœ¨ admin ã§ç®¡ç†ã•ã‚Œã¦ã„ã‚‹ POI ã‹ã‚‰æ§‹æˆã•ã‚Œã¦ã„ã¾ã™ã€‚",
+            "Ce parcours court est construit Ã  partir des POI actuellement gÃ©rÃ©s dans l'admin."));
 
     private string GetTourSummaryText()
         => SelectLocalizedText(CreateLocalizedMap(
@@ -434,10 +445,13 @@ public sealed partial class FoodStreetMockDataService
 
     private static string ApplyReplacements(string source, IEnumerable<(string From, string To)> replacements)
     {
-        var result = source;
+        var result = TextEncodingHelper.NormalizeDisplayText(source);
         foreach (var (from, to) in replacements)
         {
-            result = result.Replace(from, to, StringComparison.OrdinalIgnoreCase);
+            result = result.Replace(
+                TextEncodingHelper.NormalizeDisplayText(from),
+                TextEncodingHelper.NormalizeDisplayText(to),
+                StringComparison.OrdinalIgnoreCase);
         }
 
         return result;
@@ -465,18 +479,31 @@ public sealed partial class FoodStreetMockDataService
 
     private static string ToLatinText(string value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        var source = TextEncodingHelper.NormalizeDisplayText(value);
+        if (string.IsNullOrWhiteSpace(source))
         {
             return string.Empty;
         }
 
-        var normalized = value.Normalize(NormalizationForm.FormD);
+        var normalized = source.Normalize(NormalizationForm.FormD);
         var builder = new StringBuilder(normalized.Length);
 
         foreach (var character in normalized)
         {
             if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
             {
+                continue;
+            }
+
+            if (character == '\u0110')
+            {
+                builder.Append('D');
+                continue;
+            }
+
+            if (character == '\u0111')
+            {
+                builder.Append('d');
                 continue;
             }
 

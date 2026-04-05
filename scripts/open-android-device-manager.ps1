@@ -72,7 +72,7 @@ function Resolve-AndroidDeviceManagerPath {
         }
     }
 
-    $candidates = @($candidateMap.ToArray() | Sort-Object -Descending)
+    $candidates = @($candidateMap | Sort-Object -Descending)
     if ($candidates.Count -gt 0) {
         return $candidates[0]
     }

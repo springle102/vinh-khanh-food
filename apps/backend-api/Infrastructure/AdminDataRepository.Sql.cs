@@ -12,7 +12,7 @@ public sealed partial class AdminDataRepository
         {
             return OpenConnectionCore(_connectionString);
         }
-        catch (SqlException exception) when (ShouldAttemptDatabaseBootstrap(exception))
+        catch (SqlException exception) when (_allowCreateDatabase && _allowSeedDatabase && ShouldAttemptDatabaseBootstrap(exception))
         {
             EnsureDatabaseAccessible();
             return OpenConnectionCore(_connectionString);
@@ -212,6 +212,9 @@ public sealed partial class AdminDataRepository
         throw new InvalidOperationException(
             "Chua cau hinh connection string SQL Server. Hay set ConnectionStrings:AdminSqlServer trong appsettings hoac user secrets.");
     }
+
+    private static bool ResolveDatabaseInitializationFlag(IConfiguration configuration, string key)
+        => configuration.GetValue<bool?>($"DatabaseInitialization:{key}") ?? false;
 
     private static string ResolveSeedSqlPath(IConfiguration configuration, IWebHostEnvironment environment)
     {

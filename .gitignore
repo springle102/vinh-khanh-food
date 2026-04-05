@@ -4,6 +4,7 @@
 .nuget-local/
 .tmp-build/
 .tmp-*.log
+.tmp/*.log
 .tmp-hosts-backup
 
 **/bin/

@@ -11,12 +11,12 @@ public static class AppLanguage
 
     private static readonly IReadOnlyList<AppLanguageDefinition> Definitions =
     [
-        new("vi", "Tiếng Việt", "🇻🇳", "vi-VN"),
-        new("en", "English", "🇬🇧", "en-US"),
-        new("zh-CN", "中文", "🇨🇳", "zh-CN"),
-        new("ko", "한국어", "🇰🇷", "ko-KR"),
-        new("ja", "日本語", "🇯🇵", "ja-JP"),
-        new("fr", "Français", "🇫🇷", "fr-FR")
+        new("vi", "Ti\u1EBFng Vi\u1EC7t", "\uD83C\uDDFB\uD83C\uDDF3", "vi-VN"),
+        new("en", "English", "\uD83C\uDDFA\uD83C\uDDF8", "en-US"),
+        new("zh-CN", "\u4E2D\u6587", "\uD83C\uDDE8\uD83C\uDDF3", "zh-CN"),
+        new("ko", "\uD55C\uAD6D\uC5B4", "\uD83C\uDDF0\uD83C\uDDF7", "ko-KR"),
+        new("ja", "\u65E5\u672C\u8A9E", "\uD83C\uDDEF\uD83C\uDDF5", "ja-JP"),
+        new("fr", "Fran\u00E7ais", "\uD83C\uDDEB\uD83C\uDDF7", "fr-FR")
     ];
 
     public static IReadOnlyList<AppLanguageDefinition> SupportedLanguages => Definitions;
@@ -30,7 +30,9 @@ public static class AppLanguage
 
         return languageCode.Trim() switch
         {
+            "vi-VN" => "vi",
             "zh" => "zh-CN",
+            "zh-Hans" => "zh-CN",
             "fr-FR" => "fr",
             "en-US" => "en",
             "ja-JP" => "ja",
@@ -53,6 +55,9 @@ public static class AppLanguage
 
         switch (normalized)
         {
+            case "vi":
+                AddCandidate(candidates, "vi-VN");
+                break;
             case "zh":
                 AddCandidate(candidates, "zh-CN");
                 break;

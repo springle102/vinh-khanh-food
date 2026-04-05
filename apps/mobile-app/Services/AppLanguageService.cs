@@ -84,6 +84,22 @@ public sealed class AppLanguageService : IAppLanguageService
             ["poi_detail_reviews"] = "reviews",
             ["poi_detail_no_selection"] = "Select a place on the map",
             ["poi_detail_address"] = "Address",
+            ["poi_detail_price_range"] = "Price range",
+            ["poi_detail_food_items"] = "Dishes",
+            ["poi_detail_promotions"] = "Promotions",
+            ["poi_detail_opening_hours"] = "Opening hours",
+            ["poi_detail_tags"] = "Tags",
+            ["poi_detail_no_food_items"] = "No dishes are available for this place yet.",
+            ["poi_detail_no_promotions"] = "No promotions are available right now.",
+            ["poi_detail_spicy_mild"] = "Mild",
+            ["poi_detail_spicy_medium"] = "Medium",
+            ["poi_detail_spicy_hot"] = "Hot",
+            ["poi_detail_status_active"] = "Active",
+            ["poi_detail_status_upcoming"] = "Upcoming",
+            ["poi_detail_status_expired"] = "Expired",
+            ["poi_detail_status_info"] = "Info",
+            ["poi_detail_period_from"] = "From",
+            ["poi_detail_period_until"] = "Until",
             ["qr_scanner_title"] = "Scan QR",
             ["qr_scanner_instruction"] = "Place the QR code inside the frame to choose a language and continue your experience.",
             ["qr_scanner_manual_title"] = "Enter code manually",
@@ -146,13 +162,13 @@ public sealed class AppLanguageService : IAppLanguageService
 
         if (_currentTexts.TryGetValue(key, out var currentValue) && !string.IsNullOrWhiteSpace(currentValue))
         {
-            return currentValue;
+            return TextEncodingHelper.NormalizeDisplayText(currentValue);
         }
 
         if (_fallbackTexts.TryGetValue(key, out var fallbackValue) && !string.IsNullOrWhiteSpace(fallbackValue))
         {
             LogFallbackKey(key);
-            return fallbackValue;
+            return TextEncodingHelper.NormalizeDisplayText(fallbackValue);
         }
 
         LogMissingKey(key);
@@ -237,8 +253,13 @@ public sealed class AppLanguageService : IAppLanguageService
             await using var stream = await FileSystem.OpenAppPackageFileAsync($"Localization/{languageCode}.json");
             using var reader = new StreamReader(stream);
             var content = await reader.ReadToEndAsync();
-            return JsonSerializer.Deserialize<Dictionary<string, string>>(content, JsonOptions)
+            var values = JsonSerializer.Deserialize<Dictionary<string, string>>(content, JsonOptions)
                 ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            return values.ToDictionary(
+                pair => pair.Key,
+                pair => TextEncodingHelper.NormalizeDisplayText(pair.Value),
+                StringComparer.OrdinalIgnoreCase);
         }
         catch
         {
@@ -252,7 +273,7 @@ public sealed class AppLanguageService : IAppLanguageService
         {
             if (!string.IsNullOrWhiteSpace(pair.Value))
             {
-                destination[pair.Key] = pair.Value.Trim();
+                destination[pair.Key] = TextEncodingHelper.NormalizeDisplayText(pair.Value);
             }
         }
     }

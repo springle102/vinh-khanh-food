@@ -64,7 +64,7 @@
                             <Label
                                 Grid.Column="2"
                                 FontSize="18"
-                                Text="›"
+                                Text="&#x203A;"
                                 TextColor="#FDF2E2"
                                 VerticalOptions="Center" />
                         </Grid>

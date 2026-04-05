@@ -1,24 +1,21 @@
 using System.Collections.ObjectModel;
-using Microsoft.Maui.ApplicationModel;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 using VinhKhanh.MobileApp.Services;
 
 namespace VinhKhanh.MobileApp.ViewModels;
 
-public sealed class MyTourViewModel : BaseViewModel
+public sealed class MyTourViewModel : LocalizedViewModelBase
 {
     private readonly IFoodStreetDataService _dataService;
-    private readonly IAppLanguageService _languageService;
     private TourPlan? _tour;
 
     public MyTourViewModel(
         IFoodStreetDataService dataService,
         IAppLanguageService languageService)
+        : base(languageService)
     {
         _dataService = dataService;
-        _languageService = languageService;
-        _languageService.LanguageChanged += OnLanguageChanged;
     }
 
     public ObservableCollection<TourStop> Stops { get; } = [];
@@ -38,9 +35,9 @@ public sealed class MyTourViewModel : BaseViewModel
         }
     }
 
-    public string HeaderTitleText => _languageService.GetText("tour_title");
-    public string CreateTourText => _languageService.GetText("tour_create");
-    public string CheckpointTitleText => _languageService.GetText("tour_checkpoints");
+    public string HeaderTitleText => LanguageService.GetText("tour_title");
+    public string CreateTourText => LanguageService.GetText("tour_create");
+    public string CheckpointTitleText => LanguageService.GetText("tour_checkpoints");
 
     public double ProgressValue => Tour?.ProgressValue ?? 0;
     public string ProgressText => Tour?.ProgressText ?? "0 / 0";
@@ -51,28 +48,9 @@ public sealed class MyTourViewModel : BaseViewModel
         Tour = await _dataService.GetTourPlanAsync();
         Stops.ReplaceRange(Tour.Stops);
         Checkpoints.ReplaceRange(Tour.Checkpoints);
-        RefreshLocalizedTexts();
+        RefreshLocalizedBindings();
     }
 
-    private void RefreshLocalizedTexts()
-    {
-        OnPropertyChanged(nameof(HeaderTitleText));
-        OnPropertyChanged(nameof(CreateTourText));
-        OnPropertyChanged(nameof(CheckpointTitleText));
-    }
-
-    private void OnLanguageChanged(object? sender, EventArgs e)
-    {
-        MainThread.BeginInvokeOnMainThread(async () =>
-        {
-            try
-            {
-                await LoadAsync();
-            }
-            catch
-            {
-                RefreshLocalizedTexts();
-            }
-        });
-    }
+    protected override async Task ReloadLocalizedStateAsync()
+        => await LoadAsync();
 }

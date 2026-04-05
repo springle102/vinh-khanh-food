@@ -1,7 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Maui.ApplicationModel;
-using Microsoft.Maui.Devices;
 using Microsoft.Maui.Storage;
 using Plugin.Maui.Audio;
 using VinhKhanh.MobileApp.Helpers;
@@ -368,21 +367,10 @@ public sealed class PoiNarrationService : IPoiNarrationService
     }
 
     private static string ResolveApiBaseUrl(MobileRuntimeAppSettings runtimeSettings)
-    {
-        var platformKey = DeviceInfo.Current.Platform.ToString();
-        if (runtimeSettings.PlatformApiBaseUrls.TryGetValue(platformKey, out var platformApiBaseUrl) &&
-            !string.IsNullOrWhiteSpace(platformApiBaseUrl))
-        {
-            return platformApiBaseUrl;
-        }
-
-        return runtimeSettings.ApiBaseUrl ?? string.Empty;
-    }
+        => MobileApiEndpointHelper.ResolveBaseUrl(runtimeSettings.ApiBaseUrl, runtimeSettings.PlatformApiBaseUrls);
 
     private static string EnsureTrailingSlash(string baseUrl)
-        => string.IsNullOrWhiteSpace(baseUrl)
-            ? string.Empty
-            : baseUrl.EndsWith("/", StringComparison.Ordinal) ? baseUrl : $"{baseUrl}/";
+        => MobileApiEndpointHelper.EnsureTrailingSlash(baseUrl);
 
     private void ReleasePlaybackStateLocked()
     {

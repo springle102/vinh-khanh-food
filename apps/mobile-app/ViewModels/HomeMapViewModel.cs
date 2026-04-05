@@ -8,10 +8,9 @@ using VinhKhanh.MobileApp.Services;
 
 namespace VinhKhanh.MobileApp.ViewModels;
 
-public sealed class HomeMapViewModel : BaseViewModel
+public sealed class HomeMapViewModel : LocalizedViewModelBase
 {
     private readonly IFoodStreetDataService _dataService;
-    private readonly IAppLanguageService _languageService;
     private readonly IPoiNarrationService _poiNarrationService;
     private readonly IPoiTourStoreService _poiTourStoreService;
 
@@ -31,12 +30,11 @@ public sealed class HomeMapViewModel : BaseViewModel
         IAppLanguageService languageService,
         IPoiNarrationService poiNarrationService,
         IPoiTourStoreService poiTourStoreService)
+        : base(languageService)
     {
         _dataService = dataService;
-        _languageService = languageService;
         _poiNarrationService = poiNarrationService;
         _poiTourStoreService = poiTourStoreService;
-        _languageService.LanguageChanged += OnLanguageChanged;
     }
 
     public ObservableCollection<PoiLocation> Pois { get; } = [];
@@ -132,68 +130,86 @@ public sealed class HomeMapViewModel : BaseViewModel
     public bool HasDetailContent => SelectedPoi is not null || SelectedPoiDetail is not null || IsPoiDetailLoading;
     public bool HasSelectedPoiDetail => SelectedPoiDetail is not null;
     public bool IsFeaturedPoi => SelectedPoiDetail?.IsFeatured ?? SelectedPoi?.IsFeatured ?? false;
+    public bool HasRatingSummary => (SelectedPoiDetail?.ReviewCount ?? 0) > 0 && (SelectedPoiDetail?.Rating ?? 0) > 0;
     public bool HasReviewSummary => (SelectedPoiDetail?.ReviewCount ?? 0) > 0;
+    public bool HasSelectedPoiPriceRange => !string.IsNullOrWhiteSpace(SelectedPoiPriceRange);
+    public bool HasSelectedPoiOpeningHours => !string.IsNullOrWhiteSpace(SelectedPoiOpeningHours);
+    public bool HasSelectedPoiTags => SelectedPoiTags.Count > 0;
+    public bool HasSelectedPoiFoodItems => SelectedPoiFoodItems.Count > 0;
+    public bool HasSelectedPoiPromotions => SelectedPoiPromotions.Count > 0;
+    public bool ShowSelectedPoiFoodItemsEmptyState => HasSelectedPoiDetail && !IsPoiDetailLoading && !HasSelectedPoiFoodItems;
+    public bool ShowSelectedPoiPromotionsEmptyState => HasSelectedPoiDetail && !IsPoiDetailLoading && !HasSelectedPoiPromotions;
     public bool IsFloatingPoiActionVisible => !HasVisibleBottomSheet;
 
-    public string SearchPlaceholderText => _languageService.GetText("home_search_placeholder");
-    public string PoiChipText => _languageService.GetText("home_poi_chip");
-    public string LayerButtonText => _languageService.GetText("home_layer");
-    public string PoiActionText => _languageService.GetText("bottom_poi");
-    public string ListenActionText => _languageService.GetText("poi_detail_listen");
-    public string DirectionsActionText => _languageService.GetText("poi_detail_directions");
-    public string SaveActionText => _languageService.GetText(IsPoiSaved ? "poi_detail_saved" : "poi_detail_save");
-    public string DetailLoadingText => _languageService.GetText("poi_detail_loading");
-    public string FeaturedBadgeText => _languageService.GetText("poi_detail_featured");
-    public string NoSelectionText => _languageService.GetText("poi_detail_no_selection");
-    public string AddressLabelText => _languageService.GetText("poi_detail_address");
+    public string SearchPlaceholderText => LanguageService.GetText("home_search_placeholder");
+    public string PoiChipText => LanguageService.GetText("home_poi_chip");
+    public string LayerButtonText => LanguageService.GetText("home_layer");
+    public string PoiActionText => LanguageService.GetText("bottom_poi");
+    public string ListenActionText => LanguageService.GetText("poi_detail_listen");
+    public string DirectionsActionText => LanguageService.GetText("poi_detail_directions");
+    public string SaveActionText => LanguageService.GetText(IsPoiSaved ? "poi_detail_saved" : "poi_detail_save");
+    public string DetailLoadingText => LanguageService.GetText("poi_detail_loading");
+    public string FeaturedBadgeText => LanguageService.GetText("poi_detail_featured");
+    public string NoSelectionText => LanguageService.GetText("poi_detail_no_selection");
+    public string AddressLabelText => LanguageService.GetText("poi_detail_address");
+    public string PriceRangeLabelText => LanguageService.GetText("poi_detail_price_range");
+    public string FoodItemsLabelText => LanguageService.GetText("poi_detail_food_items");
+    public string PromotionsLabelText => LanguageService.GetText("poi_detail_promotions");
+    public string OpeningHoursLabelText => LanguageService.GetText("poi_detail_opening_hours");
+    public string TagsLabelText => LanguageService.GetText("poi_detail_tags");
+    public string NoFoodItemsText => LanguageService.GetText("poi_detail_no_food_items");
+    public string NoPromotionsText => LanguageService.GetText("poi_detail_no_promotions");
 
     public string SelectedPoiTitle
         => FirstNonEmpty(
-            LocalizedTextHelper.GetLocalizedText(SelectedPoiDetail?.Name, _languageService.CurrentLanguage),
+            LocalizedTextHelper.GetLocalizedText(SelectedPoiDetail?.Name, LanguageService.CurrentLanguage),
             SelectedPoi?.Title,
             NoSelectionText);
 
     public string SelectedPoiDescription
         => FirstNonEmpty(
-            LocalizedTextHelper.GetLocalizedText(SelectedPoiDetail?.Description, _languageService.CurrentLanguage),
-            LocalizedTextHelper.GetLocalizedText(SelectedPoiDetail?.Summary, _languageService.CurrentLanguage),
+            LocalizedTextHelper.GetLocalizedText(SelectedPoiDetail?.Description, LanguageService.CurrentLanguage),
+            LocalizedTextHelper.GetLocalizedText(SelectedPoiDetail?.Summary, LanguageService.CurrentLanguage),
             SelectedPoi?.ShortDescription,
-            _languageService.GetText("home_default_description"));
+            LanguageService.GetText("home_default_description"));
 
     public string SelectedPoiSummary
         => FirstNonEmpty(
-            LocalizedTextHelper.GetLocalizedText(SelectedPoiDetail?.Summary, _languageService.CurrentLanguage),
+            LocalizedTextHelper.GetLocalizedText(SelectedPoiDetail?.Summary, LanguageService.CurrentLanguage),
             SelectedPoi?.ShortDescription,
-            _languageService.GetText("home_default_description"));
+            LanguageService.GetText("home_default_description"));
 
     public string SelectedPoiAddress
         => FirstNonEmpty(
             SelectedPoiDetail?.Address,
             SelectedPoi?.Address,
-            _languageService.GetText("home_default_address"));
+            LanguageService.GetText("home_default_address"));
 
     public string SelectedPoiCategory
         => FirstNonEmpty(
             SelectedPoiDetail?.Category,
             SelectedPoi?.Category,
-            _languageService.GetText("home_poi_chip"));
+            LanguageService.GetText("home_poi_chip"));
 
     public string SelectedPoiPriceRange
         => FirstNonEmpty(
-            SelectedPoi?.PriceRange,
-            "80.000 - 350.000 VND");
+            SelectedPoiDetail?.PriceRange,
+            SelectedPoi?.PriceRange);
+
+    public string SelectedPoiOpeningHours
+        => FirstNonEmpty(SelectedPoiDetail?.OpeningHours);
 
     public string SelectedPoiImageUrl => DetailImages.FirstOrDefault() ?? _dataService.GetBackdropImageUrl();
 
     public string SelectedPoiRatingText
-        => SelectedPoiDetail is null
-            ? "4.6"
-            : SelectedPoiDetail.Rating.ToString("0.0", CultureInfo.InvariantCulture);
+        => !HasRatingSummary
+            ? string.Empty
+            : SelectedPoiDetail!.Rating.ToString("0.0", CultureInfo.InvariantCulture);
 
     public string SelectedPoiReviewText
         => !HasReviewSummary
             ? string.Empty
-            : $"{SelectedPoiDetail!.ReviewCount} {_languageService.GetText("poi_detail_reviews")}";
+            : $"{SelectedPoiDetail!.ReviewCount} {LanguageService.GetText("poi_detail_reviews")}";
 
     public IReadOnlyList<string> DetailImages
     {
@@ -212,6 +228,18 @@ public sealed class HomeMapViewModel : BaseViewModel
             return [_dataService.GetBackdropImageUrl()];
         }
     }
+
+    public IReadOnlyList<string> SelectedPoiTags
+        => SelectedPoiDetail?.Tags
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToList()
+            ?? [];
+
+    public IReadOnlyList<PoiFoodItemDetail> SelectedPoiFoodItems
+        => SelectedPoiDetail?.FoodItems ?? [];
+
+    public IReadOnlyList<PoiPromotionDetail> SelectedPoiPromotions
+        => SelectedPoiDetail?.Promotions ?? [];
 
     public AsyncCommand<PoiLocation> SelectPoiCommand => new(poi => SelectPoiAsync(poi, autoPlayNarration: true));
     public AsyncCommand<string> LoadPoiDetailCommand => new(poiId => LoadPoiDetailByIdAsync(poiId, autoPlayNarration: true));
@@ -242,7 +270,7 @@ public sealed class HomeMapViewModel : BaseViewModel
         var currentPoiId = SelectedPoi?.Id;
 
         Pois.ReplaceRange(await _dataService.GetPoisAsync());
-        SearchResults.ReplaceRange(Pois);
+        ApplySearch();
         HeatPoints.ReplaceRange(await _dataService.GetHeatPointsAsync());
 
         SelectedPoi = currentPoiId is null
@@ -384,7 +412,7 @@ public sealed class HomeMapViewModel : BaseViewModel
             return;
         }
 
-        await _poiNarrationService.PlayAsync(SelectedPoiDetail, _languageService.CurrentLanguage);
+        await _poiNarrationService.PlayAsync(SelectedPoiDetail, LanguageService.CurrentLanguage);
     }
 
     private void QueueAutoPlayNarration(PoiExperienceDetail detail, long requestVersion)
@@ -409,7 +437,7 @@ public sealed class HomeMapViewModel : BaseViewModel
 
         try
         {
-            await _poiNarrationService.PlayAsync(detail, _languageService.CurrentLanguage);
+            await _poiNarrationService.PlayAsync(detail, LanguageService.CurrentLanguage);
         }
         catch
         {
@@ -468,72 +496,13 @@ public sealed class HomeMapViewModel : BaseViewModel
     }
 
     private void RefreshLocalizedTexts()
-    {
-        OnPropertyChanged(nameof(SearchPlaceholderText));
-        OnPropertyChanged(nameof(PoiChipText));
-        OnPropertyChanged(nameof(LayerButtonText));
-        OnPropertyChanged(nameof(PoiActionText));
-        OnPropertyChanged(nameof(ListenActionText));
-        OnPropertyChanged(nameof(DirectionsActionText));
-        OnPropertyChanged(nameof(SaveActionText));
-        OnPropertyChanged(nameof(DetailLoadingText));
-        OnPropertyChanged(nameof(FeaturedBadgeText));
-        OnPropertyChanged(nameof(NoSelectionText));
-        OnPropertyChanged(nameof(AddressLabelText));
-        RefreshSelectedPoiBindings();
-        RefreshDetailBindings();
-    }
+        => RefreshLocalizedBindings();
 
     private void RefreshSelectedPoiBindings()
-    {
-        OnPropertyChanged(nameof(SelectedPoiTitle));
-        OnPropertyChanged(nameof(SelectedPoiDescription));
-        OnPropertyChanged(nameof(SelectedPoiSummary));
-        OnPropertyChanged(nameof(SelectedPoiAddress));
-        OnPropertyChanged(nameof(SelectedPoiCategory));
-        OnPropertyChanged(nameof(SelectedPoiPriceRange));
-        OnPropertyChanged(nameof(SelectedPoiImageUrl));
-        OnPropertyChanged(nameof(HasDetailContent));
-    }
+        => RefreshLocalizedBindings();
 
     private void RefreshDetailBindings()
-    {
-        OnPropertyChanged(nameof(HasSelectedPoiDetail));
-        OnPropertyChanged(nameof(IsFeaturedPoi));
-        OnPropertyChanged(nameof(HasReviewSummary));
-        OnPropertyChanged(nameof(SelectedPoiTitle));
-        OnPropertyChanged(nameof(SelectedPoiDescription));
-        OnPropertyChanged(nameof(SelectedPoiSummary));
-        OnPropertyChanged(nameof(SelectedPoiAddress));
-        OnPropertyChanged(nameof(SelectedPoiCategory));
-        OnPropertyChanged(nameof(SelectedPoiImageUrl));
-        OnPropertyChanged(nameof(SelectedPoiRatingText));
-        OnPropertyChanged(nameof(SelectedPoiReviewText));
-        OnPropertyChanged(nameof(DetailImages));
-        OnPropertyChanged(nameof(HasVisibleBottomSheet));
-        OnPropertyChanged(nameof(IsFloatingPoiActionVisible));
-    }
-
-    private void OnLanguageChanged(object? sender, EventArgs e)
-    {
-        MainThread.BeginInvokeOnMainThread(async () =>
-        {
-            try
-            {
-                await StopNarrationAsync();
-                await LoadAsync(autoPlayNarrationForSelection: _isNarrationContextActive && IsBottomSheetVisible);
-            }
-            catch
-            {
-                if (SelectedPoi is not null)
-                {
-                    SelectedPoiDetail = CreateInlineFallbackDetail(SelectedPoi);
-                }
-
-                RefreshLocalizedTexts();
-            }
-        });
-    }
+        => RefreshLocalizedBindings();
 
     private PoiExperienceDetail CreateInlineFallbackDetail(PoiLocation poi)
     {
@@ -542,10 +511,11 @@ public sealed class HomeMapViewModel : BaseViewModel
             Id = poi.Id,
             Category = poi.Category,
             Address = poi.Address,
+            PriceRange = poi.PriceRange,
             Latitude = poi.Latitude,
             Longitude = poi.Longitude,
-            Rating = 4.5,
-            ReviewCount = 84,
+            Rating = 0,
+            ReviewCount = 0,
             IsFeatured = poi.IsFeatured,
             Images =
             [
@@ -566,7 +536,7 @@ public sealed class HomeMapViewModel : BaseViewModel
             return;
         }
 
-        var normalizedLanguage = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
+        var normalizedLanguage = AppLanguage.NormalizeCode(LanguageService.CurrentLanguage);
         target.Set(normalizedLanguage, value);
 
         var separatorIndex = normalizedLanguage.IndexOf('-');
@@ -578,4 +548,20 @@ public sealed class HomeMapViewModel : BaseViewModel
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
+    protected override async Task ReloadLocalizedStateAsync()
+    {
+        try
+        {
+            await StopNarrationAsync();
+            await LoadAsync(autoPlayNarrationForSelection: _isNarrationContextActive && IsBottomSheetVisible);
+        }
+        catch
+        {
+            if (SelectedPoi is not null)
+            {
+                SelectedPoiDetail = CreateInlineFallbackDetail(SelectedPoi);
+            }
+        }
+    }
 }

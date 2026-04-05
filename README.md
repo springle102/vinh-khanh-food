@@ -1,4 +1,4 @@
-﻿# Vinh Khanh Food
+# Vinh Khanh Food
 
 README này là tài liệu tổng hợp duy nhất cho toàn bộ đồ án. Repository hiện tại gồm 3 phần chính:
 
@@ -8,8 +8,7 @@ README này là tài liệu tổng hợp duy nhất cho toàn bộ đồ án. Re
 
 ## Các lỗi đang phát sinh
 - Lỗi map hiện thành phố Thủ Đức, không hiện TPHCM
-- Lỗi chưa hiện hết thông tin về POI trên app (khoảng giá, món ăn, ưu đãi)
-- Lỗi chưa kéo, đóng trang chi tiết POI trên app
+-Chưa dịch được triệt để ngôn ngữ. (vẫn còn lẫn lộn ngôn ngữ)
 - Quản lý tour chưa hợp lí
 - Lỗi khách hàng chưa sửa được thông tin cá nhân
 - Chưa làm backend xử lí đăng nhập trên app và và đăng kí
