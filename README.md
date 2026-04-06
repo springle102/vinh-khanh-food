@@ -8,7 +8,7 @@ README này là tài liệu tổng hợp duy nhất cho toàn bộ đồ án. Re
 
 ## Các lỗi đang phát sinh
 - Lỗi map hiện thành phố Thủ Đức, không hiện TPHCM
--Chưa dịch được triệt để ngôn ngữ. (vẫn còn lẫn lộn ngôn ngữ)
+- Chưa dịch được triệt để ngôn ngữ. (vẫn còn lẫn lộn ngôn ngữ)
 - Quản lý tour chưa hợp lí
 - Lỗi khách hàng chưa sửa được thông tin cá nhân
 - Chưa làm backend xử lí đăng nhập trên app và và đăng kí
