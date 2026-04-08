@@ -4,44 +4,25 @@ import { Card } from "../../components/ui/Card";
 import { DataTable, type DataColumn } from "../../components/ui/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
+import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
-import type { CustomerUser, EndUserProfile, EndUserStatusCode, EndUserPoiVisit } from "../../data/types";
+import type { CustomerStatus, CustomerUser, EndUserProfile, EndUserStatusCode } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
 import { endUserStatusBadgeTone, endUserStatusLabels, formatDateTime, resolveEndUserStatus } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
 
-type ConfirmAction = {
-  customer: CustomerUser;
-  nextIsBanned: boolean;
-  title: string;
-  message: string;
-  confirmLabel: string;
-  buttonVariant: "danger" | "secondary";
-};
-
 const getCustomerIdentifier = (customer: CustomerUser) =>
-  customer.username?.trim() || customer.deviceId?.trim() || customer.name || customer.id;
+  customer.name?.trim() || customer.username?.trim() || customer.email?.trim() || customer.id;
 
-const mapProfileToCustomer = (customer: EndUserProfile, totalScans: number): CustomerUser => ({
-  id: customer.id,
-  name: customer.username ?? customer.deviceId ?? customer.id,
-  email: "",
-  phone: "",
-  status: customer.status,
-  isActive: customer.isActive,
-  isBanned: customer.isBanned,
-  preferredLanguage: customer.defaultLanguage,
-  isPremium: false,
-  totalScans,
-  favoritePoiIds: [],
-  createdAt: customer.createdAt,
-  lastActiveAt: customer.lastActiveAt,
-  username: customer.username,
-  deviceId: customer.deviceId,
-  country: customer.country,
-  deviceType: customer.deviceType,
-});
+const getAccountTypeLabel = (customer: CustomerUser | null) =>
+  customer?.isPremium ? "Premium" : "Free";
+
+const statusOptions: Array<{ value: CustomerStatus; label: string }> = [
+  { value: "active", label: "Đang hoạt động" },
+  { value: "inactive", label: "Không hoạt động" },
+  { value: "banned", label: "Đã ban" },
+];
 
 export const EndUsersPage = () => {
   const { state, saveCustomerUserStatus } = useAdminData();
@@ -51,13 +32,16 @@ export const EndUsersPage = () => {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<EndUserProfile | null>(null);
-  const [selectedHistory, setSelectedHistory] = useState<EndUserPoiVisit[]>([]);
-  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [statusDraft, setStatusDraft] = useState<CustomerStatus>("active");
   const [submittingUserId, setSubmittingUserId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const canManageEndUsers = user?.role === "SUPER_ADMIN";
   const endUsers = useMemo(() => state.customerUsers, [state.customerUsers]);
+  const selectedCustomerSummary = useMemo(
+    () => endUsers.find((item) => item.id === selectedCustomerId) ?? null,
+    [endUsers, selectedCustomerId],
+  );
 
   const counts = useMemo(() => {
     return endUsers.reduce(
@@ -74,19 +58,15 @@ export const EndUsersPage = () => {
     setSelectedCustomerId(customerId);
     setDetailLoading(true);
     setDetailError(null);
+    setActionError(null);
 
     try {
-      const [customer, history] = await Promise.all([
-        adminApi.getEndUser(customerId),
-        adminApi.getEndUserHistory(customerId),
-      ]);
-
+      const customer = await adminApi.getEndUser(customerId);
       setSelectedCustomer(customer);
-      setSelectedHistory(history);
+      setStatusDraft(customer.status);
     } catch (error) {
       setDetailError(getErrorMessage(error));
       setSelectedCustomer(null);
-      setSelectedHistory([]);
     } finally {
       setDetailLoading(false);
     }
@@ -97,44 +77,16 @@ export const EndUsersPage = () => {
     await loadEndUserDetails(customerId);
   };
 
-  const openConfirmAction = (customer: CustomerUser) => {
-    setActionError(null);
-    setConfirmAction(
-      customer.isBanned
-        ? {
-            customer,
-            nextIsBanned: false,
-            title: "Khôi phục tài khoản",
-            message: "Bạn có muốn khôi phục tài khoản này không?",
-            confirmLabel: "Bỏ ban",
-            buttonVariant: "secondary",
-          }
-        : {
-            customer,
-            nextIsBanned: true,
-            title: "Khóa tài khoản",
-            message: "Bạn có chắc muốn khóa tài khoản này không?",
-            confirmLabel: "Ban",
-            buttonVariant: "danger",
-          },
-    );
-  };
-
-  const handleConfirmedStatusAction = async () => {
-    if (!user || !canManageEndUsers || !confirmAction) {
+  const handleSaveStatus = async () => {
+    if (!user || !canManageEndUsers || !selectedCustomer) {
       return;
     }
 
     try {
-      setSubmittingUserId(confirmAction.customer.id);
-      await saveCustomerUserStatus(confirmAction.customer.id, confirmAction.nextIsBanned, user);
-
-      if (selectedCustomerId === confirmAction.customer.id && detailModalOpen) {
-        await loadEndUserDetails(confirmAction.customer.id);
-      }
-
-      setConfirmAction(null);
+      setSubmittingUserId(selectedCustomer.id);
       setActionError(null);
+      await saveCustomerUserStatus(selectedCustomer.id, statusDraft, user);
+      await loadEndUserDetails(selectedCustomer.id);
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -144,14 +96,39 @@ export const EndUsersPage = () => {
 
   const columns: DataColumn<CustomerUser>[] = [
     {
-      key: "identifier",
+      key: "user",
       header: "Người dùng",
       render: (customer) => (
         <div>
           <p className="font-semibold text-ink-900">{getCustomerIdentifier(customer)}</p>
-          <p className="mt-1 text-sm text-ink-500">{customer.deviceId || customer.email || customer.id}</p>
+          <p className="mt-1 text-sm text-ink-500">{customer.username?.trim() || "--"}</p>
         </div>
       ),
+    },
+    {
+      key: "email",
+      header: "Email",
+      render: (customer) => <p className="text-sm text-ink-700">{customer.email || "--"}</p>,
+    },
+    {
+      key: "userId",
+      header: "User ID",
+      render: (customer) => <p className="font-mono text-sm text-ink-700">{customer.id}</p>,
+    },
+    {
+      key: "accountType",
+      header: "Loại tài khoản",
+      render: (customer) => (
+        <StatusBadge
+          status={customer.isPremium ? "active" : "inactive"}
+          label={getAccountTypeLabel(customer)}
+        />
+      ),
+    },
+    {
+      key: "password",
+      header: "Mật khẩu",
+      render: (customer) => <p className="font-mono text-sm text-ink-700">{customer.password || "--"}</p>,
     },
     {
       key: "locale",
@@ -160,16 +137,6 @@ export const EndUsersPage = () => {
         <div>
           <p className="font-medium text-ink-800">{customer.preferredLanguage.toUpperCase()}</p>
           <p className="mt-1 text-xs text-ink-500">{customer.country || "--"}</p>
-        </div>
-      ),
-    },
-    {
-      key: "device",
-      header: "Thiết bị",
-      render: (customer) => (
-        <div>
-          <p className="font-medium capitalize text-ink-800">{customer.deviceType ?? "--"}</p>
-          <p className="mt-1 text-xs text-ink-500">Hoạt động lần cuối: {formatDateTime(customer.lastActiveAt)}</p>
         </div>
       ),
     },
@@ -189,29 +156,15 @@ export const EndUsersPage = () => {
     {
       key: "actions",
       header: "Thao tác",
-      render: (customer) => {
-        const isSubmitting = submittingUserId === customer.id;
-        return (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => void openEndUserDetails(customer.id)} disabled={isSubmitting}>
-              Chi tiết
-            </Button>
-            <Button
-              variant={customer.isBanned ? "secondary" : "danger"}
-              onClick={() => openConfirmAction(customer)}
-              disabled={!canManageEndUsers || isSubmitting}
-            >
-              {isSubmitting ? "Đang xử lý..." : customer.isBanned ? "Bỏ ban" : "Ban"}
-            </Button>
-          </div>
-        );
-      },
+      render: (customer) => (
+        <Button variant="secondary" onClick={() => void openEndUserDetails(customer.id)}>
+          Chi tiết / sửa
+        </Button>
+      ),
     },
   ];
 
   const selectedStatus = selectedCustomer ? resolveEndUserStatus(selectedCustomer) : null;
-  const selectedCustomerRow =
-    selectedCustomer && mapProfileToCustomer(selectedCustomer, selectedHistory.length);
   const isDetailActionSubmitting = selectedCustomer ? submittingUserId === selectedCustomer.id : false;
 
   return (
@@ -221,9 +174,9 @@ export const EndUsersPage = () => {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">
             Quản trị người dùng cuối
           </p>
-          <h1 className="mt-3 text-3xl font-bold text-ink-900">Quản lý end-user của ứng dụng mobile</h1>
+          <h1 className="mt-3 text-3xl font-bold text-ink-900">Quản lý tài khoản end-user của mobile app</h1>
           <p className="mt-3 text-sm leading-6 text-ink-500">
-            Trang riêng cho user cuối: xem danh sách, chi tiết, lịch sử ghé POI, khóa và mở khóa tài khoản.
+            Quản lý thông tin đăng nhập end-user và cập nhật trạng thái tài khoản theo từng người dùng.
           </p>
         </div>
       </Card>
@@ -249,9 +202,9 @@ export const EndUsersPage = () => {
 
       {!canManageEndUsers ? (
         <Card className="border border-amber-100 bg-amber-50">
-          <p className="font-semibold text-amber-800">Tài khoản hiện tại chỉ có quyền xem end-user.</p>
+          <p className="font-semibold text-amber-800">Tài khoản hiện tại chỉ có quyền xem thông tin end-user.</p>
           <p className="mt-2 text-sm text-amber-700">
-            Đăng nhập bằng Super Admin để ban hoặc bỏ ban tài khoản khi cần.
+            Đăng nhập bằng Super Admin để đổi trạng thái tài khoản khi cần.
           </p>
         </Card>
       ) : null}
@@ -260,7 +213,7 @@ export const EndUsersPage = () => {
         {endUsers.length === 0 ? (
           <EmptyState
             title="Chưa có end-user nào"
-            description="Khi mobile app ghi nhận lượt ghé POI, danh sách người dùng cuối sẽ hiển thị tại đây."
+            description="Khi mobile app ghi nhận người dùng mới, danh sách tài khoản sẽ hiển thị tại đây."
           />
         ) : (
           <DataTable data={endUsers} columns={columns} rowKey={(row) => row.id} pageSize={8} />
@@ -271,7 +224,7 @@ export const EndUsersPage = () => {
         open={detailModalOpen}
         onClose={() => setDetailModalOpen(false)}
         title="Chi tiết người dùng"
-        description="Thông tin tài khoản và lịch sử ghé POI của end-user."
+        description="Thông tin tài khoản và trạng thái hiện tại của end-user."
         maxWidthClassName="max-w-5xl"
       >
         {detailLoading ? (
@@ -286,28 +239,47 @@ export const EndUsersPage = () => {
                 <p className="mt-2 font-semibold text-ink-900">{selectedCustomer.id}</p>
               </Card>
               <Card>
-                <p className="text-sm text-ink-500">Username / Device</p>
-                <p className="mt-2 font-semibold text-ink-900">
-                  {selectedCustomer.username || selectedCustomer.deviceId || "--"}
-                </p>
+                <p className="text-sm text-ink-500">Họ tên</p>
+                <p className="mt-2 font-semibold text-ink-900">{selectedCustomer.name || "--"}</p>
+              </Card>
+              <Card>
+                <p className="text-sm text-ink-500">Loại tài khoản</p>
+                <div className="mt-2">
+                  <StatusBadge
+                    status={selectedCustomerSummary?.isPremium ? "active" : "inactive"}
+                    label={getAccountTypeLabel(selectedCustomerSummary)}
+                  />
+                </div>
+              </Card>
+              <Card>
+                <p className="text-sm text-ink-500">Username</p>
+                <p className="mt-2 font-semibold text-ink-900">{selectedCustomer.username || "--"}</p>
+              </Card>
+              <Card>
+                <p className="text-sm text-ink-500">Email</p>
+                <p className="mt-2 font-semibold text-ink-900">{selectedCustomer.email || "--"}</p>
+              </Card>
+              <Card>
+                <p className="text-sm text-ink-500">Mật khẩu</p>
+                <p className="mt-2 font-mono font-semibold text-ink-900">{selectedCustomer.password || "--"}</p>
+              </Card>
+              <Card>
+                <p className="text-sm text-ink-500">Số điện thoại</p>
+                <p className="mt-2 font-semibold text-ink-900">{selectedCustomer.phone || "--"}</p>
               </Card>
               <Card>
                 <p className="text-sm text-ink-500">Ngôn ngữ mặc định</p>
                 <p className="mt-2 font-semibold uppercase text-ink-900">{selectedCustomer.defaultLanguage}</p>
               </Card>
               <Card>
-                <p className="text-sm text-ink-500">Trạng thái</p>
+                <p className="text-sm text-ink-500">Quốc gia</p>
+                <p className="mt-2 font-semibold text-ink-900">{selectedCustomer.country || "--"}</p>
+              </Card>
+              <Card>
+                <p className="text-sm text-ink-500">Trạng thái hiện tại</p>
                 <div className="mt-2">
                   <StatusBadge status={endUserStatusBadgeTone[selectedStatus]} label={endUserStatusLabels[selectedStatus]} />
                 </div>
-              </Card>
-              <Card>
-                <p className="text-sm text-ink-500">Quốc gia</p>
-                <p className="mt-2 font-semibold text-ink-900">{selectedCustomer.country}</p>
-              </Card>
-              <Card>
-                <p className="text-sm text-ink-500">Thiết bị</p>
-                <p className="mt-2 font-semibold capitalize text-ink-900">{selectedCustomer.deviceType}</p>
               </Card>
               <Card>
                 <p className="text-sm text-ink-500">Ngày tạo</p>
@@ -319,95 +291,47 @@ export const EndUsersPage = () => {
               </Card>
             </section>
 
-            {selectedCustomerRow ? (
-              <div className="flex justify-end">
-                <Button
-                  variant={selectedCustomerRow.isBanned ? "secondary" : "danger"}
-                  disabled={!canManageEndUsers || isDetailActionSubmitting}
-                  onClick={() => openConfirmAction(selectedCustomerRow)}
-                >
-                  {isDetailActionSubmitting ? "Đang xử lý..." : selectedCustomerRow.isBanned ? "Bỏ ban" : "Ban"}
-                </Button>
-              </div>
-            ) : null}
-
-            <div>
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-ink-900">Lịch sử ghé POI</h3>
-                <p className="text-sm text-ink-500">{selectedHistory.length} lần ghi nhận</p>
-              </div>
-
-              {selectedHistory.length === 0 ? (
-                <EmptyState
-                  title="Chưa có lịch sử POI"
-                  description="User này chưa có bản ghi đến POI nào trong hệ thống."
-                />
-              ) : (
-                <div className="overflow-hidden rounded-3xl border border-sand-100">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-sand-100">
-                      <thead className="bg-sand-50/80">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-500">
-                            POI
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-500">
-                            Thời gian
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-500">
-                            Ngôn ngữ dịch
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-sand-100 bg-white">
-                        {selectedHistory.map((item) => (
-                          <tr key={item.id}>
-                            <td className="px-4 py-4">
-                              <p className="font-medium text-ink-900">{item.poiSlug}</p>
-                              <p className="mt-1 text-sm text-ink-500">{item.poiAddress}</p>
-                            </td>
-                            <td className="px-4 py-4 text-sm text-ink-700">{formatDateTime(item.visitedAt)}</td>
-                            <td className="px-4 py-4">
-                              <StatusBadge status="active" label={item.translatedLanguage.toUpperCase()} />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+            <Card className="border border-sand-100 bg-sand-50/70">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div className="max-w-2xl">
+                  <p className="text-sm font-semibold text-ink-900">Chỉnh sửa trạng thái người dùng</p>
+                  <p className="mt-1 text-sm text-ink-500">
+                    Dùng trạng thái để tạm ngưng, kích hoạt lại hoặc ban hoàn toàn tài khoản end-user.
+                  </p>
                 </div>
-              )}
-            </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <div>
+                    <label className="field-label">Trạng thái mới</label>
+                    <Select
+                      value={statusDraft}
+                      onChange={(event) => setStatusDraft(event.target.value as CustomerStatus)}
+                      disabled={!canManageEndUsers || isDetailActionSubmitting}
+                    >
+                      {statusOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <Button
+                    onClick={() => void handleSaveStatus()}
+                    disabled={!canManageEndUsers || isDetailActionSubmitting || statusDraft === selectedCustomer.status}
+                  >
+                    {isDetailActionSubmitting ? "Đang lưu..." : "Lưu trạng thái"}
+                  </Button>
+                </div>
+              </div>
+              {actionError ? (
+                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {actionError}
+                </div>
+              ) : null}
+            </Card>
           </div>
         ) : (
           <EmptyState title="Chưa chọn người dùng" description="Hãy chọn một end-user trong bảng để xem chi tiết." />
         )}
-      </Modal>
-
-      <Modal
-        open={confirmAction !== null}
-        onClose={() => (submittingUserId ? undefined : setConfirmAction(null))}
-        title={confirmAction?.title ?? "Xác nhận thao tác"}
-        description={confirmAction?.message}
-        maxWidthClassName="max-w-xl"
-      >
-        {actionError ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {actionError}
-          </div>
-        ) : null}
-        <div className="flex justify-end gap-3">
-          <Button variant="ghost" onClick={() => setConfirmAction(null)} disabled={submittingUserId !== null}>
-            Hủy
-          </Button>
-          <Button
-            variant={confirmAction?.buttonVariant ?? "secondary"}
-            onClick={() => void handleConfirmedStatusAction()}
-            disabled={submittingUserId !== null}
-          >
-            {submittingUserId !== null ? "Đang xử lý..." : confirmAction?.confirmLabel ?? "Xác nhận"}
-          </Button>
-        </div>
       </Modal>
     </div>
   );

@@ -94,6 +94,7 @@ public sealed class TranslationsController(
     [HttpPost("translate")]
     public async Task<ActionResult<ApiResponse<TextTranslationResponse>>> TranslateTexts(
         [FromBody] TextTranslationRequest request,
+        [FromQuery] string? customerUserId,
         CancellationToken cancellationToken)
     {
         if (request.Texts is null || request.Texts.Count == 0)
@@ -104,6 +105,17 @@ public sealed class TranslationsController(
         if (string.IsNullOrWhiteSpace(request.TargetLanguageCode))
         {
             return BadRequest(ApiResponse<TextTranslationResponse>.Fail("TargetLanguageCode là bắt buộc."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(customerUserId))
+        {
+            var accessDecision = repository.EvaluateCustomerLanguageAccess(customerUserId, request.TargetLanguageCode);
+            if (!accessDecision.IsAllowed)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<TextTranslationResponse>.Fail(accessDecision.Message));
+            }
+
+            request = request with { TargetLanguageCode = accessDecision.LanguageCode };
         }
 
         var translated = await translationProxyService.TranslateAsync(request, cancellationToken);

@@ -10,11 +10,9 @@ README này là tài liệu tổng hợp duy nhất cho toàn bộ đồ án. Re
 - Lỗi map hiện thành phố Thủ Đức, không hiện TPHCM
 - Chưa dịch được triệt để ngôn ngữ. (vẫn còn lẫn lộn ngôn ngữ)
 - Quản lý tour chưa hợp lí
-- Lỗi khách hàng chưa sửa được thông tin cá nhân
-- Chưa làm backend xử lí đăng nhập trên app và và đăng kí
 - Chưa xử lí backend đăng nhập bằng google, facebook
 - Cần thêm chatbox AI cho app (xài API key của Gemini)
-
+- Lỗi khi trạng thái người dùng là không hoạt động và đã ban thì vẫn đăng nhập bình thường
 ## Tổng quan kiến trúc
 
 ```text
@@ -134,6 +132,7 @@ Mobile App -------------------> Backend API
 ```powershell
 npm run install:admin
 npm run dev
+npm run dev:all
 .\scripts\dev-backend.cmd
 npm run dev:mobile:android
 npm run build
@@ -144,6 +143,13 @@ npm run lint
 Nếu dùng PowerShell và gặp lỗi `npm.ps1` do execution policy, hãy thay `npm` bằng `npm.cmd`.
 
 ## Cách chạy local
+
+Mở đúng workspace trước khi chạy lệnh:
+
+- VS Code: mở thư mục `D:\vinh-khanh-food` hoặc file workspace/solution của repo. Repo đã có `.vscode/settings.json` để terminal mặc định mở tại root workspace.
+- Visual Studio: mở `vinh-khanh-food.sln` chứ không mở `vinh-khanh-food.slnLaunch`. File `.slnLaunch` chỉ là cấu hình profile chạy dùng chung cho solution.
+- Khi chạy web trong Visual Studio, ưu tiên profile backend (`VinhKhanh.BackendApi` hoặc `https`). Backend đã được cấu hình SPA proxy để tự bật Vite dev server cho `apps/admin-web` tại `http://localhost:5173`.
+- Nếu muốn chạy đa dự án trong Visual Studio, solution cũng có profile `Backend + Admin Web` trong file `vinh-khanh-food.slnLaunch`.
 
 ### 1. Yêu cầu môi trường
 
@@ -187,6 +193,14 @@ npm run dev:mobile:android
 ```
 
 Script này sẽ build, cài lên emulator Android và tiếp tục watch để deploy lại khi file trong `apps/mobile-app` thay đổi.
+
+### 5. Chạy đồng thời backend + admin web + mobile
+
+```powershell
+npm run dev:all
+```
+
+Lệnh này sẽ mở đồng thời backend, admin web và mobile watcher trong cùng một terminal. Nhấn `Ctrl+C` để dừng toàn bộ.
 
 ## Tài khoản mẫu
 

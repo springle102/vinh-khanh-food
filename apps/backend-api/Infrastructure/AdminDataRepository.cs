@@ -52,9 +52,9 @@ public sealed partial class AdminDataRepository
         }
 
         var ownerPoiIds = GetOwnerPoiIds(connection, null, scopeUserId);
-        var allowedUserIds = GetUserPoiVisitLinks(connection, null)
-            .Where((link) => ownerPoiIds.Contains(link.PoiId))
-            .Select((link) => link.UserId)
+        var allowedUserIds = GetCustomerUsers(connection, null)
+            .Where((customer) => customer.FavoritePoiIds.Any(ownerPoiIds.Contains))
+            .Select((customer) => customer.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return items
@@ -71,20 +71,6 @@ public sealed partial class AdminDataRepository
         }
 
         return GetEndUserById(connection, null, id);
-    }
-
-    public IReadOnlyList<EndUserPoiVisit> GetEndUserHistory(string id, string? scopeUserId = null, string? scopeRole = null)
-    {
-        using var connection = OpenConnection();
-        if (IsOwnerScopeRequest(scopeUserId, scopeRole))
-        {
-            var ownerPoiIds = GetOwnerPoiIds(connection, null, scopeUserId);
-            return GetEndUserHistory(connection, null, id)
-                .Where((item) => ownerPoiIds.Contains(item.PoiId, StringComparer.OrdinalIgnoreCase))
-                .ToList();
-        }
-
-        return GetEndUserHistory(connection, null, id);
     }
 
     public IReadOnlyList<PoiCategory> GetCategories()
@@ -174,7 +160,10 @@ public sealed partial class AdminDataRepository
         return GetSettings(connection, null);
     }
 
-    public AdminBootstrapResponse GetBootstrap(string? scopeUserId = null, string? scopeRole = null)
+    public AdminBootstrapResponse GetBootstrap(
+        string? scopeUserId = null,
+        string? scopeRole = null,
+        string? customerUserId = null)
     {
         using var connection = OpenConnection();
 
@@ -209,16 +198,9 @@ public sealed partial class AdminDataRepository
             foodItems = foodItems.Where((item) => ownerPoiIdSet.Contains(item.PoiId)).ToList();
 
             var foodItemIdSet = foodItems.Select((item) => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var customerPoiLinks = GetUserPoiVisitLinks(connection, null);
-            var allowedCustomerIds = customerPoiLinks
-                .Where((link) => ownerPoiIdSet.Contains(link.PoiId))
-                .Select((link) => link.UserId)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             customerUsers = customerUsers
-                .Where((customer) =>
-                    customer.FavoritePoiIds.Any(ownerPoiIdSet.Contains) ||
-                    allowedCustomerIds.Contains(customer.Id))
+                .Where((customer) => customer.FavoritePoiIds.Any(ownerPoiIdSet.Contains))
                 .ToList();
 
             routes = routes.Where((route) => route.StopPoiIds.Any(ownerPoiIdSet.Contains)).ToList();
@@ -272,6 +254,21 @@ public sealed partial class AdminDataRepository
                     auditTargets.Any((target) =>
                         string.Equals(log.Target, target, StringComparison.OrdinalIgnoreCase) ||
                         log.Target.Contains(target, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+        else if (!string.IsNullOrWhiteSpace(customerUserId))
+        {
+            var customer = GetCustomerUserById(connection, null, customerUserId);
+            var allowedLanguages = GetAllowedLanguageCodesForCustomer(connection, null, customerUserId, settings);
+
+            users = [];
+            customerUsers = customer is null ? [] : [customer];
+            auditLogs = [];
+            translations = translations
+                .Where((translation) => allowedLanguages.Contains(PremiumAccessCatalog.NormalizeLanguageCode(translation.LanguageCode)))
+                .ToList();
+            audioGuides = audioGuides
+                .Where((audioGuide) => allowedLanguages.Contains(PremiumAccessCatalog.NormalizeLanguageCode(audioGuide.LanguageCode)))
                 .ToList();
         }
 
@@ -337,9 +334,11 @@ public sealed partial class AdminDataRepository
             }
 
             using var verifiedConnection = OpenConnection();
+            EnsureSystemSettingsSchema(verifiedConnection);
             RemoveLegacyPoiDefaultLanguageColumn(verifiedConnection);
             EnsureRefreshSessionsTable(verifiedConnection);
             EnsureEndUserManagementSchema(verifiedConnection);
+            EnsurePremiumPurchaseSchema(verifiedConnection);
             EnsureTourManagementSchema(verifiedConnection);
             NormalizeLegacyEntityTypes(verifiedConnection);
         }
@@ -376,6 +375,107 @@ public sealed partial class AdminDataRepository
             """);
     }
 
+    private void EnsureSystemSettingsSchema(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.SystemSettings', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.SystemSettings (
+                    Id INT NOT NULL PRIMARY KEY,
+                    AppName NVARCHAR(150) NOT NULL,
+                    SupportEmail NVARCHAR(200) NOT NULL,
+                    DefaultLanguage NVARCHAR(20) NOT NULL,
+                    FallbackLanguage NVARCHAR(20) NOT NULL,
+                    PremiumUnlockPriceUsd INT NOT NULL,
+                    MapProvider NVARCHAR(50) NOT NULL,
+                    StorageProvider NVARCHAR(50) NOT NULL,
+                    TtsProvider NVARCHAR(50) NOT NULL,
+                    GeofenceRadiusMeters INT NOT NULL,
+                    GuestReviewEnabled BIT NOT NULL,
+                    AnalyticsRetentionDays INT NOT NULL
+                );
+            END;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'PremiumUnlockPriceUsd') IS NULL
+                ALTER TABLE dbo.SystemSettings ADD PremiumUnlockPriceUsd INT NULL;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'GuestReviewEnabled') IS NULL
+                ALTER TABLE dbo.SystemSettings ADD GuestReviewEnabled BIT NULL;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'AnalyticsRetentionDays') IS NULL
+                ALTER TABLE dbo.SystemSettings ADD AnalyticsRetentionDays INT NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            $"""
+            UPDATE dbo.SystemSettings
+            SET PremiumUnlockPriceUsd = CASE
+                    WHEN PremiumUnlockPriceUsd IS NULL OR PremiumUnlockPriceUsd <= 0 THEN {PremiumAccessCatalog.DefaultPremiumPriceUsd}
+                    ELSE PremiumUnlockPriceUsd
+                END,
+                GuestReviewEnabled = COALESCE(GuestReviewEnabled, CAST(1 AS bit)),
+                AnalyticsRetentionDays = COALESCE(AnalyticsRetentionDays, 180)
+            WHERE PremiumUnlockPriceUsd IS NULL
+               OR PremiumUnlockPriceUsd <= 0
+               OR GuestReviewEnabled IS NULL
+               OR AnalyticsRetentionDays IS NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
+                    AND name = N'PremiumUnlockPriceUsd'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.SystemSettings ALTER COLUMN PremiumUnlockPriceUsd INT NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
+                    AND name = N'GuestReviewEnabled'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.SystemSettings ALTER COLUMN GuestReviewEnabled BIT NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
+                    AND name = N'AnalyticsRetentionDays'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.SystemSettings ALTER COLUMN AnalyticsRetentionDays INT NOT NULL;
+            END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.SystemSettingLanguages', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.SystemSettingLanguages (
+                    SettingId INT NOT NULL,
+                    LanguageType NVARCHAR(20) NOT NULL,
+                    LanguageCode NVARCHAR(20) NOT NULL,
+                    PRIMARY KEY (SettingId, LanguageType, LanguageCode),
+                    CONSTRAINT FK_SystemSettingLanguages_SystemSettings FOREIGN KEY (SettingId) REFERENCES dbo.SystemSettings(Id)
+                );
+            END;
+            """);
+    }
+
     private void EnsureEndUserManagementSchema(SqlConnection connection)
     {
         ExecuteNonQuery(
@@ -389,50 +489,74 @@ public sealed partial class AdminDataRepository
                     Name NVARCHAR(120) NOT NULL,
                     Email NVARCHAR(200) NOT NULL,
                     Phone NVARCHAR(30) NOT NULL,
+                    [Password] NVARCHAR(200) NOT NULL,
                     [Status] NVARCHAR(30) NOT NULL,
                     IsActive BIT NOT NULL,
                     IsBanned BIT NOT NULL,
                     PreferredLanguage NVARCHAR(20) NOT NULL,
                     IsPremium BIT NOT NULL,
-                    TotalScans INT NOT NULL,
                     CreatedAt DATETIMEOFFSET(7) NOT NULL,
                     LastActiveAt DATETIMEOFFSET(7) NULL,
                     Username NVARCHAR(120) NULL,
-                    DeviceId NVARCHAR(200) NULL,
-                    Country NVARCHAR(20) NOT NULL,
-                    DeviceType NVARCHAR(20) NOT NULL
+                    Country NVARCHAR(20) NOT NULL
                 );
             END;
 
             IF COL_LENGTH(N'dbo.CustomerUsers', N'Username') IS NULL
                 ALTER TABLE dbo.CustomerUsers ADD Username NVARCHAR(120) NULL;
 
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'DeviceId') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD DeviceId NVARCHAR(200) NULL;
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'Password') IS NULL
+                ALTER TABLE dbo.CustomerUsers ADD [Password] NVARCHAR(200) NULL;
 
             IF COL_LENGTH(N'dbo.CustomerUsers', N'Country') IS NULL
                 ALTER TABLE dbo.CustomerUsers ADD Country NVARCHAR(20) NULL;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'DeviceType') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD DeviceType NVARCHAR(20) NULL;
 
             IF COL_LENGTH(N'dbo.CustomerUsers', N'IsActive') IS NULL
                 ALTER TABLE dbo.CustomerUsers ADD IsActive BIT NULL;
 
             IF COL_LENGTH(N'dbo.CustomerUsers', N'IsBanned') IS NULL
                 ALTER TABLE dbo.CustomerUsers ADD IsBanned BIT NULL;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'IsPremium') IS NULL
+                ALTER TABLE dbo.CustomerUsers ADD IsPremium BIT NULL;
             """);
 
         ExecuteNonQuery(
             connection,
             null,
             """
+            IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_DeviceType')
+            BEGIN
+                ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT CK_CustomerUsers_DeviceType;
+            END;
+
+            IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_Identity')
+            BEGIN
+                ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT CK_CustomerUsers_Identity;
+            END;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'DeviceId') IS NOT NULL
+            BEGIN
+                ALTER TABLE dbo.CustomerUsers DROP COLUMN DeviceId;
+            END;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'DeviceType') IS NOT NULL
+            BEGIN
+                ALTER TABLE dbo.CustomerUsers DROP COLUMN DeviceType;
+            END;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'TotalScans') IS NOT NULL
+            BEGIN
+                ALTER TABLE dbo.CustomerUsers DROP COLUMN TotalScans;
+            END;
 
             UPDATE dbo.CustomerUsers
             SET Username = NULLIF(LTRIM(RTRIM(Username)), N''),
-                DeviceId = NULLIF(LTRIM(RTRIM(DeviceId)), N''),
+                Email = NULLIF(LTRIM(RTRIM(Email)), N''),
+                Phone = NULLIF(LTRIM(RTRIM(Phone)), N''),
+                [Password] = NULLIF(LTRIM(RTRIM([Password])), N''),
                 Country = NULLIF(UPPER(LTRIM(RTRIM(Country))), N''),
-                DeviceType = LOWER(NULLIF(LTRIM(RTRIM(DeviceType)), N''));
+                PreferredLanguage = NULLIF(LTRIM(RTRIM(PreferredLanguage)), N'');
 
             UPDATE dbo.CustomerUsers
             SET Username = COALESCE(
@@ -444,12 +568,8 @@ public sealed partial class AdminDataRepository
                     END,
                     NULLIF(LTRIM(RTRIM(Name)), N''),
                     Id),
+                [Password] = COALESCE(NULLIF(LTRIM(RTRIM([Password])), N''), N'Customer@123'),
                 Country = COALESCE(NULLIF(UPPER(LTRIM(RTRIM(Country))), N''), N'VN'),
-                DeviceType = CASE
-                    WHEN LOWER(COALESCE(DeviceType, N'')) IN (N'android', N'ios')
-                        THEN LOWER(DeviceType)
-                    ELSE N'android'
-                END,
                 IsBanned = COALESCE(
                     IsBanned,
                     CASE
@@ -462,6 +582,7 @@ public sealed partial class AdminDataRepository
                         WHEN LOWER(COALESCE([Status], N'')) IN (N'inactive', N'idle') THEN CAST(0 AS bit)
                         ELSE CAST(1 AS bit)
                     END),
+                IsPremium = COALESCE(IsPremium, CAST(0 AS bit)),
                 PreferredLanguage = COALESCE(NULLIF(LTRIM(RTRIM(PreferredLanguage)), N''), N'vi'),
                 [Status] = CASE
                     WHEN COALESCE(IsBanned,
@@ -480,9 +601,10 @@ public sealed partial class AdminDataRepository
                 END
             WHERE NULLIF(LTRIM(RTRIM(Username)), N'') IS NULL
                OR NULLIF(LTRIM(RTRIM(Country)), N'') IS NULL
-               OR LOWER(COALESCE(DeviceType, N'')) NOT IN (N'android', N'ios')
                OR LOWER(COALESCE([Status], N'')) NOT IN (N'active', N'banned', N'inactive')
                OR NULLIF(LTRIM(RTRIM(PreferredLanguage)), N'') IS NULL
+               OR NULLIF(LTRIM(RTRIM([Password])), N'') IS NULL
+               OR IsPremium IS NULL
                OR IsActive IS NULL
                OR IsBanned IS NULL;
 
@@ -520,6 +642,17 @@ public sealed partial class AdminDataRepository
                 SELECT 1
                 FROM sys.columns
                 WHERE object_id = OBJECT_ID(N'dbo.CustomerUsers')
+                    AND name = N'IsPremium'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.CustomerUsers ALTER COLUMN IsPremium BIT NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.CustomerUsers')
                     AND name = N'Country'
                     AND is_nullable = 1
             )
@@ -531,11 +664,11 @@ public sealed partial class AdminDataRepository
                 SELECT 1
                 FROM sys.columns
                 WHERE object_id = OBJECT_ID(N'dbo.CustomerUsers')
-                    AND name = N'DeviceType'
+                    AND name = N'Password'
                     AND is_nullable = 1
             )
             BEGIN
-                ALTER TABLE dbo.CustomerUsers ALTER COLUMN DeviceType NVARCHAR(20) NOT NULL;
+                ALTER TABLE dbo.CustomerUsers ALTER COLUMN [Password] NVARCHAR(200) NOT NULL;
             END;
 
             IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_Status')
@@ -547,45 +680,19 @@ public sealed partial class AdminDataRepository
             ADD CONSTRAINT CK_CustomerUsers_Status
             CHECK ([Status] IN (N'active', N'banned', N'inactive'));
 
-            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_DeviceType')
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers
-                ADD CONSTRAINT CK_CustomerUsers_DeviceType
-                CHECK (DeviceType IN (N'android', N'ios'));
-            END;
-
             IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_Identity')
             BEGIN
                 ALTER TABLE dbo.CustomerUsers
                 ADD CONSTRAINT CK_CustomerUsers_Identity
                 CHECK (
                     NULLIF(LTRIM(RTRIM(Username)), N'') IS NOT NULL OR
-                    NULLIF(LTRIM(RTRIM(DeviceId)), N'') IS NOT NULL
+                    NULLIF(LTRIM(RTRIM(Email)), N'') IS NOT NULL
                 );
             END;
 
-            IF OBJECT_ID(N'dbo.UserPoiVisits', N'U') IS NULL
+            IF OBJECT_ID(N'dbo.UserPoiVisits', N'U') IS NOT NULL
             BEGIN
-                CREATE TABLE dbo.UserPoiVisits (
-                    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
-                    UserId NVARCHAR(50) NOT NULL,
-                    PoiId NVARCHAR(50) NOT NULL,
-                    VisitedAt DATETIMEOFFSET(7) NOT NULL,
-                    TranslatedLanguage NVARCHAR(20) NOT NULL,
-                    CONSTRAINT FK_UserPoiVisits_CustomerUsers FOREIGN KEY (UserId) REFERENCES dbo.CustomerUsers(Id),
-                    CONSTRAINT FK_UserPoiVisits_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id)
-                );
-            END;
-
-            IF NOT EXISTS (
-                SELECT 1
-                FROM sys.indexes
-                WHERE name = N'IX_UserPoiVisits_UserId_VisitedAt'
-                    AND object_id = OBJECT_ID(N'dbo.UserPoiVisits')
-            )
-            BEGIN
-                CREATE INDEX IX_UserPoiVisits_UserId_VisitedAt
-                ON dbo.UserPoiVisits (UserId, VisitedAt DESC);
+                DROP TABLE dbo.UserPoiVisits;
             END;
             """);
     }
@@ -625,6 +732,120 @@ public sealed partial class AdminDataRepository
             null,
             """
             ALTER TABLE dbo.Pois DROP COLUMN DefaultLanguageCode;
+            """);
+    }
+
+    private void EnsurePremiumPurchaseSchema(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.PremiumPurchaseTransactions', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.PremiumPurchaseTransactions (
+                    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
+                    CustomerUserId NVARCHAR(50) NOT NULL,
+                    AmountUsd INT NOT NULL,
+                    CurrencyCode NVARCHAR(10) NOT NULL,
+                    PaymentProvider NVARCHAR(30) NOT NULL,
+                    PaymentMethod NVARCHAR(30) NOT NULL,
+                    PaymentReference NVARCHAR(100) NULL,
+                    MaskedAccount NVARCHAR(60) NULL,
+                    IdempotencyKey NVARCHAR(100) NOT NULL,
+                    [Status] NVARCHAR(20) NOT NULL,
+                    FailureMessage NVARCHAR(300) NULL,
+                    CreatedAt DATETIMEOFFSET(7) NOT NULL,
+                    ProcessedAt DATETIMEOFFSET(7) NULL,
+                    CONSTRAINT FK_PremiumPurchaseTransactions_CustomerUsers
+                        FOREIGN KEY (CustomerUserId) REFERENCES dbo.CustomerUsers(Id)
+                );
+            END;
+
+            IF COL_LENGTH(N'dbo.PremiumPurchaseTransactions', N'PaymentReference') IS NULL
+                ALTER TABLE dbo.PremiumPurchaseTransactions ADD PaymentReference NVARCHAR(100) NULL;
+
+            IF COL_LENGTH(N'dbo.PremiumPurchaseTransactions', N'MaskedAccount') IS NULL
+                ALTER TABLE dbo.PremiumPurchaseTransactions ADD MaskedAccount NVARCHAR(60) NULL;
+
+            IF COL_LENGTH(N'dbo.PremiumPurchaseTransactions', N'IdempotencyKey') IS NULL
+                ALTER TABLE dbo.PremiumPurchaseTransactions ADD IdempotencyKey NVARCHAR(100) NULL;
+
+            IF COL_LENGTH(N'dbo.PremiumPurchaseTransactions', N'FailureMessage') IS NULL
+                ALTER TABLE dbo.PremiumPurchaseTransactions ADD FailureMessage NVARCHAR(300) NULL;
+
+            IF COL_LENGTH(N'dbo.PremiumPurchaseTransactions', N'ProcessedAt') IS NULL
+                ALTER TABLE dbo.PremiumPurchaseTransactions ADD ProcessedAt DATETIMEOFFSET(7) NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE dbo.PremiumPurchaseTransactions
+            SET CurrencyCode = COALESCE(NULLIF(LTRIM(RTRIM(CurrencyCode)), N''), N'USD'),
+                PaymentProvider = COALESCE(NULLIF(LTRIM(RTRIM(PaymentProvider)), N''), N'mock'),
+                PaymentMethod = COALESCE(NULLIF(LTRIM(RTRIM(PaymentMethod)), N''), N'bank_card'),
+                [Status] = CASE
+                    WHEN LOWER(COALESCE([Status], N'')) IN (N'pending', N'succeeded', N'failed') THEN LOWER([Status])
+                    ELSE N'succeeded'
+                END,
+                IdempotencyKey = COALESCE(NULLIF(LTRIM(RTRIM(IdempotencyKey)), N''), CONCAT(N'legacy-', Id))
+            WHERE CurrencyCode IS NULL
+               OR NULLIF(LTRIM(RTRIM(CurrencyCode)), N'') IS NULL
+               OR PaymentProvider IS NULL
+               OR NULLIF(LTRIM(RTRIM(PaymentProvider)), N'') IS NULL
+               OR PaymentMethod IS NULL
+               OR NULLIF(LTRIM(RTRIM(PaymentMethod)), N'') IS NULL
+               OR [Status] IS NULL
+               OR LOWER(COALESCE([Status], N'')) NOT IN (N'pending', N'succeeded', N'failed')
+               OR IdempotencyKey IS NULL
+               OR NULLIF(LTRIM(RTRIM(IdempotencyKey)), N'') IS NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.PremiumPurchaseTransactions')
+                    AND name = N'IdempotencyKey'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.PremiumPurchaseTransactions ALTER COLUMN IdempotencyKey NVARCHAR(100) NOT NULL;
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.check_constraints
+                WHERE name = N'CK_PremiumPurchaseTransactions_Status'
+            )
+            BEGIN
+                ALTER TABLE dbo.PremiumPurchaseTransactions
+                ADD CONSTRAINT CK_PremiumPurchaseTransactions_Status
+                CHECK ([Status] IN (N'pending', N'succeeded', N'failed'));
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'UX_PremiumPurchaseTransactions_Customer_Idempotency'
+                    AND object_id = OBJECT_ID(N'dbo.PremiumPurchaseTransactions')
+            )
+            BEGIN
+                CREATE UNIQUE INDEX UX_PremiumPurchaseTransactions_Customer_Idempotency
+                ON dbo.PremiumPurchaseTransactions (CustomerUserId, IdempotencyKey);
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'UX_PremiumPurchaseTransactions_Customer_Pending'
+                    AND object_id = OBJECT_ID(N'dbo.PremiumPurchaseTransactions')
+            )
+            BEGIN
+                CREATE UNIQUE INDEX UX_PremiumPurchaseTransactions_Customer_Pending
+                ON dbo.PremiumPurchaseTransactions (CustomerUserId)
+                WHERE [Status] = N'pending';
+            END;
             """);
     }
 
@@ -861,27 +1082,6 @@ public sealed partial class AdminDataRepository
         return poiIds;
     }
 
-    private IReadOnlyList<(string UserId, string PoiId)> GetUserPoiVisitLinks(
-        SqlConnection connection,
-        SqlTransaction? transaction)
-    {
-        const string sql = """
-            SELECT UserId, PoiId
-            FROM dbo.UserPoiVisits;
-            """;
-
-        using var command = CreateCommand(connection, transaction, sql);
-        using var reader = command.ExecuteReader();
-
-        var items = new List<(string UserId, string PoiId)>();
-        while (reader.Read())
-        {
-            items.Add((ReadString(reader, "UserId"), ReadString(reader, "PoiId")));
-        }
-
-        return items;
-    }
-
     private bool CanOwnerAccessEndUser(
         SqlConnection connection,
         SqlTransaction? transaction,
@@ -901,10 +1101,7 @@ public sealed partial class AdminDataRepository
             return true;
         }
 
-        return GetUserPoiVisitLinks(connection, transaction)
-            .Any((link) =>
-                string.Equals(link.UserId, endUserId, StringComparison.OrdinalIgnoreCase) &&
-                ownerPoiIds.Contains(link.PoiId));
+        return false;
     }
 
     private void NormalizeLegacyEntityTypes(SqlConnection connection)

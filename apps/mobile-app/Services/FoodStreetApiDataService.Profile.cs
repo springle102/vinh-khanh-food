@@ -1,14 +1,13 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.Storage;
+using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
 
 public sealed partial class FoodStreetApiDataService
 {
-    private const string CurrentCustomerIdPreferenceKey = "vkfood.current.customer.id";
-
     public async Task<UserProfileCard?> SelectUserProfileAsync(string identifier)
     {
         var normalizedIdentifier = identifier?.Trim() ?? string.Empty;
@@ -26,16 +25,57 @@ public sealed partial class FoodStreetApiDataService
 
         SaveCurrentCustomerId(matchedCustomer.Id);
         InvalidateBootstrapSnapshot();
+        await EnsureAllowedLanguageSelectionAsync();
         return MapUserProfile(matchedCustomer);
+    }
+
+    public async Task<UserProfileCard> RegisterUserProfileAsync(CustomerRegistrationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var client = await GetClientAsync()
+            ?? throw new InvalidOperationException("Mobile app chua cau hinh API base URL.");
+
+        var payload = new CustomerRegistrationRequest
+        {
+            Name = request.Name?.Trim() ?? string.Empty,
+            Username = request.Username?.Trim() ?? string.Empty,
+            Email = request.Email?.Trim() ?? string.Empty,
+            Phone = request.Phone?.Trim() ?? string.Empty,
+            Password = request.Password ?? string.Empty,
+            PreferredLanguage = AppLanguage.NormalizeCode(
+                string.IsNullOrWhiteSpace(request.PreferredLanguage)
+                    ? _languageService.CurrentLanguage
+                    : request.PreferredLanguage),
+            Country = string.IsNullOrWhiteSpace(request.Country)
+                ? "VN"
+                : request.Country.Trim().ToUpperInvariant()
+        };
+
+        using var response = await client.PostAsJsonAsync(
+            "api/v1/customer-users",
+            payload,
+            JsonOptions);
+        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<CustomerUserDto>>(JsonOptions);
+
+        if (!response.IsSuccessStatusCode || envelope?.Success != true || envelope.Data is null)
+        {
+            throw new InvalidOperationException(envelope?.Message ?? "Khong the tao tai khoan moi luc nay.");
+        }
+
+        SaveCurrentCustomerId(envelope.Data.Id);
+        InvalidateBootstrapSnapshot();
+        await EnsureAllowedLanguageSelectionAsync();
+        return MapUserProfile(envelope.Data);
     }
 
     public async Task<UserProfileCard> UpdateUserProfileAsync(UserProfileUpdateRequest request)
     {
         var customer = await GetResolvedCurrentCustomerAsync()
-            ?? throw new InvalidOperationException("Không xác định được khách hàng hiện tại để cập nhật hồ sơ.");
+            ?? throw new InvalidOperationException("Khong xac dinh duoc khach hang hien tai de cap nhat ho so.");
 
         var client = await GetClientAsync()
-            ?? throw new InvalidOperationException("Mobile app chưa cấu hình API base URL.");
+            ?? throw new InvalidOperationException("Mobile app chua cau hinh API base URL.");
 
         using var response = await client.PutAsJsonAsync(
             $"api/v1/customer-users/{Uri.EscapeDataString(customer.Id)}/profile",
@@ -45,12 +85,104 @@ public sealed partial class FoodStreetApiDataService
 
         if (!response.IsSuccessStatusCode || envelope?.Success != true || envelope.Data is null)
         {
-            throw new InvalidOperationException(envelope?.Message ?? "Không thể cập nhật hồ sơ khách hàng.");
+            throw new InvalidOperationException(envelope?.Message ?? "Khong the cap nhat ho so khach hang.");
         }
 
         SaveCurrentCustomerId(envelope.Data.Id);
         InvalidateBootstrapSnapshot();
         return MapUserProfile(envelope.Data);
+    }
+
+    public async Task<PremiumPurchaseOffer> GetPremiumOfferAsync()
+    {
+        var snapshot = await GetBootstrapSnapshotAsync();
+        if (snapshot?.PremiumOffer is not null)
+        {
+            return snapshot.PremiumOffer;
+        }
+
+        _logger.LogWarning(
+            "Premium offer was not available from bootstrap data. Falling back to default price {FallbackPriceUsd} USD.",
+            DefaultPremiumPriceUsd);
+
+        return new PremiumPurchaseOffer
+        {
+            PriceUsd = DefaultPremiumPriceUsd,
+            FreeLanguageCodes = ["vi", "en"],
+            PremiumLanguageCodes = ["zh-CN", "ko", "ja"]
+        };
+    }
+
+    public async Task<PremiumPurchaseResult> PurchasePremiumAsync(PremiumCheckoutRequest request)
+    {
+        var customer = await GetResolvedCurrentCustomerAsync()
+            ?? throw new InvalidOperationException("Vui long dang nhap tai khoan de mua goi Premium.");
+        var client = await GetClientAsync()
+            ?? throw new InvalidOperationException("Mobile app chua cau hinh API base URL.");
+        var offer = await GetPremiumOfferAsync();
+
+        ArgumentNullException.ThrowIfNull(request);
+        request.ExpectedPriceUsd = offer.PriceUsd;
+        request.ClientRequestId = string.IsNullOrWhiteSpace(request.ClientRequestId)
+            ? Guid.NewGuid().ToString("N")
+            : request.ClientRequestId.Trim();
+
+        using var response = await client.PostAsJsonAsync(
+            $"api/v1/customer-users/{Uri.EscapeDataString(customer.Id)}/premium/purchase",
+            request,
+            JsonOptions);
+        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<PremiumPurchaseResponseDto>>(JsonOptions);
+
+        if (!response.IsSuccessStatusCode || envelope?.Success != true || envelope.Data is null)
+        {
+            throw new InvalidOperationException(envelope?.Message ?? "Khong the kich hoat goi Premium luc nay.");
+        }
+
+        SaveCurrentCustomerId(envelope.Data.Customer.Id);
+        InvalidateBootstrapSnapshot();
+        await EnsureAllowedLanguageSelectionAsync();
+
+        return new PremiumPurchaseResult
+        {
+            Profile = MapUserProfile(envelope.Data.Customer),
+            ChargedAmountUsd = envelope.Data.ChargedAmountUsd,
+            CurrencyCode = envelope.Data.CurrencyCode,
+            PaymentProvider = envelope.Data.PaymentProvider,
+            PaymentMethod = envelope.Data.PaymentMethod,
+            TransactionId = envelope.Data.TransactionId
+        };
+    }
+
+    public async Task<string> EnsureAllowedLanguageSelectionAsync()
+    {
+        var snapshot = await GetBootstrapSnapshotAsync();
+        var languages = snapshot?.SupportedLanguages.Count > 0
+            ? snapshot.SupportedLanguages
+            : BuildSupportedLanguages(null, null);
+        var currentLanguageCode = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
+        var currentLanguage = languages.FirstOrDefault(item =>
+            string.Equals(item.Code, currentLanguageCode, StringComparison.OrdinalIgnoreCase));
+
+        if (currentLanguage is not null && !currentLanguage.IsLocked)
+        {
+            return currentLanguage.Code;
+        }
+
+        var fallbackLanguage = languages.FirstOrDefault(item => !item.IsLocked)
+            ?? languages.FirstOrDefault()
+            ?? new LanguageOption
+            {
+                Code = AppLanguage.DefaultLanguage,
+                Flag = "\uD83C\uDDFB\uD83C\uDDF3",
+                DisplayName = "Tieng Viet"
+            };
+
+        if (!string.Equals(currentLanguageCode, fallbackLanguage.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            await _languageService.SetLanguageAsync(fallbackLanguage.Code);
+        }
+
+        return fallbackLanguage.Code;
     }
 
     private async Task<CustomerUserDto?> GetResolvedCurrentCustomerAsync()
@@ -66,13 +198,7 @@ public sealed partial class FoodStreetApiDataService
         }
 
         var customers = await GetCustomerUsersAsync();
-        var resolvedCustomer = ResolvePreferredCustomer(customers);
-        if (resolvedCustomer is not null)
-        {
-            SaveCurrentCustomerId(resolvedCustomer.Id);
-        }
-
-        return resolvedCustomer;
+        return ResolvePreferredCustomer(customers);
     }
 
     private async Task<IReadOnlyList<CustomerUserDto>> GetCustomerUsersAsync()
@@ -128,7 +254,6 @@ public sealed partial class FoodStreetApiDataService
         return customerUsers
             .Where(item => item.IsActive && !item.IsBanned)
             .OrderByDescending(item => item.LastActiveAt ?? item.CreatedAt)
-            .ThenByDescending(item => item.TotalScans)
             .FirstOrDefault()
             ?? customerUsers
                 .Where(item => !item.IsBanned)
@@ -147,7 +272,6 @@ public sealed partial class FoodStreetApiDataService
         return customerUsers.FirstOrDefault(item =>
                    string.Equals(item.Email, normalizedIdentifier, StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(item.Username, normalizedIdentifier, StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(item.DeviceId, normalizedIdentifier, StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(item.Id, normalizedIdentifier, StringComparison.OrdinalIgnoreCase) ||
                    (!string.IsNullOrWhiteSpace(item.Phone) &&
                     string.Equals(NormalizePhone(item.Phone), normalizedPhone, StringComparison.OrdinalIgnoreCase)))
@@ -159,13 +283,13 @@ public sealed partial class FoodStreetApiDataService
         => string.Concat((value ?? string.Empty).Where(char.IsDigit));
 
     private static string ReadCurrentCustomerId()
-        => Preferences.Default.Get(CurrentCustomerIdPreferenceKey, string.Empty);
+        => Preferences.Default.Get(AppPreferenceKeys.CurrentCustomerId, string.Empty);
 
     private static void SaveCurrentCustomerId(string customerId)
     {
         if (!string.IsNullOrWhiteSpace(customerId))
         {
-            Preferences.Default.Set(CurrentCustomerIdPreferenceKey, customerId);
+            Preferences.Default.Set(AppPreferenceKeys.CurrentCustomerId, customerId);
         }
     }
 
@@ -181,11 +305,24 @@ public sealed partial class FoodStreetApiDataService
     {
         return new UserProfileCard
         {
+            CustomerId = customer.Id,
             FullName = FirstNonEmpty(customer.Name, customer.Username, customer.Email, customer.Id),
+            Username = FirstNonEmpty(customer.Username, customer.Email, customer.Id),
             Email = customer.Email,
             Phone = customer.Phone,
             AvatarInitials = BuildInitials(customer.Name, customer.Username, customer.Email),
-            MetaLine = $"ID {customer.Id} • {customer.DeviceType} • {_languageService.CurrentLanguage}"
+            MetaLine = $"ID {customer.Id} • {(customer.IsPremium ? "Premium" : "Free")} • {customer.PreferredLanguage.ToUpperInvariant()}",
+            IsPremium = customer.IsPremium
         };
+    }
+
+    private sealed class PremiumPurchaseResponseDto
+    {
+        public CustomerUserDto Customer { get; set; } = new();
+        public int ChargedAmountUsd { get; set; }
+        public string CurrencyCode { get; set; } = "USD";
+        public string PaymentProvider { get; set; } = "mock";
+        public string PaymentMethod { get; set; } = PremiumPaymentMethodIds.BankCard;
+        public string TransactionId { get; set; } = string.Empty;
     }
 }

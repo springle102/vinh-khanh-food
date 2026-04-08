@@ -47,19 +47,19 @@ public sealed partial class FoodStreetApiDataService
                 "ヴィンカイン名物貝料理店",
                 "Maison Signature des Escargots Vinh Khanh"),
             "poi-bbq-night" => CreateLocalizedMap(
-                "Quảng trường Ẩm thực BBQ Night",
-                "BBQ Night Food Square",
-                "BBQ Night 美食广场",
-                "BBQ Night 푸드 스퀘어",
-                "BBQ Night フードスクエア",
-                "Place Gourmande BBQ Night"),
+                "Nhà Hàng Sushi Ko",
+                "Sushi Ko Seafood House",
+                "寿司Ko海鲜馆",
+                "스시 코 해산물 하우스",
+                "寿司こう 海鮮ハウス",
+                "Maison des Fruits de Mer Sushi Ko"),
             "poi-sweet-lane" => CreateLocalizedMap(
-                "Hẻm Chè Vĩnh Khánh",
-                "Vinh Khanh Dessert Alley",
-                "永庆甜品巷",
-                "빈카인 디저트 골목",
-                "ヴィンカインスイーツ路地",
-                "Ruelle des Desserts Vinh Khanh"),
+                "Hẻm Cà Phê Vĩnh Khánh",
+                "Vinh Khanh Coffee & Tea Alley",
+                "永庆咖啡茶巷",
+                "빈카인 커피 & 티 골목",
+                "ヴィンカイン コーヒー&ティー路地",
+                "Ruelle Café & Thé Vinh Khanh"),
             _ => CreateFallbackTranslationMap(fallbackTitle)
         };
     }
@@ -76,19 +76,19 @@ public sealed partial class FoodStreetApiDataService
                 "メニューが豊富で、この通りを初めて訪れる人でも楽しみやすい名物の貝料理店です。",
                 "Une adresse signature aux coquillages avec une carte variée, idéale pour une première découverte de la rue."),
             "poi-bbq-night" => CreateLocalizedMap(
-                "Điểm tụ họp sôi động với món nướng hải sản và không khí phố đêm náo nhiệt.",
-                "A lively grilled seafood stop with the high-energy feel of Vinh Khanh at night.",
-                "这里以烧烤海鲜和热闹夜市氛围闻名，是永庆街最热闹的聚点之一。",
-                "해산물 구이와 활기찬 밤거리 분위기로 유명한 빈카인의 대표 모임 장소입니다.",
-                "海鮮焼きとにぎやかな夜の雰囲気で知られる、ヴィンカイン通りでも特に活気のある立ち寄り先です。",
-                "Une halte très animée, connue pour ses fruits de mer grillés et l'énergie nocturne de Vinh Khanh."),
+                "Điểm hải sản & đồ sống nổi bật với sushi, sashimi và nhịp sống phố đêm.",
+                "A seafood and raw-dish stop known for sushi, sashimi, and Vinh Khanh's lively night energy.",
+                "这里主打寿司、刺身与海鲜生食，也是感受永庆夜间节奏的热门一站。",
+                "스시와 사시미, 신선한 해산물 요리로 빈카인 밤거리의 분위기를 느끼기 좋은 곳입니다.",
+                "寿司や刺身、新鮮な海鮮料理でヴィンカインの夜の活気を感じられる立ち寄り先です。",
+                "Une halte fruits de mer et plats crus, réputée pour ses sushis, ses sashimis et l'énergie nocturne de Vinh Khanh."),
             "poi-sweet-lane" => CreateLocalizedMap(
-                "Điểm tráng miệng và món ngọt giúp cân bằng hành trình ăn uống.",
-                "A dessert stop that balances the whole food journey with sweet local treats.",
-                "这是一处用本地甜品为整段美食之旅收尾的轻松站点。",
-                "달콤한 현지 디저트로 전체 미식 코스를 부드럽게 마무리해 주는 곳입니다.",
-                "地元スイーツで食べ歩きの流れをやさしく整えてくれる甘味スポットです。",
-                "Une étape dessert qui équilibre le parcours gourmand avec des douceurs locales."),
+                "Điểm cà phê & trà phù hợp để nghỉ chân giữa hành trình ăn uống.",
+                "A coffee and tea stop that gives the food journey a relaxed mid-route break.",
+                "这是一处适合在美食行程中途停下来喝咖啡与茶的轻松站点。",
+                "미식 여정 중간에 커피와 차로 잠시 쉬어 가기 좋은 곳입니다.",
+                "食べ歩きの途中でコーヒーやお茶を楽しみながらひと休みできる場所です。",
+                "Une pause café et thé idéale pour souffler au milieu du parcours gourmand."),
             _ => CreateFallbackTranslationMap(fallbackSummary)
         };
     }
@@ -109,19 +109,19 @@ public sealed partial class FoodStreetApiDataService
                 "ストリートフード巡りの最初の一軒にぴったりで、炒めた貝料理や焼き貝、シェアしやすい海鮮プレートで知られています。",
                 "Cette adresse signature ouvre parfaitement le parcours gourmand avec ses escargots sautés, ses coquillages grillés et ses plateaux de fruits de mer à partager."),
             "poi-bbq-night" => CreateLocalizedMap(
-                "Khu BBQ nhộn nhịp vào buổi tối, hợp với nhóm bạn muốn trải nghiệm không khí phố ẩm thực và các món hải sản nướng nóng hổi.",
-                "This BBQ stop comes alive at night and suits groups who want the bright, energetic seafood street atmosphere.",
-                "这处海鲜烧烤据点在夜晚尤其热闹，很适合想感受永庆街灯火与烟火气的游客。",
-                "이 해산물 BBQ 명소는 밤이 되면 특히 활기를 띠어, 빈카인 거리의 불빛과 에너지를 느끼고 싶은 일행에게 잘 어울립니다.",
-                "この海鮮BBQスポットは夜になると特ににぎわい、ヴィンカイン通りらしい灯りと活気を味わいたい人に向いています。",
-                "Ce spot BBQ s'anime surtout le soir et convient parfaitement à ceux qui veulent retrouver l'ambiance lumineuse et énergique de Vinh Khanh."),
+                "Không gian hải sản & đồ sống này phù hợp với nhóm bạn muốn gọi sushi, sashimi và các phần ăn chia sẻ trong nhịp sống phố đêm Vĩnh Khánh.",
+                "This seafood and raw-dish stop suits groups who want sushi, sashimi, and shareable plates in Vinh Khanh's lively night scene.",
+                "这处海鲜与生食据点很适合结伴前来，点寿司、刺身与适合分享的菜品，感受永庆夜间氛围。",
+                "이 해산물·생식 명소는 스시와 사시미, 함께 나눠 먹기 좋은 메뉴를 즐기며 빈카인 밤거리를 느끼고 싶은 일행에게 잘 어울립니다.",
+                "この海鮮・生ものスポットは、寿司や刺身、シェアしやすい料理を楽しみながらヴィンカインの夜を味わいたいグループに向いています。",
+                "Cette adresse fruits de mer et plats crus convient parfaitement aux groupes qui veulent partager sushis, sashimis et assiettes à plusieurs dans l'ambiance nocturne de Vinh Khanh."),
             "poi-sweet-lane" => CreateLocalizedMap(
-                "Hẻm chè và món ngọt là điểm dừng để kết tour, thường được chọn để nghỉ chân sau các món mặn và hải sản.",
-                "This dessert lane works well as the final stop, especially after savory seafood dishes and street-food tastings.",
-                "这条甜品小巷很适合作为最后一站，在海鲜和咸食之后用本地甜点收束整段行程。",
-                "이 디저트 골목은 마지막 코스로 잘 어울리며, 해산물과 짭짤한 요리 뒤에 현지 달콤한 메뉴로 마무리하기 좋습니다.",
-                "この甘味の路地は最後の立ち寄り先にぴったりで、海鮮や塩気のある料理のあとを地元スイーツで締めくくれます。",
-                "Cette ruelle sucrée fait une excellente dernière étape pour conclure le parcours sur une note dessert après les fruits de mer et les plats salés."),
+                "Hẻm cà phê là điểm dừng để nghỉ chân, thường được chọn sau các món mặn và hải sản để cân bằng lại hành trình với cà phê sữa hoặc trà trái cây.",
+                "This coffee lane works well as a pause stop after savory seafood dishes, especially for iced coffee or fruit tea.",
+                "这条咖啡小巷适合作为海鲜与咸食之后的休息站，用冰咖啡或水果茶让整段行程更平衡。",
+                "이 커피 골목은 해산물과 짭짤한 요리 뒤에 아이스커피나 과일차로 동선을 정리하기 좋은 휴식 코스입니다.",
+                "このコーヒー路地は、海鮮や塩気のある料理のあとにアイスコーヒーやフルーツティーでひと息つくのにちょうど良い立ち寄り先です。",
+                "Cette ruelle café est idéale pour faire une pause après les plats salés et les fruits de mer, autour d'un café glacé ou d'un thé fruité."),
             _ => CreateLocalizedMap(
                 fallbackSummary,
                 $"{ToLatinText(fallbackSummary)} Address: {localizedAddress}. Category: {localizedCategory}.",
@@ -163,12 +163,12 @@ public sealed partial class FoodStreetApiDataService
 
     private string GetTourSummaryText()
         => SelectLocalizedText(CreateLocalizedMap(
-            "Lộ trình nhẹ, nhiều món signature và kết thúc bằng món ngọt.",
-            "A lighter route with signature dishes and a sweet finish.",
-            "这是一条较轻松的路线，主打招牌菜，并以甜品收尾。",
-            "대표 메뉴를 맛본 뒤 디저트로 마무리하는 가벼운 코스입니다.",
-            "名物料理を楽しみ、最後はスイーツで締めくくる軽めのコースです。",
-            "Un itinéraire plus léger, rythmé par des plats signature et une fin en douceur."));
+            "Lộ trình nhẹ, nhiều món signature và kết thúc bằng cà phê hoặc trà.",
+            "A lighter route with signature dishes and a coffee-or-tea finish.",
+            "这是一条较轻松的路线，主打招牌菜，并以咖啡或茶收尾。",
+            "대표 메뉴를 맛본 뒤 커피나 차로 마무리하는 가벼운 코스입니다.",
+            "名物料理を楽しみ、最後はコーヒーやお茶で締めくくる軽めのコースです。",
+            "Un itinéraire plus léger, rythmé par des plats signature et une fin autour d'un café ou d'un thé."));
 
     private string FormatTourProgressText(int completedCount, int totalCount)
         => SelectLocalizedText(CreateLocalizedMap(
@@ -291,13 +291,27 @@ public sealed partial class FoodStreetApiDataService
                 "해산물 구이",
                 "海鮮焼き",
                 "Fruits de mer grillés")),
+            "hai-san-do-song" => SelectLocalizedText(CreateLocalizedMap(
+                "Hải sản & đồ sống",
+                "Seafood & raw dishes",
+                "海鲜与生食",
+                "해산물 & 생식",
+                "海鮮・生もの",
+                "Fruits de mer & plats crus")),
+            "ca-phe-tra" => SelectLocalizedText(CreateLocalizedMap(
+                "Cà phê & trà",
+                "Coffee & tea",
+                "咖啡与茶",
+                "커피 & 차",
+                "コーヒー&ティー",
+                "Café & thé")),
             "mon-ngot" => SelectLocalizedText(CreateLocalizedMap(
-                "Món ngọt",
-                "Desserts",
-                "甜品",
-                "디저트",
-                "スイーツ",
-                "Desserts")),
+                "Cà phê & trà",
+                "Coffee & tea",
+                "咖啡与茶",
+                "커피 & 차",
+                "コーヒー&ティー",
+                "Café & thé")),
             _ => CurrentLanguageCode == "vi" ? category.Trim() : ToLatinText(category)
         };
     }

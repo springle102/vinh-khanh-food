@@ -19,7 +19,11 @@ public interface IFoodStreetDataService
     Task<TourPlan> GetTourPlanAsync();
     Task<UserProfileCard> GetUserProfileAsync();
     Task<UserProfileCard?> SelectUserProfileAsync(string identifier);
+    Task<UserProfileCard> RegisterUserProfileAsync(CustomerRegistrationRequest request);
     Task<UserProfileCard> UpdateUserProfileAsync(UserProfileUpdateRequest request);
+    Task<PremiumPurchaseOffer> GetPremiumOfferAsync();
+    Task<PremiumPurchaseResult> PurchasePremiumAsync(PremiumCheckoutRequest request);
+    Task<string> EnsureAllowedLanguageSelectionAsync();
     Task<IReadOnlyList<SettingsMenuItem>> GetSettingsMenuAsync();
     string GetBackdropImageUrl();
 }
@@ -30,6 +34,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private const string BootstrapEndpoint = "api/v1/bootstrap";
     private const string SyncStateEndpoint = "api/v1/sync-state";
     private const string DefaultBackdropImageUrl = "https://images.unsplash.com/photo-1520201163981-8cc95007dd2e?auto=format&fit=crop&w=1200&q=80";
+    private const int DefaultPremiumPriceUsd = 10;
     private static readonly TimeSpan SyncCheckInterval = TimeSpan.FromSeconds(5);
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -88,10 +93,10 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         new()
         {
             Id = "poi-bbq-night",
-            Title = "Quảng trường Ẩm thực BBQ Night",
-            ShortDescription = "Điểm tụ họp sôi động với món nướng hải sản và không khí phố đêm náo nhiệt.",
+            Title = "Nhà Hàng Sushi Ko",
+            ShortDescription = "Điểm hải sản & đồ sống nổi bật với sushi, sashimi và nhịp sống phố đêm.",
             Address = "126 Vĩnh Khánh, Phường Khánh Hội, TP.HCM",
-            Category = "Hải sản nướng",
+            Category = "Hải sản & đồ sống",
             PriceRange = "120.000 - 350.000 VND",
             ThumbnailUrl = FallbackPoiImages["poi-bbq-night"],
             Latitude = 10.763724,
@@ -103,10 +108,10 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         new()
         {
             Id = "poi-sweet-lane",
-            Title = "Hẻm Chè Vĩnh Khánh",
-            ShortDescription = "Điểm tráng miệng và món ngọt giúp cân bằng hành trình ăn uống.",
+            Title = "Hẻm Cà Phê Vĩnh Khánh",
+            ShortDescription = "Điểm cà phê & trà phù hợp để nghỉ chân giữa hành trình ăn uống.",
             Address = "88/4 Vĩnh Khánh, Phường Vĩnh Hội, TP.HCM",
-            Category = "Món ngọt",
+            Category = "Cà phê & trà",
             PriceRange = "25.000 - 75.000 VND",
             ThumbnailUrl = FallbackPoiImages["poi-sweet-lane"],
             Latitude = 10.75712,
@@ -159,7 +164,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         var snapshot = await GetBootstrapSnapshotAsync();
         var source = snapshot?.SupportedLanguages.Count > 0
             ? snapshot.SupportedLanguages
-            : Languages;
+            : BuildSupportedLanguages(null, null);
 
         return source.Select(language =>
         {
@@ -169,6 +174,8 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
                 Code = normalizedCode,
                 Flag = TextEncodingHelper.NormalizeDisplayText(language.Flag),
                 DisplayName = TextEncodingHelper.NormalizeDisplayText(language.DisplayName),
+                IsPremium = language.IsPremium,
+                IsLocked = language.IsLocked,
                 IsSelected = string.Equals(normalizedCode, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase)
             };
         }).ToList();
@@ -377,12 +384,23 @@ public sealed partial class FoodStreetApiDataService
         return envelope?.Success == true ? envelope.Data : null;
     }
 
+    private static string BuildBootstrapEndpoint()
+    {
+        var customerUserId = ReadCurrentCustomerId();
+        if (string.IsNullOrWhiteSpace(customerUserId))
+        {
+            return BootstrapEndpoint;
+        }
+
+        return $"{BootstrapEndpoint}?customerUserId={Uri.EscapeDataString(customerUserId)}";
+    }
+
     private async Task<BootstrapSnapshot?> RefreshBootstrapSnapshotAsync(
         HttpClient client,
         DataSyncStateDto? remoteSyncState,
         string reason)
     {
-        using var response = await client.GetAsync(BootstrapEndpoint);
+        using var response = await client.GetAsync(BuildBootstrapEndpoint());
         if (!response.IsSuccessStatusCode)
         {
             return _bootstrapSnapshot;
@@ -474,19 +492,25 @@ public sealed partial class FoodStreetApiDataService
         var categoriesById = bootstrap.Categories
             .Where(item => !string.IsNullOrWhiteSpace(item.Id))
             .ToDictionary(item => item.Id, item => item.Name, StringComparer.OrdinalIgnoreCase);
-        var supportedLanguages = BuildSupportedLanguages(bootstrap.Settings);
+        var currentCustomer = ResolveCurrentCustomerForAccess(bootstrap.CustomerUsers);
+        var premiumOffer = BuildPremiumOffer(bootstrap.Settings);
+        var supportedLanguages = BuildSupportedLanguages(bootstrap.Settings, currentCustomer);
+        var allowedLanguageCodes = GetAllowedLanguageCodeSet(bootstrap.Settings, currentCustomer);
+        var accessibleTranslations = bootstrap.Translations
+            .Where(item => allowedLanguageCodes.Contains(AppLanguage.NormalizeCode(item.LanguageCode)))
+            .ToList();
 
-        var translationsByPoiId = bootstrap.Translations
+        var translationsByPoiId = accessibleTranslations
             .Where(item => string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
 
-        var translationsByFoodItemId = bootstrap.Translations
+        var translationsByFoodItemId = accessibleTranslations
             .Where(item => string.Equals(item.EntityType, "food_item", StringComparison.OrdinalIgnoreCase))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<TranslationDto>)group.ToList(), StringComparer.OrdinalIgnoreCase);
 
-        var translationsByPromotionId = bootstrap.Translations
+        var translationsByPromotionId = accessibleTranslations
             .Where(item => string.Equals(item.EntityType, "promotion", StringComparison.OrdinalIgnoreCase))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<TranslationDto>)group.ToList(), StringComparer.OrdinalIgnoreCase);
@@ -550,8 +574,9 @@ public sealed partial class FoodStreetApiDataService
             ResolveBackdropImageUrl(poiLocations, poiImages),
             ResolveUserProfile(bootstrap.CustomerUsers),
             new Dictionary<string, PoiExperienceDetail>(StringComparer.OrdinalIgnoreCase),
+            premiumOffer,
             supportedLanguages,
-            BuildRouteSnapshots(bootstrap.Routes, bootstrap.Translations, publishedPoiIds));
+            BuildRouteSnapshots(bootstrap.Routes, accessibleTranslations, publishedPoiIds));
     }
 
     private BootstrapSnapshot CreateSnapshot(AdminBootstrapDto bootstrap)
@@ -559,19 +584,28 @@ public sealed partial class FoodStreetApiDataService
         var categoriesById = bootstrap.Categories
             .Where(item => !string.IsNullOrWhiteSpace(item.Id))
             .ToDictionary(item => item.Id, item => item.Name, StringComparer.OrdinalIgnoreCase);
-        var supportedLanguages = BuildSupportedLanguages(bootstrap.Settings);
+        var currentCustomer = ResolveCurrentCustomerForAccess(bootstrap.CustomerUsers);
+        var premiumOffer = BuildPremiumOffer(bootstrap.Settings);
+        var supportedLanguages = BuildSupportedLanguages(bootstrap.Settings, currentCustomer);
+        var allowedLanguageCodes = GetAllowedLanguageCodeSet(bootstrap.Settings, currentCustomer);
+        var accessibleTranslations = bootstrap.Translations
+            .Where(item => allowedLanguageCodes.Contains(AppLanguage.NormalizeCode(item.LanguageCode)))
+            .ToList();
+        var accessibleAudioGuides = bootstrap.AudioGuides
+            .Where(item => allowedLanguageCodes.Contains(AppLanguage.NormalizeCode(item.LanguageCode)))
+            .ToList();
 
-        var translationsByPoiId = bootstrap.Translations
+        var translationsByPoiId = accessibleTranslations
             .Where(item => string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
 
-        var translationsByFoodItemId = bootstrap.Translations
+        var translationsByFoodItemId = accessibleTranslations
             .Where(item => string.Equals(item.EntityType, "food_item", StringComparison.OrdinalIgnoreCase))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<TranslationDto>)group.ToList(), StringComparer.OrdinalIgnoreCase);
 
-        var translationsByPromotionId = bootstrap.Translations
+        var translationsByPromotionId = accessibleTranslations
             .Where(item => string.Equals(item.EntityType, "promotion", StringComparison.OrdinalIgnoreCase))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<TranslationDto>)group.ToList(), StringComparer.OrdinalIgnoreCase);
@@ -612,7 +646,7 @@ public sealed partial class FoodStreetApiDataService
             .GroupBy(item => item.PoiId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<PromotionDto>)group.ToList(), StringComparer.OrdinalIgnoreCase);
 
-        var audioGuidesByPoiId = bootstrap.AudioGuides
+        var audioGuidesByPoiId = accessibleAudioGuides
             .Where(item =>
                 string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase) &&
@@ -669,8 +703,9 @@ public sealed partial class FoodStreetApiDataService
             ResolveBackdropImageUrl(poiDetails),
             ResolveUserProfile(bootstrap.CustomerUsers),
             poiDetails,
+            premiumOffer,
             supportedLanguages,
-            BuildRouteSnapshots(bootstrap.Routes, bootstrap.Translations, publishedPoiIds));
+            BuildRouteSnapshots(bootstrap.Routes, accessibleTranslations, publishedPoiIds));
     }
 
     private TourPlan? TryBuildTourPlanFromSnapshot(BootstrapSnapshot? snapshot)
@@ -724,9 +759,16 @@ public sealed partial class FoodStreetApiDataService
         };
     }
 
-    private IReadOnlyList<LanguageOption> BuildSupportedLanguages(SystemSettingDto? settings)
+    private IReadOnlyList<LanguageOption> BuildSupportedLanguages(SystemSettingDto? settings, CustomerUserDto? currentCustomer)
     {
         var orderedCodes = new List<string>();
+        var freeLanguageSet = (settings?.FreeLanguages ?? ["vi", "en"])
+            .Select(AppLanguage.NormalizeCode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var premiumLanguageSet = (settings?.PremiumLanguages ?? ["zh-CN", "ko", "ja"])
+            .Select(AppLanguage.NormalizeCode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var isPremiumCustomer = currentCustomer?.IsPremium == true;
 
         void AddCode(string? code)
         {
@@ -741,23 +783,26 @@ public sealed partial class FoodStreetApiDataService
         AddCode(settings?.DefaultLanguage);
         AddCode(settings?.FallbackLanguage);
 
-        foreach (var code in settings?.FreeLanguages ?? [])
+        foreach (var code in settings?.FreeLanguages ?? ["vi", "en"])
         {
             AddCode(code);
         }
 
-        foreach (var code in settings?.PremiumLanguages ?? [])
+        foreach (var code in settings?.PremiumLanguages ?? ["zh-CN", "ko", "ja"])
         {
             AddCode(code);
         }
 
         if (orderedCodes.Count == 0)
         {
-            orderedCodes.AddRange(Languages.Select(item => item.Code));
+            orderedCodes.AddRange(["vi", "en", "zh-CN", "ko", "ja"]);
         }
 
         return orderedCodes
-            .Select(CreateLanguageOption)
+            .Select(code => CreateLanguageOption(
+                code,
+                premiumLanguageSet.Contains(AppLanguage.NormalizeCode(code)),
+                !isPremiumCustomer && !freeLanguageSet.Contains(AppLanguage.NormalizeCode(code))))
             .ToList();
     }
 
@@ -778,7 +823,7 @@ public sealed partial class FoodStreetApiDataService
 
     #endif
 
-    private LanguageOption CreateLanguageOption(string code)
+    private LanguageOption CreateLanguageOption(string code, bool isPremium = false, bool isLocked = false)
     {
         var normalizedCode = AppLanguage.NormalizeCode(code);
         var template = Languages.FirstOrDefault(item =>
@@ -789,8 +834,63 @@ public sealed partial class FoodStreetApiDataService
             Code = normalizedCode,
             Flag = TextEncodingHelper.NormalizeDisplayText(template?.Flag ?? "\uD83C\uDF10"),
             DisplayName = TextEncodingHelper.NormalizeDisplayText(template?.DisplayName ?? normalizedCode),
+            IsPremium = isPremium,
+            IsLocked = isLocked,
             IsSelected = string.Equals(normalizedCode, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase)
         };
+    }
+
+    private PremiumPurchaseOffer BuildPremiumOffer(SystemSettingDto? settings)
+    {
+        var hasValidPrice = settings?.PremiumUnlockPriceUsd is > 0;
+        if (!hasValidPrice)
+        {
+            _logger.LogWarning(
+                "Premium price is missing or invalid in mobile bootstrap payload. Falling back to default price {FallbackPriceUsd} USD.",
+                DefaultPremiumPriceUsd);
+        }
+
+        var priceUsd = hasValidPrice
+            ? settings!.PremiumUnlockPriceUsd
+            : DefaultPremiumPriceUsd;
+        var freeLanguages = (settings?.FreeLanguages?.Count ?? 0) > 0
+            ? settings!.FreeLanguages.Select(AppLanguage.NormalizeCode).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+            : ["vi", "en"];
+        var premiumLanguages = (settings?.PremiumLanguages?.Count ?? 0) > 0
+            ? settings!.PremiumLanguages.Select(AppLanguage.NormalizeCode).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+            : ["zh-CN", "ko", "ja"];
+
+        return new PremiumPurchaseOffer
+        {
+            PriceUsd = priceUsd,
+            FreeLanguageCodes = freeLanguages,
+            PremiumLanguageCodes = premiumLanguages
+        };
+    }
+
+    private IReadOnlySet<string> GetAllowedLanguageCodeSet(SystemSettingDto? settings, CustomerUserDto? currentCustomer)
+    {
+        var offer = BuildPremiumOffer(settings);
+        var allowedCodes = offer.FreeLanguageCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (currentCustomer?.IsPremium == true)
+        {
+            allowedCodes.UnionWith(offer.PremiumLanguageCodes);
+        }
+
+        return allowedCodes;
+    }
+
+    private CustomerUserDto? ResolveCurrentCustomerForAccess(IReadOnlyList<CustomerUserDto> customerUsers)
+    {
+        var currentCustomerId = ReadCurrentCustomerId();
+        if (string.IsNullOrWhiteSpace(currentCustomerId))
+        {
+            return null;
+        }
+
+        return customerUsers.FirstOrDefault(item =>
+            string.Equals(item.Id, currentCustomerId, StringComparison.OrdinalIgnoreCase));
     }
 
     private IReadOnlyList<RouteSnapshot> BuildRouteSnapshots(
@@ -954,7 +1054,6 @@ public sealed partial class FoodStreetApiDataService
         var customer = customerUsers
             .Where(item => item.IsActive && !item.IsBanned)
             .OrderByDescending(item => item.LastActiveAt ?? item.CreatedAt)
-            .ThenByDescending(item => item.TotalScans)
             .FirstOrDefault()
             ?? customerUsers
                 .Where(item => !item.IsBanned)
@@ -979,11 +1078,14 @@ public sealed partial class FoodStreetApiDataService
         }
         return new UserProfileCard
         {
+            CustomerId = customer.Id,
             FullName = FirstNonEmpty(customer.Name, customer.Username, customer.Email, customer.Id),
+            Username = FirstNonEmpty(customer.Username, customer.Email, customer.Id),
             Email = customer.Email,
             Phone = customer.Phone,
             AvatarInitials = BuildInitials(customer.Name, customer.Username, customer.Email),
-            MetaLine = $"ID {customer.Id} • {customer.DeviceType} • {_languageService.CurrentLanguage}"
+            IsPremium = customer.IsPremium,
+            MetaLine = $"ID {customer.Id} • {(customer.IsPremium ? "Premium" : "Free")} • {customer.PreferredLanguage.ToUpperInvariant()}"
         };
     }
 
@@ -1107,6 +1209,7 @@ public sealed partial class FoodStreetApiDataService
         string BackdropImageUrl,
         UserProfileCard UserProfile,
         IReadOnlyDictionary<string, PoiExperienceDetail> PoiDetails,
+        PremiumPurchaseOffer PremiumOffer,
         IReadOnlyList<LanguageOption> SupportedLanguages,
         IReadOnlyList<RouteSnapshot> Routes);
 
@@ -1152,13 +1255,10 @@ public sealed partial class FoodStreetApiDataService
         public string Phone { get; set; } = string.Empty;
         public string PreferredLanguage { get; set; } = "vi";
         public string? Username { get; set; }
-        public string? DeviceId { get; set; }
         public string Country { get; set; } = string.Empty;
-        public string DeviceType { get; set; } = "android";
         public bool IsActive { get; set; }
         public bool IsBanned { get; set; }
         public bool IsPremium { get; set; }
-        public int TotalScans { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset? LastActiveAt { get; set; }
     }
@@ -1276,6 +1376,7 @@ public sealed partial class FoodStreetApiDataService
         public string FallbackLanguage { get; set; } = "en";
         public List<string> FreeLanguages { get; set; } = [];
         public List<string> PremiumLanguages { get; set; } = [];
+        public int PremiumUnlockPriceUsd { get; set; } = DefaultPremiumPriceUsd;
     }
 
     private sealed class DataSyncStateDto

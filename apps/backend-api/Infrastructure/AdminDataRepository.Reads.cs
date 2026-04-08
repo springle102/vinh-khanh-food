@@ -28,7 +28,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<CustomerUser> GetCustomerUsers(SqlConnection connection, SqlTransaction? transaction)
     {
         const string usersSql = """
-            SELECT Id, Name, Email, Phone, [Status], IsActive, IsBanned, PreferredLanguage, Username, DeviceId, Country, DeviceType, IsPremium, TotalScans, CreatedAt, LastActiveAt
+            SELECT Id, Name, Email, Phone, [Password], [Status], IsActive, IsBanned, PreferredLanguage, Username, Country, IsPremium, CreatedAt, LastActiveAt
             FROM dbo.CustomerUsers
             ORDER BY CreatedAt DESC, Id DESC;
             """;
@@ -70,16 +70,14 @@ public sealed partial class AdminDataRepository
                     Name = ReadString(usersReader, "Name"),
                     Email = ReadString(usersReader, "Email"),
                     Phone = ReadString(usersReader, "Phone"),
+                    Password = ReadString(usersReader, "Password"),
                     Status = ResolveEndUserStatus(isBanned, isActive),
                     IsActive = isActive,
                     IsBanned = isBanned,
                     PreferredLanguage = ReadString(usersReader, "PreferredLanguage"),
                     Username = ReadNullableString(usersReader, "Username"),
-                    DeviceId = ReadNullableString(usersReader, "DeviceId"),
                     Country = ReadString(usersReader, "Country"),
-                    DeviceType = ReadString(usersReader, "DeviceType"),
                     IsPremium = ReadBool(usersReader, "IsPremium"),
-                    TotalScans = ReadInt(usersReader, "TotalScans"),
                     FavoritePoiIds = favoriteMap.GetValueOrDefault(customerId, []),
                     CreatedAt = ReadDateTimeOffset(usersReader, "CreatedAt"),
                     LastActiveAt = ReadNullableDateTimeOffset(usersReader, "LastActiveAt")
@@ -93,7 +91,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<EndUser> GetEndUsers(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, Username, DeviceId, IsActive, IsBanned, PreferredLanguage, Country, DeviceType, CreatedAt, LastActiveAt, [Status]
+            SELECT Id, Name, Email, Phone, [Password], Username, IsActive, IsBanned, PreferredLanguage, Country, CreatedAt, LastActiveAt, [Status]
             FROM dbo.CustomerUsers
             ORDER BY CreatedAt DESC, Id DESC;
             """;

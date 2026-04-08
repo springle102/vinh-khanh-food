@@ -95,6 +95,7 @@ public sealed class PoisController(
         [FromQuery] string? voiceType,
         [FromQuery] string? userId,
         [FromQuery] string? role,
+        [FromQuery] string? customerUserId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(languageCode))
@@ -102,9 +103,15 @@ public sealed class PoisController(
             return BadRequest(ApiResponse<PoiNarrationResponse>.Fail("LanguageCode là bắt buộc."));
         }
 
+        var accessDecision = repository.EvaluateCustomerLanguageAccess(customerUserId, languageCode);
+        if (!accessDecision.IsAllowed)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<PoiNarrationResponse>.Fail(accessDecision.Message));
+        }
+
         var narration = await poiNarrationService.ResolveAsync(
             id,
-            languageCode,
+            accessDecision.LanguageCode,
             voiceType,
             userId,
             role,

@@ -101,6 +101,12 @@ public sealed partial class AdminDataRepository
         return Convert.ToInt32(reader[columnName], CultureInfo.InvariantCulture);
     }
 
+    private static int? ReadNullableInt(SqlDataReader reader, string columnName)
+    {
+        var value = reader[columnName];
+        return value is DBNull ? null : Convert.ToInt32(value, CultureInfo.InvariantCulture);
+    }
+
     private static double ReadDouble(SqlDataReader reader, string columnName)
     {
         return Convert.ToDouble(reader[columnName], CultureInfo.InvariantCulture);

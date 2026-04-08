@@ -83,8 +83,13 @@
                                 <VerticalStackLayout Grid.Column="1" Spacing="10" VerticalOptions="Center">
                                     <VerticalStackLayout IsVisible="{Binding IsViewingProfile}" Spacing="10">
                                         <VerticalStackLayout Spacing="1">
-                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding UserNameLabelText}" />
+                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding FullNameLabelText}" />
                                             <Label FontFamily="OpenSansSemibold" FontSize="18" Text="{Binding Profile.FullName}" />
+                                        </VerticalStackLayout>
+
+                                        <VerticalStackLayout Spacing="1">
+                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding UserNameLabelText}" />
+                                            <Label FontFamily="OpenSansSemibold" FontSize="15" Text="{Binding Profile.Username}" />
                                         </VerticalStackLayout>
 
                                         <BoxView HeightRequest="1" Color="#F0E8DE" />
@@ -99,8 +104,13 @@
 
                                     <VerticalStackLayout IsVisible="{Binding IsEditingProfile}" Spacing="10">
                                         <VerticalStackLayout Spacing="4">
-                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding UserNameLabelText}" />
+                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding FullNameLabelText}" />
                                             <Entry Text="{Binding FullName}" Placeholder="{Binding NamePlaceholderText}" />
+                                        </VerticalStackLayout>
+
+                                        <VerticalStackLayout Spacing="4">
+                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding UserNameLabelText}" />
+                                            <Entry Text="{Binding Username}" Placeholder="{Binding UsernamePlaceholderText}" />
                                         </VerticalStackLayout>
 
                                         <VerticalStackLayout Spacing="4">
@@ -138,6 +148,70 @@
                     <Border
                         Padding="16"
                         BackgroundColor="White"
+                        Stroke="#E8D2A8"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 22">
+                        <Border.Shadow>
+                            <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
+                        </Border.Shadow>
+
+                        <VerticalStackLayout Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding PremiumTitleText}" />
+                                <Border Grid.Column="1" Padding="10,4" BackgroundColor="#FFF5E6" StrokeThickness="0" StrokeShape="RoundRectangle 999">
+                                    <Label FontFamily="OpenSansSemibold" FontSize="11" Text="{Binding PremiumStatusText}" TextColor="#9A5B12" />
+                                </Border>
+                            </Grid>
+
+                            <Label FontSize="13" Text="{Binding PremiumDescriptionText}" TextColor="{StaticResource BrandTextSecondary}" />
+
+                            <VerticalStackLayout Spacing="3">
+                                <Label Style="{StaticResource MetaTextStyle}" Text="{Binding PremiumLanguageListTitleText}" />
+                                <Label FontFamily="OpenSansSemibold" FontSize="14" Text="{Binding PremiumLanguageListText}" />
+                            </VerticalStackLayout>
+
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                <Label FontSize="12" Text="{Binding PremiumPriceLabelText}" TextColor="{StaticResource BrandTextMuted}" VerticalOptions="Center" />
+                                <Label
+                                    Grid.Column="1"
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="18"
+                                    HorizontalOptions="End"
+                                    Text="{Binding PremiumPriceText}"
+                                    TextColor="{StaticResource BrandPrimary}" />
+                            </Grid>
+
+                            <Button
+                                Command="{Binding BuyPremiumCommand}"
+                                IsEnabled="{Binding CanPurchasePremium}"
+                                IsVisible="{Binding CanPurchasePremium}"
+                                Text="{Binding PremiumActionText}" />
+
+                            <Border
+                                Padding="12,10"
+                                BackgroundColor="#EDF7EE"
+                                IsVisible="{Binding HasPremiumMessage}"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 14">
+                                <Border.Triggers>
+                                    <DataTrigger TargetType="Border" Binding="{Binding IsPremiumMessageError}" Value="True">
+                                        <Setter Property="BackgroundColor" Value="#FDECEC" />
+                                    </DataTrigger>
+                                </Border.Triggers>
+                                <Label FontSize="12" Text="{Binding PremiumMessage}">
+                                    <Label.Triggers>
+                                        <DataTrigger TargetType="Label" Binding="{Binding IsPremiumMessageError}" Value="True">
+                                            <Setter Property="TextColor" Value="#B42318" />
+                                        </DataTrigger>
+                                    </Label.Triggers>
+                                </Label>
+                            </Border>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border
+                        Padding="16"
+                        BackgroundColor="White"
                         Stroke="#EFE5D8"
                         StrokeThickness="1"
                         StrokeShape="RoundRectangle 22">
@@ -148,31 +222,72 @@
                         <VerticalStackLayout Spacing="14">
                             <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding LanguageTitleText}" />
 
-                            <CollectionView HeightRequest="214" ItemsSource="{Binding Languages}" SelectionMode="None">
-                                <CollectionView.ItemsLayout>
-                                    <GridItemsLayout Orientation="Vertical" Span="2" VerticalItemSpacing="12" HorizontalItemSpacing="12" />
-                                </CollectionView.ItemsLayout>
-                                <CollectionView.ItemTemplate>
+                            <FlexLayout
+                                Wrap="Wrap"
+                                JustifyContent="SpaceBetween"
+                                AlignItems="Stretch"
+                                BindableLayout.ItemsSource="{Binding Languages}">
+                                <BindableLayout.ItemTemplate>
                                     <DataTemplate x:DataType="models:LanguageOption">
-                                        <Border Padding="12,14" BackgroundColor="White" Stroke="{StaticResource BrandStrokeStrong}" StrokeShape="RoundRectangle 18">
+                                        <Border
+                                            Margin="0,0,0,12"
+                                            Padding="14,14,14,12"
+                                            BackgroundColor="White"
+                                            MinimumHeightRequest="94"
+                                            Stroke="{StaticResource BrandStrokeStrong}"
+                                            StrokeShape="RoundRectangle 16"
+                                            FlexLayout.Basis="48%"
+                                            FlexLayout.Grow="1">
                                             <Border.Triggers>
                                                 <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
                                                     <Setter Property="BackgroundColor" Value="{StaticResource BrandPrimaryPale}" />
                                                     <Setter Property="Stroke" Value="{StaticResource BrandPrimary}" />
                                                     <Setter Property="StrokeThickness" Value="1.6" />
                                                 </DataTrigger>
+                                                <DataTrigger TargetType="Border" Binding="{Binding IsLocked}" Value="True">
+                                                    <Setter Property="BackgroundColor" Value="#FFF8F1" />
+                                                    <Setter Property="Stroke" Value="#E8D2A8" />
+                                                </DataTrigger>
                                             </Border.Triggers>
-                                            <VerticalStackLayout HorizontalOptions="Center" Spacing="8">
-                                                <Label FontSize="30" HorizontalTextAlignment="Center" Text="{Binding Flag}" />
-                                                <Label FontFamily="OpenSansSemibold" HorizontalTextAlignment="Center" Text="{Binding DisplayName}" />
-                                            </VerticalStackLayout>
+
+                                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                                                <Label
+                                                    Grid.RowSpan="2"
+                                                    FontSize="28"
+                                                    Text="{Binding Flag}"
+                                                    VerticalOptions="Center" />
+                                                <Label
+                                                    Grid.Column="1"
+                                                    FontFamily="OpenSansSemibold"
+                                                    FontSize="14"
+                                                    LineBreakMode="WordWrap"
+                                                    MaxLines="2"
+                                                    Text="{Binding DisplayName}"
+                                                    VerticalOptions="Center" />
+                                                <Border
+                                                    Grid.Row="1"
+                                                    Grid.Column="1"
+                                                    Padding="10,4"
+                                                    BackgroundColor="#FFF1D6"
+                                                    HorizontalOptions="Start"
+                                                    IsVisible="{Binding IsPremium}"
+                                                    StrokeThickness="0"
+                                                    StrokeShape="RoundRectangle 12">
+                                                    <Label
+                                                        FontFamily="OpenSansSemibold"
+                                                        FontSize="10"
+                                                        Text="{Binding Source={x:Reference PageRoot}, Path=BindingContext.PremiumBadgeText}"
+                                                        TextColor="#9A5B12" />
+                                                </Border>
+                                            </Grid>
+
                                             <Border.GestureRecognizers>
                                                 <TapGestureRecognizer Command="{Binding Source={x:Reference PageRoot}, Path=BindingContext.SelectLanguageCommand}" CommandParameter="{Binding .}" />
                                             </Border.GestureRecognizers>
                                         </Border>
                                     </DataTemplate>
-                                </CollectionView.ItemTemplate>
-                            </CollectionView>
+                                </BindableLayout.ItemTemplate>
+                            </FlexLayout>
                         </VerticalStackLayout>
                     </Border>
 

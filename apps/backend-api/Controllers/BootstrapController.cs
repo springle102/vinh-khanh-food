@@ -14,18 +14,20 @@ public sealed class BootstrapController(
     [HttpGet("bootstrap")]
     public ActionResult<ApiResponse<AdminBootstrapResponse>> GetBootstrap(
         [FromQuery] string? userId,
-        [FromQuery] string? role)
+        [FromQuery] string? role,
+        [FromQuery] string? customerUserId)
     {
-        var bootstrap = repository.GetBootstrap(userId, role);
+        var bootstrap = repository.GetBootstrap(userId, role, customerUserId);
         if (bootstrap.SyncState is not null)
         {
             Response.Headers["X-Data-Version"] = bootstrap.SyncState.Version;
         }
 
         logger.LogDebug(
-            "Bootstrap served for scope userId={UserId}, role={Role}, version={Version}",
+            "Bootstrap served for scope userId={UserId}, role={Role}, customerUserId={CustomerUserId}, version={Version}",
             userId,
             role,
+            customerUserId,
             bootstrap.SyncState?.Version);
 
         return Ok(ApiResponse<AdminBootstrapResponse>.Ok(bootstrap));

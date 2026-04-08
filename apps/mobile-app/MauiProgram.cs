@@ -33,6 +33,7 @@ public static class MauiProgram
         builder.Services.AddTransient<MyTourViewModel>();
         builder.Services.AddTransient<QrScannerViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
+        builder.Services.AddTransient<PremiumCheckoutViewModel>();
 
 #if DEBUG
         builder.Logging.AddDebug();

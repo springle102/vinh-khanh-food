@@ -27,27 +27,19 @@ public sealed class UsersController(AdminDataRepository repository) : Controller
             : Ok(ApiResponse<EndUser>.Ok(user));
     }
 
-    [HttpGet("{id}/history")]
-    public ActionResult<ApiResponse<IReadOnlyList<EndUserPoiVisit>>> GetUserHistory(
-        string id,
-        [FromQuery] string? userId,
-        [FromQuery] string? role)
-    {
-        var user = repository.GetEndUserById(id, userId, role);
-        if (user is null)
-        {
-            return NotFound(ApiResponse<IReadOnlyList<EndUserPoiVisit>>.Fail("Không tìm thấy người dùng cuối."));
-        }
-
-        return Ok(ApiResponse<IReadOnlyList<EndUserPoiVisit>>.Ok(repository.GetEndUserHistory(id, userId, role)));
-    }
-
     [HttpPatch("{id}/status")]
     public ActionResult<ApiResponse<EndUser>> UpdateUserStatus(string id, [FromBody] EndUserStatusUpdateRequest request)
     {
-        var updated = repository.UpdateEndUserStatus(id, request);
-        return updated is null
-            ? NotFound(ApiResponse<EndUser>.Fail("Không tìm thấy người dùng cuối."))
-            : Ok(ApiResponse<EndUser>.Ok(updated, "Cập nhật trạng thái người dùng thành công."));
+        try
+        {
+            var updated = repository.UpdateEndUserStatus(id, request);
+            return updated is null
+                ? NotFound(ApiResponse<EndUser>.Fail("Không tìm thấy người dùng cuối."))
+                : Ok(ApiResponse<EndUser>.Ok(updated, "Cập nhật trạng thái người dùng thành công."));
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(ApiResponse<EndUser>.Fail(exception.Message));
+        }
     }
 }

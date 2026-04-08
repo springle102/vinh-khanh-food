@@ -2,10 +2,10 @@ import type {
   AdminDataState,
   AdminUser,
   AudioGuide,
-  EndUserPoiVisit,
   EndUserProfile,
   FoodItem,
   GeocodingLocation,
+  CustomerStatus,
   LanguageCode,
   MediaAsset,
   Poi,
@@ -305,12 +305,10 @@ export const adminApi = {
     ),
   getEndUser: (userId: string) =>
     request<EndUserProfile>(appendScopeParams(`/api/v1/users/${userId}`)),
-  getEndUserHistory: (userId: string) =>
-    request<EndUserPoiVisit[]>(appendScopeParams(`/api/v1/users/${userId}/history`)),
   saveEndUserStatus: (
     userId: string,
     payload: {
-      isBanned: boolean;
+      status: CustomerStatus;
       actorName: string;
       actorRole: AdminUser["role"];
     },

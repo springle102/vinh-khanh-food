@@ -41,43 +41,33 @@ export interface CustomerUser {
   name: string;
   email: string;
   phone: string;
+  password: string;
   status: CustomerStatus;
   isActive: boolean;
   isBanned: boolean;
   preferredLanguage: LanguageCode;
   isPremium: boolean;
-  totalScans: number;
   favoritePoiIds: string[];
   createdAt: string;
   lastActiveAt: string | null;
   username?: string | null;
-  deviceId?: string | null;
   country?: string;
-  deviceType?: Extract<DeviceType, "ios" | "android">;
 }
 
 export interface EndUserProfile {
   id: string;
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
   username: string | null;
-  deviceId: string | null;
   isActive: boolean;
   isBanned: boolean;
   defaultLanguage: LanguageCode;
   country: string;
-  deviceType: Extract<DeviceType, "ios" | "android">;
   createdAt: string;
   lastActiveAt: string | null;
   status: CustomerStatus;
-}
-
-export interface EndUserPoiVisit {
-  id: string;
-  userId: string;
-  poiId: string;
-  poiSlug: string;
-  poiAddress: string;
-  visitedAt: string;
-  translatedLanguage: LanguageCode;
 }
 
 export interface PoiCategory {

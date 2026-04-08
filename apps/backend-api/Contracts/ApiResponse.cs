@@ -64,14 +64,41 @@ public sealed record AdminUserUpsertRequest(
     string ActorRole);
 
 public sealed record EndUserStatusUpdateRequest(
-    bool IsBanned,
+    string Status,
     string ActorName,
-    string ActorRole);
+    string ActorRole)
+{
+    public bool IsBanned => string.Equals(Status?.Trim(), "banned", StringComparison.OrdinalIgnoreCase);
+}
 
 public sealed record CustomerProfileUpdateRequest(
     string Name,
+    string Username,
     string Email,
     string Phone);
+
+public sealed record CustomerRegistrationRequest(
+    string Name,
+    string Username,
+    string Email,
+    string Phone,
+    string Password,
+    string? PreferredLanguage,
+    string? Country);
+
+public sealed record PremiumPurchaseRequest(
+    string PaymentProvider,
+    string PaymentMethod,
+    string ClientRequestId,
+    int? ExpectedPriceUsd,
+    string? CardholderName,
+    string? CardNumber,
+    string? ExpiryMonth,
+    string? ExpiryYear,
+    string? Cvv,
+    string? WalletProvider,
+    string? WalletAccount,
+    string? WalletPin);
 
 public sealed record GeocodingLocationResponse(
     string Address,
@@ -180,6 +207,15 @@ public sealed record SystemSettingUpsertRequest(
     int AnalyticsRetentionDays,
     string ActorName,
     string ActorRole);
+
+public sealed record PremiumPurchaseResponse(
+    Models.CustomerUser Customer,
+    int ChargedAmountUsd,
+    string CurrencyCode,
+    string PaymentProvider,
+    string PaymentMethod,
+    string TransactionId,
+    DateTimeOffset PurchasedAt);
 
 public sealed record DashboardSummaryResponse(
     int TotalViews,

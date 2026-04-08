@@ -554,7 +554,6 @@ public sealed partial class AdminDataRepository
         string nextPoiId)
     {
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.CustomerFavoritePois SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
-        ExecuteNonQuery(connection, transaction, "UPDATE dbo.UserPoiVisits SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.PoiTags SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.FoodItems SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.RouteStops SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
@@ -610,7 +609,6 @@ public sealed partial class AdminDataRepository
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.FoodItems WHERE PoiId = ?;", id);
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Promotions WHERE PoiId = ?;", id);
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Reviews WHERE PoiId = ?;", id);
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.UserPoiVisits WHERE PoiId = ?;", id);
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.ViewLogs WHERE PoiId = ?;", id);
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioListenLogs WHERE PoiId = ?;", id);
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Pois WHERE Id = ?;", id);

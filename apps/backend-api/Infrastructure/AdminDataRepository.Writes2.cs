@@ -1,4 +1,5 @@
 using Microsoft.Data.SqlClient;
+using System.Data;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
 
@@ -9,7 +10,7 @@ public sealed partial class AdminDataRepository
     public CustomerUser? UpdateCustomerProfile(string id, CustomerProfileUpdateRequest request)
     {
         using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
 
         var existing = GetCustomerUserById(connection, transaction, id);
         if (existing is null)
@@ -19,8 +20,13 @@ public sealed partial class AdminDataRepository
         }
 
         var normalizedName = NormalizeCustomerProfileValue(request.Name, "Tên", 120);
-        var normalizedEmail = NormalizeCustomerProfileValue(request.Email, "Email", 200);
+        var normalizedEmail = NormalizeCustomerRegistrationEmail(request.Email);
         var normalizedPhone = NormalizeCustomerProfileValue(request.Phone, "Số điện thoại", 30);
+
+        normalizedPhone = NormalizeCustomerRegistrationPhone(request.Phone);
+        var normalizedUsername = NormalizeCustomerUsername(request.Username);
+        var existingRows = GetCustomerIdentityRowsForRegistration(connection, transaction);
+        EnsureCustomerIdentityIsUnique(existingRows, normalizedEmail, normalizedPhone, normalizedUsername, id);
 
         ExecuteNonQuery(
             connection,
@@ -28,11 +34,13 @@ public sealed partial class AdminDataRepository
             """
             UPDATE dbo.CustomerUsers
             SET Name = ?,
+                Username = ?,
                 Email = ?,
                 Phone = ?
             WHERE Id = ?;
             """,
             normalizedName,
+            normalizedUsername,
             normalizedEmail,
             normalizedPhone,
             id);
@@ -63,21 +71,23 @@ public sealed partial class AdminDataRepository
             return null;
         }
 
+        var normalizedStatus = NormalizeEndUserStatus(request.Status);
+        var isBanned = string.Equals(normalizedStatus, "banned", StringComparison.OrdinalIgnoreCase);
+        var isActive = string.Equals(normalizedStatus, "active", StringComparison.OrdinalIgnoreCase);
+
         ExecuteNonQuery(
             connection,
             transaction,
             """
             UPDATE dbo.CustomerUsers
             SET IsBanned = ?,
-                [Status] = CASE
-                    WHEN ? = CAST(1 AS bit) THEN N'banned'
-                    WHEN IsActive = CAST(1 AS bit) THEN N'active'
-                    ELSE N'inactive'
-                END
+                IsActive = ?,
+                [Status] = ?
             WHERE Id = ?;
             """,
-            request.IsBanned,
-            request.IsBanned,
+            isBanned,
+            isActive,
+            normalizedStatus,
             id);
 
         AppendAuditLog(
@@ -85,7 +95,12 @@ public sealed partial class AdminDataRepository
             transaction,
             request.ActorName,
             request.ActorRole,
-            request.IsBanned ? "Khóa người dùng cuối" : "Mở khóa người dùng cuối",
+            normalizedStatus switch
+            {
+                "banned" => "Khóa người dùng cuối",
+                "inactive" => "Tạm ngưng người dùng cuối",
+                _ => "Kích hoạt người dùng cuối"
+            },
             id);
 
         var saved = GetEndUserById(connection, transaction, id);
@@ -573,7 +588,18 @@ public sealed partial class AdminDataRepository
     public SystemSetting SaveSettings(SystemSettingUpsertRequest request)
     {
         using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+
+        var normalizedRequest = request with
+        {
+            DefaultLanguage = PremiumAccessCatalog.NormalizeLanguageCode(request.DefaultLanguage),
+            FallbackLanguage = PremiumAccessCatalog.NormalizeLanguageCode(request.FallbackLanguage),
+            FreeLanguages = [.. PremiumAccessCatalog.FreeLanguages],
+            PremiumLanguages = [.. PremiumAccessCatalog.PremiumLanguages],
+            PremiumUnlockPriceUsd = request.PremiumUnlockPriceUsd > 0
+                ? request.PremiumUnlockPriceUsd
+                : PremiumAccessCatalog.DefaultPremiumPriceUsd
+        };
 
         var exists = ExecuteScalarInt(connection, transaction, "SELECT COUNT(*) FROM dbo.SystemSettings WHERE Id = 1;") > 0;
         if (exists)
@@ -596,17 +622,17 @@ public sealed partial class AdminDataRepository
                     AnalyticsRetentionDays = ?
                 WHERE Id = 1;
                 """,
-                request.AppName,
-                request.SupportEmail,
-                request.DefaultLanguage,
-                request.FallbackLanguage,
-                request.PremiumUnlockPriceUsd,
-                request.MapProvider,
-                request.StorageProvider,
-                request.TtsProvider,
-                request.GeofenceRadiusMeters,
-                request.GuestReviewEnabled,
-                request.AnalyticsRetentionDays);
+                normalizedRequest.AppName,
+                normalizedRequest.SupportEmail,
+                normalizedRequest.DefaultLanguage,
+                normalizedRequest.FallbackLanguage,
+                normalizedRequest.PremiumUnlockPriceUsd,
+                normalizedRequest.MapProvider,
+                normalizedRequest.StorageProvider,
+                normalizedRequest.TtsProvider,
+                normalizedRequest.GeofenceRadiusMeters,
+                normalizedRequest.GuestReviewEnabled,
+                normalizedRequest.AnalyticsRetentionDays);
         }
         else
         {
@@ -620,21 +646,21 @@ public sealed partial class AdminDataRepository
                 )
                 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
-                request.AppName,
-                request.SupportEmail,
-                request.DefaultLanguage,
-                request.FallbackLanguage,
-                request.PremiumUnlockPriceUsd,
-                request.MapProvider,
-                request.StorageProvider,
-                request.TtsProvider,
-                request.GeofenceRadiusMeters,
-                request.GuestReviewEnabled,
-                request.AnalyticsRetentionDays);
+                normalizedRequest.AppName,
+                normalizedRequest.SupportEmail,
+                normalizedRequest.DefaultLanguage,
+                normalizedRequest.FallbackLanguage,
+                normalizedRequest.PremiumUnlockPriceUsd,
+                normalizedRequest.MapProvider,
+                normalizedRequest.StorageProvider,
+                normalizedRequest.TtsProvider,
+                normalizedRequest.GeofenceRadiusMeters,
+                normalizedRequest.GuestReviewEnabled,
+                normalizedRequest.AnalyticsRetentionDays);
         }
 
-        ReplaceSettingLanguages(connection, transaction, "free", request.FreeLanguages);
-        ReplaceSettingLanguages(connection, transaction, "premium", request.PremiumLanguages);
+        ReplaceSettingLanguages(connection, transaction, "free", normalizedRequest.FreeLanguages);
+        ReplaceSettingLanguages(connection, transaction, "premium", normalizedRequest.PremiumLanguages);
 
         AppendAuditLog(connection, transaction, request.ActorName, request.ActorRole, "Cập nhật cài đặt hệ thống", request.AppName);
 
@@ -770,5 +796,17 @@ public sealed partial class AdminDataRepository
         }
 
         return normalized;
+    }
+
+    private static string NormalizeEndUserStatus(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant() ?? string.Empty;
+        return normalized switch
+        {
+            "active" => "active",
+            "inactive" => "inactive",
+            "banned" => "banned",
+            _ => throw new ArgumentException("Trạng thái người dùng không hợp lệ.")
+        };
     }
 }

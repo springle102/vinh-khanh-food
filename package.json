@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "npm --prefix apps/admin-web run dev",
     "dev:admin": "npm --prefix apps/admin-web run dev",
+    "dev:all": "node ./scripts/dev-all.cjs",
     "dev:backend": "node ./scripts/run-backend.cjs dev",
     "dev:mobile:android": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-mobile-android.ps1",
     "open:android:devices": "powershell -ExecutionPolicy Bypass -File ./scripts/open-android-device-manager.ps1",

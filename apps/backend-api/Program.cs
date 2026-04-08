@@ -11,6 +11,8 @@ builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
 builder.Services.AddSingleton<AdminDataRepository>();
+builder.Services.AddSingleton<IPremiumPaymentProcessor, MockPremiumPaymentProcessor>();
+builder.Services.AddSingleton<PremiumPurchaseService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<PoiNarrationService>();
@@ -103,7 +105,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseStaticFiles();
 app.UseCors("AdminWeb");
 app.Use(async (context, next) =>

@@ -21,16 +21,14 @@ public sealed class CustomerUser
     public string Name { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public bool IsBanned { get; set; }
     public string PreferredLanguage { get; set; } = "vi";
     public string? Username { get; set; }
-    public string? DeviceId { get; set; }
     public string Country { get; set; } = string.Empty;
-    public string DeviceType { get; set; } = "android";
     public bool IsPremium { get; set; }
-    public int TotalScans { get; set; }
     public List<string> FavoritePoiIds { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastActiveAt { get; set; }
@@ -39,27 +37,18 @@ public sealed class CustomerUser
 public sealed class EndUser
 {
     public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
     public string? Username { get; set; }
-    public string? DeviceId { get; set; }
     public bool IsActive { get; set; }
     public bool IsBanned { get; set; }
     public string DefaultLanguage { get; set; } = "vi";
     public string Country { get; set; } = string.Empty;
-    public string DeviceType { get; set; } = "android";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastActiveAt { get; set; }
     public string Status { get; set; } = "active";
-}
-
-public sealed class EndUserPoiVisit
-{
-    public string Id { get; set; } = string.Empty;
-    public string UserId { get; set; } = string.Empty;
-    public string PoiId { get; set; } = string.Empty;
-    public string PoiSlug { get; set; } = string.Empty;
-    public string PoiAddress { get; set; } = string.Empty;
-    public DateTimeOffset VisitedAt { get; set; }
-    public string TranslatedLanguage { get; set; } = "vi";
 }
 
 public sealed class PoiCategory
@@ -210,6 +199,23 @@ public sealed class AuditLog
     public string Action { get; set; } = string.Empty;
     public string Target { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class PremiumPurchaseTransaction
+{
+    public string Id { get; set; } = string.Empty;
+    public string CustomerUserId { get; set; } = string.Empty;
+    public int AmountUsd { get; set; }
+    public string CurrencyCode { get; set; } = "USD";
+    public string PaymentProvider { get; set; } = "mock";
+    public string PaymentMethod { get; set; } = string.Empty;
+    public string? PaymentReference { get; set; }
+    public string? MaskedAccount { get; set; }
+    public string IdempotencyKey { get; set; } = string.Empty;
+    public string Status { get; set; } = "pending";
+    public string? FailureMessage { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? ProcessedAt { get; set; }
 }
 
 public sealed class RefreshSession

@@ -12,6 +12,11 @@ public static class ServiceHelper
     public static T GetService<T>() where T : notnull => Services.GetRequiredService<T>();
 }
 
+public static class AppPreferenceKeys
+{
+    public const string CurrentCustomerId = "vkfood.current.customer.id";
+}
+
 public static class AppRoutes
 {
     public const string Login = "LoginPage";
@@ -20,6 +25,7 @@ public static class AppRoutes
     public const string QrScanner = "QrScannerPage";
     public const string LanguageSelection = "LanguageSelectionPage";
     public const string Settings = "SettingsPage";
+    public const string PremiumCheckout = "PremiumCheckoutPage";
 
     public static string Root(string route) => route.StartsWith("//", StringComparison.Ordinal) ? route : $"//{route}";
 

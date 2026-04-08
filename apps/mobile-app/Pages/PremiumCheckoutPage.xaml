@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="VinhKhanh.MobileApp.Pages.PremiumCheckoutPage"
+    x:Name="PageRoot"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:models="clr-namespace:VinhKhanh.MobileApp.Models"
+    xmlns:viewModels="clr-namespace:VinhKhanh.MobileApp.ViewModels"
+    x:DataType="viewModels:PremiumCheckoutViewModel"
+    Shell.NavBarIsVisible="False">
+
+    <ScrollView BackgroundColor="{StaticResource BrandBackground}">
+        <VerticalStackLayout Padding="22,18,22,32" Spacing="16">
+            <Grid ColumnDefinitions="Auto,*,Auto" VerticalOptions="Center">
+                <Button
+                    BackgroundColor="#F4EEE6"
+                    Command="{Binding CancelCommand}"
+                    CornerRadius="16"
+                    HeightRequest="42"
+                    Padding="14,8"
+                    Text="&#x2039;"
+                    TextColor="{StaticResource BrandTextPrimary}"
+                    WidthRequest="42" />
+                <VerticalStackLayout Grid.Column="1" Padding="12,0" Spacing="2">
+                    <Label FontFamily="OpenSansSemibold" FontSize="22" Text="{Binding HeaderTitleText}" />
+                    <Label FontSize="13" Text="{Binding SubtitleText}" TextColor="{StaticResource BrandTextSecondary}" />
+                </VerticalStackLayout>
+                <Button
+                    Grid.Column="2"
+                    BackgroundColor="Transparent"
+                    Command="{Binding CancelCommand}"
+                    FontSize="13"
+                    Padding="10,8"
+                    Text="{Binding CancelText}"
+                    TextColor="{StaticResource BrandTextSecondary}" />
+            </Grid>
+
+            <Border Style="{StaticResource CardBorderStyle}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Style="{StaticResource SectionTitleStyle}" Text="{Binding SummaryTitleText}" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding PremiumLanguagesTitleText}" />
+                            <Label FontFamily="OpenSansSemibold" FontSize="15" Text="{Binding PremiumLanguagesText}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" HorizontalOptions="End" Spacing="4">
+                            <Label HorizontalTextAlignment="End" Style="{StaticResource MetaTextStyle}" Text="{Binding PriceLabelText}" />
+                            <Label FontFamily="OpenSansSemibold" FontSize="22" HorizontalTextAlignment="End" Text="{Binding PriceText}" TextColor="{StaticResource BrandPrimary}" />
+                        </VerticalStackLayout>
+                    </Grid>
+                    <Border Padding="12,10" BackgroundColor="#FFF6E8" Stroke="#E8D2A8" StrokeShape="RoundRectangle 16">
+                        <Label FontSize="12" Text="{Binding PaymentNoteText}" TextColor="#8C5A22" />
+                    </Border>
+                </VerticalStackLayout>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}">
+                <VerticalStackLayout Spacing="14">
+                    <Label Style="{StaticResource SectionTitleStyle}" Text="{Binding MethodsTitleText}" />
+
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding PaymentMethods}" Spacing="10">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:PremiumPaymentMethodOption">
+                                <Border
+                                    Padding="14"
+                                    BackgroundColor="White"
+                                    Stroke="#E7DCCE"
+                                    StrokeShape="RoundRectangle 18">
+                                    <Border.Triggers>
+                                        <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                            <Setter Property="BackgroundColor" Value="{StaticResource BrandPrimaryPale}" />
+                                            <Setter Property="Stroke" Value="{StaticResource BrandPrimary}" />
+                                            <Setter Property="StrokeThickness" Value="1.5" />
+                                        </DataTrigger>
+                                    </Border.Triggers>
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                        <Border
+                                            Padding="10,6"
+                                            BackgroundColor="{Binding AccentColor}"
+                                            StrokeThickness="0"
+                                            StrokeShape="RoundRectangle 12"
+                                            VerticalOptions="Start">
+                                            <Label FontFamily="OpenSansSemibold" FontSize="10" TextColor="White" Text="{Binding Title}" />
+                                        </Border>
+                                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                            <Label FontFamily="OpenSansSemibold" FontSize="15" Text="{Binding Title}" />
+                                            <Label FontSize="12" Text="{Binding Description}" TextColor="{StaticResource BrandTextSecondary}" />
+                                        </VerticalStackLayout>
+                                    </Grid>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding Source={x:Reference PageRoot}, Path=BindingContext.SelectPaymentMethodCommand}" CommandParameter="{Binding .}" />
+                                    </Border.GestureRecognizers>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}" IsVisible="{Binding IsBankCardSelected}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Style="{StaticResource SectionTitleStyle}" Text="{Binding CardSectionTitleText}" />
+
+                    <VerticalStackLayout Spacing="4">
+                        <Label Style="{StaticResource MetaTextStyle}" Text="{Binding CardholderLabelText}" />
+                        <Border Style="{StaticResource InputContainerStyle}">
+                            <Entry Text="{Binding CardholderName}" Placeholder="{Binding CardholderPlaceholderText}" />
+                        </Border>
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="4">
+                        <Label Style="{StaticResource MetaTextStyle}" Text="{Binding CardNumberLabelText}" />
+                        <Border Style="{StaticResource InputContainerStyle}">
+                            <Entry Keyboard="Numeric" MaxLength="19" Text="{Binding CardNumber}" Placeholder="{Binding CardNumberPlaceholderText}" />
+                        </Border>
+                    </VerticalStackLayout>
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding CardExpiryLabelText}" />
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                                <Border Style="{StaticResource InputContainerStyle}">
+                                    <Entry Keyboard="Numeric" MaxLength="2" Text="{Binding ExpiryMonth}" Placeholder="{Binding ExpiryMonthPlaceholderText}" />
+                                </Border>
+                                <Border Grid.Column="1" Style="{StaticResource InputContainerStyle}">
+                                    <Entry Keyboard="Numeric" MaxLength="4" Text="{Binding ExpiryYear}" Placeholder="{Binding ExpiryYearPlaceholderText}" />
+                                </Border>
+                            </Grid>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding CardCvvLabelText}" />
+                            <Border Style="{StaticResource InputContainerStyle}">
+                                <Entry IsPassword="True" Keyboard="Numeric" MaxLength="4" Text="{Binding Cvv}" Placeholder="{Binding CvvPlaceholderText}" />
+                            </Border>
+                        </VerticalStackLayout>
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}" IsVisible="{Binding IsEWalletSelected}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Style="{StaticResource SectionTitleStyle}" Text="{Binding WalletSectionTitleText}" />
+
+                    <VerticalStackLayout Spacing="6">
+                        <Label Style="{StaticResource MetaTextStyle}" Text="{Binding WalletProviderLabelText}" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <Border Padding="14,12" BackgroundColor="White" Stroke="#E7DCCE" StrokeShape="RoundRectangle 16">
+                                <Border.Triggers>
+                                    <DataTrigger TargetType="Border" Binding="{Binding IsMomoSelected}" Value="True">
+                                        <Setter Property="BackgroundColor" Value="#F7F1FF" />
+                                        <Setter Property="Stroke" Value="#7B43D6" />
+                                        <Setter Property="StrokeThickness" Value="1.5" />
+                                    </DataTrigger>
+                                </Border.Triggers>
+                                <Label FontFamily="OpenSansSemibold" HorizontalTextAlignment="Center" Text="{Binding MomoText}" />
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SelectWalletProviderCommand}" CommandParameter="momo" />
+                                </Border.GestureRecognizers>
+                            </Border>
+
+                            <Border Grid.Column="1" Padding="14,12" BackgroundColor="White" Stroke="#E7DCCE" StrokeShape="RoundRectangle 16">
+                                <Border.Triggers>
+                                    <DataTrigger TargetType="Border" Binding="{Binding IsZaloPaySelected}" Value="True">
+                                        <Setter Property="BackgroundColor" Value="#EAF4FF" />
+                                        <Setter Property="Stroke" Value="#2476D4" />
+                                        <Setter Property="StrokeThickness" Value="1.5" />
+                                    </DataTrigger>
+                                </Border.Triggers>
+                                <Label FontFamily="OpenSansSemibold" HorizontalTextAlignment="Center" Text="{Binding ZaloPayText}" />
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SelectWalletProviderCommand}" CommandParameter="zalopay" />
+                                </Border.GestureRecognizers>
+                            </Border>
+                        </Grid>
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="4">
+                        <Label Style="{StaticResource MetaTextStyle}" Text="{Binding WalletAccountLabelText}" />
+                        <Border Style="{StaticResource InputContainerStyle}">
+                            <Entry Text="{Binding WalletAccount}" Placeholder="{Binding WalletAccountPlaceholderText}" />
+                        </Border>
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="4">
+                        <Label Style="{StaticResource MetaTextStyle}" Text="{Binding WalletPinLabelText}" />
+                        <Border Style="{StaticResource InputContainerStyle}">
+                            <Entry IsPassword="True" Keyboard="Numeric" MaxLength="6" Text="{Binding WalletPin}" Placeholder="{Binding WalletPinPlaceholderText}" />
+                        </Border>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Border>
+
+            <Border
+                Padding="12,10"
+                BackgroundColor="#EDF7EE"
+                IsVisible="{Binding HasMessage}"
+                StrokeThickness="0"
+                StrokeShape="RoundRectangle 14">
+                <Border.Triggers>
+                    <DataTrigger TargetType="Border" Binding="{Binding IsMessageError}" Value="True">
+                        <Setter Property="BackgroundColor" Value="#FDECEC" />
+                    </DataTrigger>
+                </Border.Triggers>
+                <Label FontSize="12" Text="{Binding Message}">
+                    <Label.Triggers>
+                        <DataTrigger TargetType="Label" Binding="{Binding IsMessageError}" Value="True">
+                            <Setter Property="TextColor" Value="#B42318" />
+                        </DataTrigger>
+                    </Label.Triggers>
+                </Label>
+            </Border>
+
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <Button Grid.Column="0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CancelCommand}" Text="{Binding CancelText}" />
+                <Button Grid.Column="1" Command="{Binding SubmitPaymentCommand}" IsEnabled="{Binding CanSubmitPayment}" Text="{Binding SubmitPaymentText}" />
+            </Grid>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

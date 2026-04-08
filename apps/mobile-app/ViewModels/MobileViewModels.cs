@@ -295,7 +295,9 @@ public sealed class PoiListViewModel(
             "oc" => "Ốc",
             "do-nuong" => "Đồ nướng",
             "do-uong" => "Đồ uống",
-            "mon-ngot" => "Món ngọt",
+            "ca-phe-tra" => "Cà phê & trà",
+            "hai-san-do-song" => "Hải sản & đồ sống",
+            "mon-ngot" => "Cà phê & trà",
             _ => CultureInfo.CurrentCulture.TextInfo.ToTitleCase(key.Replace('-', ' '))
         };
     }

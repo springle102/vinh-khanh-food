@@ -133,12 +133,42 @@
                             </BoxView>
                         </Grid>
 
-                        <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
+                        <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill" IsVisible="{Binding IsLoginMode}">
                             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                 <Label FontSize="17" Text="@" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
                                 <Entry Grid.Column="1" Placeholder="{Binding IdentifierPlaceholderText}" Text="{Binding Identifier}" />
                             </Grid>
                         </Border>
+
+                        <VerticalStackLayout IsVisible="{Binding IsSignUpMode}" Spacing="12">
+                            <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                    <Label FontSize="17" Text="o" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
+                                    <Entry Grid.Column="1" Placeholder="{Binding SignUpNamePlaceholderText}" Text="{Binding SignUpName}" />
+                                </Grid>
+                            </Border>
+
+                            <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                    <Label FontSize="17" Text="@" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
+                                    <Entry Grid.Column="1" Keyboard="Email" Placeholder="{Binding SignUpEmailPlaceholderText}" Text="{Binding SignUpEmail}" />
+                                </Grid>
+                            </Border>
+
+                            <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                    <Label FontSize="17" Text="u" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
+                                    <Entry Grid.Column="1" Placeholder="{Binding SignUpUsernamePlaceholderText}" Text="{Binding SignUpUsername}" />
+                                </Grid>
+                            </Border>
+
+                            <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                    <Label FontSize="17" Text="#" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
+                                    <Entry Grid.Column="1" Keyboard="Telephone" Placeholder="{Binding SignUpPhonePlaceholderText}" Text="{Binding SignUpPhone}" />
+                                </Grid>
+                            </Border>
+                        </VerticalStackLayout>
 
                         <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
@@ -148,7 +178,16 @@
                             </Grid>
                         </Border>
 
+                        <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill" IsVisible="{Binding IsSignUpMode}">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                <Label FontSize="17" Text="*" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
+                                <Entry Grid.Column="1" IsPassword="True" Placeholder="{Binding ConfirmPasswordPlaceholderText}" Text="{Binding ConfirmPassword}" />
+                                <Label Grid.Column="2" FontSize="16" Text="o" VerticalOptions="Center" TextColor="{StaticResource BrandTextMuted}" />
+                            </Grid>
+                        </Border>
+
                         <Label
+                            IsVisible="{Binding IsLoginMode}"
                             HorizontalTextAlignment="End"
                             Text="{Binding ForgotPasswordText}"
                             TextColor="{StaticResource BrandPrimary}"
@@ -157,13 +196,14 @@
 
                         <Button Command="{Binding LoginCommand}" FontSize="17" Text="{Binding PrimaryButtonText}" />
 
-                        <VerticalStackLayout Spacing="14">
+                        <VerticalStackLayout IsVisible="{Binding IsLoginMode}" Spacing="14">
                             <Button Command="{Binding SocialLoginCommand}" CommandParameter="google" Style="{StaticResource SecondaryButtonStyle}" Text="{Binding GoogleLoginText}" />
                             <Button Command="{Binding SocialLoginCommand}" CommandParameter="facebook" Style="{StaticResource SecondaryButtonStyle}" Text="{Binding FacebookLoginText}" />
                             <Button Command="{Binding SocialLoginCommand}" CommandParameter="apple" Style="{StaticResource SecondaryButtonStyle}" Text="{Binding AppleLoginText}" />
                         </VerticalStackLayout>
 
                         <Label
+                            IsVisible="{Binding IsLoginMode}"
                             HorizontalTextAlignment="Center"
                             Text="{Binding CreateAccountText}"
                             TextColor="{StaticResource BrandPrimary}"

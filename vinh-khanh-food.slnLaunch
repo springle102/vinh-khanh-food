@@ -1,0 +1,11 @@
+[
+  {
+    "Name": "Backend + Web (SPA Proxy)",
+    "Projects": [
+      {
+        "Path": "apps\\backend-api\\VinhKhanh.BackendApi.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

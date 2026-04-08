@@ -88,13 +88,15 @@ public sealed partial class AdminDataRepository
         return new EndUser
         {
             Id = ReadString(reader, "Id"),
+            Name = ReadString(reader, "Name"),
+            Email = ReadString(reader, "Email"),
+            Phone = ReadString(reader, "Phone"),
+            Password = ReadString(reader, "Password"),
             Username = ReadNullableString(reader, "Username"),
-            DeviceId = ReadNullableString(reader, "DeviceId"),
             IsActive = isActive,
             IsBanned = isBanned,
             DefaultLanguage = ReadString(reader, "PreferredLanguage"),
             Country = ReadString(reader, "Country"),
-            DeviceType = ReadString(reader, "DeviceType"),
             CreatedAt = ReadDateTimeOffset(reader, "CreatedAt"),
             LastActiveAt = ReadNullableDateTimeOffset(reader, "LastActiveAt"),
             Status = ResolveEndUserStatus(isBanned, isActive)

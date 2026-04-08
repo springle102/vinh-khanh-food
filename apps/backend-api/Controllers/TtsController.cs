@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Infrastructure;
 
 namespace VinhKhanh.BackendApi.Controllers;
@@ -6,6 +7,7 @@ namespace VinhKhanh.BackendApi.Controllers;
 [ApiController]
 [Route("api/v1/tts")]
 public sealed class TtsController(
+    AdminDataRepository repository,
     GoogleTranslateTtsProxyService googleTranslateTtsProxyService,
     ILogger<TtsController> logger) : ControllerBase
 {
@@ -13,20 +15,27 @@ public sealed class TtsController(
     public async Task<IActionResult> ProxyGoogleTranslateTts(
         [FromQuery] string text,
         [FromQuery] string languageCode,
+        [FromQuery] string? customerUserId,
         [FromQuery] int? idx,
         [FromQuery] int? total,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            return BadRequest("Text lÃ  báº¯t buá»™c.");
+            return BadRequest(ApiResponse<string>.Fail("Text la bat buoc."));
+        }
+
+        var accessDecision = repository.EvaluateCustomerLanguageAccess(customerUserId, languageCode);
+        if (!accessDecision.IsAllowed)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<string>.Fail(accessDecision.Message));
         }
 
         try
         {
             var audio = await googleTranslateTtsProxyService.FetchAudioAsync(
                 text,
-                languageCode,
+                accessDecision.LanguageCode,
                 idx,
                 total,
                 cancellationToken);
@@ -42,7 +51,7 @@ public sealed class TtsController(
             logger.LogWarning(
                 exception,
                 "Unable to proxy Google Translate TTS. language={LanguageCode}; segment={SegmentIndex}/{TotalSegments}",
-                languageCode,
+                accessDecision.LanguageCode,
                 idx,
                 total);
             return StatusCode(StatusCodes.Status502BadGateway);
