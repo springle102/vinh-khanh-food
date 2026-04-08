@@ -14,7 +14,6 @@ README này là tài liệu tổng hợp duy nhất cho toàn bộ đồ án. Re
 - Chưa làm backend xử lí đăng nhập trên app và và đăng kí
 - Chưa xử lí backend đăng nhập bằng google, facebook
 - Cần thêm chatbox AI cho app (xài API key của Gemini)
-- Chưa làm giới hạn ngôn ngữ được nghe khi xài bản free
 
 ## Tổng quan kiến trúc
 
