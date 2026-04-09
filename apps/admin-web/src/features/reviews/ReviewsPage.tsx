@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/Button";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import type { Review } from "../../data/types";
+import { canModerateReviews } from "../../lib/rbac";
 import { useAuth } from "../auth/AuthContext";
 import { formatDateTime, languageLabels } from "../../lib/utils";
 import { getPoiTitle } from "../../lib/selectors";
@@ -11,6 +12,7 @@ import { getPoiTitle } from "../../lib/selectors";
 export const ReviewsPage = () => {
   const { state, saveReviewStatus } = useAdminData();
   const { user } = useAuth();
+  const canManageReviewModeration = canModerateReviews(user?.role);
 
   const columns: DataColumn<Review>[] = [
     {
@@ -50,17 +52,21 @@ export const ReviewsPage = () => {
       key: "actions",
       header: "Thao tác",
       render: (item) => (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => user && saveReviewStatus(item.id, "approved", user)}
-          >
-            Duyệt
-          </Button>
-          <Button variant="ghost" onClick={() => user && saveReviewStatus(item.id, "hidden", user)}>
-            Ẩn
-          </Button>
-        </div>
+        canManageReviewModeration ? (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => user && saveReviewStatus(item.id, "approved", user)}
+            >
+              Duyệt
+            </Button>
+            <Button variant="ghost" onClick={() => user && saveReviewStatus(item.id, "hidden", user)}>
+              Ẩn
+            </Button>
+          </div>
+        ) : (
+          <p className="text-sm text-ink-500">Chỉ xem</p>
+        )
       ),
     },
   ];

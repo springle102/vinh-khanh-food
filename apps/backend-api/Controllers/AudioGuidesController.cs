@@ -7,7 +7,9 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/audio-guides")]
-public sealed class AudioGuidesController(AdminDataRepository repository) : ControllerBase
+public sealed class AudioGuidesController(
+    AdminDataRepository repository,
+    AdminRequestContextResolver adminRequestContextResolver) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<AudioGuide>>> GetAudioGuides(
@@ -16,7 +18,8 @@ public sealed class AudioGuidesController(AdminDataRepository repository) : Cont
         [FromQuery] string? languageCode,
         [FromQuery] string? status)
     {
-        IEnumerable<AudioGuide> query = repository.GetAudioGuides();
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        IEnumerable<AudioGuide> query = repository.GetAudioGuides(actor);
 
         if (!string.IsNullOrWhiteSpace(entityType))
         {
@@ -44,34 +47,71 @@ public sealed class AudioGuidesController(AdminDataRepository repository) : Cont
     [HttpPost]
     public ActionResult<ApiResponse<AudioGuide>> CreateAudioGuide([FromBody] AudioGuideUpsertRequest request)
     {
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
         if (string.IsNullOrWhiteSpace(request.EntityId) || string.IsNullOrWhiteSpace(request.LanguageCode))
         {
-            return BadRequest(ApiResponse<AudioGuide>.Fail("EntityId và languageCode là bắt buộc."));
+            return BadRequest(ApiResponse<AudioGuide>.Fail("EntityId va languageCode la bat buoc."));
         }
 
-        var saved = repository.SaveAudioGuide(null, request);
-        return Ok(ApiResponse<AudioGuide>.Ok(saved, "Tạo audio guide thành công."));
+        if (!CanManageEntity(actor, request.EntityType, request.EntityId))
+        {
+            return NotFound(ApiResponse<AudioGuide>.Fail("Khong tim thay tai nguyen de cap nhat audio guide."));
+        }
+
+        var saved = repository.SaveAudioGuide(null, request with { UpdatedBy = actor.Name }, actor);
+        return Ok(ApiResponse<AudioGuide>.Ok(saved, "Tao audio guide thanh cong."));
     }
 
     [HttpPut("{id}")]
     public ActionResult<ApiResponse<AudioGuide>> UpdateAudioGuide(string id, [FromBody] AudioGuideUpsertRequest request)
     {
-        var existing = repository.GetAudioGuides().Any(item => item.Id == id);
-        if (!existing)
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var existing = repository.GetAudioGuides(actor).FirstOrDefault(item => item.Id == id);
+        if (existing is null || !CanManageEntity(actor, request.EntityType, request.EntityId))
         {
-            return NotFound(ApiResponse<AudioGuide>.Fail("Không tìm thấy audio guide."));
+            return NotFound(ApiResponse<AudioGuide>.Fail("Khong tim thay audio guide."));
         }
 
-        var saved = repository.SaveAudioGuide(id, request);
-        return Ok(ApiResponse<AudioGuide>.Ok(saved, "Cập nhật audio guide thành công."));
+        var saved = repository.SaveAudioGuide(id, request with { UpdatedBy = actor.Name }, actor);
+        return Ok(ApiResponse<AudioGuide>.Ok(saved, "Cap nhat audio guide thanh cong."));
     }
 
     [HttpDelete("{id}")]
     public ActionResult<ApiResponse<string>> DeleteAudioGuide(string id)
     {
-        var deleted = repository.DeleteAudioGuide(id);
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var existing = repository.GetAudioGuides(actor).FirstOrDefault(item => item.Id == id);
+        if (existing is null)
+        {
+            return NotFound(ApiResponse<string>.Fail("Khong tim thay audio guide."));
+        }
+
+        var deleted = repository.DeleteAudioGuide(id, actor);
         return deleted
-            ? Ok(ApiResponse<string>.Ok(id, "Xóa audio guide thành công."))
-            : NotFound(ApiResponse<string>.Fail("Không tìm thấy audio guide."));
+            ? Ok(ApiResponse<string>.Ok(id, "Xoa audio guide thanh cong."))
+            : NotFound(ApiResponse<string>.Fail("Khong tim thay audio guide."));
     }
+
+    private bool CanManageEntity(AdminRequestContext actor, string? entityType, string? entityId)
+    {
+        if (string.IsNullOrWhiteSpace(entityType) || string.IsNullOrWhiteSpace(entityId))
+        {
+            return false;
+        }
+
+        return NormalizeEntityType(entityType) switch
+        {
+            "poi" => repository.GetPois(actor).Any(item => item.Id == entityId),
+            "food_item" => repository.GetFoodItems(actor).Any(item => item.Id == entityId),
+            "route" => repository.GetRoutes(actor).Any(item =>
+                item.Id == entityId &&
+                (actor.IsSuperAdmin || string.Equals(item.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase))),
+            _ => false
+        };
+    }
+
+    private static string NormalizeEntityType(string value)
+        => string.Equals(value.Trim(), "food-item", StringComparison.OrdinalIgnoreCase)
+            ? "food_item"
+            : value.Trim().ToLowerInvariant();
 }

@@ -28,7 +28,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<CustomerUser> GetCustomerUsers(SqlConnection connection, SqlTransaction? transaction)
     {
         const string usersSql = """
-            SELECT Id, Name, Email, Phone, [Password], [Status], IsActive, IsBanned, PreferredLanguage, Username, Country, IsPremium, CreatedAt, LastActiveAt
+            SELECT Id, Name, Email, Phone, [Password], PreferredLanguage, Username, Country, IsPremium, CreatedAt, LastActiveAt
             FROM dbo.CustomerUsers
             ORDER BY CreatedAt DESC, Id DESC;
             """;
@@ -62,8 +62,6 @@ public sealed partial class AdminDataRepository
             while (usersReader.Read())
             {
                 var customerId = ReadString(usersReader, "Id");
-                var isActive = ReadBool(usersReader, "IsActive");
-                var isBanned = ReadBool(usersReader, "IsBanned");
                 customers.Add(new CustomerUser
                 {
                     Id = customerId,
@@ -71,9 +69,6 @@ public sealed partial class AdminDataRepository
                     Email = ReadString(usersReader, "Email"),
                     Phone = ReadString(usersReader, "Phone"),
                     Password = ReadString(usersReader, "Password"),
-                    Status = ResolveEndUserStatus(isBanned, isActive),
-                    IsActive = isActive,
-                    IsBanned = isBanned,
                     PreferredLanguage = ReadString(usersReader, "PreferredLanguage"),
                     Username = ReadNullableString(usersReader, "Username"),
                     Country = ReadString(usersReader, "Country"),
@@ -91,7 +86,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<EndUser> GetEndUsers(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, Name, Email, Phone, [Password], Username, IsActive, IsBanned, PreferredLanguage, Country, CreatedAt, LastActiveAt, [Status]
+            SELECT Id, Name, Email, Phone, [Password], Username, PreferredLanguage, Country, CreatedAt, LastActiveAt
             FROM dbo.CustomerUsers
             ORDER BY CreatedAt DESC, Id DESC;
             """;

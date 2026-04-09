@@ -43,9 +43,14 @@ export const UsersPage = () => {
   const [form, setForm] = useState<UserForm>(defaultUserForm);
 
   const canManageUsers = user?.role === "SUPER_ADMIN";
+  const isSelfService = user?.role === "PLACE_OWNER";
+  const visibleUsers = useMemo(
+    () => (isSelfService && user ? state.users.filter((account) => account.id === user.id) : state.users),
+    [isSelfService, state.users, user],
+  );
   const ownerAccounts = useMemo(
-    () => state.users.filter((account) => account.role === "PLACE_OWNER"),
-    [state.users],
+    () => visibleUsers.filter((account) => account.role === "PLACE_OWNER"),
+    [visibleUsers],
   );
 
   const openModal = (account?: AdminUser) => {
@@ -69,14 +74,20 @@ export const UsersPage = () => {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!user || !canManageUsers) {
+    if (!user || (!canManageUsers && !isSelfService)) {
       return;
     }
 
     await saveUser(
       {
         ...form,
-        managedPoiId: form.role === "PLACE_OWNER" ? form.managedPoiId || null : null,
+        role: isSelfService ? user.role : form.role,
+        status: isSelfService ? user.status : form.status,
+        managedPoiId: isSelfService
+          ? user.managedPoiId
+          : form.role === "PLACE_OWNER"
+            ? form.managedPoiId || null
+            : null,
       },
       user,
     );
@@ -140,8 +151,12 @@ export const UsersPage = () => {
       key: "actions",
       header: "Thao tác",
       render: (account) => (
-        <Button variant="secondary" onClick={() => openModal(account)} disabled={!canManageUsers}>
-          Chỉnh sửa
+        <Button
+          variant="secondary"
+          onClick={() => openModal(account)}
+          disabled={!canManageUsers && account.id !== user?.id}
+        >
+          {canManageUsers ? "Chỉnh sửa" : "Cập nhật hồ sơ"}
         </Button>
       ),
     },
@@ -153,40 +168,49 @@ export const UsersPage = () => {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">
-              Quản trị tài khoản chủ quán
+              {canManageUsers ? "Quản trị tài khoản chủ quán" : "Hồ sơ tài khoản"}
             </p>
-            <h1 className="mt-3 text-3xl font-bold text-ink-900">Quản lý Super Admin và tài khoản chủ quán</h1>
+            <h1 className="mt-3 text-3xl font-bold text-ink-900">
+              {canManageUsers ? "Quản lý Super Admin và tài khoản chủ quán" : "Cập nhật hồ sơ chủ quán"}
+            </h1>
             <p className="mt-3 text-sm leading-6 text-ink-500">
-              Đây là khu vực riêng để quản lý tài khoản admin và chủ quán. End-user mobile được tách sang trang riêng
-              trên sidebar.
+              {canManageUsers
+                ? "Đây là khu vực riêng để quản lý tài khoản admin và chủ quán. End-user mobile được tách sang trang riêng trên sidebar."
+                : "Chủ quán chỉ được cập nhật hồ sơ, mật khẩu và thông tin liên hệ của chính mình."}
             </p>
           </div>
-          <Button onClick={() => openModal()} disabled={!canManageUsers}>
-            Thêm tài khoản chủ quán
+          <Button onClick={() => openModal(isSelfService ? user ?? undefined : undefined)} disabled={!canManageUsers && !isSelfService}>
+            {canManageUsers ? "Thêm tài khoản chủ quán" : "Chỉnh sửa hồ sơ"}
           </Button>
         </div>
       </Card>
 
       <section className="grid gap-4 md:grid-cols-3">
         <Card>
-          <p className="text-sm text-ink-500">Tổng chủ quán</p>
+          <p className="text-sm text-ink-500">{canManageUsers ? "Tổng chủ quán" : "Vai trò"}</p>
           <p className="mt-2 text-3xl font-bold text-ink-900">{ownerAccounts.length}</p>
         </Card>
         <Card>
-          <p className="text-sm text-ink-500">Đang hoạt động</p>
+          <p className="text-sm text-ink-500">{canManageUsers ? "Đang hoạt động" : "Trạng thái"}</p>
           <p className="mt-2 text-3xl font-bold text-ink-900">
-            {ownerAccounts.filter((account) => account.status === "active").length}
+            {canManageUsers
+              ? ownerAccounts.filter((account) => account.status === "active").length
+              : user?.status === "active"
+                ? "Hoạt động"
+                : "Đã khóa"}
           </p>
         </Card>
         <Card>
-          <p className="text-sm text-ink-500">Đã khóa</p>
+          <p className="text-sm text-ink-500">{canManageUsers ? "Đã khóa" : "POI phụ trách"}</p>
           <p className="mt-2 text-3xl font-bold text-ink-900">
-            {ownerAccounts.filter((account) => account.status === "locked").length}
+            {canManageUsers
+              ? ownerAccounts.filter((account) => account.status === "locked").length
+              : getPoiTitle(state, user?.managedPoiId ?? "") || "--"}
           </p>
         </Card>
       </section>
 
-      {!canManageUsers ? (
+      {!canManageUsers && !isSelfService ? (
         <Card className="border border-amber-100 bg-amber-50">
           <p className="font-semibold text-amber-800">Tài khoản hiện tại không có quyền quản lý tài khoản admin.</p>
           <p className="mt-2 text-sm text-amber-700">
@@ -196,14 +220,24 @@ export const UsersPage = () => {
       ) : null}
 
       <Card>
-        <DataTable data={state.users} columns={columns} rowKey={(row) => row.id} />
+        <DataTable data={visibleUsers} columns={columns} rowKey={(row) => row.id} />
       </Card>
 
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={form.id ? "Cập nhật tài khoản admin" : "Tạo tài khoản chủ quán"}
-        description="Super Admin có thể gán mỗi tài khoản PLACE_OWNER cho một POI cụ thể trong hệ thống."
+        title={
+          canManageUsers
+            ? form.id
+              ? "Cập nhật tài khoản admin"
+              : "Tạo tài khoản chủ quán"
+            : "Cập nhật hồ sơ chủ quán"
+        }
+        description={
+          canManageUsers
+            ? "Super Admin có thể gán mỗi tài khoản PLACE_OWNER cho một POI cụ thể trong hệ thống."
+            : "Bạn chỉ có thể cập nhật hồ sơ và mật khẩu của chính mình."
+        }
       >
         <form
           className="space-y-5"
@@ -249,6 +283,7 @@ export const UsersPage = () => {
                 onChange={(event) =>
                   setForm((current) => ({ ...current, role: event.target.value as AdminUser["role"] }))
                 }
+                disabled={isSelfService}
               >
                 <option value="SUPER_ADMIN">Super Admin</option>
                 <option value="PLACE_OWNER">Chủ quán</option>
@@ -261,6 +296,7 @@ export const UsersPage = () => {
                 onChange={(event) =>
                   setForm((current) => ({ ...current, status: event.target.value as AdminUser["status"] }))
                 }
+                disabled={isSelfService}
               >
                 <option value="active">Đang hoạt động</option>
                 <option value="locked">Đã khóa</option>
@@ -271,7 +307,7 @@ export const UsersPage = () => {
               <Select
                 value={form.managedPoiId}
                 onChange={(event) => setForm((current) => ({ ...current, managedPoiId: event.target.value }))}
-                disabled={form.role === "SUPER_ADMIN"}
+                disabled={isSelfService || form.role === "SUPER_ADMIN"}
               >
                 <option value="">Chưa gán POI</option>
                 {state.pois.map((poi) => (
@@ -293,8 +329,8 @@ export const UsersPage = () => {
             <Button variant="ghost" onClick={() => setModalOpen(false)}>
               Hủy
             </Button>
-            <Button type="submit" disabled={!canManageUsers}>
-              Lưu tài khoản
+            <Button type="submit" disabled={!canManageUsers && !isSelfService}>
+              {canManageUsers ? "Lưu tài khoản" : "Lưu hồ sơ"}
             </Button>
           </div>
         </form>

@@ -120,11 +120,14 @@ Mobile App -------------------> Backend API
 - `apps/mobile-app/Resources/Raw/appsettings.json`
   - `ApiBaseUrl` cho môi trường local
   - `PlatformApiBaseUrls.Android` nên đổi thành IP của máy đang chạy backend trong cùng mạng hoặc emulator
+  - khi build APK để cài lên điện thoại thật, không dùng `localhost` hoặc `127.0.0.1` vì các địa chỉ này sẽ trỏ về chính điện thoại
+  - tạo file `.android-settings/appsettings.json` bằng cách copy từ `apps/mobile-app/appsettings.android.sample.json`, rồi đổi `ApiBaseUrl` và `PlatformApiBaseUrls.Android` sang IP LAN của máy chạy backend, ví dụ `http://192.168.1.10:5080`
+  - backend cũng phải listen trên mạng nội bộ thay vì chỉ `localhost`; có thể chạy PowerShell với `$env:VK_BACKEND_URLS='http://0.0.0.0:5080'; .\scripts\dev-backend.cmd`
 
-## Google Translate TTS
+## ElevenLabs TTS
 
 - Audio guide đã upload vẫn được ưu tiên cho admin web và mobile app
-- Khi không có audio sẵn, admin web và mobile app đều fallback sang Google Translate TTS từ cùng một nội dung narration đã resolve từ backend
+- Khi không có audio sẵn, admin web và mobile app đều fallback sang ElevenLabs TTS từ cùng một nội dung narration đã resolve từ backend
 - Backend `api/v1/pois/{id}/narration` tiếp tục đồng bộ text, ngôn ngữ hiệu lực và audio guide giữa admin và app
 
 ## Các lệnh root thường dùng

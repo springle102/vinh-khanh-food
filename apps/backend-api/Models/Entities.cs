@@ -22,9 +22,6 @@ public sealed class CustomerUser
     public string Email { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
-    public string Status { get; set; } = string.Empty;
-    public bool IsActive { get; set; }
-    public bool IsBanned { get; set; }
     public string PreferredLanguage { get; set; } = "vi";
     public string? Username { get; set; }
     public string Country { get; set; } = string.Empty;
@@ -42,13 +39,10 @@ public sealed class EndUser
     public string Phone { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string? Username { get; set; }
-    public bool IsActive { get; set; }
-    public bool IsBanned { get; set; }
     public string DefaultLanguage { get; set; } = "vi";
     public string Country { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastActiveAt { get; set; }
-    public string Status { get; set; } = "active";
 }
 
 public sealed class PoiCategory
@@ -176,6 +170,8 @@ public sealed class TourRoute
     public bool IsFeatured { get; set; }
     public List<string> StopPoiIds { get; set; } = [];
     public bool IsActive { get; set; }
+    public bool IsSystemRoute { get; set; }
+    public string? OwnerUserId { get; set; }
     public string UpdatedBy { get; set; } = string.Empty;
     public DateTimeOffset UpdatedAt { get; set; }
 }
@@ -194,10 +190,28 @@ public sealed class Promotion
 public sealed class AuditLog
 {
     public string Id { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
     public string ActorName { get; set; } = string.Empty;
     public string ActorRole { get; set; } = string.Empty;
+    public string ActorType { get; set; } = string.Empty;
     public string Action { get; set; } = string.Empty;
-    public string Target { get; set; } = string.Empty;
+    public string Module { get; set; } = string.Empty;
+    public string TargetId { get; set; } = string.Empty;
+    public string TargetSummary { get; set; } = string.Empty;
+    public string? BeforeSummary { get; set; }
+    public string? AfterSummary { get; set; }
+    public string SourceApp { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class UserActivityLog
+{
+    public string Id { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string ActorType { get; set; } = string.Empty;
+    public string EventType { get; set; } = string.Empty;
+    public string Metadata { get; set; } = string.Empty;
+    public string SourceApp { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
 }
 
@@ -221,7 +235,9 @@ public sealed class PremiumPurchaseTransaction
 public sealed class RefreshSession
 {
     public string UserId { get; set; } = string.Empty;
+    public string AccessToken { get; set; } = string.Empty;
     public string RefreshToken { get; set; } = string.Empty;
+    public DateTimeOffset AccessTokenExpiresAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
 }
 
@@ -236,7 +252,7 @@ public sealed class SystemSetting
     public int PremiumUnlockPriceUsd { get; set; }
     public string MapProvider { get; set; } = "openstreetmap";
     public string StorageProvider { get; set; } = "cloudinary";
-    public string TtsProvider { get; set; } = "google_translate";
+    public string TtsProvider { get; set; } = "elevenlabs";
     public int GeofenceRadiusMeters { get; set; }
     public bool GuestReviewEnabled { get; set; }
     public int AnalyticsRetentionDays { get; set; }

@@ -7,18 +7,22 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/admin-users")]
-public sealed class AdminUsersController(AdminDataRepository repository) : ControllerBase
+public sealed class AdminUsersController(
+    AdminDataRepository repository,
+    AdminRequestContextResolver adminRequestContextResolver) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<AdminUser>>> GetUsers()
-        => Ok(ApiResponse<IReadOnlyList<AdminUser>>.Ok(repository.GetUsers()));
+        => Ok(ApiResponse<IReadOnlyList<AdminUser>>.Ok(
+            repository.GetUsers(adminRequestContextResolver.RequireAuthenticatedAdmin())));
 
     [HttpGet("{id}")]
     public ActionResult<ApiResponse<AdminUser>> GetUserById(string id)
     {
-        var user = repository.GetUsers().FirstOrDefault(item => item.Id == id);
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var user = repository.GetUsers(actor).FirstOrDefault(item => item.Id == id);
         return user is null
-            ? NotFound(ApiResponse<AdminUser>.Fail("Không tìm thấy tài khoản admin."))
+            ? NotFound(ApiResponse<AdminUser>.Fail("Khong tim thay tai khoan admin."))
             : Ok(ApiResponse<AdminUser>.Ok(user));
     }
 
@@ -27,23 +31,37 @@ public sealed class AdminUsersController(AdminDataRepository repository) : Contr
     {
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Email))
         {
-            return BadRequest(ApiResponse<AdminUser>.Fail("Tên và email là bắt buộc."));
+            return BadRequest(ApiResponse<AdminUser>.Fail("Ten va email la bat buoc."));
         }
 
-        var saved = repository.SaveUser(null, request);
-        return CreatedAtAction(nameof(GetUserById), new { id = saved.Id }, ApiResponse<AdminUser>.Ok(saved, "Tạo tài khoản admin thành công."));
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var sanitizedRequest = request with
+        {
+            ActorName = actor.Name,
+            ActorRole = actor.Role
+        };
+
+        var saved = repository.SaveUser(null, sanitizedRequest, actor);
+        return CreatedAtAction(nameof(GetUserById), new { id = saved.Id }, ApiResponse<AdminUser>.Ok(saved, "Tao tai khoan admin thanh cong."));
     }
 
     [HttpPut("{id}")]
     public ActionResult<ApiResponse<AdminUser>> UpdateUser(string id, [FromBody] AdminUserUpsertRequest request)
     {
-        var existing = repository.GetUsers().Any(item => item.Id == id);
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var existing = repository.GetUsers(actor).Any(item => item.Id == id);
         if (!existing)
         {
-            return NotFound(ApiResponse<AdminUser>.Fail("Không tìm thấy tài khoản admin."));
+            return NotFound(ApiResponse<AdminUser>.Fail("Khong tim thay tai khoan admin."));
         }
 
-        var saved = repository.SaveUser(id, request);
-        return Ok(ApiResponse<AdminUser>.Ok(saved, "Cập nhật tài khoản admin thành công."));
+        var sanitizedRequest = request with
+        {
+            ActorName = actor.Name,
+            ActorRole = actor.Role
+        };
+
+        var saved = repository.SaveUser(id, sanitizedRequest, actor);
+        return Ok(ApiResponse<AdminUser>.Ok(saved, "Cap nhat tai khoan admin thanh cong."));
     }
 }

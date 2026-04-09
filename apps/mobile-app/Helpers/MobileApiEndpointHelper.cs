@@ -9,6 +9,16 @@ public static class MobileApiEndpointHelper
     public static string ResolveBaseUrl(string? apiBaseUrl, IReadOnlyDictionary<string, string>? platformApiBaseUrls)
     {
         var platformKey = DeviceInfo.Current.Platform.ToString();
+        var virtualPlatformKey = GetVirtualPlatformKey(platformKey);
+
+        if (platformApiBaseUrls is not null &&
+            !string.IsNullOrWhiteSpace(virtualPlatformKey) &&
+            platformApiBaseUrls.TryGetValue(virtualPlatformKey, out var virtualPlatformApiBaseUrl) &&
+            !string.IsNullOrWhiteSpace(virtualPlatformApiBaseUrl))
+        {
+            return NormalizeForCurrentPlatform(virtualPlatformApiBaseUrl);
+        }
+
         if (platformApiBaseUrls is not null &&
             platformApiBaseUrls.TryGetValue(platformKey, out var platformApiBaseUrl) &&
             !string.IsNullOrWhiteSpace(platformApiBaseUrl))
@@ -53,5 +63,13 @@ public static class MobileApiEndpointHelper
         };
 
         return builder.Uri.ToString().TrimEnd('/');
+    }
+
+    private static string? GetVirtualPlatformKey(string platformKey)
+    {
+        return DeviceInfo.Current.Platform == DevicePlatform.Android &&
+               DeviceInfo.Current.DeviceType == DeviceType.Virtual
+            ? $"{platformKey}Virtual"
+            : null;
     }
 }

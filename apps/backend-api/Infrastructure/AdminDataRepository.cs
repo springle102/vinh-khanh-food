@@ -9,6 +9,7 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 public sealed partial class AdminDataRepository
 {
     private const int MaxAuditLogs = 120;
+    private const int MaxUserActivityLogs = 500;
     private readonly string _connectionString;
     private readonly string _seedSqlServerPath;
     private readonly bool _allowCreateDatabase;
@@ -30,10 +31,24 @@ public sealed partial class AdminDataRepository
         InitializeDatabase();
     }
 
-    public IReadOnlyList<AdminUser> GetUsers()
+    public AdminRequestContext? GetAdminRequestContext(string accessToken)
     {
         using var connection = OpenConnection();
-        return GetUsers(connection, null);
+        return GetAdminRequestContext(connection, null, accessToken, DateTimeOffset.UtcNow);
+    }
+
+    public IReadOnlyList<AdminUser> GetUsers(AdminRequestContext? actor = null)
+    {
+        using var connection = OpenConnection();
+        var items = GetUsers(connection, null);
+        if (actor is null || actor.IsSuperAdmin)
+        {
+            return items;
+        }
+
+        return items
+            .Where(item => string.Equals(item.Id, actor.UserId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
     }
 
     public IReadOnlyList<CustomerUser> GetCustomerUsers()
@@ -42,34 +57,25 @@ public sealed partial class AdminDataRepository
         return GetCustomerUsers(connection, null);
     }
 
-    public IReadOnlyList<EndUser> GetEndUsers(string? scopeUserId = null, string? scopeRole = null)
+    public IReadOnlyList<EndUser> GetEndUsers(AdminRequestContext actor)
     {
-        using var connection = OpenConnection();
-        var items = GetEndUsers(connection, null);
-        if (!IsOwnerScopeRequest(scopeUserId, scopeRole))
+        if (!actor.IsSuperAdmin)
         {
-            return items;
+            throw new ApiForbiddenException("Chủ quán không được phép xem danh sách người dùng cuối của toàn hệ thống.");
         }
 
-        var ownerPoiIds = GetOwnerPoiIds(connection, null, scopeUserId);
-        var allowedUserIds = GetCustomerUsers(connection, null)
-            .Where((customer) => customer.FavoritePoiIds.Any(ownerPoiIds.Contains))
-            .Select((customer) => customer.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        return items
-            .Where((item) => allowedUserIds.Contains(item.Id))
-            .ToList();
+        using var connection = OpenConnection();
+        return GetEndUsers(connection, null);
     }
 
-    public EndUser? GetEndUserById(string id, string? scopeUserId = null, string? scopeRole = null)
+    public EndUser? GetEndUserById(string id, AdminRequestContext actor)
     {
-        using var connection = OpenConnection();
-        if (IsOwnerScopeRequest(scopeUserId, scopeRole) && !CanOwnerAccessEndUser(connection, null, scopeUserId, id))
+        if (!actor.IsSuperAdmin)
         {
-            return null;
+            throw new ApiForbiddenException("Chủ quán không được phép xem chi tiết người dùng cuối.");
         }
 
+        using var connection = OpenConnection();
         return GetEndUserById(connection, null, id);
     }
 
@@ -79,79 +85,112 @@ public sealed partial class AdminDataRepository
         return GetCategories(connection, null);
     }
 
-    public IReadOnlyList<Poi> GetPois(string? scopeUserId = null, string? scopeRole = null)
+    public IReadOnlyList<Poi> GetPois(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
-        var items = GetPois(connection, null);
-        if (!IsOwnerScopeRequest(scopeUserId, scopeRole))
+        return ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+    }
+
+    public IReadOnlyList<Translation> GetTranslations(AdminRequestContext? actor = null)
+    {
+        using var connection = OpenConnection();
+        var items = GetTranslations(connection, null);
+        if (actor is null)
         {
             return items;
         }
 
-        var ownerPoiIds = GetOwnerPoiIds(connection, null, scopeUserId);
-        return items
-            .Where((item) => ownerPoiIds.Contains(item.Id))
-            .ToList();
+        var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+        var foodItems = ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois);
+        var routes = ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
+        return ApplyTranslationScope(connection, null, items, actor, pois, foodItems, routes);
     }
 
-    public IReadOnlyList<Translation> GetTranslations()
+    public IReadOnlyList<AudioGuide> GetAudioGuides(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
-        return GetTranslations(connection, null);
+        var items = GetAudioGuides(connection, null);
+        if (actor is null)
+        {
+            return items;
+        }
+
+        var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+        var foodItems = ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois);
+        var routes = ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
+        return ApplyAudioGuideScope(connection, null, items, actor, pois, foodItems, routes);
     }
 
-    public IReadOnlyList<AudioGuide> GetAudioGuides()
+    public IReadOnlyList<MediaAsset> GetMediaAssets(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
-        return GetAudioGuides(connection, null);
+        var items = GetMediaAssets(connection, null);
+        if (actor is null)
+        {
+            return items;
+        }
+
+        var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+        var foodItems = ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois);
+        var routes = ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
+        return ApplyMediaAssetScope(connection, null, items, actor, pois, foodItems, routes);
     }
 
-    public IReadOnlyList<MediaAsset> GetMediaAssets()
+    public IReadOnlyList<FoodItem> GetFoodItems(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
-        return GetMediaAssets(connection, null);
+        var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+        return ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois);
     }
 
-    public IReadOnlyList<FoodItem> GetFoodItems()
+    public IReadOnlyList<TourRoute> GetRoutes(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
-        return GetFoodItems(connection, null);
+        return ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
     }
 
-    public IReadOnlyList<TourRoute> GetRoutes()
+    public IReadOnlyList<Promotion> GetPromotions(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
-        return GetRoutes(connection, null);
+        return ApplyPromotionScope(connection, null, GetPromotions(connection, null), actor);
     }
 
-    public IReadOnlyList<Promotion> GetPromotions()
+    public IReadOnlyList<Review> GetReviews(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
-        return GetPromotions(connection, null);
+        return ApplyReviewScope(connection, null, GetReviews(connection, null), actor);
     }
 
-    public IReadOnlyList<Review> GetReviews()
+    public IReadOnlyList<ViewLog> GetViewLogs(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
-        return GetReviews(connection, null);
+        var items = GetViewLogs(connection, null);
+        if (actor is null)
+        {
+            return items;
+        }
+
+        var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+        return ApplyViewLogScope(connection, null, items, actor, pois);
     }
 
-    public IReadOnlyList<ViewLog> GetViewLogs()
+    public IReadOnlyList<AudioListenLog> GetAudioListenLogs(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
-        return GetViewLogs(connection, null);
+        var items = GetAudioListenLogs(connection, null);
+        if (actor is null)
+        {
+            return items;
+        }
+
+        var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+        return ApplyAudioListenLogScope(connection, null, items, actor, pois);
     }
 
-    public IReadOnlyList<AudioListenLog> GetAudioListenLogs()
+    public IReadOnlyList<AuditLog> GetAuditLogs(AdminRequestContext actor)
     {
         using var connection = OpenConnection();
-        return GetAudioListenLogs(connection, null);
-    }
-
-    public IReadOnlyList<AuditLog> GetAuditLogs()
-    {
-        using var connection = OpenConnection();
-        return GetAuditLogs(connection, null);
+        return ApplyAuditScope(connection, null, GetAuditLogs(connection, null), actor);
     }
 
     public SystemSetting GetSettings()
@@ -161,14 +200,15 @@ public sealed partial class AdminDataRepository
     }
 
     public AdminBootstrapResponse GetBootstrap(
-        string? scopeUserId = null,
-        string? scopeRole = null,
+        AdminRequestContext? admin = null,
         string? customerUserId = null)
     {
         using var connection = OpenConnection();
 
-        var users = GetUsers(connection, null);
-        var customerUsers = GetCustomerUsers(connection, null);
+        var users = admin is null ? [] : GetUsers(connection, null);
+        var customerUsers = admin is not null && admin.IsSuperAdmin
+            ? GetCustomerUsers(connection, null)
+            : [];
         var categories = GetCategories(connection, null);
         var pois = GetPois(connection, null);
         var translations = GetTranslations(connection, null);
@@ -180,96 +220,51 @@ public sealed partial class AdminDataRepository
         var reviews = GetReviews(connection, null);
         var viewLogs = GetViewLogs(connection, null);
         var audioListenLogs = GetAudioListenLogs(connection, null);
-        var auditLogs = GetAuditLogs(connection, null);
+        var auditLogs = admin is null ? [] : GetAuditLogs(connection, null);
         var settings = GetSettings(connection, null);
 
-        if (IsOwnerScopeRequest(scopeUserId, scopeRole))
+        if (admin is not null)
         {
-            var ownerPoiIds = GetOwnerPoiIds(connection, null, scopeUserId);
-            var ownerPoiIdSet = ownerPoiIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var routePoiSet = routes
-                .Where((route) => route.StopPoiIds.Any(ownerPoiIdSet.Contains))
-                .Select((route) => route.Id)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            pois = pois.Where((poi) => ownerPoiIdSet.Contains(poi.Id)).ToList();
-            users = users.Where((user) => string.Equals(user.Id, scopeUserId, StringComparison.OrdinalIgnoreCase)).ToList();
-            categories = categories.Where((category) => pois.Any((poi) => poi.CategoryId == category.Id)).ToList();
-            foodItems = foodItems.Where((item) => ownerPoiIdSet.Contains(item.PoiId)).ToList();
-
-            var foodItemIdSet = foodItems.Select((item) => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            customerUsers = customerUsers
-                .Where((customer) => customer.FavoritePoiIds.Any(ownerPoiIdSet.Contains))
-                .ToList();
-
-            routes = routes.Where((route) => route.StopPoiIds.Any(ownerPoiIdSet.Contains)).ToList();
-            promotions = promotions.Where((promotion) => ownerPoiIdSet.Contains(promotion.PoiId)).ToList();
-            reviews = reviews.Where((review) => ownerPoiIdSet.Contains(review.PoiId)).ToList();
-            viewLogs = viewLogs.Where((log) => ownerPoiIdSet.Contains(log.PoiId)).ToList();
-            audioListenLogs = audioListenLogs.Where((log) => ownerPoiIdSet.Contains(log.PoiId)).ToList();
-
-            translations = translations
-                .Where((translation) =>
-                    (string.Equals(translation.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                     ownerPoiIdSet.Contains(translation.EntityId)) ||
-                    (string.Equals(translation.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
-                     foodItemIdSet.Contains(translation.EntityId)) ||
-                    (string.Equals(translation.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
-                     routePoiSet.Contains(translation.EntityId)))
-                .ToList();
-
-            audioGuides = audioGuides
-                .Where((audioGuide) =>
-                    (string.Equals(audioGuide.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                     ownerPoiIdSet.Contains(audioGuide.EntityId)) ||
-                    (string.Equals(audioGuide.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
-                     foodItemIdSet.Contains(audioGuide.EntityId)) ||
-                    (string.Equals(audioGuide.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
-                     routePoiSet.Contains(audioGuide.EntityId)))
-                .ToList();
-
-            mediaAssets = mediaAssets
-                .Where((asset) =>
-                    (string.Equals(asset.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                     ownerPoiIdSet.Contains(asset.EntityId)) ||
-                    (string.Equals(asset.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
-                     foodItemIdSet.Contains(asset.EntityId)) ||
-                    (string.Equals(asset.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
-                     routePoiSet.Contains(asset.EntityId)))
-                .ToList();
-
-            var auditTargets = pois
-                .SelectMany((poi) => new[] { poi.Id, poi.Slug })
-                .Concat(foodItems.Select((item) => item.Id))
-                .Concat(routes.Select((route) => route.Id))
-                .Concat(promotions.Select((promotion) => promotion.Id))
-                .Concat(reviews.Select((review) => review.Id))
-                .Append(scopeUserId ?? string.Empty)
-                .Where((value) => !string.IsNullOrWhiteSpace(value))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            auditLogs = auditLogs
-                .Where((log) =>
-                    auditTargets.Any((target) =>
-                        string.Equals(log.Target, target, StringComparison.OrdinalIgnoreCase) ||
-                        log.Target.Contains(target, StringComparison.OrdinalIgnoreCase)))
-                .ToList();
+            users = ApplyAdminUserScope(users, admin);
+            pois = ApplyPoiScope(connection, null, pois, admin);
+            categories = categories.Where(category => pois.Any(poi => poi.CategoryId == category.Id)).ToList();
+            foodItems = ApplyFoodItemScope(connection, null, foodItems, admin, pois);
+            routes = ApplyRouteScope(connection, null, routes, admin);
+            promotions = ApplyPromotionScope(connection, null, promotions, admin);
+            reviews = ApplyReviewScope(connection, null, reviews, admin);
+            viewLogs = ApplyViewLogScope(connection, null, viewLogs, admin, pois);
+            audioListenLogs = ApplyAudioListenLogScope(connection, null, audioListenLogs, admin, pois);
+            translations = ApplyTranslationScope(connection, null, translations, admin, pois, foodItems, routes);
+            audioGuides = ApplyAudioGuideScope(connection, null, audioGuides, admin, pois, foodItems, routes);
+            mediaAssets = ApplyMediaAssetScope(connection, null, mediaAssets, admin, pois, foodItems, routes);
+            auditLogs = ApplyAuditScope(connection, null, auditLogs, admin);
+            customerUsers = admin.IsSuperAdmin ? customerUsers : [];
         }
-        else if (!string.IsNullOrWhiteSpace(customerUserId))
+        else
         {
-            var customer = GetCustomerUserById(connection, null, customerUserId);
-            var allowedLanguages = GetAllowedLanguageCodesForCustomer(connection, null, customerUserId, settings);
+            var allowedLanguages = !string.IsNullOrWhiteSpace(customerUserId)
+                ? GetAllowedLanguageCodesForCustomer(connection, null, customerUserId, settings)
+                : settings.FreeLanguages
+                    .Select(PremiumAccessCatalog.NormalizeLanguageCode)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var customer = !string.IsNullOrWhiteSpace(customerUserId)
+                ? GetCustomerUserById(connection, null, customerUserId)
+                : null;
 
+            pois = ApplyPublicPoiScope(pois);
+            categories = categories.Where(category => pois.Any(poi => poi.CategoryId == category.Id)).ToList();
+            foodItems = foodItems.Where(item => pois.Any(poi => poi.Id == item.PoiId)).ToList();
+            routes = ApplyPublicRouteScope(routes, pois);
+            promotions = ApplyPublicPromotionScope(promotions, pois);
+            reviews = ApplyPublicReviewScope(reviews, pois);
+            viewLogs = viewLogs.Where(log => pois.Any(poi => poi.Id == log.PoiId)).ToList();
+            audioListenLogs = audioListenLogs.Where(log => pois.Any(poi => poi.Id == log.PoiId)).ToList();
+            translations = ApplyPublicTranslationScope(translations, pois, foodItems, routes, allowedLanguages);
+            audioGuides = ApplyPublicAudioGuideScope(audioGuides, pois, foodItems, routes, allowedLanguages);
+            mediaAssets = ApplyPublicMediaAssetScope(mediaAssets, pois, foodItems, routes);
             users = [];
             customerUsers = customer is null ? [] : [customer];
             auditLogs = [];
-            translations = translations
-                .Where((translation) => allowedLanguages.Contains(PremiumAccessCatalog.NormalizeLanguageCode(translation.LanguageCode)))
-                .ToList();
-            audioGuides = audioGuides
-                .Where((audioGuide) => allowedLanguages.Contains(PremiumAccessCatalog.NormalizeLanguageCode(audioGuide.LanguageCode)))
-                .ToList();
         }
 
         var syncState = GetSyncState(connection, null);
@@ -293,17 +288,29 @@ public sealed partial class AdminDataRepository
             syncState);
     }
 
-    public DashboardSummaryResponse GetDashboardSummary()
+    public DashboardSummaryResponse GetDashboardSummary(AdminRequestContext actor)
     {
         using var connection = OpenConnection();
+        var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+        var reviews = ApplyReviewScope(connection, null, GetReviews(connection, null), actor);
+        var audioGuides = ApplyAudioGuideScope(
+            connection,
+            null,
+            GetAudioGuides(connection, null),
+            actor,
+            pois,
+            ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois),
+            ApplyRouteScope(connection, null, GetRoutes(connection, null), actor));
+        var viewLogs = ApplyViewLogScope(connection, null, GetViewLogs(connection, null), actor, pois);
+        var audioListenLogs = ApplyAudioListenLogScope(connection, null, GetAudioListenLogs(connection, null), actor, pois);
 
         return new DashboardSummaryResponse(
-            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.ViewLogs;"),
-            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.AudioListenLogs;"),
-            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.Pois WHERE [Status] = ?;", "published"),
-            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.Pois WHERE IsFeatured = ?;", true),
-            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.AudioGuides WHERE [Status] <> ?;", "ready"),
-            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.Reviews WHERE [Status] = ?;", "pending"),
+            viewLogs.Count,
+            audioListenLogs.Count,
+            pois.Count(item => string.Equals(item.Status, "published", StringComparison.OrdinalIgnoreCase)),
+            pois.Count(item => item.Featured),
+            audioGuides.Count(item => !string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase)),
+            reviews.Count(item => string.Equals(item.Status, "pending", StringComparison.OrdinalIgnoreCase)),
             ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.SystemSettingLanguages WHERE LanguageType = ?;", "premium"));
     }
 
@@ -326,20 +333,20 @@ public sealed partial class AdminDataRepository
                 EnsureDatabaseSeeded();
             }
 
+            using var verifiedConnection = OpenConnection();
+            EnsureRuntimeCompatibilitySchema(verifiedConnection);
+
             if (!_allowSchemaUpdates)
             {
                 _logger.LogInformation(
-                    "Automatic database schema updates are disabled. Backend will use the existing shared database schema as-is.");
+                    "Automatic advanced database schema updates are disabled. Backend applied the required runtime compatibility schema only.");
                 return;
             }
 
-            using var verifiedConnection = OpenConnection();
-            EnsureSystemSettingsSchema(verifiedConnection);
             RemoveLegacyPoiDefaultLanguageColumn(verifiedConnection);
             EnsureRefreshSessionsTable(verifiedConnection);
             EnsureEndUserManagementSchema(verifiedConnection);
             EnsurePremiumPurchaseSchema(verifiedConnection);
-            EnsureTourManagementSchema(verifiedConnection);
             NormalizeLegacyEntityTypes(verifiedConnection);
         }
         catch (SqlException exception)
@@ -352,9 +359,134 @@ public sealed partial class AdminDataRepository
 
     private bool HasCoreTables(SqlConnection connection)
     {
-        return TableExists(connection, "AdminUsers") &&
-            TableExists(connection, "Pois") &&
-            TableExists(connection, "SystemSettings");
+        return TableExists(connection, null, "AdminUsers") &&
+            TableExists(connection, null, "Pois") &&
+            TableExists(connection, null, "SystemSettings");
+    }
+
+    private void EnsureRuntimeCompatibilitySchema(SqlConnection connection)
+    {
+        EnsureAdminUsersRuntimeSchema(connection);
+        EnsurePoiRuntimeSchema(connection);
+        EnsureRefreshSessionsTable(connection);
+        EnsureSeparatedAuditLogSchema(connection);
+        EnsureSystemSettingsSchema(connection);
+        EnsureCustomerUsersRuntimeSchema(connection);
+        EnsureTourManagementSchema(connection);
+    }
+
+    private void EnsureAdminUsersRuntimeSchema(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF COL_LENGTH(N'dbo.AdminUsers', N'AvatarColor') IS NULL
+                ALTER TABLE dbo.AdminUsers ADD AvatarColor NVARCHAR(20) NULL;
+
+            IF COL_LENGTH(N'dbo.AdminUsers', N'ManagedPoiId') IS NULL
+                ALTER TABLE dbo.AdminUsers ADD ManagedPoiId NVARCHAR(50) NULL;
+
+            UPDATE dbo.AdminUsers
+            SET AvatarColor = COALESCE(NULLIF(LTRIM(RTRIM(AvatarColor)), N''), N'#f97316')
+            WHERE COL_LENGTH(N'dbo.AdminUsers', N'AvatarColor') IS NOT NULL
+              AND (AvatarColor IS NULL OR NULLIF(LTRIM(RTRIM(AvatarColor)), N'') IS NULL);
+            """);
+    }
+
+    private void EnsurePoiRuntimeSchema(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF COL_LENGTH(N'dbo.Pois', N'OwnerUserId') IS NULL
+                ALTER TABLE dbo.Pois ADD OwnerUserId NVARCHAR(50) NULL;
+
+            IF OBJECT_ID(N'dbo.PoiTags', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.PoiTags (
+                    PoiId NVARCHAR(50) NOT NULL,
+                    TagValue NVARCHAR(100) NOT NULL,
+                    PRIMARY KEY (PoiId, TagValue),
+                    CONSTRAINT FK_PoiTags_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id)
+                );
+            END;
+            """);
+    }
+
+    private void EnsureCustomerUsersRuntimeSchema(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.CustomerUsers', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CustomerUsers (
+                    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
+                    Name NVARCHAR(120) NOT NULL,
+                    Email NVARCHAR(200) NOT NULL,
+                    Phone NVARCHAR(30) NOT NULL,
+                    [Password] NVARCHAR(200) NOT NULL,
+                    PreferredLanguage NVARCHAR(20) NOT NULL,
+                    IsPremium BIT NOT NULL,
+                    CreatedAt DATETIMEOFFSET(7) NOT NULL,
+                    LastActiveAt DATETIMEOFFSET(7) NULL,
+                    Username NVARCHAR(120) NULL,
+                    Country NVARCHAR(20) NOT NULL
+                );
+            END;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'Username') IS NULL
+                ALTER TABLE dbo.CustomerUsers ADD Username NVARCHAR(120) NULL;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'Password') IS NULL
+                ALTER TABLE dbo.CustomerUsers ADD [Password] NVARCHAR(200) NULL;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'Country') IS NULL
+                ALTER TABLE dbo.CustomerUsers ADD Country NVARCHAR(20) NULL;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'PreferredLanguage') IS NULL
+                ALTER TABLE dbo.CustomerUsers ADD PreferredLanguage NVARCHAR(20) NULL;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'IsPremium') IS NULL
+                ALTER TABLE dbo.CustomerUsers ADD IsPremium BIT NULL;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'LastActiveAt') IS NULL
+                ALTER TABLE dbo.CustomerUsers ADD LastActiveAt DATETIMEOFFSET(7) NULL;
+
+            UPDATE dbo.CustomerUsers
+            SET Username = COALESCE(
+                    NULLIF(LTRIM(RTRIM(Username)), N''),
+                    CASE
+                        WHEN NULLIF(LTRIM(RTRIM(Email)), N'') IS NOT NULL AND CHARINDEX(N'@', Email) > 1
+                            THEN LEFT(Email, CHARINDEX(N'@', Email) - 1)
+                        ELSE NULL
+                    END,
+                    NULLIF(LTRIM(RTRIM(Name)), N''),
+                    Id),
+                [Password] = COALESCE(NULLIF(LTRIM(RTRIM([Password])), N''), N'Customer@123'),
+                Country = COALESCE(NULLIF(UPPER(LTRIM(RTRIM(Country))), N''), N'VN'),
+                IsPremium = COALESCE(IsPremium, CAST(0 AS bit)),
+                PreferredLanguage = COALESCE(NULLIF(LTRIM(RTRIM(PreferredLanguage)), N''), N'vi')
+            WHERE NULLIF(LTRIM(RTRIM(Username)), N'') IS NULL
+               OR NULLIF(LTRIM(RTRIM(Country)), N'') IS NULL
+               OR NULLIF(LTRIM(RTRIM(PreferredLanguage)), N'') IS NULL
+               OR NULLIF(LTRIM(RTRIM([Password])), N'') IS NULL
+               OR IsPremium IS NULL;
+
+            IF OBJECT_ID(N'dbo.CustomerFavoritePois', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CustomerFavoritePois (
+                    CustomerUserId NVARCHAR(50) NOT NULL,
+                    PoiId NVARCHAR(50) NOT NULL,
+                    PRIMARY KEY (CustomerUserId, PoiId),
+                    CONSTRAINT FK_CustomerFavoritePois_CustomerUsers FOREIGN KEY (CustomerUserId) REFERENCES dbo.CustomerUsers(Id),
+                    CONSTRAINT FK_CustomerFavoritePois_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id)
+                );
+            END;
+            """);
     }
 
     private void EnsureRefreshSessionsTable(SqlConnection connection)
@@ -366,11 +498,199 @@ public sealed partial class AdminDataRepository
             IF OBJECT_ID(N'dbo.RefreshSessions', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.RefreshSessions (
+                    AccessToken NVARCHAR(200) NOT NULL,
                     RefreshToken NVARCHAR(200) NOT NULL PRIMARY KEY,
                     UserId NVARCHAR(50) NOT NULL,
+                    AccessTokenExpiresAt DATETIMEOFFSET(7) NOT NULL,
                     ExpiresAt DATETIMEOFFSET(7) NOT NULL,
                     CONSTRAINT FK_RefreshSessions_AdminUsers FOREIGN KEY (UserId) REFERENCES dbo.AdminUsers(Id)
                 );
+            END;
+
+            IF COL_LENGTH(N'dbo.RefreshSessions', N'AccessToken') IS NULL
+                ALTER TABLE dbo.RefreshSessions ADD AccessToken NVARCHAR(200) NULL;
+
+            IF COL_LENGTH(N'dbo.RefreshSessions', N'AccessTokenExpiresAt') IS NULL
+                ALTER TABLE dbo.RefreshSessions ADD AccessTokenExpiresAt DATETIMEOFFSET(7) NULL;
+
+            UPDATE dbo.RefreshSessions
+            SET AccessToken = COALESCE(NULLIF(LTRIM(RTRIM(AccessToken)), N''), CONCAT(N'legacy_access_', REPLACE(CONVERT(NVARCHAR(36), NEWID()), N'-', N''))),
+                AccessTokenExpiresAt = COALESCE(AccessTokenExpiresAt, ExpiresAt)
+            WHERE AccessToken IS NULL
+               OR NULLIF(LTRIM(RTRIM(AccessToken)), N'') IS NULL
+               OR AccessTokenExpiresAt IS NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.RefreshSessions')
+                    AND name = N'AccessToken'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.RefreshSessions ALTER COLUMN AccessToken NVARCHAR(200) NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.RefreshSessions')
+                    AND name = N'AccessTokenExpiresAt'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.RefreshSessions ALTER COLUMN AccessTokenExpiresAt DATETIMEOFFSET(7) NOT NULL;
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'UX_RefreshSessions_AccessToken'
+                    AND object_id = OBJECT_ID(N'dbo.RefreshSessions')
+            )
+            BEGIN
+                CREATE UNIQUE INDEX UX_RefreshSessions_AccessToken
+                ON dbo.RefreshSessions (AccessToken);
+            END;
+            """);
+    }
+
+    private void EnsureSeparatedAuditLogSchema(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.AdminAuditLogs', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.AdminAuditLogs (
+                    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
+                    ActorId NVARCHAR(50) NOT NULL,
+                    ActorName NVARCHAR(120) NOT NULL,
+                    ActorRole NVARCHAR(50) NOT NULL,
+                    ActorType NVARCHAR(30) NOT NULL,
+                    [Action] NVARCHAR(160) NOT NULL,
+                    [Module] NVARCHAR(60) NOT NULL,
+                    TargetId NVARCHAR(120) NOT NULL,
+                    TargetSummary NVARCHAR(300) NOT NULL,
+                    BeforeSummary NVARCHAR(MAX) NULL,
+                    AfterSummary NVARCHAR(MAX) NULL,
+                    SourceApp NVARCHAR(60) NOT NULL,
+                    LegacyAuditId NVARCHAR(50) NULL,
+                    CreatedAt DATETIMEOFFSET(7) NOT NULL
+                );
+            END;
+
+            IF OBJECT_ID(N'dbo.UserActivityLogs', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.UserActivityLogs (
+                    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
+                    ActorId NVARCHAR(50) NOT NULL,
+                    ActorType NVARCHAR(30) NOT NULL,
+                    EventType NVARCHAR(160) NOT NULL,
+                    Metadata NVARCHAR(MAX) NOT NULL,
+                    SourceApp NVARCHAR(60) NOT NULL,
+                    LegacyAuditId NVARCHAR(50) NULL,
+                    CreatedAt DATETIMEOFFSET(7) NOT NULL
+                );
+            END;
+
+            IF COL_LENGTH(N'dbo.AdminAuditLogs', N'LegacyAuditId') IS NULL
+                ALTER TABLE dbo.AdminAuditLogs ADD LegacyAuditId NVARCHAR(50) NULL;
+
+            IF COL_LENGTH(N'dbo.UserActivityLogs', N'LegacyAuditId') IS NULL
+                ALTER TABLE dbo.UserActivityLogs ADD LegacyAuditId NVARCHAR(50) NULL;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'UX_AdminAuditLogs_LegacyAuditId'
+                    AND object_id = OBJECT_ID(N'dbo.AdminAuditLogs')
+            )
+            BEGIN
+                CREATE UNIQUE INDEX UX_AdminAuditLogs_LegacyAuditId
+                ON dbo.AdminAuditLogs (LegacyAuditId)
+                WHERE LegacyAuditId IS NOT NULL;
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'UX_UserActivityLogs_LegacyAuditId'
+                    AND object_id = OBJECT_ID(N'dbo.UserActivityLogs')
+            )
+            BEGIN
+                CREATE UNIQUE INDEX UX_UserActivityLogs_LegacyAuditId
+                ON dbo.UserActivityLogs (LegacyAuditId)
+                WHERE LegacyAuditId IS NOT NULL;
+            END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.AuditLogs', N'U') IS NOT NULL
+            BEGIN
+                INSERT INTO dbo.AdminAuditLogs (
+                    Id, ActorId, ActorName, ActorRole, ActorType, [Action], [Module], TargetId, TargetSummary,
+                    BeforeSummary, AfterSummary, SourceApp, LegacyAuditId, CreatedAt
+                )
+                SELECT
+                    legacy.Id,
+                    COALESCE(adminUser.Id, legacy.TargetValue, N'legacy-admin'),
+                    legacy.ActorName,
+                    legacy.ActorRole,
+                    N'ADMIN',
+                    legacy.[Action],
+                    CASE
+                        WHEN legacy.[Action] LIKE N'%đăng nhập%' OR legacy.[Action] LIKE N'%phiên đăng nhập%' THEN N'AUTH'
+                        WHEN legacy.[Action] LIKE N'%POI%' THEN N'POI'
+                        WHEN legacy.[Action] LIKE N'%audio%' THEN N'AUDIO_GUIDE'
+                        WHEN legacy.[Action] LIKE N'%thuyết minh%' THEN N'TRANSLATION'
+                        WHEN legacy.[Action] LIKE N'%tour%' THEN N'TOUR'
+                        WHEN legacy.[Action] LIKE N'%ưu đãi%' THEN N'PROMOTION'
+                        WHEN legacy.[Action] LIKE N'%đánh giá%' THEN N'REVIEW'
+                        WHEN legacy.[Action] LIKE N'%tài khoản admin%' OR legacy.[Action] LIKE N'%chủ quán%' THEN N'ADMIN_USER'
+                        WHEN legacy.[Action] LIKE N'%cài đặt%' OR legacy.[Action] LIKE N'%ngôn ngữ premium%' THEN N'SETTINGS'
+                        ELSE N'LEGACY'
+                    END,
+                    legacy.TargetValue,
+                    legacy.TargetValue,
+                    NULL,
+                    NULL,
+                    N'ADMIN_WEB',
+                    legacy.Id,
+                    legacy.CreatedAt
+                FROM dbo.AuditLogs legacy
+                LEFT JOIN dbo.AdminUsers adminUser
+                    ON adminUser.Email = legacy.TargetValue
+                WHERE UPPER(COALESCE(legacy.ActorRole, N'')) IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM dbo.AdminAuditLogs migrated
+                      WHERE migrated.LegacyAuditId = legacy.Id
+                  );
+
+                INSERT INTO dbo.UserActivityLogs (
+                    Id, ActorId, ActorType, EventType, Metadata, SourceApp, LegacyAuditId, CreatedAt
+                )
+                SELECT
+                    legacy.Id,
+                    legacy.TargetValue,
+                    N'END_USER',
+                    legacy.[Action],
+                    CONCAT(N'actor=', legacy.ActorName, N'; target=', legacy.TargetValue),
+                    N'MOBILE_APP',
+                    legacy.Id,
+                    legacy.CreatedAt
+                FROM dbo.AuditLogs legacy
+                WHERE UPPER(COALESCE(legacy.ActorRole, N'')) NOT IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM dbo.UserActivityLogs migrated
+                      WHERE migrated.LegacyAuditId = legacy.Id
+                  );
             END;
             """);
     }
@@ -402,6 +722,9 @@ public sealed partial class AdminDataRepository
             IF COL_LENGTH(N'dbo.SystemSettings', N'PremiumUnlockPriceUsd') IS NULL
                 ALTER TABLE dbo.SystemSettings ADD PremiumUnlockPriceUsd INT NULL;
 
+            IF COL_LENGTH(N'dbo.SystemSettings', N'TtsProvider') IS NULL
+                ALTER TABLE dbo.SystemSettings ADD TtsProvider NVARCHAR(50) NULL;
+
             IF COL_LENGTH(N'dbo.SystemSettings', N'GuestReviewEnabled') IS NULL
                 ALTER TABLE dbo.SystemSettings ADD GuestReviewEnabled BIT NULL;
 
@@ -418,12 +741,25 @@ public sealed partial class AdminDataRepository
                     WHEN PremiumUnlockPriceUsd IS NULL OR PremiumUnlockPriceUsd <= 0 THEN {PremiumAccessCatalog.DefaultPremiumPriceUsd}
                     ELSE PremiumUnlockPriceUsd
                 END,
+                TtsProvider = COALESCE(NULLIF(LTRIM(RTRIM(TtsProvider)), N''), N'elevenlabs'),
                 GuestReviewEnabled = COALESCE(GuestReviewEnabled, CAST(1 AS bit)),
                 AnalyticsRetentionDays = COALESCE(AnalyticsRetentionDays, 180)
             WHERE PremiumUnlockPriceUsd IS NULL
                OR PremiumUnlockPriceUsd <= 0
+               OR NULLIF(LTRIM(RTRIM(TtsProvider)), N'') IS NULL
                OR GuestReviewEnabled IS NULL
                OR AnalyticsRetentionDays IS NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
+                    AND name = N'TtsProvider'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.SystemSettings ALTER COLUMN TtsProvider NVARCHAR(50) NOT NULL;
+            END;
 
             IF EXISTS (
                 SELECT 1
@@ -490,9 +826,6 @@ public sealed partial class AdminDataRepository
                     Email NVARCHAR(200) NOT NULL,
                     Phone NVARCHAR(30) NOT NULL,
                     [Password] NVARCHAR(200) NOT NULL,
-                    [Status] NVARCHAR(30) NOT NULL,
-                    IsActive BIT NOT NULL,
-                    IsBanned BIT NOT NULL,
                     PreferredLanguage NVARCHAR(20) NOT NULL,
                     IsPremium BIT NOT NULL,
                     CreatedAt DATETIMEOFFSET(7) NOT NULL,
@@ -511,14 +844,14 @@ public sealed partial class AdminDataRepository
             IF COL_LENGTH(N'dbo.CustomerUsers', N'Country') IS NULL
                 ALTER TABLE dbo.CustomerUsers ADD Country NVARCHAR(20) NULL;
 
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'IsActive') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD IsActive BIT NULL;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'IsBanned') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD IsBanned BIT NULL;
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'PreferredLanguage') IS NULL
+                ALTER TABLE dbo.CustomerUsers ADD PreferredLanguage NVARCHAR(20) NULL;
 
             IF COL_LENGTH(N'dbo.CustomerUsers', N'IsPremium') IS NULL
                 ALTER TABLE dbo.CustomerUsers ADD IsPremium BIT NULL;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'LastActiveAt') IS NULL
+                ALTER TABLE dbo.CustomerUsers ADD LastActiveAt DATETIMEOFFSET(7) NULL;
             """);
 
         ExecuteNonQuery(
@@ -530,9 +863,64 @@ public sealed partial class AdminDataRepository
                 ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT CK_CustomerUsers_DeviceType;
             END;
 
+            IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_Status')
+            BEGIN
+                ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT CK_CustomerUsers_Status;
+            END;
+
             IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_Identity')
             BEGIN
                 ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT CK_CustomerUsers_Identity;
+            END;
+
+            DECLARE @constraintName sysname;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'Status') IS NOT NULL
+            BEGIN
+                SELECT TOP 1 @constraintName = dc.name
+                FROM sys.default_constraints dc
+                INNER JOIN sys.columns c
+                    ON c.default_object_id = dc.object_id
+                WHERE dc.parent_object_id = OBJECT_ID(N'dbo.CustomerUsers')
+                  AND c.name = N'Status';
+
+                IF @constraintName IS NOT NULL
+                    EXEC(N'ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT ' + QUOTENAME(@constraintName) + N';');
+
+                ALTER TABLE dbo.CustomerUsers DROP COLUMN [Status];
+                SET @constraintName = NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'IsActive') IS NOT NULL
+            BEGIN
+                SELECT TOP 1 @constraintName = dc.name
+                FROM sys.default_constraints dc
+                INNER JOIN sys.columns c
+                    ON c.default_object_id = dc.object_id
+                WHERE dc.parent_object_id = OBJECT_ID(N'dbo.CustomerUsers')
+                  AND c.name = N'IsActive';
+
+                IF @constraintName IS NOT NULL
+                    EXEC(N'ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT ' + QUOTENAME(@constraintName) + N';');
+
+                ALTER TABLE dbo.CustomerUsers DROP COLUMN IsActive;
+                SET @constraintName = NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.CustomerUsers', N'IsBanned') IS NOT NULL
+            BEGIN
+                SELECT TOP 1 @constraintName = dc.name
+                FROM sys.default_constraints dc
+                INNER JOIN sys.columns c
+                    ON c.default_object_id = dc.object_id
+                WHERE dc.parent_object_id = OBJECT_ID(N'dbo.CustomerUsers')
+                  AND c.name = N'IsBanned';
+
+                IF @constraintName IS NOT NULL
+                    EXEC(N'ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT ' + QUOTENAME(@constraintName) + N';');
+
+                ALTER TABLE dbo.CustomerUsers DROP COLUMN IsBanned;
+                SET @constraintName = NULL;
             END;
 
             IF COL_LENGTH(N'dbo.CustomerUsers', N'DeviceId') IS NOT NULL
@@ -570,73 +958,13 @@ public sealed partial class AdminDataRepository
                     Id),
                 [Password] = COALESCE(NULLIF(LTRIM(RTRIM([Password])), N''), N'Customer@123'),
                 Country = COALESCE(NULLIF(UPPER(LTRIM(RTRIM(Country))), N''), N'VN'),
-                IsBanned = COALESCE(
-                    IsBanned,
-                    CASE
-                        WHEN LOWER(COALESCE([Status], N'')) IN (N'blocked', N'banned') THEN CAST(1 AS bit)
-                        ELSE CAST(0 AS bit)
-                    END),
-                IsActive = COALESCE(
-                    IsActive,
-                    CASE
-                        WHEN LOWER(COALESCE([Status], N'')) IN (N'inactive', N'idle') THEN CAST(0 AS bit)
-                        ELSE CAST(1 AS bit)
-                    END),
                 IsPremium = COALESCE(IsPremium, CAST(0 AS bit)),
-                PreferredLanguage = COALESCE(NULLIF(LTRIM(RTRIM(PreferredLanguage)), N''), N'vi'),
-                [Status] = CASE
-                    WHEN COALESCE(IsBanned,
-                        CASE
-                            WHEN LOWER(COALESCE([Status], N'')) IN (N'blocked', N'banned') THEN CAST(1 AS bit)
-                            ELSE CAST(0 AS bit)
-                        END) = CAST(1 AS bit)
-                        THEN N'banned'
-                    WHEN COALESCE(IsActive,
-                        CASE
-                            WHEN LOWER(COALESCE([Status], N'')) IN (N'inactive', N'idle') THEN CAST(0 AS bit)
-                            ELSE CAST(1 AS bit)
-                        END) = CAST(1 AS bit)
-                        THEN N'active'
-                    ELSE N'inactive'
-                END
+                PreferredLanguage = COALESCE(NULLIF(LTRIM(RTRIM(PreferredLanguage)), N''), N'vi')
             WHERE NULLIF(LTRIM(RTRIM(Username)), N'') IS NULL
                OR NULLIF(LTRIM(RTRIM(Country)), N'') IS NULL
-               OR LOWER(COALESCE([Status], N'')) NOT IN (N'active', N'banned', N'inactive')
                OR NULLIF(LTRIM(RTRIM(PreferredLanguage)), N'') IS NULL
                OR NULLIF(LTRIM(RTRIM([Password])), N'') IS NULL
-               OR IsPremium IS NULL
-               OR IsActive IS NULL
-               OR IsBanned IS NULL;
-
-            UPDATE dbo.CustomerUsers
-            SET [Status] = CASE
-                    WHEN IsBanned = CAST(1 AS bit) THEN N'banned'
-                    WHEN IsActive = CAST(1 AS bit) THEN N'active'
-                    ELSE N'inactive'
-                END
-            WHERE IsBanned IS NOT NULL AND IsActive IS NOT NULL;
-
-            IF EXISTS (
-                SELECT 1
-                FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'dbo.CustomerUsers')
-                    AND name = N'IsActive'
-                    AND is_nullable = 1
-            )
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers ALTER COLUMN IsActive BIT NOT NULL;
-            END;
-
-            IF EXISTS (
-                SELECT 1
-                FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'dbo.CustomerUsers')
-                    AND name = N'IsBanned'
-                    AND is_nullable = 1
-            )
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers ALTER COLUMN IsBanned BIT NOT NULL;
-            END;
+               OR IsPremium IS NULL;
 
             IF EXISTS (
                 SELECT 1
@@ -671,14 +999,16 @@ public sealed partial class AdminDataRepository
                 ALTER TABLE dbo.CustomerUsers ALTER COLUMN [Password] NVARCHAR(200) NOT NULL;
             END;
 
-            IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_Status')
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.CustomerUsers')
+                    AND name = N'PreferredLanguage'
+                    AND is_nullable = 1
+            )
             BEGIN
-                ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT CK_CustomerUsers_Status;
+                ALTER TABLE dbo.CustomerUsers ALTER COLUMN PreferredLanguage NVARCHAR(20) NOT NULL;
             END;
-
-            ALTER TABLE dbo.CustomerUsers
-            ADD CONSTRAINT CK_CustomerUsers_Status
-            CHECK ([Status] IN (N'active', N'banned', N'inactive'));
 
             IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_Identity')
             BEGIN
@@ -867,6 +1197,8 @@ public sealed partial class AdminDataRepository
                     Difficulty NVARCHAR(30) NOT NULL,
                     IsFeatured BIT NOT NULL,
                     IsActive BIT NOT NULL,
+                    IsSystemRoute BIT NOT NULL,
+                    OwnerUserId NVARCHAR(50) NULL,
                     UpdatedBy NVARCHAR(120) NOT NULL,
                     UpdatedAt DATETIMEOFFSET(7) NOT NULL
                 );
@@ -886,6 +1218,12 @@ public sealed partial class AdminDataRepository
 
             IF COL_LENGTH(N'dbo.Routes', N'IsActive') IS NULL
                 ALTER TABLE dbo.Routes ADD IsActive BIT NULL;
+
+            IF COL_LENGTH(N'dbo.Routes', N'IsSystemRoute') IS NULL
+                ALTER TABLE dbo.Routes ADD IsSystemRoute BIT NULL;
+
+            IF COL_LENGTH(N'dbo.Routes', N'OwnerUserId') IS NULL
+                ALTER TABLE dbo.Routes ADD OwnerUserId NVARCHAR(50) NULL;
 
             IF COL_LENGTH(N'dbo.Routes', N'UpdatedBy') IS NULL
                 ALTER TABLE dbo.Routes ADD UpdatedBy NVARCHAR(120) NULL;
@@ -930,6 +1268,7 @@ public sealed partial class AdminDataRepository
                 Difficulty = COALESCE(NULLIF(LTRIM(RTRIM(Difficulty)), N''), N'custom'),
                 IsFeatured = COALESCE(IsFeatured, CAST(0 AS bit)),
                 IsActive = COALESCE(IsActive, CAST(1 AS bit)),
+                IsSystemRoute = COALESCE(IsSystemRoute, CAST(1 AS bit)),
                 UpdatedBy = CASE
                     WHEN NULLIF(LTRIM(RTRIM(UpdatedBy)), N'') = N'Minh Anh' THEN N'Minh Ánh'
                     ELSE COALESCE(NULLIF(LTRIM(RTRIM(UpdatedBy)), N''), N'SYSTEM')
@@ -995,6 +1334,17 @@ public sealed partial class AdminDataRepository
                 SELECT 1
                 FROM sys.columns
                 WHERE object_id = OBJECT_ID(N'dbo.Routes')
+                    AND name = N'IsSystemRoute'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Routes ALTER COLUMN IsSystemRoute BIT NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Routes')
                     AND name = N'UpdatedBy'
                     AND is_nullable = 1
             )
@@ -1011,6 +1361,17 @@ public sealed partial class AdminDataRepository
             )
             BEGIN
                 ALTER TABLE dbo.Routes ALTER COLUMN UpdatedAt DATETIMEOFFSET(7) NOT NULL;
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.foreign_keys
+                WHERE name = N'FK_Routes_AdminUsers_OwnerUserId'
+            )
+            BEGIN
+                ALTER TABLE dbo.Routes
+                ADD CONSTRAINT FK_Routes_AdminUsers_OwnerUserId
+                FOREIGN KEY (OwnerUserId) REFERENCES dbo.AdminUsers(Id);
             END;
             """);
 
@@ -1050,9 +1411,395 @@ public sealed partial class AdminDataRepository
             """);
     }
 
-    private static bool IsOwnerScopeRequest(string? scopeUserId, string? scopeRole) =>
-        !string.IsNullOrWhiteSpace(scopeUserId) &&
-        string.Equals(scopeRole, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase);
+    private IReadOnlyList<AdminUser> ApplyAdminUserScope(
+        IReadOnlyList<AdminUser> users,
+        AdminRequestContext actor) =>
+        actor.IsSuperAdmin
+            ? users
+            : users.Where(user => string.Equals(user.Id, actor.UserId, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private IReadOnlyList<Poi> ApplyPoiScope(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        IReadOnlyList<Poi> pois,
+        AdminRequestContext? actor)
+    {
+        if (actor is null)
+        {
+            return ApplyPublicPoiScope(pois);
+        }
+
+        if (actor.IsSuperAdmin)
+        {
+            return pois;
+        }
+
+        var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actor.UserId);
+        return pois.Where(poi => ownerPoiIds.Contains(poi.Id)).ToList();
+    }
+
+    private static IReadOnlyList<Poi> ApplyPublicPoiScope(IReadOnlyList<Poi> pois) =>
+        pois
+            .Where(poi => string.Equals(poi.Status, "published", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    private IReadOnlyList<FoodItem> ApplyFoodItemScope(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        IReadOnlyList<FoodItem> foodItems,
+        AdminRequestContext? actor,
+        IReadOnlyList<Poi> scopedPois)
+    {
+        if (actor is not null && actor.IsSuperAdmin)
+        {
+            return foodItems;
+        }
+
+        var visiblePoiIds = scopedPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return foodItems.Where(item => visiblePoiIds.Contains(item.PoiId)).ToList();
+    }
+
+    private IReadOnlyList<TourRoute> ApplyRouteScope(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        IReadOnlyList<TourRoute> routes,
+        AdminRequestContext? actor)
+    {
+        if (actor is null)
+        {
+            return ApplyPublicRouteScope(routes, ApplyPublicPoiScope(GetPois(connection, transaction)));
+        }
+
+        if (actor.IsSuperAdmin)
+        {
+            return routes;
+        }
+
+        var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actor.UserId);
+        return routes
+            .Where(route =>
+                string.Equals(route.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase) ||
+                route.StopPoiIds.Any(ownerPoiIds.Contains))
+            .ToList();
+    }
+
+    private static IReadOnlyList<TourRoute> ApplyPublicRouteScope(
+        IReadOnlyList<TourRoute> routes,
+        IReadOnlyList<Poi> visiblePois)
+    {
+        var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return routes
+            .Where(route =>
+                route.IsActive &&
+                route.IsSystemRoute &&
+                route.StopPoiIds.Any(visiblePoiIds.Contains))
+            .ToList();
+    }
+
+    private IReadOnlyList<Promotion> ApplyPromotionScope(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        IReadOnlyList<Promotion> promotions,
+        AdminRequestContext? actor)
+    {
+        if (actor is null)
+        {
+            return ApplyPublicPromotionScope(promotions, ApplyPublicPoiScope(GetPois(connection, transaction)));
+        }
+
+        if (actor.IsSuperAdmin)
+        {
+            return promotions;
+        }
+
+        var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actor.UserId);
+        return promotions.Where(promotion => ownerPoiIds.Contains(promotion.PoiId)).ToList();
+    }
+
+    private static IReadOnlyList<Promotion> ApplyPublicPromotionScope(
+        IReadOnlyList<Promotion> promotions,
+        IReadOnlyList<Poi> visiblePois)
+    {
+        var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return promotions
+            .Where(promotion =>
+                visiblePoiIds.Contains(promotion.PoiId) &&
+                !string.Equals(promotion.Status, "expired", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(promotion.Status, "deleted", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(promotion.Status, "hidden", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private IReadOnlyList<Review> ApplyReviewScope(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        IReadOnlyList<Review> reviews,
+        AdminRequestContext? actor)
+    {
+        if (actor is null)
+        {
+            return ApplyPublicReviewScope(reviews, ApplyPublicPoiScope(GetPois(connection, transaction)));
+        }
+
+        if (actor.IsSuperAdmin)
+        {
+            return reviews;
+        }
+
+        var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actor.UserId);
+        return reviews.Where(review => ownerPoiIds.Contains(review.PoiId)).ToList();
+    }
+
+    private static IReadOnlyList<Review> ApplyPublicReviewScope(
+        IReadOnlyList<Review> reviews,
+        IReadOnlyList<Poi> visiblePois)
+    {
+        var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return reviews
+            .Where(review =>
+                visiblePoiIds.Contains(review.PoiId) &&
+                string.Equals(review.Status, "approved", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private IReadOnlyList<ViewLog> ApplyViewLogScope(
+        SqlConnection _connection,
+        SqlTransaction? _transaction,
+        IReadOnlyList<ViewLog> viewLogs,
+        AdminRequestContext actor,
+        IReadOnlyList<Poi> scopedPois)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return viewLogs;
+        }
+
+        var visiblePoiIds = scopedPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return viewLogs.Where(log => visiblePoiIds.Contains(log.PoiId)).ToList();
+    }
+
+    private IReadOnlyList<AudioListenLog> ApplyAudioListenLogScope(
+        SqlConnection _connection,
+        SqlTransaction? _transaction,
+        IReadOnlyList<AudioListenLog> audioListenLogs,
+        AdminRequestContext actor,
+        IReadOnlyList<Poi> scopedPois)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return audioListenLogs;
+        }
+
+        var visiblePoiIds = scopedPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return audioListenLogs.Where(log => visiblePoiIds.Contains(log.PoiId)).ToList();
+    }
+
+    private IReadOnlyList<Translation> ApplyTranslationScope(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        IReadOnlyList<Translation> translations,
+        AdminRequestContext actor,
+        IReadOnlyList<Poi> scopedPois,
+        IReadOnlyList<FoodItem> scopedFoodItems,
+        IReadOnlyList<TourRoute> scopedRoutes)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return translations;
+        }
+
+        var visiblePoiIds = scopedPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleFoodItemIds = scopedFoodItems.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleRouteIds = scopedRoutes.Select(route => route.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return translations
+            .Where(translation =>
+                (string.Equals(translation.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                 visiblePoiIds.Contains(translation.EntityId)) ||
+                (string.Equals(translation.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                 visibleFoodItemIds.Contains(translation.EntityId)) ||
+                (string.Equals(translation.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                 visibleRouteIds.Contains(translation.EntityId)))
+            .ToList();
+    }
+
+    private IReadOnlyList<AudioGuide> ApplyAudioGuideScope(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        IReadOnlyList<AudioGuide> audioGuides,
+        AdminRequestContext actor,
+        IReadOnlyList<Poi> scopedPois,
+        IReadOnlyList<FoodItem> scopedFoodItems,
+        IReadOnlyList<TourRoute> scopedRoutes)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return audioGuides;
+        }
+
+        var visiblePoiIds = scopedPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleFoodItemIds = scopedFoodItems.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleRouteIds = scopedRoutes.Select(route => route.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return audioGuides
+            .Where(audioGuide =>
+                (string.Equals(audioGuide.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                 visiblePoiIds.Contains(audioGuide.EntityId)) ||
+                (string.Equals(audioGuide.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                 visibleFoodItemIds.Contains(audioGuide.EntityId)) ||
+                (string.Equals(audioGuide.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                 visibleRouteIds.Contains(audioGuide.EntityId)))
+            .ToList();
+    }
+
+    private IReadOnlyList<MediaAsset> ApplyMediaAssetScope(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        IReadOnlyList<MediaAsset> mediaAssets,
+        AdminRequestContext actor,
+        IReadOnlyList<Poi> scopedPois,
+        IReadOnlyList<FoodItem> scopedFoodItems,
+        IReadOnlyList<TourRoute> scopedRoutes)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return mediaAssets;
+        }
+
+        var visiblePoiIds = scopedPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleFoodItemIds = scopedFoodItems.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleRouteIds = scopedRoutes.Select(route => route.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return mediaAssets
+            .Where(asset =>
+                (string.Equals(asset.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                 visiblePoiIds.Contains(asset.EntityId)) ||
+                (string.Equals(asset.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                 visibleFoodItemIds.Contains(asset.EntityId)) ||
+                (string.Equals(asset.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                 visibleRouteIds.Contains(asset.EntityId)))
+            .ToList();
+    }
+
+    private IReadOnlyList<Translation> ApplyPublicTranslationScope(
+        IReadOnlyList<Translation> translations,
+        IReadOnlyList<Poi> visiblePois,
+        IReadOnlyList<FoodItem> visibleFoodItems,
+        IReadOnlyList<TourRoute> visibleRoutes,
+        IReadOnlyCollection<string> allowedLanguages)
+    {
+        var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleFoodItemIds = visibleFoodItems.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleRouteIds = visibleRoutes.Select(route => route.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return translations
+            .Where(translation =>
+                allowedLanguages.Contains(PremiumAccessCatalog.NormalizeLanguageCode(translation.LanguageCode)) &&
+                (
+                    (string.Equals(translation.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                     visiblePoiIds.Contains(translation.EntityId)) ||
+                    (string.Equals(translation.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                     visibleFoodItemIds.Contains(translation.EntityId)) ||
+                    (string.Equals(translation.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                     visibleRouteIds.Contains(translation.EntityId))
+                ))
+            .ToList();
+    }
+
+    private IReadOnlyList<AudioGuide> ApplyPublicAudioGuideScope(
+        IReadOnlyList<AudioGuide> audioGuides,
+        IReadOnlyList<Poi> visiblePois,
+        IReadOnlyList<FoodItem> visibleFoodItems,
+        IReadOnlyList<TourRoute> visibleRoutes,
+        IReadOnlyCollection<string> allowedLanguages)
+    {
+        var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleFoodItemIds = visibleFoodItems.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleRouteIds = visibleRoutes.Select(route => route.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return audioGuides
+            .Where(audioGuide =>
+                allowedLanguages.Contains(PremiumAccessCatalog.NormalizeLanguageCode(audioGuide.LanguageCode)) &&
+                (
+                    (string.Equals(audioGuide.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                     visiblePoiIds.Contains(audioGuide.EntityId)) ||
+                    (string.Equals(audioGuide.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                     visibleFoodItemIds.Contains(audioGuide.EntityId)) ||
+                    (string.Equals(audioGuide.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                     visibleRouteIds.Contains(audioGuide.EntityId))
+                ))
+            .ToList();
+    }
+
+    private IReadOnlyList<MediaAsset> ApplyPublicMediaAssetScope(
+        IReadOnlyList<MediaAsset> mediaAssets,
+        IReadOnlyList<Poi> visiblePois,
+        IReadOnlyList<FoodItem> visibleFoodItems,
+        IReadOnlyList<TourRoute> visibleRoutes)
+    {
+        var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleFoodItemIds = visibleFoodItems.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleRouteIds = visibleRoutes.Select(route => route.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return mediaAssets
+            .Where(asset =>
+                (string.Equals(asset.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                 visiblePoiIds.Contains(asset.EntityId)) ||
+                (string.Equals(asset.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                 visibleFoodItemIds.Contains(asset.EntityId)) ||
+                (string.Equals(asset.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                 visibleRouteIds.Contains(asset.EntityId)))
+            .ToList();
+    }
+
+    private IReadOnlyList<AuditLog> ApplyAuditScope(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        IReadOnlyList<AuditLog> auditLogs,
+        AdminRequestContext actor)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return auditLogs;
+        }
+
+        var ownerPois = ApplyPoiScope(connection, transaction, GetPois(connection, transaction), actor);
+        var ownerPoiIds = ownerPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ownerFoodItemIds = ApplyFoodItemScope(connection, transaction, GetFoodItems(connection, transaction), actor, ownerPois)
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ownerRouteIds = ApplyRouteScope(connection, transaction, GetRoutes(connection, transaction), actor)
+            .Select(route => route.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ownerPromotionIds = ApplyPromotionScope(connection, transaction, GetPromotions(connection, transaction), actor)
+            .Select(promotion => promotion.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ownerReviewIds = ApplyReviewScope(connection, transaction, GetReviews(connection, transaction), actor)
+            .Select(review => review.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return auditLogs
+            .Where(log =>
+                string.Equals(log.ActorId, actor.UserId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(log.TargetId, actor.UserId, StringComparison.OrdinalIgnoreCase) ||
+                (string.Equals(log.Module, "POI", StringComparison.OrdinalIgnoreCase) &&
+                 ownerPoiIds.Contains(log.TargetId)) ||
+                (string.Equals(log.Module, "FOOD_ITEM", StringComparison.OrdinalIgnoreCase) &&
+                 ownerFoodItemIds.Contains(log.TargetId)) ||
+                (string.Equals(log.Module, "TRANSLATION", StringComparison.OrdinalIgnoreCase) &&
+                 (ownerPoiIds.Contains(log.TargetId) || ownerFoodItemIds.Contains(log.TargetId) || ownerRouteIds.Contains(log.TargetId))) ||
+                (string.Equals(log.Module, "AUDIO_GUIDE", StringComparison.OrdinalIgnoreCase) &&
+                 (ownerPoiIds.Contains(log.TargetId) || ownerFoodItemIds.Contains(log.TargetId) || ownerRouteIds.Contains(log.TargetId))) ||
+                (string.Equals(log.Module, "MEDIA", StringComparison.OrdinalIgnoreCase) &&
+                 (ownerPoiIds.Contains(log.TargetId) || ownerFoodItemIds.Contains(log.TargetId) || ownerRouteIds.Contains(log.TargetId))) ||
+                (string.Equals(log.Module, "TOUR", StringComparison.OrdinalIgnoreCase) &&
+                 ownerRouteIds.Contains(log.TargetId)) ||
+                (string.Equals(log.Module, "PROMOTION", StringComparison.OrdinalIgnoreCase) &&
+                 ownerPromotionIds.Contains(log.TargetId)) ||
+                (string.Equals(log.Module, "REVIEW", StringComparison.OrdinalIgnoreCase) &&
+                 ownerReviewIds.Contains(log.TargetId)))
+            .ToList();
+    }
 
     private HashSet<string> GetOwnerPoiIds(SqlConnection connection, SqlTransaction? transaction, string? ownerUserId)
     {
@@ -1080,28 +1827,6 @@ public sealed partial class AdminDataRepository
         }
 
         return poiIds;
-    }
-
-    private bool CanOwnerAccessEndUser(
-        SqlConnection connection,
-        SqlTransaction? transaction,
-        string? ownerUserId,
-        string endUserId)
-    {
-        var ownerPoiIds = GetOwnerPoiIds(connection, transaction, ownerUserId);
-        if (ownerPoiIds.Count == 0)
-        {
-            return false;
-        }
-
-        var customer = GetCustomerUsers(connection, transaction)
-            .FirstOrDefault((item) => string.Equals(item.Id, endUserId, StringComparison.OrdinalIgnoreCase));
-        if (customer is not null && customer.FavoritePoiIds.Any(ownerPoiIds.Contains))
-        {
-            return true;
-        }
-
-        return false;
     }
 
     private void NormalizeLegacyEntityTypes(SqlConnection connection)

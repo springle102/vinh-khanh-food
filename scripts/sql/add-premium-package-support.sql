@@ -89,7 +89,7 @@ BEGIN
         10,
         N'openstreetmap',
         N'cloudinary',
-        N'google_translate',
+        N'elevenlabs',
         60,
         1,
         180);

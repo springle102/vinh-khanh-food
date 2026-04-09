@@ -12,6 +12,7 @@ import { useAdminData } from "../../data/store";
 import type { Poi, TourRoute } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
 import { preventImplicitFormSubmit } from "../../lib/forms";
+import { canEditFeaturedRoute, canManageRoute } from "../../lib/rbac";
 import { getCategoryName, getPoiById, getPoiTitle } from "../../lib/selectors";
 import { formatDateTime, formatNumber, normalizeSearchText } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
@@ -117,6 +118,7 @@ const getRouteIssues = (
 export const ToursPage = () => {
   const { state, saveRoute } = useAdminData();
   const { user } = useAuth();
+  const canFeatureRoute = canEditFeaturedRoute(user?.role);
   const [keyword, setKeyword] = useState("");
   const [themeFilter, setThemeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
@@ -242,6 +244,10 @@ export const ToursPage = () => {
   }, [form.stopPoiIds, poiKeyword, state]);
 
   const openModal = (route?: TourRoute) => {
+    if (route && !canManageRoute(user, route)) {
+      return;
+    }
+
     setFormError("");
     setPoiKeyword("");
     setForm(
@@ -298,7 +304,7 @@ export const ToursPage = () => {
   };
 
   const handleToggleRoute = async (route: TourRoute) => {
-    if (!user) {
+    if (!user || !canManageRoute(user, route)) {
       return;
     }
 
@@ -388,6 +394,7 @@ export const ToursPage = () => {
               <p className="font-semibold text-ink-900">{getTourCopy(item.name)}</p>
               <StatusBadge status="draft" label={getTourThemeLabel(item.theme)} />
               {item.isFeatured ? <StatusBadge status="published" label="Nổi bật" /> : null}
+              <StatusBadge status={item.isSystemRoute ? "active" : "draft"} label={item.isSystemRoute ? "Hệ thống" : "Riêng quán"} />
             </div>
             <p className="mt-1 text-sm text-ink-500">{getTourCopy(item.description)}</p>
             <p className="mt-1 text-xs text-ink-500">ID: {item.id}</p>
@@ -480,7 +487,7 @@ export const ToursPage = () => {
       widthClassName: "min-w-[210px]",
       render: (item) => (
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => openModal(item)}>
+          <Button variant="secondary" onClick={() => openModal(item)} disabled={!canManageRoute(user, item)}>
             Chỉnh sửa
           </Button>
           <Button
@@ -488,7 +495,7 @@ export const ToursPage = () => {
             onClick={() => {
               void handleToggleRoute(item);
             }}
-            disabled={busyRouteId === item.id}
+            disabled={busyRouteId === item.id || !canManageRoute(user, item)}
           >
             {busyRouteId === item.id
               ? "Đang cập nhật..."
@@ -682,8 +689,9 @@ export const ToursPage = () => {
                     onChange={(event) =>
                       setForm((current) => ({ ...current, isFeatured: event.target.checked }))
                     }
+                    disabled={!canFeatureRoute}
                   />
-                  Tour nổi bật
+                  {canFeatureRoute ? "Tour nổi bật" : "Tour nổi bật (chỉ super admin)"}
                 </label>
               </div>
             </div>

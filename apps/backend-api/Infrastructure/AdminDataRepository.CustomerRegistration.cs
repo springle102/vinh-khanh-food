@@ -41,9 +41,6 @@ public sealed partial class AdminDataRepository
                 Email,
                 Phone,
                 [Password],
-                [Status],
-                IsActive,
-                IsBanned,
                 PreferredLanguage,
                 IsPremium,
                 CreatedAt,
@@ -51,16 +48,13 @@ public sealed partial class AdminDataRepository
                 Username,
                 Country
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             customerId,
             normalizedName,
             normalizedEmail,
             normalizedPhone,
             normalizedPassword,
-            "active",
-            true,
-            false,
             normalizedPreferredLanguage,
             false,
             now,

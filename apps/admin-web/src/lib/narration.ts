@@ -22,14 +22,7 @@ export const languageLocales: Record<LanguageCode, string> = {
   ja: "ja-JP",
 };
 
-const GOOGLE_TTS_MAX_CHARS = 180;
-const googleTtsLanguages: Record<LanguageCode, string> = {
-  vi: "vi",
-  en: "en",
-  "zh-CN": "zh-CN",
-  ko: "ko",
-  ja: "ja",
-};
+const TTS_PROXY_MAX_CHARS = 180;
 
 export const supportedNarrationLanguages = Object.keys(languageLabels) as LanguageCode[];
 
@@ -124,7 +117,7 @@ export const logNarrationDebug = (
   console.debug(`[poi-narration:${scope}]`, payload);
 };
 
-const splitNarrationIntoChunks = (text: string, maxLength = GOOGLE_TTS_MAX_CHARS) => {
+const splitNarrationIntoChunks = (text: string, maxLength = TTS_PROXY_MAX_CHARS) => {
   const chunks: string[] = [];
   let start = 0;
 
@@ -152,7 +145,7 @@ const splitNarrationIntoChunks = (text: string, maxLength = GOOGLE_TTS_MAX_CHARS
   return chunks;
 };
 
-export const buildGoogleTtsAudioUrls = (
+export const buildTtsAudioUrls = (
   text: string,
   languageCode: LanguageCode,
 ) => {
@@ -161,22 +154,96 @@ export const buildGoogleTtsAudioUrls = (
     return [];
   }
 
-  const language = googleTtsLanguages[languageCode];
-  if (!language) {
-    return [];
-  }
-
   const chunks = splitNarrationIntoChunks(normalizedText);
   return chunks.map((chunk, index) => {
     const query = new URLSearchParams({
-      languageCode: language,
+      languageCode,
       text: chunk,
       total: chunks.length.toString(),
       idx: index.toString(),
     });
 
-    return resolveApiUrl(`/api/v1/tts/google?${query.toString()}`);
+    return resolveApiUrl(`/api/v1/tts?${query.toString()}`);
   });
+};
+
+export const fetchTtsPlaybackUrls = async (urls: string[]) => {
+  const objectUrls: string[] = [];
+  const dispose = () => {
+    objectUrls.forEach((value) => URL.revokeObjectURL(value));
+    objectUrls.length = 0;
+  };
+
+  try {
+    const playbackUrls: string[] = [];
+
+    for (const url of urls) {
+      const response = await fetch(url, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const contentType = response.headers.get("content-type") ?? "";
+
+      if (!response.ok) {
+        if (contentType.includes("application/json")) {
+          try {
+            const payload = (await response.json()) as {
+              success?: boolean;
+              message?: string | null;
+            };
+
+            dispose();
+            return {
+              audioUrls: [],
+              dispose,
+              error: payload.message?.trim() || `TTS request failed (${response.status}).`,
+            };
+          } catch {
+            dispose();
+            return {
+              audioUrls: [],
+              dispose,
+              error: `TTS request failed (${response.status}).`,
+            };
+          }
+        }
+
+        dispose();
+        return {
+          audioUrls: [],
+          dispose,
+          error: `TTS request failed (${response.status}).`,
+        };
+      }
+
+      if (!contentType.includes("audio")) {
+        dispose();
+        return {
+          audioUrls: [],
+          dispose,
+          error: "Backend không trả về audio TTS hợp lệ.",
+        };
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      objectUrls.push(objectUrl);
+      playbackUrls.push(objectUrl);
+    }
+
+    return {
+      audioUrls: playbackUrls,
+      dispose,
+      error: null,
+    };
+  } catch {
+    dispose();
+    return {
+      audioUrls: [],
+      dispose,
+      error: "Không thể kết nối backend để tạo audio ElevenLabs TTS.",
+    };
+  }
 };
 
 export const resolvePoiNarration = async ({

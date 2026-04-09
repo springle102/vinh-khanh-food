@@ -68,7 +68,7 @@ public sealed partial class AdminDataRepository
         return value is null or DBNull ? 0 : Convert.ToInt32(value, CultureInfo.InvariantCulture);
     }
 
-    private static bool TableExists(SqlConnection connection, string tableName)
+    private static bool TableExists(SqlConnection connection, SqlTransaction? transaction, string tableName)
     {
         const string sql = """
             SELECT COUNT(*)
@@ -76,8 +76,17 @@ public sealed partial class AdminDataRepository
             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?;
             """;
 
-        return ExecuteScalarInt(connection, null, sql, "dbo", tableName) > 0;
+        return ExecuteScalarInt(connection, transaction, sql, "dbo", tableName) > 0;
     }
+
+    private static bool HasAdminAuditLogTable(SqlConnection connection, SqlTransaction? transaction = null)
+        => TableExists(connection, transaction, "AdminAuditLogs");
+
+    private static bool HasLegacyAuditLogTable(SqlConnection connection, SqlTransaction? transaction = null)
+        => TableExists(connection, transaction, "AuditLogs");
+
+    private static bool HasUserActivityLogTable(SqlConnection connection, SqlTransaction? transaction = null)
+        => TableExists(connection, transaction, "UserActivityLogs");
 
     private static string ReadString(SqlDataReader reader, string columnName)
     {

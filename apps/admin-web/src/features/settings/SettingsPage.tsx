@@ -279,7 +279,7 @@ export const SettingsPage = () => {
                   }
                   disabled={!canManageSettings}
                 >
-                  <option value="google_translate">Google Translate TTS</option>
+                  <option value="elevenlabs">ElevenLabs TTS</option>
                 </Select>
               </div>
             </div>

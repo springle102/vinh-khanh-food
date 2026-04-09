@@ -6,7 +6,10 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/storage")]
-public sealed class StorageController(StorageService storageService) : ControllerBase
+public sealed class StorageController(
+    AdminRequestContextResolver adminRequestContextResolver,
+    StorageService storageService,
+    ResponseUrlNormalizer responseUrlNormalizer) : ControllerBase
 {
     [HttpPost("upload")]
     [RequestSizeLimit(25 * 1024 * 1024)]
@@ -15,12 +18,15 @@ public sealed class StorageController(StorageService storageService) : Controlle
         [FromForm] string? folder,
         CancellationToken cancellationToken)
     {
+        adminRequestContextResolver.RequireAuthenticatedAdmin();
+
         if (file is null)
         {
-            return BadRequest(ApiResponse<StoredFileResponse>.Fail("File upload là bắt buộc."));
+            return BadRequest(ApiResponse<StoredFileResponse>.Fail("File upload la bat buoc."));
         }
 
-        var stored = await storageService.SaveAsync(file, folder, cancellationToken);
-        return Ok(ApiResponse<StoredFileResponse>.Ok(stored, "Upload file thành công."));
+        var stored = responseUrlNormalizer.Normalize(
+            await storageService.SaveAsync(file, folder, cancellationToken));
+        return Ok(ApiResponse<StoredFileResponse>.Ok(stored, "Upload file thanh cong."));
     }
 }

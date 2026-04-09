@@ -7,15 +7,21 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/settings")]
-public sealed class SettingsController(AdminDataRepository repository) : ControllerBase
+public sealed class SettingsController(
+    AdminDataRepository repository,
+    AdminRequestContextResolver adminRequestContextResolver) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<SystemSetting>> GetSettings()
-        => Ok(ApiResponse<SystemSetting>.Ok(repository.GetSettings()));
+    {
+        adminRequestContextResolver.RequireSuperAdmin();
+        return Ok(ApiResponse<SystemSetting>.Ok(repository.GetSettings()));
+    }
 
     [HttpPut]
     public ActionResult<ApiResponse<SystemSetting>> UpdateSettings([FromBody] SystemSettingUpsertRequest request)
     {
+        var actor = adminRequestContextResolver.RequireSuperAdmin();
         if (string.IsNullOrWhiteSpace(request.AppName) || string.IsNullOrWhiteSpace(request.SupportEmail))
         {
             return BadRequest(ApiResponse<SystemSetting>.Fail("AppName va supportEmail la bat buoc."));
@@ -26,7 +32,7 @@ public sealed class SettingsController(AdminDataRepository repository) : Control
             return BadRequest(ApiResponse<SystemSetting>.Fail("Gia goi Premium phai lon hon 0 USD."));
         }
 
-        var saved = repository.SaveSettings(request);
+        var saved = repository.SaveSettings(request, actor);
         return Ok(ApiResponse<SystemSetting>.Ok(saved, "Cap nhat cai dat he thong thanh cong."));
     }
 }

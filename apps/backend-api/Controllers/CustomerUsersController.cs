@@ -32,6 +32,20 @@ public sealed class CustomerUsersController(
         }
     }
 
+    [HttpPost("login")]
+    public ActionResult<ApiResponse<CustomerUser>> Login([FromBody] CustomerLoginRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Identifier) || string.IsNullOrWhiteSpace(request.Password))
+        {
+            return BadRequest(ApiResponse<CustomerUser>.Fail("Email, username hoac so dien thoai va mat khau la bat buoc."));
+        }
+
+        var customer = repository.LoginCustomer(request.Identifier, request.Password);
+        return customer is null
+            ? Unauthorized(ApiResponse<CustomerUser>.Fail("Thong tin dang nhap khong hop le."))
+            : Ok(ApiResponse<CustomerUser>.Ok(customer, "Dang nhap thanh cong."));
+    }
+
     [HttpGet("{id}")]
     public ActionResult<ApiResponse<CustomerUser>> GetCustomerUserById(string id)
     {

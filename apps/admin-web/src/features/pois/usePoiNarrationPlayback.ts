@@ -8,12 +8,13 @@ import type {
   RegionVoice,
 } from "../../data/types";
 import {
-  buildGoogleTtsAudioUrls,
+  buildTtsAudioUrls,
   buildUiPlaybackKey,
   findPoiAudioGuide,
   hasValidAudioUrl,
   isPlaceholderAudioUrl,
   logNarrationDebug,
+  fetchTtsPlaybackUrls,
   resolvePoiNarration,
   type NarrationResolutionStatus,
   type ResolvedPoiNarration,
@@ -62,7 +63,7 @@ type PoiAudioSource = PoiAudioSourceBase & {
   audioUrls: string[];
   fallbackText?: string;
   generatedFromTts?: boolean;
-  usesGoogleTranslateFallback?: boolean;
+  usesTtsFallback?: boolean;
 };
 
 type PlayPoiNarrationOptions = {
@@ -93,6 +94,7 @@ const createAudioSourceFromResolvedNarration = (
   if (
     narration.translationStatus !== "auto_translated" &&
     narration.audioGuide &&
+    narration.audioGuide.sourceType === "uploaded" &&
     hasValidAudioUrl(narration.audioGuide.audioUrl) &&
     !isPlaceholderAudioUrl(narration.audioGuide.audioUrl)
   ) {
@@ -112,8 +114,8 @@ const createAudioSourceFromResolvedNarration = (
       fallbackMessage: narration.fallbackMessage,
       displayText: narration.displayText,
       ttsInputText: narration.ttsInputText,
-      generatedFromTts: narration.audioGuide.sourceType === "tts",
-      usesGoogleTranslateFallback: false,
+      generatedFromTts: false,
+      usesTtsFallback: false,
     };
   }
 
@@ -123,7 +125,7 @@ const createAudioSourceFromResolvedNarration = (
     audioCacheKey: narration.audioCacheKey,
     poiId: narration.poiId,
     audioGuideId: narration.audioGuide?.id ?? null,
-    audioUrls: buildGoogleTtsAudioUrls(
+    audioUrls: buildTtsAudioUrls(
       narration.ttsInputText,
       narration.effectiveLanguageCode,
     ),
@@ -137,23 +139,23 @@ const createAudioSourceFromResolvedNarration = (
     displayText: narration.displayText,
     ttsInputText: narration.ttsInputText,
     generatedFromTts: true,
-    usesGoogleTranslateFallback: true,
+    usesTtsFallback: true,
   };
 };
 
-const createGoogleTtsAudioSource = (audioSource: PoiAudioSource): PoiAudioSource => ({
+const createTtsAudioSource = (audioSource: PoiAudioSource): PoiAudioSource => ({
   kind: "audio",
   uiPlaybackKey: audioSource.uiPlaybackKey,
-  audioCacheKey: `${audioSource.audioCacheKey}|google-tts`,
+  audioCacheKey: `${audioSource.audioCacheKey}|elevenlabs-tts`,
   poiId: audioSource.poiId,
   audioGuideId: audioSource.audioGuideId,
-  audioUrls: buildGoogleTtsAudioUrls(
+  audioUrls: buildTtsAudioUrls(
     audioSource.ttsInputText,
     audioSource.effectiveLanguageCode,
   ),
   fallbackText: audioSource.ttsInputText,
   generatedFromTts: true,
-  usesGoogleTranslateFallback: true,
+  usesTtsFallback: true,
   requestedLanguageCode: audioSource.requestedLanguageCode,
   effectiveLanguageCode: audioSource.effectiveLanguageCode,
   voiceType: audioSource.voiceType,
@@ -214,6 +216,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
   const hasUnlockedPlaybackRef = useRef(false);
   const playbackStatusRef = useRef<PlaybackStatus>(DEFAULT_PLAYBACK_STATE.status);
   const resolveAbortRef = useRef<AbortController | null>(null);
+  const generatedTtsObjectUrlsRef = useRef<string[]>([]);
 
   useEffect(() => {
     playbackStatusRef.current = playbackState.status;
@@ -228,6 +231,11 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
     currentPoiIdRef.current = null;
     currentKindRef.current = null;
     currentAudioGuideIdRef.current = null;
+  }, []);
+
+  const revokeGeneratedTtsObjectUrls = useCallback(() => {
+    generatedTtsObjectUrlsRef.current.forEach((value) => URL.revokeObjectURL(value));
+    generatedTtsObjectUrlsRef.current = [];
   }, []);
 
   const stopCurrentAudio = useCallback(
@@ -255,6 +263,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         audioRef.current = null;
       }
 
+      revokeGeneratedTtsObjectUrls();
       resetPlaybackRefs();
 
       if (!options?.keepState) {
@@ -264,7 +273,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         });
       }
     },
-    [resetPlaybackRefs],
+    [resetPlaybackRefs, revokeGeneratedTtsObjectUrls],
   );
 
   useEffect(() => () => stopCurrentAudio(), [stopCurrentAudio]);
@@ -321,6 +330,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
       );
       const hasPlayableAudioGuide =
         narration.audioGuide &&
+        narration.audioGuide.sourceType === "uploaded" &&
         hasValidAudioUrl(narration.audioGuide.audioUrl) &&
         !isPlaceholderAudioUrl(narration.audioGuide.audioUrl);
 
@@ -352,21 +362,49 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         return;
       }
 
+      let playbackUrls = audioSource.audioUrls;
+      if (audioSource.generatedFromTts && audioSource.audioUrls.length > 0) {
+        revokeGeneratedTtsObjectUrls();
+        const preparedTtsAudio = await fetchTtsPlaybackUrls(audioSource.audioUrls);
+        if (preparedTtsAudio.error || requestId !== requestIdRef.current) {
+          if (requestId !== requestIdRef.current) {
+            preparedTtsAudio.dispose();
+            return;
+          }
+
+          setPlaybackState({
+            playbackKey: audioSource.uiPlaybackKey,
+            poiId: audioSource.poiId,
+            audioGuideId: audioSource.audioGuideId,
+            status: "error",
+            kind: "audio",
+            message: preparedTtsAudio.error ?? "Không thể tạo audio ElevenLabs TTS.",
+            isLoadingPOI: false,
+            isGeneratingTTS: false,
+            isPlayingAudio: false,
+          });
+          return;
+        }
+
+        generatedTtsObjectUrlsRef.current = [...preparedTtsAudio.audioUrls];
+        playbackUrls = preparedTtsAudio.audioUrls;
+      }
+
       currentPlaybackKeyRef.current = audioSource.uiPlaybackKey;
       currentPoiIdRef.current = audioSource.poiId;
       currentKindRef.current = audioSource.kind;
       currentAudioGuideIdRef.current = audioSource.audioGuideId;
 
-      const fallbackToGoogleTts = async () => {
+      const fallbackToTts = async () => {
         if (
           !audioSource.fallbackText ||
-          audioSource.usesGoogleTranslateFallback ||
+          audioSource.usesTtsFallback ||
           requestId !== requestIdRef.current
         ) {
           return false;
         }
 
-        const ttsSource = createGoogleTtsAudioSource(audioSource);
+        const ttsSource = createTtsAudioSource(audioSource);
         if (ttsSource.audioUrls.length === 0) {
           return false;
         }
@@ -377,7 +415,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           ...current,
           status: "loading",
           kind: "audio",
-          message: `File audio không phát được. Đang chuyển sang Google Translate TTS cho ${languageLabels[ttsSource.effectiveLanguageCode]}.`,
+          message: `File audio không phát được. Đang chuyển sang ElevenLabs TTS cho ${languageLabels[ttsSource.effectiveLanguageCode]}.`,
           isLoadingPOI: true,
           isGeneratingTTS: true,
           isPlayingAudio: false,
@@ -394,14 +432,14 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
 
       const playSegment = async (segmentIndex: number) => {
         if (
-          segmentIndex >= audioSource.audioUrls.length ||
+          segmentIndex >= playbackUrls.length ||
           requestId !== requestIdRef.current
         ) {
           return;
         }
 
         currentSegmentIndex = segmentIndex;
-        nextAudio.src = audioSource.audioUrls[segmentIndex];
+        nextAudio.src = playbackUrls[segmentIndex];
         await nextAudio.play();
       };
 
@@ -448,7 +486,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           return;
         }
 
-        if (currentSegmentIndex + 1 < audioSource.audioUrls.length) {
+        if (currentSegmentIndex + 1 < playbackUrls.length) {
           void playSegment(currentSegmentIndex + 1).catch(() => {
             nextAudio.onerror?.(new Event("error"));
           });
@@ -456,6 +494,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         }
 
         audioRef.current = null;
+        revokeGeneratedTtsObjectUrls();
         resetPlaybackRefs();
         setPlaybackState({
           ...DEFAULT_PLAYBACK_STATE,
@@ -469,9 +508,10 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         }
 
         audioRef.current = null;
+        revokeGeneratedTtsObjectUrls();
         resetPlaybackRefs();
         void (async () => {
-          const handled = await fallbackToGoogleTts();
+          const handled = await fallbackToTts();
           if (handled || requestId !== requestIdRef.current) {
             return;
           }
@@ -498,8 +538,9 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         }
 
         audioRef.current = null;
+        revokeGeneratedTtsObjectUrls();
         resetPlaybackRefs();
-        const handled = await fallbackToGoogleTts();
+        const handled = await fallbackToTts();
         if (handled || requestId !== requestIdRef.current) {
           return;
         }
@@ -520,7 +561,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         });
       }
     },
-    [resetPlaybackRefs],
+    [resetPlaybackRefs, revokeGeneratedTtsObjectUrls],
   );
 
   const toggleCurrentAudio = useCallback(
@@ -656,6 +697,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
 
       const hasPlayableAudioGuide =
         narration.audioGuide &&
+        narration.audioGuide.sourceType === "uploaded" &&
         hasValidAudioUrl(narration.audioGuide.audioUrl) &&
         !isPlaceholderAudioUrl(narration.audioGuide.audioUrl);
 

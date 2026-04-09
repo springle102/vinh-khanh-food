@@ -14,11 +14,6 @@ public sealed class PremiumPurchaseService(
         var customer = repository.GetCustomerUserById(customerId)
             ?? throw new InvalidOperationException("Khong tim thay khach hang de kich hoat Premium.");
 
-        if (customer.IsBanned || !customer.IsActive)
-        {
-            throw new InvalidOperationException("Tai khoan hien tai khong hop le de mua goi Premium.");
-        }
-
         var normalizedRequest = ValidateAndNormalizeRequest(request);
         var settings = repository.GetSettings();
         var premiumPriceUsd = settings.PremiumUnlockPriceUsd > 0

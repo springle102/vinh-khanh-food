@@ -41,11 +41,10 @@ public sealed class PoiNarrationService(
         string poiId,
         string requestedLanguageCode,
         string? requestedVoiceType,
-        string? scopeUserId,
-        string? scopeRole,
+        AdminRequestContext? actor,
         CancellationToken cancellationToken)
     {
-        var poi = repository.GetPois(scopeUserId, scopeRole)
+        var poi = repository.GetPois(actor)
             .FirstOrDefault(item => string.Equals(item.Id, poiId, StringComparison.OrdinalIgnoreCase));
         if (poi is null)
         {
@@ -324,16 +323,20 @@ public sealed class PoiNarrationService(
         return
             matchingGuides.FirstOrDefault(item => IsPlayableAudioGuide(item) && string.Equals(item.VoiceType, voiceType, StringComparison.OrdinalIgnoreCase)) ??
             matchingGuides.FirstOrDefault(IsPlayableAudioGuide) ??
-            matchingGuides.FirstOrDefault(item => HasValidAudioUrl(item.AudioUrl) && string.Equals(item.VoiceType, voiceType, StringComparison.OrdinalIgnoreCase)) ??
-            matchingGuides.FirstOrDefault(item => HasValidAudioUrl(item.AudioUrl)) ??
+            matchingGuides.FirstOrDefault(item => HasUsablePreparedAudio(item) && string.Equals(item.VoiceType, voiceType, StringComparison.OrdinalIgnoreCase)) ??
+            matchingGuides.FirstOrDefault(HasUsablePreparedAudio) ??
             matchingGuides.FirstOrDefault(item => string.Equals(item.VoiceType, voiceType, StringComparison.OrdinalIgnoreCase)) ??
             matchingGuides.FirstOrDefault();
     }
 
     private static bool IsPlayableAudioGuide(AudioGuide audioGuide) =>
         string.Equals(audioGuide.Status, "ready", StringComparison.OrdinalIgnoreCase) &&
-        HasValidAudioUrl(audioGuide.AudioUrl) &&
+        HasUsablePreparedAudio(audioGuide) &&
         !IsPlaceholderAudioUrl(audioGuide.AudioUrl);
+
+    private static bool HasUsablePreparedAudio(AudioGuide audioGuide) =>
+        string.Equals(audioGuide.SourceType, "uploaded", StringComparison.OrdinalIgnoreCase) &&
+        HasValidAudioUrl(audioGuide.AudioUrl);
 
     private static bool HasValidAudioUrl(string? value) =>
         !string.IsNullOrWhiteSpace(value);
@@ -501,7 +504,29 @@ public sealed class PoiNarrationService(
 
     private AudioGuide? NormalizeAudioGuideForResponse(AudioGuide? audioGuide)
     {
-        if (audioGuide is null || !HasValidAudioUrl(audioGuide.AudioUrl))
+        if (audioGuide is null)
+        {
+            return audioGuide;
+        }
+
+        if (!string.Equals(audioGuide.SourceType, "uploaded", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AudioGuide
+            {
+                Id = audioGuide.Id,
+                EntityType = audioGuide.EntityType,
+                EntityId = audioGuide.EntityId,
+                LanguageCode = audioGuide.LanguageCode,
+                AudioUrl = string.Empty,
+                VoiceType = audioGuide.VoiceType,
+                SourceType = audioGuide.SourceType,
+                Status = audioGuide.Status,
+                UpdatedBy = audioGuide.UpdatedBy,
+                UpdatedAt = audioGuide.UpdatedAt
+            };
+        }
+
+        if (!HasValidAudioUrl(audioGuide.AudioUrl))
         {
             return audioGuide;
         }

@@ -6,11 +6,18 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/geocoding")]
-public sealed class GeocodingController(GeocodingProxyService geocoding) : ControllerBase
+public sealed class GeocodingController(
+    AdminRequestContextResolver adminRequestContextResolver,
+    GeocodingProxyService geocoding) : ControllerBase
 {
     [HttpGet("reverse")]
-    public async Task<ActionResult<ApiResponse<GeocodingLocationResponse>>> Reverse([FromQuery] double lat, [FromQuery] double lng, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<GeocodingLocationResponse>>> Reverse(
+        [FromQuery] double lat,
+        [FromQuery] double lng,
+        CancellationToken cancellationToken)
     {
+        adminRequestContextResolver.RequireAuthenticatedAdmin();
+
         var location = await geocoding.ReverseAsync(lat, lng, cancellationToken);
         if (location is null || string.IsNullOrWhiteSpace(location.Address))
         {
@@ -21,8 +28,12 @@ public sealed class GeocodingController(GeocodingProxyService geocoding) : Contr
     }
 
     [HttpGet("search")]
-    public async Task<ActionResult<ApiResponse<GeocodingLocationResponse>>> Search([FromQuery(Name = "q")] string query, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<GeocodingLocationResponse>>> Search(
+        [FromQuery(Name = "q")] string query,
+        CancellationToken cancellationToken)
     {
+        adminRequestContextResolver.RequireAuthenticatedAdmin();
+
         if (string.IsNullOrWhiteSpace(query))
         {
             return BadRequest(ApiResponse<GeocodingLocationResponse>.Fail("ADDRESS_QUERY_REQUIRED"));

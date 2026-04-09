@@ -1,4 +1,5 @@
 import type { AdminUser } from "../../data/types";
+import { isPathAllowedForRole as isPathAllowedForRoleByRbac } from "../../lib/rbac";
 
 export type AuthPortal = "admin" | "restaurant";
 
@@ -30,17 +31,5 @@ export const getHomePathForRole = (role: AdminUser["role"]) =>
 export const getCanonicalHomePathForRole = (role: AdminUser["role"]) =>
   getCanonicalHomePathForPortal(getPortalForRole(role));
 
-export const isPathAllowedForRole = (role: AdminUser["role"], path: string) => {
-  const normalizedPath = path.split("?")[0]?.split("#")[0] ?? path;
-
-  if (role === "SUPER_ADMIN") {
-    return normalizedPath === "/" || normalizedPath.startsWith("/admin");
-  }
-
-  return (
-    normalizedPath === "/" ||
-    normalizedPath === "/dashboard" ||
-    normalizedPath === "/login" ||
-    normalizedPath.startsWith("/restaurant")
-  );
-};
+export const isPathAllowedForRole = (role: AdminUser["role"], path: string) =>
+  isPathAllowedForRoleByRbac(role, path);

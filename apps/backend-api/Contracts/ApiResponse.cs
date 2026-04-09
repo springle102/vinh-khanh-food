@@ -63,14 +63,6 @@ public sealed record AdminUserUpsertRequest(
     string ActorName,
     string ActorRole);
 
-public sealed record EndUserStatusUpdateRequest(
-    string Status,
-    string ActorName,
-    string ActorRole)
-{
-    public bool IsBanned => string.Equals(Status?.Trim(), "banned", StringComparison.OrdinalIgnoreCase);
-}
-
 public sealed record CustomerProfileUpdateRequest(
     string Name,
     string Username,
@@ -85,6 +77,10 @@ public sealed record CustomerRegistrationRequest(
     string Password,
     string? PreferredLanguage,
     string? Country);
+
+public sealed record CustomerLoginRequest(
+    string Identifier,
+    string Password);
 
 public sealed record PremiumPurchaseRequest(
     string PaymentProvider,

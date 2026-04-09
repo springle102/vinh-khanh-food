@@ -7,12 +7,15 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/promotions")]
-public sealed class PromotionsController(AdminDataRepository repository) : ControllerBase
+public sealed class PromotionsController(
+    AdminDataRepository repository,
+    AdminRequestContextResolver adminRequestContextResolver) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<Promotion>>> GetPromotions([FromQuery] string? poiId, [FromQuery] string? status)
     {
-        IEnumerable<Promotion> query = repository.GetPromotions();
+        var actor = adminRequestContextResolver.TryGetCurrentAdmin();
+        IEnumerable<Promotion> query = repository.GetPromotions(actor);
 
         if (!string.IsNullOrWhiteSpace(poiId))
         {
@@ -30,34 +33,48 @@ public sealed class PromotionsController(AdminDataRepository repository) : Contr
     [HttpPost]
     public ActionResult<ApiResponse<Promotion>> CreatePromotion([FromBody] PromotionUpsertRequest request)
     {
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
         if (string.IsNullOrWhiteSpace(request.PoiId) || string.IsNullOrWhiteSpace(request.Title))
         {
-            return BadRequest(ApiResponse<Promotion>.Fail("PoiId và tiêu đề ưu đãi là bắt buộc."));
+            return BadRequest(ApiResponse<Promotion>.Fail("PoiId va tieu de uu dai la bat buoc."));
         }
 
-        var saved = repository.SavePromotion(null, request);
-        return Ok(ApiResponse<Promotion>.Ok(saved, "Tạo ưu đãi thành công."));
+        if (!repository.GetPois(actor).Any(item => item.Id == request.PoiId))
+        {
+            return NotFound(ApiResponse<Promotion>.Fail("Khong tim thay POI de tao uu dai."));
+        }
+
+        var saved = repository.SavePromotion(null, request, actor);
+        return Ok(ApiResponse<Promotion>.Ok(saved, "Tao uu dai thanh cong."));
     }
 
     [HttpPut("{id}")]
     public ActionResult<ApiResponse<Promotion>> UpdatePromotion(string id, [FromBody] PromotionUpsertRequest request)
     {
-        var existing = repository.GetPromotions().Any(item => item.Id == id);
-        if (!existing)
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var existing = repository.GetPromotions(actor).FirstOrDefault(item => item.Id == id);
+        if (existing is null || !repository.GetPois(actor).Any(item => item.Id == request.PoiId))
         {
-            return NotFound(ApiResponse<Promotion>.Fail("Không tìm thấy ưu đãi."));
+            return NotFound(ApiResponse<Promotion>.Fail("Khong tim thay uu dai."));
         }
 
-        var saved = repository.SavePromotion(id, request);
-        return Ok(ApiResponse<Promotion>.Ok(saved, "Cập nhật ưu đãi thành công."));
+        var saved = repository.SavePromotion(id, request, actor);
+        return Ok(ApiResponse<Promotion>.Ok(saved, "Cap nhat uu dai thanh cong."));
     }
 
     [HttpDelete("{id}")]
     public ActionResult<ApiResponse<string>> DeletePromotion(string id)
     {
-        var deleted = repository.DeletePromotion(id);
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var existing = repository.GetPromotions(actor).FirstOrDefault(item => item.Id == id);
+        if (existing is null)
+        {
+            return NotFound(ApiResponse<string>.Fail("Khong tim thay uu dai."));
+        }
+
+        var deleted = repository.DeletePromotion(id, actor);
         return deleted
-            ? Ok(ApiResponse<string>.Ok(id, "Xóa ưu đãi thành công."))
-            : NotFound(ApiResponse<string>.Fail("Không tìm thấy ưu đãi."));
+            ? Ok(ApiResponse<string>.Ok(id, "Xoa uu dai thanh cong."))
+            : NotFound(ApiResponse<string>.Fail("Khong tim thay uu dai."));
     }
 }

@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import type { EndUserStatusCode, LanguageCode, Role, UserStatus } from "../data/types";
+import type { AuditActorRole, LanguageCode, UserStatus } from "../data/types";
 
 export const cn = (...values: Array<string | false | null | undefined>) => clsx(values);
 
@@ -11,44 +11,15 @@ export const languageLabels: Record<LanguageCode, string> = {
   ja: "Tiếng Nhật",
 };
 
-export const roleLabels: Record<Role, string> = {
+export const roleLabels: Record<AuditActorRole, string> = {
   SUPER_ADMIN: "Super Admin",
   PLACE_OWNER: "Chủ quán",
+  SYSTEM: "Hệ thống",
 };
 
 export const userStatusLabels: Record<UserStatus, string> = {
   active: "Đang hoạt động",
   locked: "Đã khóa",
-};
-
-export const endUserStatusLabels: Record<EndUserStatusCode, string> = {
-  ACTIVE: "Đang hoạt động",
-  INACTIVE: "Không hoạt động",
-  BANNED: "Đã ban",
-};
-
-export const endUserStatusBadgeTone: Record<EndUserStatusCode, string> = {
-  ACTIVE: "active",
-  INACTIVE: "inactive",
-  BANNED: "banned",
-};
-
-export const resolveEndUserStatus = ({
-  isActive,
-  isBanned,
-}: {
-  isActive: boolean;
-  isBanned: boolean;
-}): EndUserStatusCode => {
-  if (isBanned) {
-    return "BANNED";
-  }
-
-  if (isActive) {
-    return "ACTIVE";
-  }
-
-  return "INACTIVE";
 };
 
 export const formatDateTime = (value: string | null) => {

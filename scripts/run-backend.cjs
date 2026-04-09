@@ -21,6 +21,11 @@ for (const dir of [dotnetHome, appData, nugetPackages, buildOutput, runtimeOutpu
 const command = process.argv[2] ?? "dev";
 const dotnetCommand = process.platform === "win32" ? "dotnet.exe" : "dotnet";
 const enableSpaProxy = process.env.VK_DISABLE_SPA_PROXY !== "1";
+const defaultBackendUrls = "http://0.0.0.0:5080";
+const resolvedBackendUrls =
+  process.env.VK_BACKEND_URLS ??
+  process.env.ASPNETCORE_URLS ??
+  defaultBackendUrls;
 const baseEnv = {
   ...process.env,
   DOTNET_CLI_HOME: dotnetHome,
@@ -67,7 +72,7 @@ const child = spawn(dotnetCommand, args, {
     : {
         ...baseEnv,
         ASPNETCORE_ENVIRONMENT: "Development",
-        ASPNETCORE_URLS: "https://localhost:7080;http://localhost:5080",
+        ASPNETCORE_URLS: resolvedBackendUrls,
         ...(enableSpaProxy
           ? { ASPNETCORE_HOSTINGSTARTUPASSEMBLIES: "Microsoft.AspNetCore.SpaProxy" }
           : {}),

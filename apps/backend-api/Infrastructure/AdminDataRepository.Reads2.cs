@@ -8,7 +8,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<TourRoute> GetRoutes(SqlConnection connection, SqlTransaction? transaction)
     {
         const string routesSql = """
-            SELECT Id, Name, Theme, [Description], DurationMinutes, Difficulty, CoverImageUrl, IsFeatured, IsActive, UpdatedBy, UpdatedAt
+            SELECT Id, Name, Theme, [Description], DurationMinutes, Difficulty, CoverImageUrl, IsFeatured, IsActive, IsSystemRoute, OwnerUserId, UpdatedBy, UpdatedAt
             FROM dbo.Routes
             ORDER BY IsFeatured DESC, IsActive DESC, UpdatedAt DESC, Name, Id;
             """;
@@ -54,6 +54,8 @@ public sealed partial class AdminDataRepository
                     IsFeatured = ReadBool(routesReader, "IsFeatured"),
                     StopPoiIds = stopMap.GetValueOrDefault(routeId, []),
                     IsActive = ReadBool(routesReader, "IsActive"),
+                    IsSystemRoute = ReadBool(routesReader, "IsSystemRoute"),
+                    OwnerUserId = ReadNullableString(routesReader, "OwnerUserId"),
                     UpdatedBy = ReadString(routesReader, "UpdatedBy"),
                     UpdatedAt = ReadDateTimeOffset(routesReader, "UpdatedAt")
                 });
@@ -159,11 +161,44 @@ public sealed partial class AdminDataRepository
 
     private IReadOnlyList<AuditLog> GetAuditLogs(SqlConnection connection, SqlTransaction? transaction)
     {
-        const string sql = """
-            SELECT Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt
-            FROM dbo.AuditLogs
+        const string separatedSql = """
+            SELECT Id, ActorId, ActorName, ActorRole, ActorType, [Action], [Module], TargetId, TargetSummary, BeforeSummary, AfterSummary, SourceApp, CreatedAt
+            FROM dbo.AdminAuditLogs
             ORDER BY CreatedAt DESC, Id DESC;
             """;
+
+        const string legacySql = """
+            SELECT
+                legacy.Id,
+                COALESCE(adminUser.Id, legacy.TargetValue, legacy.ActorName, N'legacy-admin') AS ActorId,
+                legacy.ActorName,
+                legacy.ActorRole,
+                N'ADMIN' AS ActorType,
+                legacy.[Action],
+                legacy.TargetValue AS TargetId,
+                legacy.TargetValue AS TargetSummary,
+                CAST(NULL AS NVARCHAR(MAX)) AS BeforeSummary,
+                CAST(NULL AS NVARCHAR(MAX)) AS AfterSummary,
+                N'ADMIN_WEB' AS SourceApp,
+                legacy.CreatedAt
+            FROM dbo.AuditLogs legacy
+            LEFT JOIN dbo.AdminUsers adminUser
+                ON adminUser.Email = legacy.TargetValue
+            WHERE UPPER(COALESCE(legacy.ActorRole, N'')) IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')
+            ORDER BY legacy.CreatedAt DESC, legacy.Id DESC;
+            """;
+
+        var useSeparatedAuditLogs = HasAdminAuditLogTable(connection, transaction);
+        var sql = useSeparatedAuditLogs
+            ? separatedSql
+            : HasLegacyAuditLogTable(connection, transaction)
+                ? legacySql
+                : null;
+
+        if (sql is null)
+        {
+            return [];
+        }
 
         using var command = CreateCommand(connection, transaction, sql);
         using var reader = command.ExecuteReader();
@@ -171,13 +206,21 @@ public sealed partial class AdminDataRepository
         var items = new List<AuditLog>();
         while (reader.Read())
         {
+            var action = ReadString(reader, "Action");
             items.Add(new AuditLog
             {
                 Id = ReadString(reader, "Id"),
+                ActorId = ReadString(reader, "ActorId"),
                 ActorName = ReadString(reader, "ActorName"),
                 ActorRole = ReadString(reader, "ActorRole"),
-                Action = ReadString(reader, "Action"),
-                Target = ReadString(reader, "TargetValue"),
+                ActorType = ReadString(reader, "ActorType"),
+                Action = action,
+                Module = useSeparatedAuditLogs ? ReadString(reader, "Module") : GuessLegacyAuditModule(action),
+                TargetId = ReadString(reader, "TargetId"),
+                TargetSummary = ReadString(reader, "TargetSummary"),
+                BeforeSummary = ReadNullableString(reader, "BeforeSummary"),
+                AfterSummary = ReadNullableString(reader, "AfterSummary"),
+                SourceApp = ReadString(reader, "SourceApp"),
                 CreatedAt = ReadDateTimeOffset(reader, "CreatedAt")
             });
         }
@@ -273,10 +316,78 @@ public sealed partial class AdminDataRepository
         return reader.Read() ? MapAdminUser(reader) : null;
     }
 
+    private AdminRequestContext? GetAdminRequestContext(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string accessToken,
+        DateTimeOffset now)
+    {
+        const string sql = """
+            SELECT TOP 1
+                userAccount.Id,
+                userAccount.Name,
+                userAccount.Email,
+                userAccount.Role,
+                userAccount.[Status],
+                userAccount.ManagedPoiId
+            FROM dbo.RefreshSessions sessionToken
+            INNER JOIN dbo.AdminUsers userAccount
+                ON userAccount.Id = sessionToken.UserId
+            WHERE sessionToken.AccessToken = ?
+              AND sessionToken.AccessTokenExpiresAt > ?
+              AND sessionToken.ExpiresAt > ?
+              AND userAccount.[Status] = ?;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, accessToken, now, now, "active");
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new AdminRequestContext(
+            ReadString(reader, "Id"),
+            ReadString(reader, "Name"),
+            ReadString(reader, "Email"),
+            ReadString(reader, "Role"),
+            ReadString(reader, "Status"),
+            ReadNullableString(reader, "ManagedPoiId"));
+    }
+
     public CustomerUser? GetCustomerUserById(string id)
     {
         using var connection = OpenConnection();
         return GetCustomerUserById(connection, null, id);
+    }
+
+    private CustomerUser? GetCustomerUserByCredentials(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string identifier,
+        string password)
+    {
+        var normalizedIdentifier = identifier?.Trim() ?? string.Empty;
+        var normalizedPassword = password?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedIdentifier) || string.IsNullOrWhiteSpace(normalizedPassword))
+        {
+            return null;
+        }
+
+        var normalizedPhone = NormalizePhoneForComparison(normalizedIdentifier);
+
+        return GetCustomerUsers(connection, transaction)
+            .OrderByDescending(item => item.LastActiveAt ?? item.CreatedAt)
+            .FirstOrDefault(item =>
+                string.Equals(item.Password, normalizedPassword, StringComparison.Ordinal) &&
+                (
+                    string.Equals(item.Email, normalizedIdentifier, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrWhiteSpace(item.Username) &&
+                     string.Equals(item.Username, normalizedIdentifier, StringComparison.OrdinalIgnoreCase)) ||
+                    (normalizedPhone.Length > 0 &&
+                     !string.IsNullOrWhiteSpace(item.Phone) &&
+                     string.Equals(NormalizePhoneForComparison(item.Phone), normalizedPhone, StringComparison.Ordinal))
+                ));
     }
 
     private CustomerUser? GetCustomerUserById(SqlConnection connection, SqlTransaction? transaction, string id)
@@ -286,7 +397,7 @@ public sealed partial class AdminDataRepository
     private EndUser? GetEndUserById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, Name, Email, Phone, [Password], Username, IsActive, IsBanned, PreferredLanguage, Country, CreatedAt, LastActiveAt, [Status]
+            SELECT TOP 1 Id, Name, Email, Phone, [Password], Username, PreferredLanguage, Country, CreatedAt, LastActiveAt
             FROM dbo.CustomerUsers
             WHERE Id = ?;
             """;
@@ -303,7 +414,7 @@ public sealed partial class AdminDataRepository
         DateTimeOffset now)
     {
         const string sql = """
-            SELECT TOP 1 RefreshToken, UserId, ExpiresAt
+            SELECT TOP 1 AccessToken, RefreshToken, UserId, AccessTokenExpiresAt, ExpiresAt
             FROM dbo.RefreshSessions
             WHERE RefreshToken = ? AND ExpiresAt > ?;
             """;
@@ -318,8 +429,10 @@ public sealed partial class AdminDataRepository
 
         return new RefreshSession
         {
+            AccessToken = ReadString(reader, "AccessToken"),
             RefreshToken = ReadString(reader, "RefreshToken"),
             UserId = ReadString(reader, "UserId"),
+            AccessTokenExpiresAt = ReadDateTimeOffset(reader, "AccessTokenExpiresAt"),
             ExpiresAt = ReadDateTimeOffset(reader, "ExpiresAt")
         };
     }

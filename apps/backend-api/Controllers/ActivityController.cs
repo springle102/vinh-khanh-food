@@ -7,9 +7,12 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/activity")]
-public sealed class ActivityController(AdminDataRepository repository) : ControllerBase
+public sealed class ActivityController(
+    AdminDataRepository repository,
+    AdminRequestContextResolver adminRequestContextResolver) : ControllerBase
 {
     [HttpGet("audit-logs")]
     public ActionResult<ApiResponse<IReadOnlyList<AuditLog>>> GetAuditLogs()
-        => Ok(ApiResponse<IReadOnlyList<AuditLog>>.Ok(repository.GetAuditLogs()));
+        => Ok(ApiResponse<IReadOnlyList<AuditLog>>.Ok(
+            repository.GetAuditLogs(adminRequestContextResolver.RequireAuthenticatedAdmin())));
 }

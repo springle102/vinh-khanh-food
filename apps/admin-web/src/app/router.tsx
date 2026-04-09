@@ -1,11 +1,10 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
-import { AppShell, type AppShellNavItem } from "../components/layout/AppShell";
+import { AppShell } from "../components/layout/AppShell";
 import { ActivityPage } from "../features/activity/ActivityPage";
 import { useAuth } from "../features/auth/AuthContext";
 import { getHomePathForRole } from "../features/auth/auth-routing";
 import { LoginPage } from "../features/auth/LoginPage";
 import { AuthLoadingScreen, RequireAuth } from "../features/auth/RequireAuth";
-import { ContentPage } from "../features/content/ContentPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { EndUsersPage } from "../features/end-users/EndUsersPage";
 import { PoisPage } from "../features/pois/PoisPage";
@@ -14,24 +13,7 @@ import { ReviewsPage } from "../features/reviews/ReviewsPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { ToursPage } from "../features/tours/ToursPage";
 import { UsersPage } from "../features/users/UsersPage";
-
-const adminNavigationItems: AppShellNavItem[] = [
-  { to: "/admin/dashboard", label: "Tổng quan", icon: "dashboard" },
-  { to: "/admin/pois", label: "POI", icon: "map" },
-  { to: "/admin/tours", label: "Tuyến tham quan", icon: "route" },
-  { to: "/admin/content", label: "Món ăn", icon: "content" },
-  { to: "/admin/users", label: "Chủ quán", icon: "users" },
-  { to: "/admin/end-users", label: "Người dùng", icon: "users" },
-  { to: "/admin/promotions", label: "Ưu đãi", icon: "gift" },
-  { to: "/admin/reviews", label: "Đánh giá", icon: "star" },
-  { to: "/admin/activity", label: "Nhật ký", icon: "activity" },
-  { to: "/admin/settings", label: "Cài đặt", icon: "settings" },
-];
-
-const restaurantNavigationItems: AppShellNavItem[] = adminNavigationItems.map((item) => ({
-  ...item,
-  to: item.to.replace("/admin", "/restaurant"),
-}));
+import { navigationItemsByRole } from "../lib/rbac";
 
 const AdminShellLayout = () => (
   <AppShell
@@ -39,7 +21,7 @@ const AdminShellLayout = () => (
     brandTitle="Admin Console"
     headerEyebrow="Bảng điều khiển quản trị"
     headerTitle="Hệ thống vận hành nhà hàng"
-    navigationItems={adminNavigationItems}
+    navigationItems={navigationItemsByRole.SUPER_ADMIN}
   />
 );
 
@@ -49,7 +31,7 @@ const RestaurantShellLayout = () => (
     brandTitle="Admin Console"
     headerEyebrow="Bảng điều khiển quản trị"
     headerTitle="Hệ thống vận hành nhà hàng"
-    navigationItems={restaurantNavigationItems}
+    navigationItems={navigationItemsByRole.PLACE_OWNER}
   />
 );
 
@@ -95,7 +77,7 @@ export const router = createBrowserRouter([
           { path: "dashboard", element: <DashboardPage /> },
           { path: "pois", element: <PoisPage /> },
           { path: "tours", element: <ToursPage /> },
-          { path: "content", element: <ContentPage /> },
+          { path: "content", element: <Navigate to="/admin/pois" replace /> },
           { path: "media", element: <Navigate to="/admin/pois" replace /> },
           { path: "users", element: <UsersPage /> },
           { path: "end-users", element: <EndUsersPage /> },
@@ -119,15 +101,16 @@ export const router = createBrowserRouter([
           { path: "dashboard", element: <DashboardPage /> },
           { path: "pois", element: <PoisPage /> },
           { path: "tours", element: <ToursPage /> },
-          { path: "content", element: <ContentPage /> },
+          { path: "content", element: <Navigate to="/restaurant/pois" replace /> },
           { path: "media", element: <Navigate to="/restaurant/pois" replace /> },
-          { path: "users", element: <UsersPage /> },
-          { path: "end-users", element: <EndUsersPage /> },
+          { path: "users", element: <Navigate to="/restaurant/profile" replace /> },
+          { path: "end-users", element: <Navigate to="/restaurant/dashboard" replace /> },
           { path: "promotions", element: <PromotionsPage /> },
           { path: "reviews", element: <ReviewsPage /> },
           { path: "analytics", element: <Navigate to="/restaurant/dashboard" replace /> },
           { path: "activity", element: <ActivityPage /> },
-          { path: "settings", element: <SettingsPage /> },
+          { path: "profile", element: <UsersPage /> },
+          { path: "settings", element: <Navigate to="/restaurant/profile" replace /> },
         ],
       },
     ],

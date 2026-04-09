@@ -3,7 +3,7 @@
 ## Phạm vi đã xử lý
 
 - UI admin, mobile app, backend API response, log/audit action và seed SQL.
-- Đồng bộ nội dung TTS theo Google Translate TTS giữa admin và app.
+- Đồng bộ nội dung TTS dùng service chung giữa admin và app.
 - Bổ sung script migrate cho dữ liệu legacy và cấu hình UTF-8 mặc định cho repo.
 
 ## Trước -> sau
@@ -13,7 +13,7 @@
 | Admin login | `Dang nhap he thong nha hang` | `Đăng nhập hệ thống nhà hàng` |
 | Admin login | `Mat khau` | `Mật khẩu` |
 | Admin login | `Dang dang nhap...` | `Đang đăng nhập...` |
-| Admin preview TTS | `Dang phat Google Translate TTS.` | `Đang phát Google Translate TTS.` |
+| Admin preview TTS | `Dang phat ElevenLabs TTS.` | `Đang phát ElevenLabs TTS.` |
 | Admin preview TTS | `Da phat xong TTS preview.` | `Đã phát xong bản xem thử TTS.` |
 | Admin POI playback | `Da tam dung thuyet minh.` | `Đã tạm dừng bài thuyết minh.` |
 | Admin POI playback | `Khong the phat audio guide da luu.` | `Không thể phát audio guide đã lưu.` |

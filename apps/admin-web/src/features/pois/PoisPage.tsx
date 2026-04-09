@@ -3,12 +3,13 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { DataTable, type DataColumn } from "../../components/ui/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { ImageSourceField } from "../../components/ui/ImageSourceField";
 import { Input, Textarea } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
-import type { AdminDataState, AudioGuide, LanguageCode, Poi, PoiDetail, RegionVoice, Translation } from "../../data/types";
+import type { AdminDataState, AudioGuide, FoodItem, LanguageCode, MediaAsset, Poi, PoiDetail, RegionVoice, Translation } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
 import { preventImplicitFormSubmit } from "../../lib/forms";
 import { getCategoryName, getOwnerName, searchPois } from "../../lib/selectors";
@@ -57,6 +58,22 @@ type PoiFormState = {
   audioStatus: AudioGuide["status"];
 };
 
+type PoiRepresentativeImageFormState = {
+  id?: string;
+  url: string;
+};
+
+type PoiFoodItemFormState = {
+  clientId: string;
+  id?: string;
+  poiId: string;
+  name: string;
+  description: string;
+  priceRange: string;
+  imageUrl: string;
+  spicyLevel: FoodItem["spicyLevel"];
+};
+
 const createDefaultForm = (categoryId: string, status: Poi["status"] = "draft"): PoiFormState => ({
   poiId: "",
   title: "",
@@ -81,6 +98,66 @@ const createDefaultForm = (categoryId: string, status: Poi["status"] = "draft"):
   audioSourceType: "tts",
   audioStatus: "ready",
 });
+
+const createDefaultPoiImageForm = (): PoiRepresentativeImageFormState => ({
+  url: "",
+});
+
+const createPoiFoodItemForm = (
+  clientId: string,
+  poiId = "",
+): PoiFoodItemFormState => ({
+  clientId,
+  poiId,
+  name: "",
+  description: "",
+  priceRange: "",
+  imageUrl: "",
+  spicyLevel: "mild",
+});
+
+const findPoiRepresentativeImage = (mediaAssets: MediaAsset[], poiId?: string) => {
+  if (!poiId) {
+    return null;
+  }
+
+  return mediaAssets.reduce<MediaAsset | null>((latestAsset, item) => {
+    if (item.entityType !== "poi" || item.entityId !== poiId || item.type !== "image") {
+      return latestAsset;
+    }
+
+    if (!latestAsset) {
+      return item;
+    }
+
+    return Date.parse(item.createdAt) > Date.parse(latestAsset.createdAt) ? item : latestAsset;
+  }, null);
+};
+
+const buildPoiFoodItemForms = (
+  foodItems: FoodItem[],
+  poiId?: string,
+): PoiFoodItemFormState[] =>
+  foodItems
+    .filter((item) => item.poiId === poiId)
+    .map((item) => ({
+      clientId: item.id,
+      id: item.id,
+      poiId: item.poiId,
+      name: item.name,
+      description: item.description,
+      priceRange: item.priceRange,
+      imageUrl: item.imageUrl,
+      spicyLevel: item.spicyLevel,
+    }));
+
+const hasFoodItemContent = (foodItem: PoiFoodItemFormState) =>
+  Boolean(
+    foodItem.name.trim() ||
+      foodItem.description.trim() ||
+      foodItem.priceRange.trim() ||
+      foodItem.imageUrl.trim(),
+  );
 
 const parseCoordinate = (value: string, fallback: number) => {
   const parsed = Number(value);
@@ -181,7 +258,7 @@ const getSubmissionStatus = (role: "SUPER_ADMIN" | "PLACE_OWNER" | undefined, st
   role === "PLACE_OWNER" ? "pending" : status;
 
 export const PoisPage = () => {
-  const { state, saveAudioGuide, savePoi } = useAdminData();
+  const { state, saveAudioGuide, saveFoodItem, saveMediaAsset, savePoi } = useAdminData();
   const { user } = useAuth();
   const syncVersion = state.syncState?.version ?? "bootstrap";
   const isOwner = user?.role === "PLACE_OWNER";
@@ -215,6 +292,13 @@ export const PoisPage = () => {
   const [form, setForm] = useState<PoiFormState>(() =>
     createDefaultForm(state.categories[0]?.id ?? "", getSubmissionStatus(user?.role, "draft")),
   );
+  const [poiImageForm, setPoiImageForm] = useState<PoiRepresentativeImageFormState>(
+    createDefaultPoiImageForm,
+  );
+  const [poiFoodItemForms, setPoiFoodItemForms] = useState<PoiFoodItemFormState[]>(
+    [],
+  );
+  const [activeImageUploads, setActiveImageUploads] = useState(0);
   const [playbackIntent, setPlaybackIntent] = useState<{
     token: number;
     poiId: string | null;
@@ -231,6 +315,7 @@ export const PoisPage = () => {
   const poiDetailCacheRef = useRef(new Map<string, PoiDetail>());
   const poiDetailAbortRef = useRef<AbortController | null>(null);
   const narrationAbortRef = useRef<AbortController | null>(null);
+  const poiFoodItemDraftSequenceRef = useRef(0);
   const lastHandledPlaybackIntentTokenRef = useRef(0);
   const selectedNarrationRequestRef = useRef(0);
   const lastNarrationSelectionRef = useRef<{
@@ -352,6 +437,22 @@ export const PoisPage = () => {
     );
   }, []);
 
+  const createPoiFoodItemDraft = useCallback((poiId = "") => {
+    poiFoodItemDraftSequenceRef.current += 1;
+    return createPoiFoodItemForm(`food-draft-${poiFoodItemDraftSequenceRef.current}`, poiId);
+  }, []);
+
+  const uploadImageAsset = useCallback(async (file: File, folder: string) => {
+    setActiveImageUploads((current) => current + 1);
+
+    try {
+      const uploaded = await adminApi.uploadFile(file, folder);
+      return uploaded.url;
+    } finally {
+      setActiveImageUploads((current) => Math.max(0, current - 1));
+    }
+  }, []);
+
   const fetchPOIDetail = useCallback(
     async (poiId: string, options?: { useCache?: boolean; updateSelected?: boolean }) => {
       const cached = poiDetailCacheRef.current.get(poiId);
@@ -438,6 +539,8 @@ export const PoisPage = () => {
     setHasSlugBeenManuallyEdited(false);
     setFormError("");
     setAddressSearchVersion(0);
+    setPoiImageForm(createDefaultPoiImageForm());
+    setPoiFoodItemForms([]);
     setForm({
       ...createDefaultForm(
         state.categories[0]?.id ?? "",
@@ -475,11 +578,17 @@ export const PoisPage = () => {
             (item) => item.entityType === "poi" && item.entityId === poi.id,
           );
     const audioGuide = findPoiAudioGuide(audioGuides, poi.id, editableLanguageCode);
+    const representativeImage = findPoiRepresentativeImage(state.mediaAssets, poi.id);
 
     setHasSlugBeenManuallyEdited(false);
     setFormError("");
     setAddressSearchVersion(0);
     setSelectedPoiId(poi.id);
+    setPoiImageForm({
+      id: representativeImage?.id,
+      url: representativeImage?.url ?? "",
+    });
+    setPoiFoodItemForms(buildPoiFoodItemForms(state.foodItems, poi.id));
     setForm({
       id: poi.id,
       poiId: poi.id,
@@ -501,7 +610,7 @@ export const PoisPage = () => {
       ownerUserId: isOwner ? user?.id ?? "" : poi.ownerUserId ?? "",
       shortText: translationFields.shortText,
       fullText: translationFields.fullText,
-      audioUrl: audioGuide?.audioUrl ?? "",
+      audioUrl: audioGuide?.sourceType === "uploaded" ? audioGuide.audioUrl : "",
       audioSourceType: audioGuide?.sourceType ?? "tts",
       audioStatus: audioGuide?.status ?? "ready",
     });
@@ -540,7 +649,7 @@ export const PoisPage = () => {
           title: translationFields.title,
           shortText: translationFields.shortText,
           fullText: translationFields.fullText,
-          audioUrl: audioGuide?.audioUrl ?? "",
+          audioUrl: audioGuide?.sourceType === "uploaded" ? audioGuide.audioUrl : "",
           audioSourceType: audioGuide?.sourceType ?? "tts",
           audioStatus: audioGuide?.status ?? "ready",
         };
@@ -785,6 +894,28 @@ export const PoisPage = () => {
     }
   };
 
+  const updatePoiFoodItemForm = useCallback((
+    clientId: string,
+    updates: Partial<Omit<PoiFoodItemFormState, "clientId">>,
+  ) => {
+    setPoiFoodItemForms((current) =>
+      current.map((item) => (item.clientId === clientId ? { ...item, ...updates } : item)),
+    );
+  }, []);
+
+  const addPoiFoodItemForm = useCallback(() => {
+    setPoiFoodItemForms((current) => [
+      ...current,
+      createPoiFoodItemDraft(form.id ?? form.poiId.trim()),
+    ]);
+  }, [createPoiFoodItemDraft, form.id, form.poiId]);
+
+  const removePoiFoodItemForm = useCallback((clientId: string) => {
+    setPoiFoodItemForms((current) =>
+      current.filter((item) => item.clientId !== clientId),
+    );
+  }, []);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user) {
@@ -795,6 +926,22 @@ export const PoisPage = () => {
     setFormError("");
 
     try {
+      const normalizedFoodItemDrafts = poiFoodItemForms
+        .map((item) => ({
+          ...item,
+          name: item.name.trim(),
+          description: item.description.trim(),
+          priceRange: item.priceRange.trim(),
+          imageUrl: item.imageUrl.trim(),
+        }))
+        .filter((item) => item.id || hasFoodItemContent(item));
+      const invalidFoodItem = normalizedFoodItemDrafts.find((item) => !item.name);
+      if (invalidFoodItem) {
+        setFormError("Hãy nhập tên món ăn cho tất cả món bạn muốn lưu trong POI.");
+        setSaving(false);
+        return;
+      }
+
       console.debug("[admin-poi] edit-form-before-submit", {
         poiId: form.id ?? null,
         requestedPoiId: form.poiId.trim() || null,
@@ -806,6 +953,7 @@ export const PoisPage = () => {
         fullTextLength: form.fullText.length,
       });
       const nextSlug = form.slug || slugify(form.title);
+      const existingPoiImage = findPoiRepresentativeImage(state.mediaAssets, form.id);
       const existingDetail =
         selectedPoiDetail?.poi.id === form.id
           ? selectedPoiDetail
@@ -839,6 +987,70 @@ export const PoisPage = () => {
         },
         user,
       );
+
+      const nextPoiImageUrl = poiImageForm.url.trim();
+      const nextPoiImageAltText =
+        existingPoiImage?.altText?.trim() || `Ảnh đại diện ${form.title || nextSlug}`;
+      const shouldSavePoiImage =
+        !!nextPoiImageUrl &&
+        (
+          !existingPoiImage ||
+          existingPoiImage.url !== nextPoiImageUrl ||
+          existingPoiImage.altText !== nextPoiImageAltText ||
+          existingPoiImage.entityId !== savedPoi.id
+        );
+
+      if (shouldSavePoiImage) {
+        await saveMediaAsset(
+          {
+            id: poiImageForm.id ?? existingPoiImage?.id,
+            entityType: "poi",
+            entityId: savedPoi.id,
+            type: "image",
+            url: nextPoiImageUrl,
+            altText: nextPoiImageAltText,
+          },
+          user,
+        );
+      }
+
+      const originalPoiId = form.id ?? savedPoi.id;
+      const existingFoodItemsById = new Map(
+        state.foodItems
+          .filter((item) => item.poiId === originalPoiId)
+          .map((item) => [item.id, item]),
+      );
+
+      for (const foodItemDraft of normalizedFoodItemDrafts) {
+        const existingFoodItem = foodItemDraft.id
+          ? existingFoodItemsById.get(foodItemDraft.id)
+          : null;
+        const hasFoodItemChanged =
+          !existingFoodItem ||
+          existingFoodItem.poiId !== savedPoi.id ||
+          existingFoodItem.name !== foodItemDraft.name ||
+          existingFoodItem.description !== foodItemDraft.description ||
+          existingFoodItem.priceRange !== foodItemDraft.priceRange ||
+          existingFoodItem.imageUrl !== foodItemDraft.imageUrl ||
+          existingFoodItem.spicyLevel !== foodItemDraft.spicyLevel;
+
+        if (!hasFoodItemChanged) {
+          continue;
+        }
+
+        await saveFoodItem(
+          {
+            id: foodItemDraft.id,
+            poiId: savedPoi.id,
+            name: foodItemDraft.name,
+            description: foodItemDraft.description,
+            priceRange: foodItemDraft.priceRange,
+            imageUrl: foodItemDraft.imageUrl,
+            spicyLevel: foodItemDraft.spicyLevel,
+          },
+          user,
+        );
+      }
 
       let optimisticAudioGuide: AudioGuide | null = null;
       if (form.audioUrl || form.audioSourceType === "tts") {
@@ -1489,6 +1701,166 @@ export const PoisPage = () => {
                 </div>
               </div>
 
+              <div className="space-y-5 rounded-3xl border border-sand-100 bg-sand-50/70 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-ink-900">Hình ảnh đại diện</p>
+                    <p className="mt-2 text-xs text-ink-500">
+                      Admin và chủ quán có thể cập nhật ảnh quán và ảnh món ăn ngay trong form POI.
+                    </p>
+                  </div>
+                  {activeImageUploads ? (
+                    <p className="text-xs text-ink-500">Đang upload ảnh...</p>
+                  ) : null}
+                </div>
+
+                <ImageSourceField
+                  label="Ảnh đại diện quán"
+                  value={poiImageForm.url}
+                  onChange={(value) =>
+                    setPoiImageForm((current) => ({
+                      ...current,
+                      url: value,
+                    }))
+                  }
+                  onUpload={(file) => uploadImageAsset(file, "images/pois")}
+                  helperText="Ảnh mới sẽ được dùng làm hình đại diện chính của quán/POI này."
+                  emptyText="POI này chưa có ảnh đại diện."
+                />
+
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-ink-900">Món ăn thuộc POI</p>
+                      <p className="mt-2 text-xs text-ink-500">
+                        Thêm món mới và chỉnh sửa toàn bộ nội dung món ăn ngay trong màn sửa POI.
+                      </p>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      className="shrink-0"
+                      onClick={addPoiFoodItemForm}
+                    >
+                      Thêm món ăn
+                    </Button>
+                  </div>
+
+                  {poiFoodItemForms.length ? (
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      {poiFoodItemForms.map((foodItem, index) => (
+                        <div
+                          key={foodItem.clientId}
+                          className="space-y-4 rounded-3xl border border-sand-200 bg-white p-4"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-ink-900">
+                                {foodItem.name.trim() || `Món ăn ${index + 1}`}
+                              </p>
+                              <p className="mt-1 text-xs text-ink-500">
+                                {foodItem.id
+                                  ? "Món đã có trong POI."
+                                  : "Món mới sẽ được tạo khi bạn lưu POI."}
+                              </p>
+                            </div>
+                            {!foodItem.id ? (
+                              <Button
+                                variant="ghost"
+                                className="px-3 py-2 text-xs"
+                                onClick={() => removePoiFoodItemForm(foodItem.clientId)}
+                              >
+                                Bỏ món mới
+                              </Button>
+                            ) : null}
+                          </div>
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                              <label className="field-label">Tên món</label>
+                              <Input
+                                value={foodItem.name}
+                                onChange={(event) =>
+                                  updatePoiFoodItemForm(foodItem.clientId, {
+                                    name: event.target.value,
+                                  })
+                                }
+                                placeholder="Ví dụ: Bánh xèo tôm mực"
+                              />
+                            </div>
+                            <div>
+                              <label className="field-label">Khoảng giá</label>
+                              <Input
+                                value={foodItem.priceRange}
+                                onChange={(event) =>
+                                  updatePoiFoodItemForm(foodItem.clientId, {
+                                    priceRange: event.target.value,
+                                  })
+                                }
+                                placeholder="Ví dụ: 80.000 - 120.000đ"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                              <label className="field-label">Độ cay</label>
+                              <Select
+                                value={foodItem.spicyLevel}
+                                onChange={(event) =>
+                                  updatePoiFoodItemForm(foodItem.clientId, {
+                                    spicyLevel: event.target.value as FoodItem["spicyLevel"],
+                                  })
+                                }
+                              >
+                                <option value="mild">Mild</option>
+                                <option value="medium">Medium</option>
+                                <option value="hot">Hot</option>
+                              </Select>
+                            </div>
+                            <div className="rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-500">
+                                Trạng thái
+                              </p>
+                              <p className="mt-2 text-sm text-ink-700">
+                                {foodItem.id ? "Đang chỉnh sửa món hiện có" : "Món mới chưa lưu"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="field-label">Mô tả món ăn</label>
+                            <Textarea
+                              value={foodItem.description}
+                              onChange={(event) =>
+                                updatePoiFoodItemForm(foodItem.clientId, {
+                                  description: event.target.value,
+                                })
+                              }
+                              placeholder="Mô tả ngắn về nguyên liệu, hương vị hoặc điểm nổi bật."
+                            />
+                          </div>
+
+                          <ImageSourceField
+                            label={`Ảnh món: ${foodItem.name.trim() || `Món ăn ${index + 1}`}`}
+                            value={foodItem.imageUrl}
+                            onChange={(value) =>
+                              updatePoiFoodItemForm(foodItem.clientId, { imageUrl: value })
+                            }
+                            onUpload={(file) => uploadImageAsset(file, "images/food-items")}
+                            helperText="Upload ảnh mới để thay hình đại diện của món ăn."
+                            emptyText="Món này chưa có ảnh đại diện."
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-sand-200 bg-white px-4 py-3 text-sm text-ink-500">
+                      Chưa có món ăn nào trong form này. Bấm “Thêm món ăn” để tạo ngay trong lúc chỉnh sửa POI.
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="grid gap-5 md:grid-cols-2">
                 <div>
                   <label className="field-label">Nguồn audio</label>
@@ -1564,8 +1936,18 @@ export const PoisPage = () => {
             <Button variant="ghost" onClick={() => setModalOpen(false)}>
               Hủy
             </Button>
-            <Button type="submit" disabled={isSaving || isUploadingAudio}>
-              {isSaving ? "Đang lưu..." : isOwner ? (form.id ? "Gửi cập nhật để duyệt lại" : "Gửi duyệt POI") : form.id ? "Lưu cập nhật POI" : "Tạo POI"}
+            <Button type="submit" disabled={isSaving || isUploadingAudio || activeImageUploads > 0}>
+              {isSaving
+                ? "Đang lưu..."
+                : activeImageUploads > 0
+                  ? "Đợi upload ảnh..."
+                  : isOwner
+                    ? form.id
+                      ? "Gửi cập nhật để duyệt lại"
+                      : "Gửi duyệt POI"
+                    : form.id
+                      ? "Lưu cập nhật POI"
+                      : "Tạo POI"}
             </Button>
           </div>
         </form>

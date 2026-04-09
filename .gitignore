@@ -26,3 +26,4 @@ dist/
 
 apps/backend-api/appsettings.Development.json
 apps/backend-api/appsettings.Local.json
+.android-settings/appsettings.json

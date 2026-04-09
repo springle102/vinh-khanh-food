@@ -5,7 +5,6 @@ import type {
   EndUserProfile,
   FoodItem,
   GeocodingLocation,
-  CustomerStatus,
   LanguageCode,
   MediaAsset,
   Poi,
@@ -72,6 +71,8 @@ export class ApiError extends Error {
 
 const ABSOLUTE_URL_PATTERN = /^[a-z]+:\/\//i;
 const INVALID_RESPONSE_MESSAGE = "Backend trả về phản hồi không hợp lệ.";
+const NETWORK_ERROR_MESSAGE =
+  "Không thể kết nối tới backend. Hãy kiểm tra API base URL, CORS, hoặc tránh dùng localhost nếu web đang mở từ cổng hay thiết bị khác.";
 const SESSION_KEY = "vinh-khanh-admin-web:session";
 
 const normalizeConfiguredBaseUrl = (value: string | undefined) => {
@@ -100,7 +101,7 @@ const resolveConfiguredBasePath = (baseUrl: string) => {
 const API_BASE_URL = normalizeConfiguredBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const API_BASE_PATH = resolveConfiguredBasePath(API_BASE_URL);
 
-const readScopeParams = () => {
+const readSession = () => {
   if (typeof window === "undefined") {
     return null;
   }
@@ -111,36 +112,28 @@ const readScopeParams = () => {
   }
 
   try {
-    const parsed = JSON.parse(rawValue) as Partial<{ userId: string; role: AdminUser["role"] }>;
-    if (!parsed.userId || !parsed.role) {
+    const parsed = JSON.parse(rawValue) as Partial<{ accessToken: string }>;
+    if (!parsed.accessToken) {
       return null;
     }
 
     return {
-      userId: parsed.userId,
-      role: parsed.role,
+      accessToken: parsed.accessToken,
     };
   } catch {
     return null;
   }
 };
 
-const appendScopeParams = (path: string) => {
-  const scope = readScopeParams();
-  if (!scope || ABSOLUTE_URL_PATTERN.test(path)) {
-    return path;
-  }
-
-  const url = new URL(path.startsWith("/") ? path : `/${path}`, "http://localhost");
-  url.searchParams.set("userId", scope.userId);
-  url.searchParams.set("role", scope.role);
-  return `${url.pathname}${url.search}`;
-};
-
 const buildHeaders = (headers?: HeadersInit) => {
   const nextHeaders = new Headers(headers);
   if (!nextHeaders.has("Accept")) {
     nextHeaders.set("Accept", "application/json");
+  }
+
+  const session = readSession();
+  if (session?.accessToken && !nextHeaders.has("Authorization")) {
+    nextHeaders.set("Authorization", `Bearer ${session.accessToken}`);
   }
 
   return nextHeaders;
@@ -187,11 +180,21 @@ const parseResponse = async <T>(response: Response) => {
 };
 
 const request = async <T>(path: string, init?: RequestInit) => {
-  const response = await fetch(resolveApiUrl(path), {
-    ...init,
-    cache: "no-store",
-    headers: buildHeaders(init?.headers),
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(resolveApiUrl(path), {
+      ...init,
+      cache: "no-store",
+      headers: buildHeaders(init?.headers),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
+
+    throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
+  }
 
   return parseResponse<T>(response);
 };
@@ -215,7 +218,7 @@ export const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Yêu cầu đến backend thất bại.";
 
 export const adminApi = {
-  getBootstrap: () => request<AdminDataState>(appendScopeParams("/api/v1/bootstrap")),
+  getBootstrap: () => request<AdminDataState>("/api/v1/bootstrap"),
   getLoginOptions: (portal?: AuthPortal) => {
     const query = portal ? `?portal=${encodeURIComponent(portal)}` : "";
     return request<LoginAccountOption[]>(`/api/v1/auth/login-options${query}`);
@@ -244,9 +247,9 @@ export const adminApi = {
   forwardGeocode: (query: string, signal?: AbortSignal) =>
     request<GeocodingLocation>(`/api/v1/geocoding/search?q=${encodeURIComponent(query)}`, { signal }),
   getPoiById: (poiId: string, signal?: AbortSignal) =>
-    request<Poi>(appendScopeParams(`/api/v1/pois/${poiId}`), { signal }),
+    request<Poi>(`/api/v1/pois/${poiId}`, { signal }),
   getPoiDetail: (poiId: string, signal?: AbortSignal) =>
-    request<PoiDetail>(appendScopeParams(`/api/v1/pois/${poiId}/detail`), { signal }),
+    request<PoiDetail>(`/api/v1/pois/${poiId}/detail`, { signal }),
   getPoiNarration: (
     poiId: string,
     languageCode: LanguageCode,
@@ -258,10 +261,9 @@ export const adminApi = {
       voiceType,
     });
 
-    return request<ResolvedPoiNarration>(
-      appendScopeParams(`/api/v1/pois/${poiId}/narration?${query.toString()}`),
-      { signal },
-    );
+    return request<ResolvedPoiNarration>(`/api/v1/pois/${poiId}/narration?${query.toString()}`, {
+      signal,
+    });
   },
   savePoi: (poi: {
     id?: string;
@@ -304,15 +306,7 @@ export const adminApi = {
       account,
     ),
   getEndUser: (userId: string) =>
-    request<EndUserProfile>(appendScopeParams(`/api/v1/users/${userId}`)),
-  saveEndUserStatus: (
-    userId: string,
-    payload: {
-      status: CustomerStatus;
-      actorName: string;
-      actorRole: AdminUser["role"];
-    },
-  ) => jsonRequest<EndUserProfile>(`/api/v1/users/${userId}/status`, "PATCH", payload),
+    request<EndUserProfile>(`/api/v1/users/${userId}`),
   savePromotion: (promotion: {
     id?: string;
     poiId: string;

@@ -7,6 +7,8 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed partial class AdminDataRepository
 {
+    private const string SyncSchemaVersion = "asset-url-absolute-v1";
+
     public DataSyncState GetSyncState()
     {
         using var connection = OpenConnection();
@@ -15,7 +17,32 @@ public sealed partial class AdminDataRepository
 
     private DataSyncState GetSyncState(SqlConnection connection, SqlTransaction? transaction)
     {
-        const string sql = """
+        var useSeparatedAuditLogs = HasAdminAuditLogTable(connection, transaction);
+        var hasLegacyAuditLogs = HasLegacyAuditLogTable(connection, transaction);
+        var useUserActivityLogs = HasUserActivityLogTable(connection, transaction);
+
+        var auditLogCountSql = useSeparatedAuditLogs
+            ? "(SELECT COUNT(*) FROM dbo.AdminAuditLogs) AS AuditLogCount,"
+            : hasLegacyAuditLogs
+                ? "(SELECT COUNT(*) FROM dbo.AuditLogs legacy WHERE UPPER(COALESCE(legacy.ActorRole, N'')) IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')) AS AuditLogCount,"
+                : "CAST(0 AS INT) AS AuditLogCount,";
+        var userActivityCountSql = useUserActivityLogs
+            ? "(SELECT COUNT(*) FROM dbo.UserActivityLogs) AS UserActivityLogCount,"
+            : hasLegacyAuditLogs
+                ? "(SELECT COUNT(*) FROM dbo.AuditLogs legacy WHERE UPPER(COALESCE(legacy.ActorRole, N'')) NOT IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')) AS UserActivityLogCount,"
+                : "CAST(0 AS INT) AS UserActivityLogCount,";
+        var latestAuditSql = useSeparatedAuditLogs
+            ? "(SELECT MAX(CreatedAt) FROM dbo.AdminAuditLogs) AS LatestAuditAt,"
+            : hasLegacyAuditLogs
+                ? "(SELECT MAX(CreatedAt) FROM dbo.AuditLogs legacy WHERE UPPER(COALESCE(legacy.ActorRole, N'')) IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')) AS LatestAuditAt,"
+                : "CAST(NULL AS DATETIMEOFFSET(7)) AS LatestAuditAt,";
+        var latestUserActivitySql = useUserActivityLogs
+            ? "(SELECT MAX(CreatedAt) FROM dbo.UserActivityLogs) AS LatestUserActivityAt"
+            : hasLegacyAuditLogs
+                ? "(SELECT MAX(CreatedAt) FROM dbo.AuditLogs legacy WHERE UPPER(COALESCE(legacy.ActorRole, N'')) NOT IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')) AS LatestUserActivityAt"
+                : "CAST(NULL AS DATETIMEOFFSET(7)) AS LatestUserActivityAt";
+
+        var sql = $"""
             SELECT
                 (SELECT COUNT(*) FROM dbo.CustomerUsers) AS CustomerUserCount,
                 (SELECT COUNT(*) FROM dbo.Categories) AS CategoryCount,
@@ -29,7 +56,8 @@ public sealed partial class AdminDataRepository
                 (SELECT COUNT(*) FROM dbo.Reviews) AS ReviewCount,
                 (SELECT COUNT(*) FROM dbo.ViewLogs) AS ViewLogCount,
                 (SELECT COUNT(*) FROM dbo.AudioListenLogs) AS AudioListenLogCount,
-                (SELECT COUNT(*) FROM dbo.AuditLogs) AS AuditLogCount,
+                {auditLogCountSql}
+                {userActivityCountSql}
                 (SELECT MAX(COALESCE(LastActiveAt, CreatedAt)) FROM dbo.CustomerUsers) AS LatestCustomerUserAt,
                 (SELECT MAX(UpdatedAt) FROM dbo.Pois) AS LatestPoiAt,
                 (SELECT MAX(UpdatedAt) FROM dbo.PoiTranslations) AS LatestTranslationAt,
@@ -39,7 +67,8 @@ public sealed partial class AdminDataRepository
                 (SELECT MAX(CreatedAt) FROM dbo.Reviews) AS LatestReviewAt,
                 (SELECT MAX(ViewedAt) FROM dbo.ViewLogs) AS LatestViewLogAt,
                 (SELECT MAX(ListenedAt) FROM dbo.AudioListenLogs) AS LatestAudioListenAt,
-                (SELECT MAX(CreatedAt) FROM dbo.AuditLogs) AS LatestAuditAt;
+                {latestAuditSql}
+                {latestUserActivitySql};
             """;
 
         using var command = CreateCommand(connection, transaction, sql);
@@ -61,6 +90,7 @@ public sealed partial class AdminDataRepository
         var latestViewLogAt = ReadNullableDateTimeOffset(reader, "LatestViewLogAt");
         var latestAudioListenAt = ReadNullableDateTimeOffset(reader, "LatestAudioListenAt");
         var latestAuditAt = ReadNullableDateTimeOffset(reader, "LatestAuditAt");
+        var latestUserActivityAt = ReadNullableDateTimeOffset(reader, "LatestUserActivityAt");
         var generatedAt = DateTimeOffset.UtcNow;
         var lastChangedAt =
             new[]
@@ -75,6 +105,7 @@ public sealed partial class AdminDataRepository
                 latestViewLogAt,
                 latestAudioListenAt,
                 latestAuditAt,
+                latestUserActivityAt,
             }
             .Where(value => value.HasValue)
             .Select(value => value!.Value)
@@ -83,6 +114,7 @@ public sealed partial class AdminDataRepository
 
         var versionParts = new[]
         {
+            $"schema={SyncSchemaVersion}",
             $"customers={ReadInt(reader, "CustomerUserCount")}",
             $"categories={ReadInt(reader, "CategoryCount")}",
             $"pois={ReadInt(reader, "PoiCount")}",
@@ -96,6 +128,7 @@ public sealed partial class AdminDataRepository
             $"viewLogs={ReadInt(reader, "ViewLogCount")}",
             $"audioListens={ReadInt(reader, "AudioListenLogCount")}",
             $"auditLogs={ReadInt(reader, "AuditLogCount")}",
+            $"userActivityLogs={ReadInt(reader, "UserActivityLogCount")}",
             $"latestCustomer={FormatVersionPart(latestCustomerUserAt)}",
             $"latestPoi={FormatVersionPart(latestPoiAt)}",
             $"latestTranslation={FormatVersionPart(latestTranslationAt)}",
@@ -106,6 +139,7 @@ public sealed partial class AdminDataRepository
             $"latestView={FormatVersionPart(latestViewLogAt)}",
             $"latestListen={FormatVersionPart(latestAudioListenAt)}",
             $"latestAudit={FormatVersionPart(latestAuditAt)}",
+            $"latestUserActivity={FormatVersionPart(latestUserActivityAt)}",
         };
 
         return new DataSyncState(

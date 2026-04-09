@@ -142,16 +142,7 @@ public sealed class AppSettingsService : IAppSettingsService
     }
 
     private static string ResolveApiBaseUrl(MobileRuntimeAppSettings runtimeSettings)
-    {
-        var platformKey = DeviceInfo.Current.Platform.ToString();
-        if (runtimeSettings.PlatformApiBaseUrls.TryGetValue(platformKey, out var platformApiBaseUrl) &&
-            !string.IsNullOrWhiteSpace(platformApiBaseUrl))
-        {
-            return platformApiBaseUrl;
-        }
-
-        return runtimeSettings.ApiBaseUrl ?? string.Empty;
-    }
+        => MobileApiEndpointHelper.ResolveBaseUrl(runtimeSettings.ApiBaseUrl, runtimeSettings.PlatformApiBaseUrls);
 
     private static bool IsLegacyDefaultApiBaseUrl(string apiBaseUrl)
     {

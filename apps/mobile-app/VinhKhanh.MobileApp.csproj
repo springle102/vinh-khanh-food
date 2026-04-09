@@ -13,8 +13,8 @@
 
     <ApplicationTitle>Vinh Khanh Food Street</ApplicationTitle>
     <ApplicationId>com.vinhkhanh.foodguide.mobile</ApplicationId>
-    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0.1</ApplicationDisplayVersion>
+    <ApplicationVersion>2</ApplicationVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
@@ -35,6 +35,11 @@
     <MauiFont Include="Resources\Fonts\*" />
     <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
     <MauiAsset Include="Resources\Localization\**" LogicalName="Localization\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' and Exists('$(AppSettingsDirectory)appsettings.json')">
+    <MauiAsset Remove="Resources\Raw\appsettings.json" />
+    <MauiAsset Include="$(AppSettingsDirectory)appsettings.json" LogicalName="appsettings.json" />
   </ItemGroup>
 
   <ItemGroup>

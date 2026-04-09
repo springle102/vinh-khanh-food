@@ -9,24 +9,26 @@ namespace VinhKhanh.BackendApi.Controllers;
 [Route("api/v1")]
 public sealed class BootstrapController(
     AdminDataRepository repository,
+    AdminRequestContextResolver adminRequestContextResolver,
+    ResponseUrlNormalizer responseUrlNormalizer,
     ILogger<BootstrapController> logger) : ControllerBase
 {
     [HttpGet("bootstrap")]
     public ActionResult<ApiResponse<AdminBootstrapResponse>> GetBootstrap(
-        [FromQuery] string? userId,
-        [FromQuery] string? role,
         [FromQuery] string? customerUserId)
     {
-        var bootstrap = repository.GetBootstrap(userId, role, customerUserId);
+        var admin = adminRequestContextResolver.TryGetCurrentAdmin();
+        var bootstrap = responseUrlNormalizer.Normalize(
+            repository.GetBootstrap(admin, customerUserId));
         if (bootstrap.SyncState is not null)
         {
             Response.Headers["X-Data-Version"] = bootstrap.SyncState.Version;
         }
 
         logger.LogDebug(
-            "Bootstrap served for scope userId={UserId}, role={Role}, customerUserId={CustomerUserId}, version={Version}",
-            userId,
-            role,
+            "Bootstrap served for adminUserId={AdminUserId}, role={Role}, customerUserId={CustomerUserId}, version={Version}",
+            admin?.UserId,
+            admin?.Role,
             customerUserId,
             bootstrap.SyncState?.Version);
 
@@ -43,7 +45,8 @@ public sealed class BootstrapController(
 
     [HttpGet("dashboard/summary")]
     public ActionResult<ApiResponse<DashboardSummaryResponse>> GetDashboardSummary()
-        => Ok(ApiResponse<DashboardSummaryResponse>.Ok(repository.GetDashboardSummary()));
+        => Ok(ApiResponse<DashboardSummaryResponse>.Ok(
+            repository.GetDashboardSummary(adminRequestContextResolver.RequireAuthenticatedAdmin())));
 
     [HttpGet("categories")]
     public ActionResult<ApiResponse<IReadOnlyList<PoiCategory>>> GetCategories()
@@ -51,13 +54,18 @@ public sealed class BootstrapController(
 
     [HttpGet("customer-users")]
     public ActionResult<ApiResponse<IReadOnlyList<CustomerUser>>> GetCustomerUsers()
-        => Ok(ApiResponse<IReadOnlyList<CustomerUser>>.Ok(repository.GetCustomerUsers()));
+    {
+        adminRequestContextResolver.RequireSuperAdmin();
+        return Ok(ApiResponse<IReadOnlyList<CustomerUser>>.Ok(repository.GetCustomerUsers()));
+    }
 
     [HttpGet("analytics/view-logs")]
     public ActionResult<ApiResponse<IReadOnlyList<ViewLog>>> GetViewLogs()
-        => Ok(ApiResponse<IReadOnlyList<ViewLog>>.Ok(repository.GetViewLogs()));
+        => Ok(ApiResponse<IReadOnlyList<ViewLog>>.Ok(
+            repository.GetViewLogs(adminRequestContextResolver.RequireAuthenticatedAdmin())));
 
     [HttpGet("analytics/audio-listen-logs")]
     public ActionResult<ApiResponse<IReadOnlyList<AudioListenLog>>> GetAudioListenLogs()
-        => Ok(ApiResponse<IReadOnlyList<AudioListenLog>>.Ok(repository.GetAudioListenLogs()));
+        => Ok(ApiResponse<IReadOnlyList<AudioListenLog>>.Ok(
+            repository.GetAudioListenLogs(adminRequestContextResolver.RequireAuthenticatedAdmin())));
 }

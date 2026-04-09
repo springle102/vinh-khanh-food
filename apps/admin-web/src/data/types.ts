@@ -1,18 +1,17 @@
 export type LanguageCode = "vi" | "en" | "zh-CN" | "ko" | "ja";
 export type RegionVoice = "north" | "central" | "south" | "standard";
 export type Role = "SUPER_ADMIN" | "PLACE_OWNER";
+export type AuditActorRole = Role | "SYSTEM";
 export type UserStatus = "active" | "locked";
-export type CustomerStatus = "active" | "inactive" | "banned";
-export type EndUserStatusCode = "ACTIVE" | "INACTIVE" | "BANNED";
-export type ContentStatus = "draft" | "pending" | "published" | "archived";
+export type ContentStatus = "draft" | "pending" | "published" | "archived" | "deleted";
 export type EntityType = "poi" | "food_item" | "route";
 export type AudioSourceType = "uploaded" | "tts";
 export type AudioStatus = "ready" | "processing" | "missing";
 export type MediaType = "image" | "video";
-export type PromotionStatus = "upcoming" | "active" | "expired";
+export type PromotionStatus = "upcoming" | "active" | "expired" | "hidden" | "deleted";
 export type ReviewStatus = "pending" | "approved" | "hidden";
 export type DeviceType = "ios" | "android" | "web";
-export type TtsProvider = "google_translate";
+export type TtsProvider = "elevenlabs";
 
 export interface GeocodingLocation {
   address: string;
@@ -42,9 +41,6 @@ export interface CustomerUser {
   email: string;
   phone: string;
   password: string;
-  status: CustomerStatus;
-  isActive: boolean;
-  isBanned: boolean;
   preferredLanguage: LanguageCode;
   isPremium: boolean;
   favoritePoiIds: string[];
@@ -61,13 +57,10 @@ export interface EndUserProfile {
   phone: string;
   password: string;
   username: string | null;
-  isActive: boolean;
-  isBanned: boolean;
   defaultLanguage: LanguageCode;
   country: string;
   createdAt: string;
   lastActiveAt: string | null;
-  status: CustomerStatus;
 }
 
 export interface PoiCategory {
@@ -188,6 +181,8 @@ export interface TourRoute {
   isFeatured: boolean;
   stopPoiIds: string[];
   isActive: boolean;
+  isSystemRoute: boolean;
+  ownerUserId: string | null;
   updatedBy: string;
   updatedAt: string;
 }
@@ -231,10 +226,17 @@ export interface AudioListenLog {
 
 export interface AuditLog {
   id: string;
+  actorId: string;
   actorName: string;
-  actorRole: Role;
+  actorRole: AuditActorRole;
+  actorType: "ADMIN";
   action: string;
-  target: string;
+  module: string;
+  targetId: string;
+  targetSummary: string;
+  beforeSummary: string | null;
+  afterSummary: string | null;
+  sourceApp: string;
   createdAt: string;
 }
 

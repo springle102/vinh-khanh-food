@@ -9,6 +9,7 @@ namespace VinhKhanh.BackendApi.Controllers;
 [Route("api/v1/pois")]
 public sealed class PoisController(
     AdminDataRepository repository,
+    AdminRequestContextResolver adminRequestContextResolver,
     PoiNarrationService poiNarrationService,
     ILogger<PoisController> logger) : ControllerBase
 {
@@ -17,11 +18,10 @@ public sealed class PoisController(
         [FromQuery] string? status,
         [FromQuery] string? categoryId,
         [FromQuery] bool? featured,
-        [FromQuery] string? search,
-        [FromQuery] string? userId,
-        [FromQuery] string? role)
+        [FromQuery] string? search)
     {
-        IEnumerable<Poi> query = repository.GetPois(userId, role);
+        var actor = adminRequestContextResolver.TryGetCurrentAdmin();
+        IEnumerable<Poi> query = repository.GetPois(actor);
 
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -50,34 +50,30 @@ public sealed class PoisController(
     }
 
     [HttpGet("{id}")]
-    public ActionResult<ApiResponse<Poi>> GetPoiById(
-        string id,
-        [FromQuery] string? userId,
-        [FromQuery] string? role)
+    public ActionResult<ApiResponse<Poi>> GetPoiById(string id)
     {
-        var poi = repository.GetPois(userId, role).FirstOrDefault(item => item.Id == id);
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var poi = repository.GetPois(actor).FirstOrDefault(item => item.Id == id);
         return poi is null
-            ? NotFound(ApiResponse<Poi>.Fail("Không tìm thấy POI."))
+            ? NotFound(ApiResponse<Poi>.Fail("Khong tim thay POI."))
             : Ok(ApiResponse<Poi>.Ok(poi));
     }
 
     [HttpGet("{id}/detail")]
-    public ActionResult<ApiResponse<PoiDetailResponse>> GetPoiDetailById(
-        string id,
-        [FromQuery] string? userId,
-        [FromQuery] string? role)
+    public ActionResult<ApiResponse<PoiDetailResponse>> GetPoiDetailById(string id)
     {
-        var poi = repository.GetPois(userId, role).FirstOrDefault(item => item.Id == id);
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var poi = repository.GetPois(actor).FirstOrDefault(item => item.Id == id);
         if (poi is null)
         {
-            return NotFound(ApiResponse<PoiDetailResponse>.Fail("Không tìm thấy POI."));
+            return NotFound(ApiResponse<PoiDetailResponse>.Fail("Khong tim thay POI."));
         }
 
-        var translations = repository.GetTranslations()
+        var translations = repository.GetTranslations(actor)
             .Where(item => item.EntityType == "poi" && item.EntityId == id)
             .OrderByDescending(item => item.UpdatedAt)
             .ToList();
-        var audioGuides = repository.GetAudioGuides()
+        var audioGuides = repository.GetAudioGuides(actor)
             .Where(item => item.EntityType == "poi" && item.EntityId == id)
             .OrderByDescending(item => item.UpdatedAt)
             .ToList();
@@ -93,18 +89,18 @@ public sealed class PoisController(
         string id,
         [FromQuery] string? languageCode,
         [FromQuery] string? voiceType,
-        [FromQuery] string? userId,
-        [FromQuery] string? role,
         [FromQuery] string? customerUserId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(languageCode))
         {
-            return BadRequest(ApiResponse<PoiNarrationResponse>.Fail("LanguageCode là bắt buộc."));
+            return BadRequest(ApiResponse<PoiNarrationResponse>.Fail("LanguageCode la bat buoc."));
         }
 
+        var actor = adminRequestContextResolver.TryGetCurrentAdmin();
         var accessDecision = repository.EvaluateCustomerLanguageAccess(customerUserId, languageCode);
-        if (!accessDecision.IsAllowed)
+        var bypassPremiumGate = actor is not null || string.IsNullOrWhiteSpace(customerUserId);
+        if (!accessDecision.IsAllowed && !(bypassPremiumGate && accessDecision.RequiresPremium))
         {
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<PoiNarrationResponse>.Fail(accessDecision.Message));
         }
@@ -113,38 +109,49 @@ public sealed class PoisController(
             id,
             accessDecision.LanguageCode,
             voiceType,
-            userId,
-            role,
+            actor,
             cancellationToken);
         return narration is null
-            ? NotFound(ApiResponse<PoiNarrationResponse>.Fail("Không tìm thấy POI."))
+            ? NotFound(ApiResponse<PoiNarrationResponse>.Fail("Khong tim thay POI."))
             : Ok(ApiResponse<PoiNarrationResponse>.Ok(narration));
     }
 
     [HttpPost]
     public ActionResult<ApiResponse<Poi>> CreatePoi([FromBody] PoiUpsertRequest request)
     {
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+
         logger.LogInformation(
             "CreatePoi request received. requestedPoiId={RequestedPoiId}, slug={Slug}, address={Address}, tags={Tags}, actorRole={ActorRole}, actorUserId={ActorUserId}",
             request.RequestedId,
             request.Slug,
             request.Address,
             string.Join(", ", request.Tags ?? []),
-            request.ActorRole,
-            request.ActorUserId);
+            actor.Role,
+            actor.UserId);
 
         if (string.IsNullOrWhiteSpace(request.Slug) || string.IsNullOrWhiteSpace(request.Address))
         {
-            return BadRequest(ApiResponse<Poi>.Fail("Slug và địa chỉ POI là bắt buộc."));
+            return BadRequest(ApiResponse<Poi>.Fail("Slug va dia chi POI la bat buoc."));
         }
 
-        var saved = repository.SavePoi(null, request);
-        return CreatedAtAction(nameof(GetPoiById), new { id = saved.Id }, ApiResponse<Poi>.Ok(saved, "Tạo POI thành công."));
+        var sanitizedRequest = request with
+        {
+            OwnerUserId = actor.IsPlaceOwner ? actor.UserId : request.OwnerUserId,
+            UpdatedBy = actor.Name,
+            ActorRole = actor.Role,
+            ActorUserId = actor.UserId
+        };
+
+        var saved = repository.SavePoi(null, sanitizedRequest, actor);
+        return CreatedAtAction(nameof(GetPoiById), new { id = saved.Id }, ApiResponse<Poi>.Ok(saved, "Tao POI thanh cong."));
     }
 
     [HttpPut("{id}")]
     public ActionResult<ApiResponse<Poi>> UpdatePoi(string id, [FromBody] PoiUpsertRequest request)
     {
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+
         logger.LogInformation(
             "UpdatePoi request received. poiId={PoiId}, requestedPoiId={RequestedPoiId}, slug={Slug}, address={Address}, tags={Tags}, actorRole={ActorRole}, actorUserId={ActorUserId}",
             id,
@@ -152,25 +159,33 @@ public sealed class PoisController(
             request.Slug,
             request.Address,
             string.Join(", ", request.Tags ?? []),
-            request.ActorRole,
-            request.ActorUserId);
+            actor.Role,
+            actor.UserId);
 
-        var existing = repository.GetPois().Any(item => item.Id == id);
+        var existing = repository.GetPois(actor).Any(item => item.Id == id);
         if (!existing)
         {
-            return NotFound(ApiResponse<Poi>.Fail("Không tìm thấy POI."));
+            return NotFound(ApiResponse<Poi>.Fail("Khong tim thay POI."));
         }
 
-        var saved = repository.SavePoi(id, request);
-        return Ok(ApiResponse<Poi>.Ok(saved, "Cập nhật POI thành công."));
+        var sanitizedRequest = request with
+        {
+            OwnerUserId = actor.IsPlaceOwner ? actor.UserId : request.OwnerUserId,
+            UpdatedBy = actor.Name,
+            ActorRole = actor.Role,
+            ActorUserId = actor.UserId
+        };
+
+        var saved = repository.SavePoi(id, sanitizedRequest, actor);
+        return Ok(ApiResponse<Poi>.Ok(saved, "Cap nhat POI thanh cong."));
     }
 
     [HttpDelete("{id}")]
     public ActionResult<ApiResponse<string>> DeletePoi(string id)
     {
-        var deleted = repository.DeletePoi(id);
+        var deleted = repository.DeletePoi(id, adminRequestContextResolver.RequireAuthenticatedAdmin());
         return deleted
-            ? Ok(ApiResponse<string>.Ok(id, "Xóa POI thành công."))
-            : NotFound(ApiResponse<string>.Fail("Không tìm thấy POI."));
+            ? Ok(ApiResponse<string>.Ok(id, "Xoa POI thanh cong."))
+            : NotFound(ApiResponse<string>.Fail("Khong tim thay POI."));
     }
 }

@@ -63,6 +63,17 @@ public sealed partial class AdminDataRepository
     {
         setting.DefaultLanguage = PremiumAccessCatalog.NormalizeLanguageCode(setting.DefaultLanguage);
         setting.FallbackLanguage = PremiumAccessCatalog.NormalizeLanguageCode(setting.FallbackLanguage);
+        var originalTtsProvider = setting.TtsProvider;
+        setting.TtsProvider = NormalizeTtsProvider(setting.TtsProvider);
+
+        if (logWarnings &&
+            !string.Equals(originalTtsProvider, setting.TtsProvider, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "TTS provider setting '{OriginalTtsProvider}' is no longer supported. Falling back to {NormalizedTtsProvider}.",
+                originalTtsProvider,
+                setting.TtsProvider);
+        }
 
         if (setting.PremiumUnlockPriceUsd <= 0)
         {
@@ -179,4 +190,9 @@ public sealed partial class AdminDataRepository
 
         return actual.SetEquals(expected);
     }
+
+    private static string NormalizeTtsProvider(string? value)
+        => string.Equals(value?.Trim(), "elevenlabs", StringComparison.OrdinalIgnoreCase)
+            ? "elevenlabs"
+            : "elevenlabs";
 }

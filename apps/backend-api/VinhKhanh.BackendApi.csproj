@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>VinhKhanh.BackendApi</RootNamespace>
+    <UserSecretsId>VinhKhanh.BackendApi-5a02726f-10e8-4cbf-ac59-1be088f5b89c</UserSecretsId>
     <UseAppHost>false</UseAppHost>
     <SpaRoot>..\admin-web\</SpaRoot>
     <SpaProxyServerUrl>http://localhost:5173</SpaProxyServerUrl>

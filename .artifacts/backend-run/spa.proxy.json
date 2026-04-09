@@ -3,7 +3,7 @@
 "ServerUrl": "http://localhost:5173",
 "RedirectUrl": "",
 "LaunchCommand": "npm.cmd run dev",
-"WorkingDirectory": "d:\\vinh-khanh-food\\apps\\backend-api\\..\\admin-web\\",
+"WorkingDirectory": "D:\\vinh-khanh-food\\apps\\backend-api\\..\\admin-web\\",
 "MaxTimeoutInSeconds": "120",
 "KeepRunning": "false"
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdminDataState, AudioGuide } from "../../data/types";
 import {
-  buildGoogleTtsAudioUrls,
+  buildTtsAudioUrls,
+  fetchTtsPlaybackUrls,
   hasValidAudioUrl,
   resolvePoiNarration,
 } from "../../lib/narration";
@@ -35,6 +36,12 @@ export const useNarrationPreview = (state: AdminDataState) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const requestIdRef = useRef(0);
   const resolveAbortRef = useRef<AbortController | null>(null);
+  const generatedTtsObjectUrlsRef = useRef<string[]>([]);
+
+  const revokeGeneratedTtsObjectUrls = useCallback(() => {
+    generatedTtsObjectUrlsRef.current.forEach((value) => URL.revokeObjectURL(value));
+    generatedTtsObjectUrlsRef.current = [];
+  }, []);
 
   const resetAudioElement = useCallback(() => {
     audioRef.current?.pause();
@@ -46,7 +53,8 @@ export const useNarrationPreview = (state: AdminDataState) => {
       audioRef.current.onerror = null;
       audioRef.current = null;
     }
-  }, []);
+    revokeGeneratedTtsObjectUrls();
+  }, [revokeGeneratedTtsObjectUrls]);
 
   const stopPreview = useCallback((message = "") => {
     requestIdRef.current += 1;
@@ -147,7 +155,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
           kind,
           message:
             kind === "tts"
-              ? "Không thể phát bản xem thử Google Translate TTS."
+              ? "Không thể phát bản xem thử ElevenLabs TTS."
               : "Không thể phát file audio từ URL hiện tại.",
         });
       };
@@ -157,7 +165,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
     [resetAudioElement],
   );
 
-  const playGoogleTts = useCallback(
+  const playTtsPreview = useCallback(
     async ({
       audioGuideId,
       text,
@@ -171,28 +179,42 @@ export const useNarrationPreview = (state: AdminDataState) => {
       fallbackMessage?: string | null;
       requestId: number;
     }) => {
-      const audioUrls = buildGoogleTtsAudioUrls(text, languageCode);
+      const audioUrls = buildTtsAudioUrls(text, languageCode);
       if (audioUrls.length === 0) {
         setPreviewState({
           audioGuideId,
           status: "error",
           kind: "tts",
-          message: "Không có nội dung hợp lệ để tạo bản xem thử Google Translate TTS.",
+          message: "Không có nội dung hợp lệ để tạo bản xem thử ElevenLabs TTS.",
         });
         return;
       }
 
+      revokeGeneratedTtsObjectUrls();
+      const preparedTtsAudio = await fetchTtsPlaybackUrls(audioUrls);
+      if (preparedTtsAudio.error) {
+        setPreviewState({
+          audioGuideId,
+          status: "error",
+          kind: "tts",
+          message: preparedTtsAudio.error,
+        });
+        return;
+      }
+
+      generatedTtsObjectUrlsRef.current = [...preparedTtsAudio.audioUrls];
+
       await playAudioSequence({
         audioGuideId,
-        audioUrls,
+        audioUrls: preparedTtsAudio.audioUrls,
         kind: "tts",
         requestId,
         startMessage: fallbackMessage
-          ? `Đang phát Google Translate TTS. ${fallbackMessage}`
-          : "Đang phát Google Translate TTS.",
+          ? `Đang phát ElevenLabs TTS. ${fallbackMessage}`
+          : "Đang phát ElevenLabs TTS.",
       });
     },
-    [playAudioSequence],
+    [fetchTtsPlaybackUrls, playAudioSequence, revokeGeneratedTtsObjectUrls],
   );
 
   const previewAudioGuide = useCallback(
@@ -234,7 +256,10 @@ export const useNarrationPreview = (state: AdminDataState) => {
           narrationText = resolved.ttsInputText;
           effectiveLanguage = resolved.effectiveLanguageCode;
           fallbackMessage = resolved.fallbackMessage;
-          resolvedAudioUrl = resolved.audioGuide?.audioUrl?.trim() ?? resolvedAudioUrl;
+          resolvedAudioUrl =
+            resolved.audioGuide?.sourceType === "uploaded"
+              ? resolved.audioGuide.audioUrl?.trim() ?? resolvedAudioUrl
+              : resolvedAudioUrl;
         } catch (error) {
           if (error instanceof DOMException && error.name === "AbortError") {
             return;
@@ -242,7 +267,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
         }
       }
 
-      const playGoogleTtsAudio = async () => {
+      const playTtsAudio = async () => {
         if (!narrationText) {
           setPreviewState({
             audioGuideId: guide.id,
@@ -254,7 +279,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
         }
 
         try {
-          await playGoogleTts({
+          await playTtsPreview({
             audioGuideId: guide.id,
             text: narrationText,
             languageCode: effectiveLanguage,
@@ -279,12 +304,12 @@ export const useNarrationPreview = (state: AdminDataState) => {
               ? `Đang phát file audio. ${fallbackMessage}`
               : "Đang phát file audio đã tải lên.",
             onPlaybackError: () => {
-              void playGoogleTtsAudio();
+              void playTtsAudio();
             },
           });
           return;
         } catch {
-          await playGoogleTtsAudio();
+          await playTtsAudio();
           return;
         }
       }
@@ -300,21 +325,21 @@ export const useNarrationPreview = (state: AdminDataState) => {
               ? `Đang phát audio của POI. ${fallbackMessage}`
               : "Đang phát audio của POI.",
             onPlaybackError: () => {
-              void playGoogleTtsAudio();
+              void playTtsAudio();
             },
           });
           return;
         } catch {
-          await playGoogleTtsAudio();
+          await playTtsAudio();
           return;
         }
       }
 
-      await playGoogleTtsAudio();
+      await playTtsAudio();
     },
     [
       playAudioSequence,
-      playGoogleTts,
+      playTtsPreview,
       previewState.audioGuideId,
       previewState.status,
       state,

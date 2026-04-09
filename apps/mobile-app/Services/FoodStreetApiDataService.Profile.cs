@@ -8,6 +8,60 @@ namespace VinhKhanh.MobileApp.Services;
 
 public sealed partial class FoodStreetApiDataService
 {
+    public async Task<UserProfileCard?> LoginCustomerAsync(string identifier, string password)
+    {
+        var normalizedIdentifier = identifier?.Trim() ?? string.Empty;
+        var normalizedPassword = password?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedIdentifier) || string.IsNullOrWhiteSpace(normalizedPassword))
+        {
+            return null;
+        }
+
+        var client = await GetClientAsync();
+        if (client is null)
+        {
+            throw new MobileBackendConnectionException("Mobile app chua cau hinh API base URL.");
+        }
+
+        try
+        {
+            using var response = await client.PostAsJsonAsync(
+                "api/v1/customer-users/login",
+                new
+                {
+                    Identifier = normalizedIdentifier,
+                    Password = normalizedPassword
+                },
+                JsonOptions);
+            var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<CustomerUserDto>>(JsonOptions);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                return null;
+            }
+
+            if (!response.IsSuccessStatusCode || envelope?.Success != true || envelope.Data is null)
+            {
+                throw new InvalidOperationException(envelope?.Message ?? "Khong the dang nhap tai khoan luc nay.");
+            }
+
+            SaveCurrentCustomerId(envelope.Data.Id);
+            InvalidateBootstrapSnapshot();
+            await EnsureAllowedLanguageSelectionAsync();
+            return MapUserProfile(envelope.Data);
+        }
+        catch (HttpRequestException exception)
+        {
+            _logger.LogWarning(exception, "Unable to log in customer {Identifier}.", normalizedIdentifier);
+            throw new MobileBackendConnectionException("Khong the ket noi backend de dang nhap tai khoan.", exception);
+        }
+        catch (TaskCanceledException exception)
+        {
+            _logger.LogWarning(exception, "Customer login timed out for {Identifier}.", normalizedIdentifier);
+            throw new MobileBackendConnectionException("Khong the ket noi backend de dang nhap tai khoan.", exception);
+        }
+    }
+
     public async Task<UserProfileCard?> SelectUserProfileAsync(string identifier)
     {
         var normalizedIdentifier = identifier?.Trim() ?? string.Empty;
@@ -16,7 +70,7 @@ public sealed partial class FoodStreetApiDataService
             return await GetUserProfileAsync();
         }
 
-        var customers = await GetCustomerUsersAsync();
+        var customers = await GetCustomerUsersAsync(requireSuccess: true);
         var matchedCustomer = FindCustomerByIdentifier(customers, normalizedIdentifier);
         if (matchedCustomer is null)
         {
@@ -201,11 +255,16 @@ public sealed partial class FoodStreetApiDataService
         return ResolvePreferredCustomer(customers);
     }
 
-    private async Task<IReadOnlyList<CustomerUserDto>> GetCustomerUsersAsync()
+    private async Task<IReadOnlyList<CustomerUserDto>> GetCustomerUsersAsync(bool requireSuccess = false)
     {
         var client = await GetClientAsync();
         if (client is null)
         {
+            if (requireSuccess)
+            {
+                throw new MobileBackendConnectionException("Mobile app chua cau hinh API base URL.");
+            }
+
             return [];
         }
 
@@ -215,13 +274,30 @@ public sealed partial class FoodStreetApiDataService
                 "api/v1/customer-users",
                 JsonOptions);
 
-            return envelope?.Success == true && envelope.Data is not null
-                ? envelope.Data
-                : [];
+            if (envelope?.Success == true && envelope.Data is not null)
+            {
+                return envelope.Data;
+            }
+
+            if (requireSuccess)
+            {
+                throw new MobileBackendConnectionException(
+                    envelope?.Message ?? "Khong the tai danh sach khach hang tu backend.");
+            }
+
+            return [];
         }
         catch (Exception exception)
         {
             _logger.LogWarning(exception, "Unable to load customer users from backend.");
+
+            if (requireSuccess)
+            {
+                throw new MobileBackendConnectionException(
+                    "Khong the ket noi backend de tai danh sach khach hang.",
+                    exception);
+            }
+
             return [];
         }
     }
@@ -252,13 +328,8 @@ public sealed partial class FoodStreetApiDataService
     private static CustomerUserDto? ResolvePreferredCustomer(IReadOnlyList<CustomerUserDto> customerUsers)
     {
         return customerUsers
-            .Where(item => item.IsActive && !item.IsBanned)
             .OrderByDescending(item => item.LastActiveAt ?? item.CreatedAt)
             .FirstOrDefault()
-            ?? customerUsers
-                .Where(item => !item.IsBanned)
-                .OrderByDescending(item => item.LastActiveAt ?? item.CreatedAt)
-                .FirstOrDefault()
             ?? customerUsers.FirstOrDefault();
     }
 

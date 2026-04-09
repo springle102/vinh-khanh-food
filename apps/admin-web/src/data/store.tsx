@@ -24,12 +24,11 @@ import type {
   Translation,
 } from "./types";
 
-const SESSION_KEY = "vinh-khanh-admin-web:session";
 const DEFAULT_PREMIUM_PRICE_USD = 10;
 const FIXED_FREE_LANGUAGES: SystemSetting["freeLanguages"] = ["vi", "en"];
 const FIXED_PREMIUM_LANGUAGES: SystemSetting["premiumLanguages"] = ["zh-CN", "ko", "ja"];
 
-const normalizeTtsProvider = (_value: string | undefined): SystemSetting["ttsProvider"] => "google_translate";
+const normalizeTtsProvider = (_value: string | undefined): SystemSetting["ttsProvider"] => "elevenlabs";
 
 const normalizeSystemSetting = (settings: SystemSetting): SystemSetting => ({
   ...settings,
@@ -69,7 +68,7 @@ const EMPTY_ADMIN_STATE: AdminDataState = {
     premiumUnlockPriceUsd: DEFAULT_PREMIUM_PRICE_USD,
     mapProvider: "openstreetmap",
     storageProvider: "cloudinary",
-    ttsProvider: "google_translate",
+    ttsProvider: "elevenlabs",
     geofenceRadiusMeters: 0,
     guestReviewEnabled: false,
     analyticsRetentionDays: 0,
@@ -95,115 +94,6 @@ const toState = (payload: Partial<AdminDataState>): AdminDataState => ({
   auditLogs: payload.auditLogs ?? [],
   settings: normalizeSystemSetting(payload.settings ?? EMPTY_ADMIN_STATE.settings),
 });
-
-const readScopeParams = () => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const rawValue = localStorage.getItem(SESSION_KEY);
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(rawValue) as Partial<{ userId: string; role: AdminUser["role"] }>;
-    if (!parsed.userId || !parsed.role) {
-      return null;
-    }
-
-    return {
-      userId: parsed.userId,
-      role: parsed.role,
-    };
-  } catch {
-    return null;
-  }
-};
-
-const applyOwnerScope = (nextState: AdminDataState) => {
-  const scope = readScopeParams();
-  if (!scope || scope.role !== "PLACE_OWNER") {
-    return nextState;
-  }
-
-  const owner = nextState.users.find(
-    (item) => item.id === scope.userId && item.role === "PLACE_OWNER",
-  );
-  if (!owner) {
-    return nextState;
-  }
-
-  const ownerPoiIds = new Set(
-    nextState.pois
-      .filter(
-        (poi) =>
-          poi.ownerUserId === scope.userId ||
-          (!!owner.managedPoiId && poi.id === owner.managedPoiId),
-      )
-      .map((poi) => poi.id),
-  );
-
-  if (owner.managedPoiId) {
-    ownerPoiIds.add(owner.managedPoiId);
-  }
-
-  const pois = nextState.pois.filter((poi) => ownerPoiIds.has(poi.id));
-  const foodItems = nextState.foodItems.filter((item) => ownerPoiIds.has(item.poiId));
-  const promotions = nextState.promotions.filter((item) => ownerPoiIds.has(item.poiId));
-  const reviews = nextState.reviews.filter((item) => ownerPoiIds.has(item.poiId));
-  const viewLogs = nextState.viewLogs.filter((item) => ownerPoiIds.has(item.poiId));
-  const audioListenLogs = nextState.audioListenLogs.filter((item) => ownerPoiIds.has(item.poiId));
-  const categories = nextState.categories.filter((category) =>
-    pois.some((poi) => poi.categoryId === category.id),
-  );
-  const foodItemIds = new Set(foodItems.map((item) => item.id));
-  const routeIds = new Set(
-    nextState.routes
-      .filter((route) => route.stopPoiIds.some((poiId) => ownerPoiIds.has(poiId)))
-      .map((route) => route.id),
-  );
-  const routes = nextState.routes.filter((route) => routeIds.has(route.id));
-  const translations = nextState.translations.filter(
-    (item) =>
-      (item.entityType === "poi" && ownerPoiIds.has(item.entityId)) ||
-      (item.entityType === "food_item" && foodItemIds.has(item.entityId)) ||
-      (item.entityType === "route" && routeIds.has(item.entityId)),
-  );
-  const audioGuides = nextState.audioGuides.filter(
-    (item) =>
-      (item.entityType === "poi" && ownerPoiIds.has(item.entityId)) ||
-      (item.entityType === "food_item" && foodItemIds.has(item.entityId)) ||
-      (item.entityType === "route" && routeIds.has(item.entityId)),
-  );
-  const mediaAssets = nextState.mediaAssets.filter(
-    (item) =>
-      (item.entityType === "poi" && ownerPoiIds.has(item.entityId)) ||
-      (item.entityType === "food_item" && foodItemIds.has(item.entityId)) ||
-      (item.entityType === "route" && routeIds.has(item.entityId)),
-  );
-  const users = nextState.users.filter((item) => item.id === scope.userId);
-  const customerUsers = nextState.customerUsers.filter((customer) =>
-    customer.favoritePoiIds.some((poiId) => ownerPoiIds.has(poiId)),
-  );
-
-  return {
-    ...nextState,
-    users,
-    customerUsers,
-    categories,
-    pois,
-    foodItems,
-    translations,
-    audioGuides,
-    mediaAssets,
-    routes,
-    promotions,
-    reviews,
-    viewLogs,
-    audioListenLogs,
-  };
-};
 
 type PoiDraft = Omit<Poi, "id" | "createdAt" | "updatedAt" | "updatedBy"> & {
   id?: string;
@@ -232,7 +122,7 @@ type AdminDataContextValue = {
     actor: AdminUser,
   ) => Promise<void>;
   saveRoute: (
-    route: Omit<TourRoute, "id" | "updatedBy" | "updatedAt"> & { id?: string },
+    route: Omit<TourRoute, "id" | "updatedBy" | "updatedAt" | "isSystemRoute" | "ownerUserId"> & { id?: string },
     actor: AdminUser,
   ) => Promise<void>;
   saveAudioGuide: (
@@ -246,11 +136,6 @@ type AdminDataContextValue = {
   saveReviewStatus: (
     reviewId: string,
     status: Review["status"],
-    actor: AdminUser,
-  ) => Promise<void>;
-  saveCustomerUserStatus: (
-    userId: string,
-    status: CustomerUser["status"],
     actor: AdminUser,
   ) => Promise<void>;
   saveSettings: (settings: SystemSetting, actor: AdminUser) => Promise<void>;
@@ -286,7 +171,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     }
 
     try {
-      const nextState = applyOwnerScope(toState(await adminApi.getBootstrap()));
+      const nextState = toState(await adminApi.getBootstrap());
       if (requestId === bootstrapRequestIdRef.current) {
         setState(nextState);
         setHasBootstrapped(true);
@@ -446,7 +331,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
 
   const saveRoute = useCallback(
     async (
-      route: Omit<TourRoute, "id" | "updatedBy" | "updatedAt"> & { id?: string },
+      route: Omit<TourRoute, "id" | "updatedBy" | "updatedAt" | "isSystemRoute" | "ownerUserId"> & { id?: string },
       actor: AdminUser,
     ) => {
       const routePayload = {
@@ -520,19 +405,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     [refreshData],
   );
 
-  const saveCustomerUserStatus = useCallback(
-    async (userId: string, status: CustomerUser["status"], actor: AdminUser) => {
-      await adminApi.saveEndUserStatus(userId, {
-        status,
-        actorName: actor.name,
-        actorRole: actor.role,
-      });
-
-      await refreshData();
-    },
-    [refreshData],
-  );
-
   const saveSettings = useCallback(
     async (settingsDraft: SystemSetting, actor: AdminUser) => {
       await adminApi.saveSettings({
@@ -584,7 +456,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       saveAudioGuide,
       saveTranslation,
       saveReviewStatus,
-      saveCustomerUserStatus,
       saveSettings,
       saveMediaAsset,
       saveFoodItem,
@@ -600,7 +471,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       savePoi,
       savePromotion,
       saveRoute,
-      saveCustomerUserStatus,
       saveReviewStatus,
       saveSettings,
       saveTranslation,

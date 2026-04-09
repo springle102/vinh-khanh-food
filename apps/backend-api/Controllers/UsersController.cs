@@ -7,39 +7,21 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/users")]
-public sealed class UsersController(AdminDataRepository repository) : ControllerBase
+public sealed class UsersController(
+    AdminDataRepository repository,
+    AdminRequestContextResolver adminRequestContextResolver) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<ApiResponse<IReadOnlyList<EndUser>>> GetUsers(
-        [FromQuery] string? userId,
-        [FromQuery] string? role)
-        => Ok(ApiResponse<IReadOnlyList<EndUser>>.Ok(repository.GetEndUsers(userId, role)));
+    public ActionResult<ApiResponse<IReadOnlyList<EndUser>>> GetUsers()
+        => Ok(ApiResponse<IReadOnlyList<EndUser>>.Ok(
+            repository.GetEndUsers(adminRequestContextResolver.RequireAuthenticatedAdmin())));
 
     [HttpGet("{id}")]
-    public ActionResult<ApiResponse<EndUser>> GetUserById(
-        string id,
-        [FromQuery] string? userId,
-        [FromQuery] string? role)
+    public ActionResult<ApiResponse<EndUser>> GetUserById(string id)
     {
-        var user = repository.GetEndUserById(id, userId, role);
+        var user = repository.GetEndUserById(id, adminRequestContextResolver.RequireAuthenticatedAdmin());
         return user is null
-            ? NotFound(ApiResponse<EndUser>.Fail("Không tìm thấy người dùng cuối."))
+            ? NotFound(ApiResponse<EndUser>.Fail("Khong tim thay nguoi dung cuoi."))
             : Ok(ApiResponse<EndUser>.Ok(user));
-    }
-
-    [HttpPatch("{id}/status")]
-    public ActionResult<ApiResponse<EndUser>> UpdateUserStatus(string id, [FromBody] EndUserStatusUpdateRequest request)
-    {
-        try
-        {
-            var updated = repository.UpdateEndUserStatus(id, request);
-            return updated is null
-                ? NotFound(ApiResponse<EndUser>.Fail("Không tìm thấy người dùng cuối."))
-                : Ok(ApiResponse<EndUser>.Ok(updated, "Cập nhật trạng thái người dùng thành công."));
-        }
-        catch (ArgumentException exception)
-        {
-            return BadRequest(ApiResponse<EndUser>.Fail(exception.Message));
-        }
     }
 }

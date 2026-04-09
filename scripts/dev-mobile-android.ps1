@@ -320,7 +320,7 @@ function Wait-ForPackageInstalled {
         [string]$DeviceSerial,
         [Parameter(Mandatory = $true)]
         [string]$AndroidPackageId,
-        [int]$TimeoutSeconds = 10
+        [int]$TimeoutSeconds = 30
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -343,7 +343,7 @@ function Wait-ForLaunchActivity {
         [string]$DeviceSerial,
         [Parameter(Mandatory = $true)]
         [string]$AndroidPackageId,
-        [int]$TimeoutSeconds = 10
+        [int]$TimeoutSeconds = 30
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)

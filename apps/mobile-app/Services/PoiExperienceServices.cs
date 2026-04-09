@@ -23,19 +23,7 @@ public interface IPoiTourStoreService
 public sealed class PoiNarrationService : IPoiNarrationService
 {
     private const string AppSettingsFileName = "appsettings.json";
-    private const string NarrationEndpointFormat = "api/v1/pois/{0}/narration?languageCode={1}&voiceType=standard";
-    private const int GoogleTtsMaxChars = 180;
-
-    private static readonly IReadOnlyDictionary<string, string> GoogleTtsLanguages =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["vi"] = "vi",
-            ["en"] = "en",
-            ["zh-CN"] = "zh-CN",
-            ["ko"] = "ko",
-            ["ja"] = "ja",
-            ["fr"] = "fr"
-        };
+    private const int TextToSpeechProxyMaxChars = 180;
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
@@ -73,7 +61,12 @@ public sealed class PoiNarrationService : IPoiNarrationService
         var session = await BeginPlaybackSessionAsync(cancellationToken);
         try
         {
-            var resolvedNarration = await TryResolveNarrationAsync(detail.Id, requestedLanguageCode, session.Token);
+            var currentCustomerId = ReadCurrentCustomerId();
+            var resolvedNarration = await TryResolveNarrationAsync(
+                detail.Id,
+                requestedLanguageCode,
+                currentCustomerId,
+                session.Token);
             var effectiveLanguageCode = AppLanguage.NormalizeCode(resolvedNarration?.EffectiveLanguageCode ?? requestedLanguageCode);
             var canUseResolvedNarration = CanUseResolvedNarration(resolvedNarration, requestedLanguageCode, effectiveLanguageCode);
             var narrationText = FirstNonEmpty(
@@ -92,9 +85,14 @@ public sealed class PoiNarrationService : IPoiNarrationService
                 audioUrl = string.Empty;
             }
 
+            var textToSpeechBaseUrl = await GetTextToSpeechBaseUrlAsync();
             var playbackUrls = !string.IsNullOrWhiteSpace(audioUrl)
                 ? new[] { audioUrl }
-                : BuildGoogleTtsAudioUrls(narrationText, requestedLanguageCode);
+                : BuildTextToSpeechAudioUrls(
+                    narrationText,
+                    effectiveLanguageCode,
+                    textToSpeechBaseUrl,
+                    currentCustomerId);
 
             if (playbackUrls.Count > 0)
             {
@@ -157,6 +155,7 @@ public sealed class PoiNarrationService : IPoiNarrationService
         string effectiveLanguageCode) =>
         resolvedNarration?.AudioGuide is not null &&
         string.Equals(effectiveLanguageCode, requestedLanguageCode, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(resolvedNarration.AudioGuide.SourceType, "uploaded", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(resolvedNarration.AudioGuide.Status, "ready", StringComparison.OrdinalIgnoreCase) &&
         HasPlayableRemoteAudioUrl(resolvedNarration.AudioGuide.AudioUrl);
 
@@ -279,7 +278,11 @@ public sealed class PoiNarrationService : IPoiNarrationService
         }
     }
 
-    private async Task<PoiNarrationResponseDto?> TryResolveNarrationAsync(string poiId, string languageCode, CancellationToken cancellationToken)
+    private async Task<PoiNarrationResponseDto?> TryResolveNarrationAsync(
+        string poiId,
+        string languageCode,
+        string? customerUserId,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -289,10 +292,20 @@ public sealed class PoiNarrationService : IPoiNarrationService
                 return null;
             }
 
-            var relativeUrl = string.Format(
-                NarrationEndpointFormat,
-                Uri.EscapeDataString(poiId),
-                Uri.EscapeDataString(languageCode));
+            var query = new Dictionary<string, string>
+            {
+                ["languageCode"] = languageCode,
+                ["voiceType"] = "standard"
+            };
+
+            if (!string.IsNullOrWhiteSpace(customerUserId))
+            {
+                query["customerUserId"] = customerUserId;
+            }
+
+            var relativeUrl =
+                $"api/v1/pois/{Uri.EscapeDataString(poiId)}/narration?" +
+                string.Join("&", query.Select(item => $"{item.Key}={Uri.EscapeDataString(item.Value)}"));
             var envelope = await client.GetFromJsonAsync<ApiEnvelope<PoiNarrationResponseDto>>(relativeUrl, _jsonOptions, cancellationToken);
             if (envelope?.Success != true || envelope.Data is null)
             {
@@ -342,6 +355,15 @@ public sealed class PoiNarrationService : IPoiNarrationService
         };
         _resolvedBaseUrl = nextBaseUrl;
         return _apiClient;
+    }
+
+    private async Task<string?> GetTextToSpeechBaseUrlAsync()
+    {
+        var runtimeSettings = await LoadRuntimeSettingsAsync();
+        var nextBaseUrl = EnsureTrailingSlash(ResolveApiBaseUrl(runtimeSettings));
+        return string.IsNullOrWhiteSpace(nextBaseUrl)
+            ? null
+            : nextBaseUrl;
     }
 
     private async Task<MobileRuntimeAppSettings> LoadRuntimeSettingsAsync()
@@ -425,42 +447,54 @@ public sealed class PoiNarrationService : IPoiNarrationService
                parsed.Host.Contains("example.com", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IReadOnlyList<string> BuildGoogleTtsAudioUrls(string text, string languageCode)
+    private static string? ReadCurrentCustomerId()
     {
-        if (string.IsNullOrWhiteSpace(text))
+        var customerId = Preferences.Default.Get(AppPreferenceKeys.CurrentCustomerId, string.Empty);
+        return string.IsNullOrWhiteSpace(customerId) ? null : customerId.Trim();
+    }
+
+    private static IReadOnlyList<string> BuildTextToSpeechAudioUrls(
+        string text,
+        string languageCode,
+        string? apiBaseUrl,
+        string? customerUserId)
+    {
+        if (string.IsNullOrWhiteSpace(text) ||
+            string.IsNullOrWhiteSpace(languageCode) ||
+            string.IsNullOrWhiteSpace(apiBaseUrl))
         {
             return Array.Empty<string>();
         }
 
         var normalizedLanguageCode = AppLanguage.NormalizeCode(languageCode);
-        if (!GoogleTtsLanguages.TryGetValue(normalizedLanguageCode, out var googleLanguage))
-        {
-            return Array.Empty<string>();
-        }
-
-        var chunks = SplitNarrationIntoChunks(text.Trim(), GoogleTtsMaxChars);
+        var chunks = SplitNarrationIntoChunks(text.Trim(), TextToSpeechProxyMaxChars);
         if (chunks.Count == 0)
         {
             return Array.Empty<string>();
         }
 
+        var baseUri = new Uri(apiBaseUrl, UriKind.Absolute);
         return chunks
             .Select((chunk, index) =>
             {
                 var query = new Dictionary<string, string>
                 {
-                    ["ie"] = "UTF-8",
-                    ["client"] = "tw-ob",
-                    ["tl"] = googleLanguage,
-                    ["q"] = chunk,
+                    ["languageCode"] = normalizedLanguageCode,
+                    ["text"] = chunk,
                     ["total"] = chunks.Count.ToString(),
-                    ["idx"] = index.ToString(),
-                    ["textlen"] = chunk.Length.ToString(),
-                    ["ttsspeed"] = "1"
+                    ["idx"] = index.ToString()
                 };
 
-                return "https://translate.google.com/translate_tts?" +
+                if (!string.IsNullOrWhiteSpace(customerUserId))
+                {
+                    query["customerUserId"] = customerUserId;
+                }
+
+                var relativePath =
+                    "api/v1/tts?" +
                     string.Join("&", query.Select(item => $"{item.Key}={Uri.EscapeDataString(item.Value)}"));
+
+                return new Uri(baseUri, relativePath).ToString();
             })
             .ToArray();
     }

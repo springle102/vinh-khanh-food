@@ -5,17 +5,29 @@ using VinhKhanh.BackendApi.Infrastructure;
 using VinhKhanh.BackendApi.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
+var backendRoot = builder.Environment.ContentRootPath;
+var repositoryRoot = Path.GetFullPath(Path.Combine(backendRoot, "..", ".."));
+
+DotEnvBootstrapper.LoadIntoEnvironment(
+    Path.Combine(repositoryRoot, ".env"),
+    Path.Combine(repositoryRoot, ".env.local"),
+    Path.Combine(backendRoot, ".env"),
+    Path.Combine(backendRoot, ".env.local"));
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
 builder.Services.AddSingleton<AdminDataRepository>();
+builder.Services.AddScoped<AdminRequestContextResolver>();
 builder.Services.AddSingleton<IPremiumPaymentProcessor, MockPremiumPaymentProcessor>();
 builder.Services.AddSingleton<PremiumPurchaseService>();
 builder.Services.AddSingleton<StorageService>();
+builder.Services.AddSingleton<ResponseUrlNormalizer>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<PoiNarrationService>();
+builder.Services.AddOptions<TextToSpeechOptions>()
+    .Configure<IConfiguration>((options, configuration) => TextToSpeechOptions.ApplyConfiguration(options, configuration));
 builder.Services.AddHttpClient<GeocodingProxyService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(8);
@@ -28,13 +40,12 @@ builder.Services.AddHttpClient<TranslationProxyService>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("VinhKhanhAdmin/1.0");
     client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 });
-builder.Services.AddHttpClient<GoogleTranslateTtsProxyService>(client =>
+builder.Services.AddHttpClient<ITextToSpeechService, ElevenLabsTextToSpeechService>(client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(20);
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
-    client.DefaultRequestHeaders.Accept.ParseAdd("audio/mpeg, audio/*;q=0.9, */*;q=0.8");
-    client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7");
-    client.DefaultRequestHeaders.Referrer = new Uri("https://translate.google.com/");
+    client.BaseAddress = new Uri("https://api.elevenlabs.io/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("VinhKhanhAdmin/1.0");
+    client.DefaultRequestHeaders.Accept.ParseAdd("audio/mpeg, audio/*;q=0.9, application/octet-stream;q=0.8");
 });
 builder.Services.AddHttpClient();
 builder.Services
@@ -95,6 +106,29 @@ app.Use(async (context, next) =>
             context.Request.Path,
             context.Response.StatusCode,
             stopwatch.Elapsed.TotalMilliseconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+    }
+});
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (ApiRequestException exception)
+    {
+        app.Logger.LogWarning(
+            exception,
+            "Request rejected while processing {Method} {Path} with status {StatusCode}",
+            context.Request.Method,
+            context.Request.Path,
+            exception.StatusCode);
+
+        await ApiResponseHttpWriter.WriteFailureAsync(
+            context,
+            exception.StatusCode,
+            string.IsNullOrWhiteSpace(exception.Message)
+                ? ApiResponseHttpWriter.GetDefaultMessage(exception.StatusCode)
+                : exception.Message);
     }
 });
 app.UseMiddleware<ApiExceptionMiddleware>();

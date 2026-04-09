@@ -7,6 +7,42 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed partial class AdminDataRepository
 {
+    public CustomerUser? LoginCustomer(string identifier, string password)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var customer = GetCustomerUserByCredentials(connection, transaction, identifier, password);
+        if (customer is null)
+        {
+            transaction.Rollback();
+            return null;
+        }
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.CustomerUsers
+            SET LastActiveAt = ?
+            WHERE Id = ?;
+            """,
+            DateTimeOffset.UtcNow,
+            customer.Id);
+
+        AppendAuditLog(
+            connection,
+            transaction,
+            customer.Name,
+            "CUSTOMER",
+            "Dang nhap khach hang",
+            customer.Id);
+
+        var saved = GetCustomerUserById(connection, transaction, customer.Id) ?? customer;
+        transaction.Commit();
+        return saved;
+    }
+
     public CustomerUser? UpdateCustomerProfile(string id, CustomerProfileUpdateRequest request)
     {
         using var connection = OpenConnection();
@@ -59,57 +95,7 @@ public sealed partial class AdminDataRepository
         return saved;
     }
 
-    public EndUser? UpdateEndUserStatus(string id, EndUserStatusUpdateRequest request)
-    {
-        using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
-
-        var existing = GetEndUserById(connection, transaction, id);
-        if (existing is null)
-        {
-            transaction.Rollback();
-            return null;
-        }
-
-        var normalizedStatus = NormalizeEndUserStatus(request.Status);
-        var isBanned = string.Equals(normalizedStatus, "banned", StringComparison.OrdinalIgnoreCase);
-        var isActive = string.Equals(normalizedStatus, "active", StringComparison.OrdinalIgnoreCase);
-
-        ExecuteNonQuery(
-            connection,
-            transaction,
-            """
-            UPDATE dbo.CustomerUsers
-            SET IsBanned = ?,
-                IsActive = ?,
-                [Status] = ?
-            WHERE Id = ?;
-            """,
-            isBanned,
-            isActive,
-            normalizedStatus,
-            id);
-
-        AppendAuditLog(
-            connection,
-            transaction,
-            request.ActorName,
-            request.ActorRole,
-            normalizedStatus switch
-            {
-                "banned" => "Khóa người dùng cuối",
-                "inactive" => "Tạm ngưng người dùng cuối",
-                _ => "Kích hoạt người dùng cuối"
-            },
-            id);
-
-        var saved = GetEndUserById(connection, transaction, id);
-
-        transaction.Commit();
-        return saved;
-    }
-
-    public MediaAsset SaveMediaAsset(string? id, MediaAssetUpsertRequest request)
+    public MediaAsset SaveMediaAsset(string? id, MediaAssetUpsertRequest request, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
@@ -166,7 +152,14 @@ public sealed partial class AdminDataRepository
                 mediaId);
         }
 
-        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", isNew ? "Tạo media asset" : "Cập nhật media asset", mediaId);
+        AppendAdminAuditLog(
+            connection,
+            transaction,
+            actor,
+            isNew ? "Tao media asset" : "Cap nhat media asset",
+            "MEDIA",
+            mediaId,
+            $"{request.EntityType}:{request.EntityId}:{request.Type}");
 
         var saved = GetMediaAssetById(connection, transaction, mediaId)
             ?? throw new InvalidOperationException("Không thể đọc lại media asset sau khi lưu.");
@@ -183,22 +176,30 @@ public sealed partial class AdminDataRepository
         return saved;
     }
 
-    public bool DeleteMediaAsset(string id)
+    public bool DeleteMediaAsset(string id, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        var existing = GetMediaAssetById(connection, transaction, id);
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.MediaAssets WHERE Id = ?;", id) > 0;
         if (deleted)
         {
-            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa media asset", id);
+            AppendAdminAuditLog(
+                connection,
+                transaction,
+                actor,
+                "Xoa media asset",
+                "MEDIA",
+                existing?.EntityId ?? id,
+                $"{existing?.EntityType ?? "unknown"}:{existing?.EntityId ?? id}:{existing?.Type ?? "unknown"}");
         }
 
         transaction.Commit();
         return deleted;
     }
 
-    public FoodItem SaveFoodItem(string? id, FoodItemUpsertRequest request)
+    public FoodItem SaveFoodItem(string? id, FoodItemUpsertRequest request, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
@@ -248,7 +249,14 @@ public sealed partial class AdminDataRepository
                 foodId);
         }
 
-        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", isNew ? "Tạo món ăn" : "Cập nhật món ăn", request.Name);
+        AppendAdminAuditLog(
+            connection,
+            transaction,
+            actor,
+            isNew ? "Tao mon an" : "Cap nhat mon an",
+            "FOOD_ITEM",
+            foodId,
+            request.Name);
 
         var saved = GetFoodItemById(connection, transaction, foodId)
             ?? throw new InvalidOperationException("Không thể đọc lại món ăn sau khi lưu.");
@@ -257,15 +265,23 @@ public sealed partial class AdminDataRepository
         return saved;
     }
 
-    public bool DeleteFoodItem(string id)
+    public bool DeleteFoodItem(string id, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        var existing = GetFoodItemById(connection, transaction, id);
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.FoodItems WHERE Id = ?;", id) > 0;
         if (deleted)
         {
-            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa món ăn", id);
+            AppendAdminAuditLog(
+                connection,
+                transaction,
+                actor,
+                "Xoa mon an",
+                "FOOD_ITEM",
+                existing?.Id ?? id,
+                existing?.Name ?? id);
         }
 
         transaction.Commit();
@@ -292,6 +308,9 @@ public sealed partial class AdminDataRepository
         var actorUser = !string.IsNullOrWhiteSpace(actorUserId)
             ? GetUserById(connection, transaction, actorUserId)
             : null;
+        var isFeatured = isOwnerActor ? false : request.IsFeatured;
+        var isSystemRoute = isOwnerActor ? false : existing?.IsSystemRoute ?? true;
+        var ownerUserId = isOwnerActor ? actorUserId : existing?.OwnerUserId;
         var normalizedStopPoiIds = NormalizeList(request.StopPoiIds, distinct: false).ToList();
         var availablePoiIds = GetPois(connection, transaction)
             .Select(item => item.Id)
@@ -341,9 +360,10 @@ public sealed partial class AdminDataRepository
             }
 
             var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actorUser.Id);
-            if (!isNew && existing is not null && !existing.StopPoiIds.Any(ownerPoiIds.Contains))
+            if (!isNew && existing is not null &&
+                (!string.Equals(existing.OwnerUserId, actorUser.Id, StringComparison.OrdinalIgnoreCase) || existing.IsSystemRoute))
             {
-                throw new InvalidOperationException("Chủ quán chỉ được cập nhật tour có điểm đến của chính mình.");
+                throw new InvalidOperationException("Chủ quán chỉ được cập nhật tour riêng do chính mình tạo.");
             }
 
             if (normalizedStopPoiIds.Any(stopPoiId => !ownerPoiIds.Contains(stopPoiId)))
@@ -362,9 +382,9 @@ public sealed partial class AdminDataRepository
                 """
                 INSERT INTO dbo.Routes (
                     Id, Name, Theme, [Description], DurationMinutes, CoverImageUrl,
-                    Difficulty, IsFeatured, IsActive, UpdatedBy, UpdatedAt
+                    Difficulty, IsFeatured, IsActive, IsSystemRoute, OwnerUserId, UpdatedBy, UpdatedAt
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 routeId,
                 name,
@@ -373,8 +393,10 @@ public sealed partial class AdminDataRepository
                 request.DurationMinutes,
                 coverImageUrl,
                 difficulty,
-                request.IsFeatured,
+                isFeatured,
                 request.IsActive,
+                isSystemRoute,
+                string.IsNullOrWhiteSpace(ownerUserId) ? DBNull.Value : ownerUserId,
                 actorName,
                 now);
         }
@@ -393,6 +415,8 @@ public sealed partial class AdminDataRepository
                     Difficulty = ?,
                     IsFeatured = ?,
                     IsActive = ?,
+                    IsSystemRoute = ?,
+                    OwnerUserId = ?,
                     UpdatedBy = ?,
                     UpdatedAt = ?
                 WHERE Id = ?;
@@ -403,8 +427,10 @@ public sealed partial class AdminDataRepository
                 request.DurationMinutes,
                 coverImageUrl,
                 difficulty,
-                request.IsFeatured,
+                isFeatured,
                 request.IsActive,
+                isSystemRoute,
+                string.IsNullOrWhiteSpace(ownerUserId) ? DBNull.Value : ownerUserId,
                 actorName,
                 now,
                 routeId);
@@ -412,12 +438,15 @@ public sealed partial class AdminDataRepository
 
         ReplaceRouteStops(connection, transaction, routeId, normalizedStopPoiIds);
 
-        AppendAuditLog(
+        AppendAdminAuditLog(
             connection,
             transaction,
+            actorUserId,
             actorName,
             actorRole,
-            isNew ? "Tạo tour" : "Cập nhật tour",
+            isNew ? "Tao tour" : "Cap nhat tour",
+            "TOUR",
+            routeId,
             name);
 
         var saved = GetRouteById(connection, transaction, routeId)
@@ -427,10 +456,23 @@ public sealed partial class AdminDataRepository
         return saved;
     }
 
-    public bool DeleteRoute(string id)
+    public bool DeleteRoute(string id, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
+
+        var existing = GetRouteById(connection, transaction, id);
+        if (existing is null)
+        {
+            transaction.Rollback();
+            return false;
+        }
+
+        if (actor.IsPlaceOwner &&
+            (!string.Equals(existing.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase) || existing.IsSystemRoute))
+        {
+            throw new ApiNotFoundException("Khong tim thay tour.");
+        }
 
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.RouteStops WHERE RouteId = ?;", id);
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Routes WHERE Id = ?;", id) > 0;
@@ -440,13 +482,13 @@ public sealed partial class AdminDataRepository
             return false;
         }
 
-        AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa tour", id);
+        AppendAdminAuditLog(connection, transaction, actor, "Xoa tour", "TOUR", existing.Id, existing.Name);
 
         transaction.Commit();
         return true;
     }
 
-    public Promotion SavePromotion(string? id, PromotionUpsertRequest request)
+    public Promotion SavePromotion(string? id, PromotionUpsertRequest request, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
@@ -496,12 +538,13 @@ public sealed partial class AdminDataRepository
                 promotionId);
         }
 
-        AppendAuditLog(
+        AppendAdminAuditLog(
             connection,
             transaction,
-            request.ActorName,
-            request.ActorRole,
-            isNew ? "Tạo ưu đãi" : "Cập nhật ưu đãi",
+            actor,
+            isNew ? "Tao uu dai" : "Cap nhat uu dai",
+            "PROMOTION",
+            promotionId,
             request.Title);
 
         var saved = GetPromotionById(connection, transaction, promotionId)
@@ -511,15 +554,30 @@ public sealed partial class AdminDataRepository
         return saved;
     }
 
-    public bool DeletePromotion(string id)
+    public bool DeletePromotion(string id, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
-        var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Promotions WHERE Id = ?;", id) > 0;
+        var existing = GetPromotionById(connection, transaction, id);
+        var deleted = ExecuteNonQuery(
+            connection,
+            transaction,
+            "UPDATE dbo.Promotions SET [Status] = ? WHERE Id = ?;",
+            "deleted",
+            id) > 0;
         if (deleted)
         {
-            AppendAuditLog(connection, transaction, "SYSTEM", "SYSTEM", "Xóa ưu đãi", id);
+            AppendAdminAuditLog(
+                connection,
+                transaction,
+                actor,
+                "Xoa mem uu dai",
+                "PROMOTION",
+                existing?.Id ?? id,
+                existing?.Title ?? id,
+                existing is null ? null : $"status={existing.Status}",
+                "status=deleted");
         }
 
         transaction.Commit();
@@ -565,7 +623,7 @@ public sealed partial class AdminDataRepository
         return review;
     }
 
-    public Review? UpdateReviewStatus(string id, ReviewStatusRequest request)
+    public Review? UpdateReviewStatus(string id, ReviewStatusRequest request, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
@@ -578,14 +636,14 @@ public sealed partial class AdminDataRepository
         }
 
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.Reviews SET [Status] = ? WHERE Id = ?;", request.Status, id);
-        AppendAuditLog(connection, transaction, request.ActorName, request.ActorRole, "Cập nhật trạng thái đánh giá", id);
+        AppendAdminAuditLog(connection, transaction, actor, "Cap nhat trang thai danh gia", "REVIEW", id, request.Status);
 
         var saved = GetReviewById(connection, transaction, id);
         transaction.Commit();
         return saved;
     }
 
-    public SystemSetting SaveSettings(SystemSettingUpsertRequest request)
+    public SystemSetting SaveSettings(SystemSettingUpsertRequest request, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
@@ -596,6 +654,7 @@ public sealed partial class AdminDataRepository
             FallbackLanguage = PremiumAccessCatalog.NormalizeLanguageCode(request.FallbackLanguage),
             FreeLanguages = [.. PremiumAccessCatalog.FreeLanguages],
             PremiumLanguages = [.. PremiumAccessCatalog.PremiumLanguages],
+            TtsProvider = NormalizeTtsProvider(request.TtsProvider),
             PremiumUnlockPriceUsd = request.PremiumUnlockPriceUsd > 0
                 ? request.PremiumUnlockPriceUsd
                 : PremiumAccessCatalog.DefaultPremiumPriceUsd
@@ -662,7 +721,7 @@ public sealed partial class AdminDataRepository
         ReplaceSettingLanguages(connection, transaction, "free", normalizedRequest.FreeLanguages);
         ReplaceSettingLanguages(connection, transaction, "premium", normalizedRequest.PremiumLanguages);
 
-        AppendAuditLog(connection, transaction, request.ActorName, request.ActorRole, "Cập nhật cài đặt hệ thống", request.AppName);
+        AppendAdminAuditLog(connection, transaction, actor, "Cap nhat cai dat he thong", "SETTINGS", "system", request.AppName);
 
         var saved = GetSettings(connection, transaction);
         transaction.Commit();
@@ -721,16 +780,18 @@ public sealed partial class AdminDataRepository
         var accessToken = $"vk_access_{Guid.NewGuid():N}";
         var refreshToken = $"vk_refresh_{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
-        var expiresAt = now.AddHours(8);
+        var accessTokenExpiresAt = now.AddHours(8);
         var refreshExpiresAt = now.AddDays(30);
 
-        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.RefreshSessions WHERE ExpiresAt <= ?;", now);
+        ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.RefreshSessions WHERE ExpiresAt <= ? OR AccessTokenExpiresAt <= ?;", now, now);
         ExecuteNonQuery(
             connection,
             transaction,
-            "INSERT INTO dbo.RefreshSessions (RefreshToken, UserId, ExpiresAt) VALUES (?, ?, ?);",
+            "INSERT INTO dbo.RefreshSessions (AccessToken, RefreshToken, UserId, AccessTokenExpiresAt, ExpiresAt) VALUES (?, ?, ?, ?, ?);",
+            accessToken,
             refreshToken,
             user.Id,
+            accessTokenExpiresAt,
             refreshExpiresAt);
 
         return new AuthTokensResponse(
@@ -740,7 +801,195 @@ public sealed partial class AdminDataRepository
             user.Role,
             accessToken,
             refreshToken,
-            expiresAt);
+            accessTokenExpiresAt);
+    }
+
+    private void AppendAdminAuditLog(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        AdminRequestContext actor,
+        string action,
+        string module,
+        string _legacyTargetValue,
+        string targetId,
+        string targetSummary)
+        => AppendAdminAuditLog(
+            connection,
+            transaction,
+            actor.UserId,
+            actor.Name,
+            actor.Role,
+            action,
+            module,
+            targetId,
+            targetSummary,
+            null,
+            null);
+
+    private void AppendAdminAuditLog(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        AdminRequestContext actor,
+        string action,
+        string module,
+        string targetId,
+        string targetSummary,
+        string? beforeSummary = null,
+        string? afterSummary = null)
+        => AppendAdminAuditLog(
+            connection,
+            transaction,
+            actor.UserId,
+            actor.Name,
+            actor.Role,
+            action,
+            module,
+            targetId,
+            targetSummary,
+            beforeSummary,
+            afterSummary);
+
+    private void AppendAdminAuditLog(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string actorId,
+        string actorName,
+        string actorRole,
+        string action,
+        string module,
+        string targetId,
+        string targetSummary,
+        string? beforeSummary = null,
+        string? afterSummary = null)
+    {
+        if (!HasAdminAuditLogTable(connection, transaction))
+        {
+            AppendLegacyAuditLog(
+                connection,
+                transaction,
+                actorName,
+                actorRole,
+                action,
+                string.IsNullOrWhiteSpace(targetSummary) ? targetId : targetSummary);
+            return;
+        }
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            INSERT INTO dbo.AdminAuditLogs (
+                Id, ActorId, ActorName, ActorRole, ActorType, [Action], [Module], TargetId,
+                TargetSummary, BeforeSummary, AfterSummary, SourceApp, CreatedAt
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            CreateId("audit"),
+            actorId,
+            actorName,
+            actorRole,
+            AdminRoleCatalog.AdminActorType,
+            action,
+            module,
+            targetId,
+            targetSummary,
+            beforeSummary,
+            afterSummary,
+            AdminRoleCatalog.AdminWebSource,
+            DateTimeOffset.UtcNow);
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            DELETE FROM dbo.AdminAuditLogs
+            WHERE Id IN (
+                SELECT Id
+                FROM (
+                    SELECT Id, ROW_NUMBER() OVER (ORDER BY CreatedAt DESC, Id DESC) AS RowNumber
+                    FROM dbo.AdminAuditLogs
+                ) AS OrderedLogs
+                WHERE RowNumber > ?
+            );
+            """,
+            MaxAuditLogs);
+    }
+
+    private void AppendLegacyAuditLog(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string actorName,
+        string actorRole,
+        string action,
+        string targetValue)
+    {
+        if (!HasLegacyAuditLogTable(connection, transaction))
+        {
+            return;
+        }
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            INSERT INTO dbo.AuditLogs (
+                Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt
+            )
+            VALUES (?, ?, ?, ?, ?, ?);
+            """,
+            CreateId("audit"),
+            TruncateLegacyAuditValue(actorName, 120),
+            TruncateLegacyAuditValue(actorRole, 30),
+            TruncateLegacyAuditValue(action, 200),
+            TruncateLegacyAuditValue(targetValue, 300),
+            DateTimeOffset.UtcNow);
+    }
+
+    private void AppendUserActivityLog(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string actorId,
+        string eventType,
+        string metadata,
+        string sourceApp = AdminRoleCatalog.MobileAppSource)
+    {
+        if (!HasUserActivityLogTable(connection, transaction))
+        {
+            return;
+        }
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            INSERT INTO dbo.UserActivityLogs (
+                Id, ActorId, ActorType, EventType, Metadata, SourceApp, CreatedAt
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+            """,
+            CreateId("ua"),
+            actorId,
+            AdminRoleCatalog.EndUserActorType,
+            eventType,
+            metadata,
+            sourceApp,
+            DateTimeOffset.UtcNow);
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            DELETE FROM dbo.UserActivityLogs
+            WHERE Id IN (
+                SELECT Id
+                FROM (
+                    SELECT Id, ROW_NUMBER() OVER (ORDER BY CreatedAt DESC, Id DESC) AS RowNumber
+                    FROM dbo.UserActivityLogs
+                ) AS OrderedLogs
+                WHERE RowNumber > ?
+            );
+            """,
+            MaxUserActivityLogs);
     }
 
     private void AppendAuditLog(
@@ -749,37 +998,154 @@ public sealed partial class AdminDataRepository
         string actorName,
         string actorRole,
         string action,
-        string target)
+        string targetValue)
     {
-        ExecuteNonQuery(
-            connection,
-            transaction,
-            """
-            INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt)
-            VALUES (?, ?, ?, ?, ?, ?);
-            """,
-            CreateId("audit"),
-            actorName,
-            actorRole,
-            action,
-            target,
-            DateTimeOffset.UtcNow);
+        var normalizedActorRole = (actorRole ?? string.Empty).Trim();
+        if (AdminRoleCatalog.IsAdminRole(normalizedActorRole) ||
+            string.Equals(normalizedActorRole, "SYSTEM", StringComparison.OrdinalIgnoreCase))
+        {
+            var adminActor = ResolveLegacyAdminAuditActor(connection, transaction, actorName, normalizedActorRole);
+            AppendAdminAuditLog(
+                connection,
+                transaction,
+                adminActor.ActorId,
+                adminActor.ActorName,
+                adminActor.ActorRole,
+                action,
+                GuessLegacyAuditModule(action),
+                targetValue,
+                targetValue);
+            return;
+        }
 
-        ExecuteNonQuery(
+        if (!HasUserActivityLogTable(connection, transaction))
+        {
+            AppendLegacyAuditLog(connection, transaction, actorName, normalizedActorRole, action, targetValue);
+            return;
+        }
+
+        AppendUserActivityLog(
             connection,
             transaction,
-            """
-            DELETE FROM dbo.AuditLogs
-            WHERE Id IN (
-                SELECT Id
-                FROM (
-                    SELECT Id, ROW_NUMBER() OVER (ORDER BY CreatedAt DESC, Id DESC) AS RowNumber
-                    FROM dbo.AuditLogs
-                ) AS OrderedLogs
-                WHERE RowNumber > ?
-            );
-            """,
-            MaxAuditLogs);
+            ResolveLegacyUserActivityActorId(connection, transaction, actorName, targetValue),
+            action,
+            targetValue);
+    }
+
+    private (string ActorId, string ActorName, string ActorRole) ResolveLegacyAdminAuditActor(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string actorName,
+        string actorRole)
+    {
+        if (string.Equals(actorRole, "SYSTEM", StringComparison.OrdinalIgnoreCase))
+        {
+            return ("system", string.IsNullOrWhiteSpace(actorName) ? "SYSTEM" : actorName, "SYSTEM");
+        }
+
+        var matchedAdmin = GetUsers(connection, transaction)
+            .FirstOrDefault(user =>
+                string.Equals(user.Name, actorName, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(user.Role, actorRole, StringComparison.OrdinalIgnoreCase));
+
+        return matchedAdmin is null
+            ? (actorName, actorName, actorRole)
+            : (matchedAdmin.Id, matchedAdmin.Name, matchedAdmin.Role);
+    }
+
+    private string ResolveLegacyUserActivityActorId(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string actorName,
+        string targetValue)
+    {
+        if (!string.IsNullOrWhiteSpace(targetValue))
+        {
+            var customer = GetCustomerUserById(connection, transaction, targetValue);
+            if (customer is not null)
+            {
+                return customer.Id;
+            }
+        }
+
+        var matchedCustomer = GetCustomerUsers(connection, transaction)
+            .FirstOrDefault(user => string.Equals(user.Name, actorName, StringComparison.OrdinalIgnoreCase));
+
+        return matchedCustomer?.Id ?? targetValue;
+    }
+
+    private static string GuessLegacyAuditModule(string action)
+    {
+        var normalizedAction = (action ?? string.Empty).Trim();
+        if (normalizedAction.Contains("đăng nhập", StringComparison.OrdinalIgnoreCase) ||
+            normalizedAction.Contains("đăng xuất", StringComparison.OrdinalIgnoreCase))
+        {
+            return "AUTH";
+        }
+
+        if (normalizedAction.Contains("POI", StringComparison.OrdinalIgnoreCase))
+        {
+            return "POI";
+        }
+
+        if (normalizedAction.Contains("thuyết minh", StringComparison.OrdinalIgnoreCase))
+        {
+            return "TRANSLATION";
+        }
+
+        if (normalizedAction.Contains("audio", StringComparison.OrdinalIgnoreCase))
+        {
+            return "AUDIO_GUIDE";
+        }
+
+        if (normalizedAction.Contains("media", StringComparison.OrdinalIgnoreCase))
+        {
+            return "MEDIA";
+        }
+
+        if (normalizedAction.Contains("món ăn", StringComparison.OrdinalIgnoreCase))
+        {
+            return "FOOD_ITEM";
+        }
+
+        if (normalizedAction.Contains("tour", StringComparison.OrdinalIgnoreCase) ||
+            normalizedAction.Contains("tuyến", StringComparison.OrdinalIgnoreCase))
+        {
+            return "TOUR";
+        }
+
+        if (normalizedAction.Contains("ưu đãi", StringComparison.OrdinalIgnoreCase) ||
+            normalizedAction.Contains("khuyến mãi", StringComparison.OrdinalIgnoreCase))
+        {
+            return "PROMOTION";
+        }
+
+        if (normalizedAction.Contains("đánh giá", StringComparison.OrdinalIgnoreCase) ||
+            normalizedAction.Contains("review", StringComparison.OrdinalIgnoreCase))
+        {
+            return "REVIEW";
+        }
+
+        if (normalizedAction.Contains("cài đặt", StringComparison.OrdinalIgnoreCase))
+        {
+            return "SETTINGS";
+        }
+
+        if (normalizedAction.Contains("admin", StringComparison.OrdinalIgnoreCase) ||
+            normalizedAction.Contains("chủ quán", StringComparison.OrdinalIgnoreCase))
+        {
+            return "ADMIN_USER";
+        }
+
+        return "GENERAL";
+    }
+
+    private static string TruncateLegacyAuditValue(string? value, int maxLength)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength];
     }
 
     private static string NormalizeCustomerProfileValue(string? value, string fieldName, int maxLength)
@@ -798,15 +1164,4 @@ public sealed partial class AdminDataRepository
         return normalized;
     }
 
-    private static string NormalizeEndUserStatus(string? value)
-    {
-        var normalized = value?.Trim().ToLowerInvariant() ?? string.Empty;
-        return normalized switch
-        {
-            "active" => "active",
-            "inactive" => "inactive",
-            "banned" => "banned",
-            _ => throw new ArgumentException("Trạng thái người dùng không hợp lệ.")
-        };
-    }
 }

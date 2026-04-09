@@ -18,6 +18,7 @@ public interface IFoodStreetDataService
     Task<PoiExperienceDetail?> GetPoiDetailAsync(string poiId);
     Task<TourPlan> GetTourPlanAsync();
     Task<UserProfileCard> GetUserProfileAsync();
+    Task<UserProfileCard?> LoginCustomerAsync(string identifier, string password);
     Task<UserProfileCard?> SelectUserProfileAsync(string identifier);
     Task<UserProfileCard> RegisterUserProfileAsync(CustomerRegistrationRequest request);
     Task<UserProfileCard> UpdateUserProfileAsync(UserProfileUpdateRequest request);
@@ -650,6 +651,7 @@ public sealed partial class FoodStreetApiDataService
             .Where(item =>
                 string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.SourceType, "uploaded", StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(item.AudioUrl))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
@@ -1052,13 +1054,8 @@ public sealed partial class FoodStreetApiDataService
     private UserProfileCard ResolveUserProfile(IReadOnlyList<CustomerUserDto> customerUsers)
     {
         var customer = customerUsers
-            .Where(item => item.IsActive && !item.IsBanned)
             .OrderByDescending(item => item.LastActiveAt ?? item.CreatedAt)
             .FirstOrDefault()
-            ?? customerUsers
-                .Where(item => !item.IsBanned)
-                .OrderByDescending(item => item.LastActiveAt ?? item.CreatedAt)
-                .FirstOrDefault()
             ?? customerUsers.FirstOrDefault();
 
         if (customer is null)
@@ -1256,8 +1253,6 @@ public sealed partial class FoodStreetApiDataService
         public string PreferredLanguage { get; set; } = "vi";
         public string? Username { get; set; }
         public string Country { get; set; } = string.Empty;
-        public bool IsActive { get; set; }
-        public bool IsBanned { get; set; }
         public bool IsPremium { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset? LastActiveAt { get; set; }
@@ -1346,6 +1341,7 @@ public sealed partial class FoodStreetApiDataService
         public string LanguageCode { get; set; } = string.Empty;
         public string AudioUrl { get; set; } = string.Empty;
         public string VoiceType { get; set; } = string.Empty;
+        public string SourceType { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public DateTimeOffset UpdatedAt { get; set; }
     }

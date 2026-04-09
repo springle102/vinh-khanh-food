@@ -7,7 +7,10 @@ namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/media-assets")]
-public sealed class MediaAssetsController(AdminDataRepository repository) : ControllerBase
+public sealed class MediaAssetsController(
+    AdminDataRepository repository,
+    AdminRequestContextResolver adminRequestContextResolver,
+    ResponseUrlNormalizer responseUrlNormalizer) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<MediaAsset>>> GetMediaAssets(
@@ -15,7 +18,8 @@ public sealed class MediaAssetsController(AdminDataRepository repository) : Cont
         [FromQuery] string? entityId,
         [FromQuery] string? type)
     {
-        IEnumerable<MediaAsset> query = repository.GetMediaAssets();
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        IEnumerable<MediaAsset> query = repository.GetMediaAssets(actor);
 
         if (!string.IsNullOrWhiteSpace(entityType))
         {
@@ -32,40 +36,81 @@ public sealed class MediaAssetsController(AdminDataRepository repository) : Cont
             query = query.Where(item => item.Type.Equals(type, StringComparison.OrdinalIgnoreCase));
         }
 
-        return Ok(ApiResponse<IReadOnlyList<MediaAsset>>.Ok(query.OrderByDescending(item => item.CreatedAt).ToList()));
+        return Ok(ApiResponse<IReadOnlyList<MediaAsset>>.Ok(
+            query
+                .OrderByDescending(item => item.CreatedAt)
+                .Select(responseUrlNormalizer.Normalize)
+                .ToList()));
     }
 
     [HttpPost]
     public ActionResult<ApiResponse<MediaAsset>> CreateMediaAsset([FromBody] MediaAssetUpsertRequest request)
     {
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
         if (string.IsNullOrWhiteSpace(request.EntityId) || string.IsNullOrWhiteSpace(request.Url))
         {
-            return BadRequest(ApiResponse<MediaAsset>.Fail("EntityId và url là bắt buộc."));
+            return BadRequest(ApiResponse<MediaAsset>.Fail("EntityId va url la bat buoc."));
         }
 
-        var saved = repository.SaveMediaAsset(null, request);
-        return Ok(ApiResponse<MediaAsset>.Ok(saved, "Tạo media asset thành công."));
+        if (!CanManageEntity(actor, request.EntityType, request.EntityId))
+        {
+            return NotFound(ApiResponse<MediaAsset>.Fail("Khong tim thay tai nguyen de cap nhat media."));
+        }
+
+        var saved = responseUrlNormalizer.Normalize(repository.SaveMediaAsset(null, request, actor));
+        return Ok(ApiResponse<MediaAsset>.Ok(saved, "Tao media asset thanh cong."));
     }
 
     [HttpPut("{id}")]
     public ActionResult<ApiResponse<MediaAsset>> UpdateMediaAsset(string id, [FromBody] MediaAssetUpsertRequest request)
     {
-        var existing = repository.GetMediaAssets().Any(item => item.Id == id);
-        if (!existing)
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var existing = repository.GetMediaAssets(actor).FirstOrDefault(item => item.Id == id);
+        if (existing is null || !CanManageEntity(actor, request.EntityType, request.EntityId))
         {
-            return NotFound(ApiResponse<MediaAsset>.Fail("Không tìm thấy media asset."));
+            return NotFound(ApiResponse<MediaAsset>.Fail("Khong tim thay media asset."));
         }
 
-        var saved = repository.SaveMediaAsset(id, request);
-        return Ok(ApiResponse<MediaAsset>.Ok(saved, "Cập nhật media asset thành công."));
+        var saved = responseUrlNormalizer.Normalize(repository.SaveMediaAsset(id, request, actor));
+        return Ok(ApiResponse<MediaAsset>.Ok(saved, "Cap nhat media asset thanh cong."));
     }
 
     [HttpDelete("{id}")]
     public ActionResult<ApiResponse<string>> DeleteMediaAsset(string id)
     {
-        var deleted = repository.DeleteMediaAsset(id);
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var existing = repository.GetMediaAssets(actor).FirstOrDefault(item => item.Id == id);
+        if (existing is null)
+        {
+            return NotFound(ApiResponse<string>.Fail("Khong tim thay media asset."));
+        }
+
+        var deleted = repository.DeleteMediaAsset(id, actor);
         return deleted
-            ? Ok(ApiResponse<string>.Ok(id, "Xóa media asset thành công."))
-            : NotFound(ApiResponse<string>.Fail("Không tìm thấy media asset."));
+            ? Ok(ApiResponse<string>.Ok(id, "Xoa media asset thanh cong."))
+            : NotFound(ApiResponse<string>.Fail("Khong tim thay media asset."));
     }
+
+    private bool CanManageEntity(AdminRequestContext actor, string? entityType, string? entityId)
+    {
+        if (string.IsNullOrWhiteSpace(entityType) || string.IsNullOrWhiteSpace(entityId))
+        {
+            return false;
+        }
+
+        return NormalizeEntityType(entityType) switch
+        {
+            "poi" => repository.GetPois(actor).Any(item => item.Id == entityId),
+            "food_item" => repository.GetFoodItems(actor).Any(item => item.Id == entityId),
+            "route" => repository.GetRoutes(actor).Any(item =>
+                item.Id == entityId &&
+                (actor.IsSuperAdmin || string.Equals(item.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase))),
+            _ => false
+        };
+    }
+
+    private static string NormalizeEntityType(string value)
+        => string.Equals(value.Trim(), "food-item", StringComparison.OrdinalIgnoreCase)
+            ? "food_item"
+            : value.Trim().ToLowerInvariant();
 }

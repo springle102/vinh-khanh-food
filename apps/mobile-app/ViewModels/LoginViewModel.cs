@@ -149,7 +149,7 @@ public sealed class LoginViewModel : LocalizedViewModelBase
         {
             if (IsLoginMode)
             {
-                await GoToHomeAsync();
+                await LoginAsync();
                 return;
             }
 
@@ -161,29 +161,57 @@ public sealed class LoginViewModel : LocalizedViewModelBase
         }
     }
 
-    private async Task GoToHomeAsync()
+    private async Task LoginAsync()
     {
         var normalizedIdentifier = Identifier?.Trim() ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(normalizedIdentifier))
+        var normalizedPassword = Password?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedIdentifier) || string.IsNullOrWhiteSpace(normalizedPassword))
         {
-            var selectedProfile = await _dataService.SelectUserProfileAsync(normalizedIdentifier);
+            await Shell.Current.DisplayAlertAsync(
+                LoginTabText,
+                LanguageService.GetText("login_validation_required"),
+                LanguageService.GetText("common_ok"));
+            return;
+        }
+
+        try
+        {
+            var selectedProfile = await _dataService.LoginCustomerAsync(normalizedIdentifier, normalizedPassword);
             if (selectedProfile is null)
             {
                 await Shell.Current.DisplayAlertAsync(
-                    LanguageService.GetText("login_tab"),
-                    LanguageService.GetText("login_identifier_not_found"),
+                    LoginTabText,
+                    LanguageService.GetText("login_invalid_credentials"),
                     LanguageService.GetText("common_ok"));
                 return;
             }
-
-            Identifier = !string.IsNullOrWhiteSpace(selectedProfile.Email)
-                ? selectedProfile.Email
-                : selectedProfile.Phone;
         }
-        else
+        catch (MobileBackendConnectionException)
         {
-            await _dataService.EnsureAllowedLanguageSelectionAsync();
+            await Shell.Current.DisplayAlertAsync(
+                LoginTabText,
+                LanguageService.GetText("login_backend_unavailable"),
+                LanguageService.GetText("common_ok"));
+            return;
         }
+        catch (InvalidOperationException exception)
+        {
+            await Shell.Current.DisplayAlertAsync(
+                LoginTabText,
+                exception.Message,
+                LanguageService.GetText("common_ok"));
+            return;
+        }
+
+        Identifier = normalizedIdentifier;
+        Password = string.Empty;
+
+        await Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.HomeMap));
+    }
+
+    private async Task GoToHomeAsync()
+    {
+        await _dataService.EnsureAllowedLanguageSelectionAsync();
 
         await Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.HomeMap));
     }
