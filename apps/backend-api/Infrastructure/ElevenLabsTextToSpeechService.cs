@@ -1,5 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace VinhKhanh.BackendApi.Infrastructure;
@@ -7,6 +11,7 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 public sealed class ElevenLabsTextToSpeechService(
     HttpClient httpClient,
     IOptions<TextToSpeechOptions> optionsAccessor,
+    IMemoryCache cache,
     ILogger<ElevenLabsTextToSpeechService> logger) : ITextToSpeechService
 {
     public async Task<TextToSpeechResult> GenerateAudioAsync(
@@ -42,6 +47,25 @@ public sealed class ElevenLabsTextToSpeechService(
             request.OutputFormat,
             options.OutputFormat,
             TextToSpeechOptions.DefaultOutputFormatValue)!;
+        var normalizedLanguageCode = NormalizeLanguageCode(request.LanguageCode);
+        var cacheKey = BuildCacheKey(
+            normalizedText,
+            normalizedLanguageCode ?? request.LanguageCode?.Trim() ?? string.Empty,
+            voiceId,
+            modelId,
+            outputFormat);
+
+        if (cache.TryGetValue<TextToSpeechResult>(cacheKey, out var cachedAudio) &&
+            cachedAudio is not null)
+        {
+            logger.LogDebug(
+                "ElevenLabs TTS cache hit. language={LanguageCode}; voiceId={VoiceId}; modelId={ModelId}; textHash={TextHash}",
+                normalizedLanguageCode ?? request.LanguageCode?.Trim(),
+                voiceId,
+                modelId,
+                CreateHash(normalizedText));
+            return cachedAudio;
+        }
 
         var payload = new Dictionary<string, object>
         {
@@ -49,7 +73,6 @@ public sealed class ElevenLabsTextToSpeechService(
             ["model_id"] = modelId
         };
 
-        var normalizedLanguageCode = NormalizeLanguageCode(request.LanguageCode);
         if (!string.IsNullOrWhiteSpace(normalizedLanguageCode))
         {
             payload["language_code"] = normalizedLanguageCode;
@@ -114,13 +137,15 @@ public sealed class ElevenLabsTextToSpeechService(
                 throw new TextToSpeechGenerationException("ElevenLabs Text-to-Speech khong tra ve du lieu audio.");
             }
 
-            return new TextToSpeechResult(
+            var result = new TextToSpeechResult(
                 content,
                 string.IsNullOrWhiteSpace(contentType) ? InferContentType(outputFormat) : contentType,
                 "elevenlabs",
                 voiceId,
                 modelId,
                 outputFormat);
+            CacheAudio(cacheKey, result, options);
+            return result;
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -201,6 +226,40 @@ public sealed class ElevenLabsTextToSpeechService(
 
     private static string? FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private void CacheAudio(string cacheKey, TextToSpeechResult result, TextToSpeechOptions options)
+    {
+        var cacheDurationMinutes = options.CacheDurationMinutes > 0
+            ? options.CacheDurationMinutes
+            : TextToSpeechOptions.DefaultCacheDurationMinutesValue;
+
+        cache.Set(
+            cacheKey,
+            result,
+            new MemoryCacheEntryOptions
+            {
+                SlidingExpiration = TimeSpan.FromMinutes(cacheDurationMinutes),
+                Size = Math.Max(result.Content.Length, 1)
+            });
+    }
+
+    private static string BuildCacheKey(
+        string text,
+        string languageCode,
+        string voiceId,
+        string modelId,
+        string outputFormat)
+    {
+        var source = string.Join(
+            '\u001f',
+            text,
+            languageCode.ToLowerInvariant(),
+            voiceId.ToLowerInvariant(),
+            modelId.ToLowerInvariant(),
+            outputFormat.ToLowerInvariant());
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(source));
+        return $"elevenlabs-tts:{Convert.ToHexString(hash)}";
+    }
 
     private static string CreateHash(string value)
     {

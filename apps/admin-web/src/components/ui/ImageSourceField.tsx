@@ -57,6 +57,7 @@ export const ImageSourceField = ({
           id={inputId}
           type="file"
           accept={accept}
+          autoComplete="off"
           onChange={(event) => {
             void handleFileChange(event);
           }}

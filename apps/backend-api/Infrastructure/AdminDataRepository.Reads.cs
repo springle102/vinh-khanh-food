@@ -184,7 +184,7 @@ public sealed partial class AdminDataRepository
             while (poisReader.Read())
             {
                 var poiId = ReadString(poisReader, "Id");
-                pois.Add(new Poi
+                pois.Add(NormalizePoiForResponse(new Poi
                 {
                     Id = poiId,
                     Slug = ReadString(poisReader, "Slug"),
@@ -204,7 +204,7 @@ public sealed partial class AdminDataRepository
                     UpdatedBy = ReadString(poisReader, "UpdatedBy"),
                     CreatedAt = ReadDateTimeOffset(poisReader, "CreatedAt"),
                     UpdatedAt = ReadDateTimeOffset(poisReader, "UpdatedAt")
-                });
+                }));
             }
         }
 

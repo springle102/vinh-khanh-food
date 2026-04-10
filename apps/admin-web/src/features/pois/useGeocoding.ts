@@ -1,19 +1,21 @@
 import { useCallback, useRef } from "react";
 import { adminApi, ApiError } from "../../lib/api";
 import type { GeocodingLocation } from "../../data/types";
+import {
+  normalizeNominatimPayload,
+  type NominatimPayload,
+} from "./addressNormalization";
 
 export type GeocodingResult = GeocodingLocation;
 
 const REVERSE_TIMEOUT_MS = 5_000;
 const FORWARD_TIMEOUT_MS = 5_000;
+const GEOCODING_CACHE_VERSION = "poi-admin-v2";
 
 const normalizeText = (value: string) => value.trim().replace(/\s+/g, " ");
 
 const createCacheKeyFromCoordinate = (lat: number, lng: number) =>
-  `${lat.toFixed(6)},${lng.toFixed(6)}`;
-
-const normalizeOptionalText = (value: unknown) =>
-  typeof value === "string" ? normalizeText(value) : "";
+  `${GEOCODING_CACHE_VERSION}|${lat.toFixed(6)},${lng.toFixed(6)}`;
 
 const shouldFallbackToDirectNominatim = (error: unknown) => {
   if (error instanceof Error && error.name === "AbortError") {
@@ -35,37 +37,9 @@ const shouldFallbackToDirectNominatim = (error: unknown) => {
   return true;
 };
 
-const mapNominatimPayloadToLocation = (payload: {
-  display_name?: string;
-  lat?: string | number;
-  lon?: string | number;
-  address?: Record<string, unknown>;
-}) => {
-  const addressDetails = payload.address ?? {};
-
-  return {
-    address: normalizeOptionalText(payload.display_name),
-    district: normalizeOptionalText(
-      addressDetails.city_district ??
-        addressDetails.state_district ??
-        addressDetails.county ??
-        addressDetails.city,
-    ),
-    ward: normalizeOptionalText(
-      addressDetails.suburb ??
-        addressDetails.neighbourhood ??
-        addressDetails.quarter ??
-        addressDetails.city_block ??
-        addressDetails.hamlet,
-    ),
-    lat: Number(payload.lat ?? 0),
-    lng: Number(payload.lon ?? 0),
-  } satisfies GeocodingResult;
-};
-
 const fetchDirectReverseGeocode = async (lat: number, lng: number, signal?: AbortSignal) => {
   const response = await fetch(
-    `https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&accept-language=vi&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}`,
+    `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&accept-language=vi&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}`,
     {
       signal,
       headers: {
@@ -78,19 +52,20 @@ const fetchDirectReverseGeocode = async (lat: number, lng: number, signal?: Abor
     throw new Error(`REVERSE_GEOCODE_HTTP_${response.status}`);
   }
 
-  const payload = (await response.json()) as {
-    display_name?: string;
-    lat?: string | number;
-    lon?: string | number;
-    address?: Record<string, unknown>;
-  };
-
-  return mapNominatimPayloadToLocation(payload);
+  const payload = (await response.json()) as NominatimPayload;
+  console.debug("[admin-poi] direct-reverse-geocode-raw", {
+    lat,
+    lng,
+    payload,
+  });
+  const normalized = normalizeNominatimPayload(payload);
+  console.debug("[admin-poi] direct-reverse-geocode-normalized", normalized);
+  return normalized;
 };
 
 const fetchDirectForwardGeocode = async (query: string, signal?: AbortSignal) => {
   const response = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=vi&limit=1&q=${encodeURIComponent(query)}`,
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&accept-language=vi&limit=1&q=${encodeURIComponent(query)}`,
     {
       signal,
       headers: {
@@ -103,18 +78,19 @@ const fetchDirectForwardGeocode = async (query: string, signal?: AbortSignal) =>
     throw new Error(`FORWARD_GEOCODE_HTTP_${response.status}`);
   }
 
-  const payload = (await response.json()) as Array<{
-    display_name?: string;
-    lat?: string | number;
-    lon?: string | number;
-    address?: Record<string, unknown>;
-  }>;
+  const payload = (await response.json()) as NominatimPayload[];
 
   if (!payload.length) {
     throw new Error("ADDRESS_NOT_FOUND");
   }
 
-  return mapNominatimPayloadToLocation(payload[0]);
+  console.debug("[admin-poi] direct-forward-geocode-raw", {
+    query,
+    payload: payload[0],
+  });
+  const normalized = normalizeNominatimPayload(payload[0]);
+  console.debug("[admin-poi] direct-forward-geocode-normalized", normalized);
+  return normalized;
 };
 
 const withTimeout = async <T>(
@@ -165,6 +141,11 @@ export const useGeocoding = () => {
           REVERSE_TIMEOUT_MS,
           signal,
         );
+        console.debug("[admin-poi] backend-reverse-geocode-normalized", {
+          lat,
+          lng,
+          result,
+        });
       } catch (error) {
         if (!shouldFallbackToDirectNominatim(error)) {
           throw error;
@@ -186,7 +167,7 @@ export const useGeocoding = () => {
   const forwardGeocode = useCallback(
     async (rawAddress: string, signal?: AbortSignal) => {
       const normalizedAddress = normalizeText(rawAddress);
-      const cacheKey = normalizedAddress.toLowerCase();
+      const cacheKey = `${GEOCODING_CACHE_VERSION}|${normalizedAddress.toLowerCase()}`;
       const cached = forwardCacheRef.current.get(cacheKey);
       if (cached) {
         return cached;
@@ -199,6 +180,10 @@ export const useGeocoding = () => {
           FORWARD_TIMEOUT_MS,
           signal,
         );
+        console.debug("[admin-poi] backend-forward-geocode-normalized", {
+          query: normalizedAddress,
+          result,
+        });
       } catch (error) {
         if (!shouldFallbackToDirectNominatim(error)) {
           throw error;

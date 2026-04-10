@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Media;
 using Microsoft.Maui.Storage;
 using Plugin.Maui.Audio;
 using VinhKhanh.MobileApp.Helpers;
@@ -24,6 +25,8 @@ public sealed class PoiNarrationService : IPoiNarrationService
 {
     private const string AppSettingsFileName = "appsettings.json";
     private const int TextToSpeechProxyMaxChars = 180;
+    private const string TextToSpeechProxyModelId = "eleven_flash_v2_5";
+    private static readonly TimeSpan TextToSpeechProxySegmentTimeout = TimeSpan.FromSeconds(12);
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
@@ -68,15 +71,14 @@ public sealed class PoiNarrationService : IPoiNarrationService
                 currentCustomerId,
                 session.Token);
             var effectiveLanguageCode = AppLanguage.NormalizeCode(resolvedNarration?.EffectiveLanguageCode ?? requestedLanguageCode);
-            var canUseResolvedNarration = CanUseResolvedNarration(resolvedNarration, requestedLanguageCode, effectiveLanguageCode);
             var narrationText = FirstNonEmpty(
-                canUseResolvedNarration ? resolvedNarration?.TranslatedText : null,
-                canUseResolvedNarration ? resolvedNarration?.TtsInputText : null,
+                resolvedNarration?.TranslatedText,
+                resolvedNarration?.TtsInputText,
                 GetRequestedLocalizedText(detail.Description, requestedLanguageCode),
                 GetRequestedLocalizedText(detail.Summary, requestedLanguageCode));
 
             var audioUrl = FirstNonEmpty(
-                CanUseResolvedAudioGuide(resolvedNarration, requestedLanguageCode, effectiveLanguageCode)
+                CanUseResolvedAudioGuide(resolvedNarration)
                     ? resolvedNarration?.AudioGuide?.AudioUrl
                     : null,
                 GetRequestedLocalizedText(detail.AudioUrls, requestedLanguageCode));
@@ -107,6 +109,11 @@ public sealed class PoiNarrationService : IPoiNarrationService
             {
                 return;
             }
+
+            await SpeakWithDeviceTextToSpeechAsync(
+                narrationText,
+                resolvedNarration?.TtsLocale,
+                session.Token);
         }
         catch (OperationCanceledException) when (session.Token.IsCancellationRequested)
         {
@@ -130,31 +137,10 @@ public sealed class PoiNarrationService : IPoiNarrationService
         }
     }
 
-    private static bool CanUseResolvedNarration(
-        PoiNarrationResponseDto? resolvedNarration,
-        string requestedLanguageCode,
-        string effectiveLanguageCode)
-    {
-        if (resolvedNarration is null)
-        {
-            return false;
-        }
-
-        if (string.Equals(effectiveLanguageCode, requestedLanguageCode, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return string.Equals(resolvedNarration.TranslationStatus, "auto_translated", StringComparison.OrdinalIgnoreCase) &&
-               !string.IsNullOrWhiteSpace(resolvedNarration.TranslatedText);
-    }
-
     private static bool CanUseResolvedAudioGuide(
-        PoiNarrationResponseDto? resolvedNarration,
-        string requestedLanguageCode,
-        string effectiveLanguageCode) =>
+        PoiNarrationResponseDto? resolvedNarration) =>
         resolvedNarration?.AudioGuide is not null &&
-        string.Equals(effectiveLanguageCode, requestedLanguageCode, StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(resolvedNarration.TranslationStatus, "auto_translated", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(resolvedNarration.AudioGuide.SourceType, "uploaded", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(resolvedNarration.AudioGuide.Status, "ready", StringComparison.OrdinalIgnoreCase) &&
         HasPlayableRemoteAudioUrl(resolvedNarration.AudioGuide.AudioUrl);
@@ -163,7 +149,8 @@ public sealed class PoiNarrationService : IPoiNarrationService
     {
         foreach (var candidate in GetRequestedLanguageCandidates(languageCode))
         {
-            if (source.Values.TryGetValue(candidate, out var value) && !string.IsNullOrWhiteSpace(value))
+            if (source.Values.TryGetValue(candidate, out var value) &&
+                LocalizationFallbackPolicy.IsUsableTextForLanguage(value, candidate))
             {
                 return value.Trim();
             }
@@ -229,12 +216,18 @@ public sealed class PoiNarrationService : IPoiNarrationService
 
     private async Task PlayRemoteAudioSegmentAsync(string audioUrl, long playbackId, CancellationToken cancellationToken)
     {
-        using var response = await _mediaClient.GetAsync(audioUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var timeoutSource = IsTextToSpeechProxyUrl(audioUrl)
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : null;
+        timeoutSource?.CancelAfter(TextToSpeechProxySegmentTimeout);
+        var requestCancellationToken = timeoutSource?.Token ?? cancellationToken;
+
+        using var response = await _mediaClient.GetAsync(audioUrl, HttpCompletionOption.ResponseHeadersRead, requestCancellationToken);
         response.EnsureSuccessStatusCode();
 
-        await using var networkStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var networkStream = await response.Content.ReadAsStreamAsync(requestCancellationToken);
         var buffer = new MemoryStream();
-        await networkStream.CopyToAsync(buffer, cancellationToken);
+        await networkStream.CopyToAsync(buffer, requestCancellationToken);
         buffer.Position = 0;
 
         AsyncAudioPlayer player;
@@ -447,10 +440,62 @@ public sealed class PoiNarrationService : IPoiNarrationService
                parsed.Host.Contains("example.com", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsTextToSpeechProxyUrl(string audioUrl)
+    {
+        if (!Uri.TryCreate(audioUrl, UriKind.Absolute, out var parsed))
+        {
+            return false;
+        }
+
+        return parsed.AbsolutePath.EndsWith("/api/v1/tts", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string? ReadCurrentCustomerId()
     {
         var customerId = Preferences.Default.Get(AppPreferenceKeys.CurrentCustomerId, string.Empty);
         return string.IsNullOrWhiteSpace(customerId) ? null : customerId.Trim();
+    }
+
+    private static async Task SpeakWithDeviceTextToSpeechAsync(
+        string narrationText,
+        string? preferredLocale,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(narrationText))
+        {
+            return;
+        }
+
+        var speechOptions = await BuildSpeechOptionsAsync(preferredLocale);
+        if (speechOptions is null)
+        {
+            await TextToSpeech.Default.SpeakAsync(narrationText, null, cancellationToken);
+            return;
+        }
+
+        await TextToSpeech.Default.SpeakAsync(narrationText, speechOptions, cancellationToken);
+    }
+
+    private static async Task<SpeechOptions?> BuildSpeechOptionsAsync(string? preferredLocale)
+    {
+        if (string.IsNullOrWhiteSpace(preferredLocale))
+        {
+            return null;
+        }
+
+        var normalizedPreferredLocale = preferredLocale.Trim();
+        var locales = await TextToSpeech.Default.GetLocalesAsync();
+        var matchedLocale = locales?.FirstOrDefault(locale =>
+            string.Equals(locale.Language, normalizedPreferredLocale, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(locale.Name, normalizedPreferredLocale, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals($"{locale.Language}-{locale.Country}", normalizedPreferredLocale, StringComparison.OrdinalIgnoreCase));
+
+        return matchedLocale is null
+            ? null
+            : new SpeechOptions
+            {
+                Locale = matchedLocale
+            };
     }
 
     private static IReadOnlyList<string> BuildTextToSpeechAudioUrls(
@@ -482,7 +527,8 @@ public sealed class PoiNarrationService : IPoiNarrationService
                     ["languageCode"] = normalizedLanguageCode,
                     ["text"] = chunk,
                     ["total"] = chunks.Count.ToString(),
-                    ["idx"] = index.ToString()
+                    ["idx"] = index.ToString(),
+                    ["model_id"] = TextToSpeechProxyModelId
                 };
 
                 if (!string.IsNullOrWhiteSpace(customerUserId))
@@ -555,12 +601,12 @@ public sealed class PoiNarrationService : IPoiNarrationService
     private sealed class PoiNarrationResponseDto
     {
         public string PoiId { get; set; } = string.Empty;
-        public string RequestedLanguageCode { get; set; } = "vi";
-        public string EffectiveLanguageCode { get; set; } = "vi";
+        public string RequestedLanguageCode { get; set; } = AppLanguage.FallbackLanguage;
+        public string EffectiveLanguageCode { get; set; } = AppLanguage.FallbackLanguage;
         public string TtsInputText { get; set; } = string.Empty;
         public string? TranslatedText { get; set; }
         public string TranslationStatus { get; set; } = "stored";
-        public string TtsLocale { get; set; } = "vi-VN";
+        public string TtsLocale { get; set; } = "en-US";
         public string? FallbackMessage { get; set; }
         public NarrationAudioGuideDto? AudioGuide { get; set; }
     }

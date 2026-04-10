@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\apps\mobile-app\Helpers\AppLanguage.cs" Link="AppLanguage.cs" />
+    <Compile Include="..\..\apps\mobile-app\Helpers\LocalizationFallbackPolicy.cs" Link="LocalizationFallbackPolicy.cs" />
+    <Compile Include="..\..\apps\backend-api\Contracts\ApiResponse.cs" Link="Backend\ApiResponse.cs" />
+    <Compile Include="..\..\apps\backend-api\Models\Entities.cs" Link="Backend\Entities.cs" />
+    <Compile Include="..\..\apps\backend-api\Infrastructure\PremiumAccessCatalog.cs" Link="Backend\PremiumAccessCatalog.cs" />
+    <Compile Include="..\..\apps\backend-api\Infrastructure\ITextTranslationClient.cs" Link="Backend\ITextTranslationClient.cs" />
+    <Compile Include="..\..\apps\backend-api\Infrastructure\NarrationTextSanitizer.cs" Link="Backend\NarrationTextSanitizer.cs" />
+    <Compile Include="..\..\apps\backend-api\Infrastructure\LocalizationContentPolicy.cs" Link="Backend\LocalizationContentPolicy.cs" />
+    <Compile Include="..\..\apps\backend-api\Infrastructure\BootstrapLocalizationService.cs" Link="Backend\BootstrapLocalizationService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

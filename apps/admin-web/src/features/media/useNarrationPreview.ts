@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AdminDataState, AudioGuide } from "../../data/types";
+import type { AdminDataState, AudioGuide, RegionVoice } from "../../data/types";
 import {
   buildTtsAudioUrls,
-  fetchTtsPlaybackUrls,
+  canUseBrowserSpeechSynthesis,
+  createTtsPlaybackQueue,
   hasValidAudioUrl,
+  languageLocales,
+  loadBrowserSpeechVoices,
   resolvePoiNarration,
+  selectSpeechVoice,
+  type TtsPlaybackQueue,
 } from "../../lib/narration";
 
 type PreviewStatus = "idle" | "playing" | "error";
@@ -36,14 +41,22 @@ export const useNarrationPreview = (state: AdminDataState) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const requestIdRef = useRef(0);
   const resolveAbortRef = useRef<AbortController | null>(null);
-  const generatedTtsObjectUrlsRef = useRef<string[]>([]);
+  const ttsPlaybackQueueRef = useRef<TtsPlaybackQueue | null>(null);
+  const browserSpeechCancelRef = useRef<(() => void) | null>(null);
 
-  const revokeGeneratedTtsObjectUrls = useCallback(() => {
-    generatedTtsObjectUrlsRef.current.forEach((value) => URL.revokeObjectURL(value));
-    generatedTtsObjectUrlsRef.current = [];
+  const disposeTtsPlaybackQueue = useCallback(() => {
+    ttsPlaybackQueueRef.current?.dispose();
+    ttsPlaybackQueueRef.current = null;
+  }, []);
+
+  const stopBrowserSpeech = useCallback(() => {
+    browserSpeechCancelRef.current?.();
+    browserSpeechCancelRef.current = null;
   }, []);
 
   const resetAudioElement = useCallback(() => {
+    disposeTtsPlaybackQueue();
+    stopBrowserSpeech();
     audioRef.current?.pause();
 
     if (audioRef.current) {
@@ -51,10 +64,11 @@ export const useNarrationPreview = (state: AdminDataState) => {
       audioRef.current.onplay = null;
       audioRef.current.onended = null;
       audioRef.current.onerror = null;
+      audioRef.current.removeAttribute("src");
+      audioRef.current.load();
       audioRef.current = null;
     }
-    revokeGeneratedTtsObjectUrls();
-  }, [revokeGeneratedTtsObjectUrls]);
+  }, [disposeTtsPlaybackQueue, stopBrowserSpeech]);
 
   const stopPreview = useCallback((message = "") => {
     requestIdRef.current += 1;
@@ -87,6 +101,22 @@ export const useNarrationPreview = (state: AdminDataState) => {
       requestId: number;
       onPlaybackError?: () => void | Promise<void>;
     }) => {
+      const playbackQueue = kind === "tts" && audioUrls.length > 0
+        ? createTtsPlaybackQueue(audioUrls)
+        : null;
+      if (playbackQueue) {
+        disposeTtsPlaybackQueue();
+        ttsPlaybackQueueRef.current = playbackQueue;
+      }
+
+      const releasePlaybackQueue = () => {
+        if (ttsPlaybackQueueRef.current === playbackQueue) {
+          ttsPlaybackQueueRef.current = null;
+        }
+
+        playbackQueue?.dispose();
+      };
+
       const previewAudio = new Audio();
       previewAudio.preload = "auto";
       audioRef.current = previewAudio;
@@ -101,7 +131,15 @@ export const useNarrationPreview = (state: AdminDataState) => {
         }
 
         currentSegmentIndex = segmentIndex;
-        previewAudio.src = audioUrls[segmentIndex];
+        const segmentUrl = playbackQueue
+          ? await playbackQueue.getSegmentUrl(segmentIndex)
+          : audioUrls[segmentIndex];
+        if (requestId !== requestIdRef.current) {
+          releasePlaybackQueue();
+          return;
+        }
+
+        previewAudio.src = segmentUrl;
         await previewAudio.play();
       };
 
@@ -116,6 +154,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
           kind,
           message: startMessage,
         });
+        playbackQueue?.prefetch(currentSegmentIndex + 1);
       };
 
       previewAudio.onended = () => {
@@ -130,6 +169,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
           return;
         }
 
+        releasePlaybackQueue();
         resetAudioElement();
         setPreviewState({
           ...DEFAULT_PREVIEW_STATE,
@@ -142,6 +182,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
           return;
         }
 
+        releasePlaybackQueue();
         resetAudioElement();
 
         if (onPlaybackError) {
@@ -162,7 +203,88 @@ export const useNarrationPreview = (state: AdminDataState) => {
 
       await playSegment(0);
     },
-    [resetAudioElement],
+    [disposeTtsPlaybackQueue, resetAudioElement],
+  );
+
+  const playBrowserSpeechPreview = useCallback(
+    async ({
+      audioGuideId,
+      text,
+      languageCode,
+      voiceType,
+      requestId,
+      fallbackMessage,
+    }: {
+      audioGuideId: string;
+      text: string;
+      languageCode: AudioGuide["languageCode"];
+      voiceType: RegionVoice;
+      requestId: number;
+      fallbackMessage?: string | null;
+    }) => {
+      const narrationText = text.trim();
+      if (!narrationText || !canUseBrowserSpeechSynthesis()) {
+        return false;
+      }
+
+      setPreviewState({
+        audioGuideId,
+        status: "playing",
+        kind: "tts",
+        message: fallbackMessage
+          ? `Dang phat bang giong doc cua trinh duyet. ${fallbackMessage}`
+          : "Dang phat bang giong doc cua trinh duyet.",
+      });
+
+      const voices = await loadBrowserSpeechVoices();
+      if (requestId !== requestIdRef.current) {
+        return true;
+      }
+
+      const speechSynthesis = window.speechSynthesis;
+      stopBrowserSpeech();
+
+      const utterance = new SpeechSynthesisUtterance(narrationText);
+      utterance.lang = languageLocales[languageCode];
+      utterance.voice = selectSpeechVoice(voices, languageCode, voiceType);
+
+      let cancelled = false;
+      browserSpeechCancelRef.current = () => {
+        cancelled = true;
+        speechSynthesis.cancel();
+      };
+
+      utterance.onend = () => {
+        if (requestId !== requestIdRef.current || cancelled) {
+          return;
+        }
+
+        browserSpeechCancelRef.current = null;
+        setPreviewState({
+          ...DEFAULT_PREVIEW_STATE,
+          message: "Da phat xong ban xem thu TTS.",
+        });
+      };
+
+      utterance.onerror = () => {
+        if (requestId !== requestIdRef.current || cancelled) {
+          return;
+        }
+
+        browserSpeechCancelRef.current = null;
+        setPreviewState({
+          audioGuideId,
+          status: "error",
+          kind: "tts",
+          message: "Khong the phat TTS bang ElevenLabs hoac giong doc cua trinh duyet.",
+        });
+      };
+
+      speechSynthesis.cancel();
+      speechSynthesis.speak(utterance);
+      return true;
+    },
+    [stopBrowserSpeech],
   );
 
   const playTtsPreview = useCallback(
@@ -170,12 +292,14 @@ export const useNarrationPreview = (state: AdminDataState) => {
       audioGuideId,
       text,
       languageCode,
+      voiceType,
       fallbackMessage,
       requestId,
     }: {
       audioGuideId: string;
       text: string;
       languageCode: AudioGuide["languageCode"];
+      voiceType: RegionVoice;
       fallbackMessage?: string | null;
       requestId: number;
     }) => {
@@ -190,31 +314,33 @@ export const useNarrationPreview = (state: AdminDataState) => {
         return;
       }
 
-      revokeGeneratedTtsObjectUrls();
-      const preparedTtsAudio = await fetchTtsPlaybackUrls(audioUrls);
-      if (preparedTtsAudio.error) {
-        setPreviewState({
+      const fallbackToBrowserSpeech = async () => {
+        await playBrowserSpeechPreview({
           audioGuideId,
-          status: "error",
-          kind: "tts",
-          message: preparedTtsAudio.error,
+          text,
+          languageCode,
+          voiceType,
+          fallbackMessage,
+          requestId,
         });
-        return;
+      };
+
+      try {
+        await playAudioSequence({
+          audioGuideId,
+          audioUrls,
+          kind: "tts",
+          requestId,
+          startMessage: fallbackMessage
+            ? `Đang phát ElevenLabs TTS. ${fallbackMessage}`
+            : "Đang phát ElevenLabs TTS.",
+          onPlaybackError: fallbackToBrowserSpeech,
+        });
+      } catch {
+        await fallbackToBrowserSpeech();
       }
-
-      generatedTtsObjectUrlsRef.current = [...preparedTtsAudio.audioUrls];
-
-      await playAudioSequence({
-        audioGuideId,
-        audioUrls: preparedTtsAudio.audioUrls,
-        kind: "tts",
-        requestId,
-        startMessage: fallbackMessage
-          ? `Đang phát ElevenLabs TTS. ${fallbackMessage}`
-          : "Đang phát ElevenLabs TTS.",
-      });
     },
-    [fetchTtsPlaybackUrls, playAudioSequence, revokeGeneratedTtsObjectUrls],
+    [playAudioSequence, playBrowserSpeechPreview],
   );
 
   const previewAudioGuide = useCallback(
@@ -283,6 +409,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
             audioGuideId: guide.id,
             text: narrationText,
             languageCode: effectiveLanguage,
+            voiceType: guide.voiceType,
             fallbackMessage,
             requestId,
           });

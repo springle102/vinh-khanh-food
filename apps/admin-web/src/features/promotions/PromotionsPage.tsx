@@ -8,10 +8,10 @@ import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import { useAuth } from "../auth/AuthContext";
-import type { Promotion } from "../../data/types";
+import type { LanguageCode, Promotion } from "../../data/types";
 import { preventImplicitFormSubmit } from "../../lib/forms";
-import { formatDateTime } from "../../lib/utils";
-import { getPoiTitle } from "../../lib/selectors";
+import { formatDateTime, languageLabels } from "../../lib/utils";
+import { getEntityTranslation, getPoiTitle } from "../../lib/selectors";
 
 type PromotionForm = {
   id?: string;
@@ -21,6 +21,7 @@ type PromotionForm = {
   startAt: string;
   endAt: string;
   status: Promotion["status"];
+  languageCode: LanguageCode;
 };
 
 const defaultPromotionForm: PromotionForm = {
@@ -30,56 +31,105 @@ const defaultPromotionForm: PromotionForm = {
   startAt: "",
   endAt: "",
   status: "upcoming",
+  languageCode: "vi",
 };
 
 export const PromotionsPage = () => {
-  const { state, savePromotion } = useAdminData();
+  const { state, isBootstrapping, savePromotion, saveTranslation } = useAdminData();
   const { user } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState<PromotionForm>({
-    ...defaultPromotionForm,
-    poiId: state.pois[0]?.id ?? "",
-  });
+  const [form, setForm] = useState<PromotionForm>(defaultPromotionForm);
+
+  const resolvePromotionTranslationFields = (promotion: Promotion, languageCode: LanguageCode) => {
+    const translation = getEntityTranslation(state, "promotion", promotion.id, languageCode);
+
+    return {
+      title: translation?.title ?? promotion.title,
+      description: translation?.fullText || translation?.shortText || promotion.description,
+    };
+  };
 
   const openModal = (promotion?: Promotion) => {
+    const languageCode = state.settings.defaultLanguage;
     setForm(
       promotion
         ? {
           id: promotion.id,
           poiId: promotion.poiId,
-          title: promotion.title,
-          description: promotion.description,
+          ...resolvePromotionTranslationFields(promotion, languageCode),
           startAt: promotion.startAt.slice(0, 16),
           endAt: promotion.endAt.slice(0, 16),
           status: promotion.status,
+          languageCode,
         }
-        : {
-          ...defaultPromotionForm,
-          poiId: state.pois[0]?.id ?? "",
-        },
+        : { ...defaultPromotionForm, languageCode },
     );
     setModalOpen(true);
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user) {
       return;
     }
 
-    savePromotion(
+    const existingPromotion = form.id
+      ? state.promotions.find((item) => item.id === form.id)
+      : null;
+    const shouldWriteBaseText =
+      !existingPromotion ||
+      form.languageCode === state.settings.defaultLanguage;
+    const savedPromotion = await savePromotion(
       {
         id: form.id,
         poiId: form.poiId,
-        title: form.title,
-        description: form.description,
+        title: shouldWriteBaseText ? form.title : existingPromotion?.title ?? form.title,
+        description: shouldWriteBaseText ? form.description : existingPromotion?.description ?? form.description,
         startAt: new Date(form.startAt).toISOString(),
         endAt: new Date(form.endAt).toISOString(),
         status: form.status,
       },
       user,
     );
+    const existingTranslation = state.translations.find(
+      (item) =>
+        item.entityType === "promotion" &&
+        item.entityId === savedPromotion.id &&
+        item.languageCode === form.languageCode,
+    );
+    await saveTranslation(
+      {
+        id: existingTranslation?.id,
+        entityType: "promotion",
+        entityId: savedPromotion.id,
+        languageCode: form.languageCode,
+        title: form.title,
+        shortText: form.description,
+        fullText: form.description,
+        seoTitle: form.title,
+        seoDescription: form.description || form.title,
+        isPremium: !state.settings.freeLanguages.includes(form.languageCode),
+      },
+      user,
+    );
     setModalOpen(false);
+  };
+
+  const handlePromotionLanguageChange = (languageCode: LanguageCode) => {
+    setForm((current) => {
+      const promotion = current.id
+        ? state.promotions.find((item) => item.id === current.id)
+        : null;
+      if (!promotion) {
+        return { ...current, languageCode };
+      }
+
+      return {
+        ...current,
+        languageCode,
+        ...resolvePromotionTranslationFields(promotion, languageCode),
+      };
+    });
   };
 
   const columns: DataColumn<Promotion>[] = [
@@ -132,7 +182,9 @@ export const PromotionsPage = () => {
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">Promotions</p>
             <h1 className="mt-3 text-3xl font-bold text-ink-900">Quản lý ưu đãi, sự kiện và thông báo chiến dịch</h1>
           </div>
-          <Button onClick={() => openModal()}>Tạo ưu đãi</Button>
+          <Button onClick={() => openModal()} disabled={isBootstrapping}>
+            {isBootstrapping ? "Đang tải dữ liệu..." : "Tạo ưu đãi"}
+          </Button>
         </div>
       </Card>
 
@@ -146,16 +198,31 @@ export const PromotionsPage = () => {
         title={form.id ? "Cập nhật ưu đãi" : "Tạo ưu đãi mới"}
         description="Thông tin khuyến mãi có thể dùng cho banner, push notification và poi detail."
       >
-        <form className="space-y-5" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit}>
+        <form className="space-y-5" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit} autoComplete="off">
           <div>
             <label className="field-label">POI</label>
             <Select
               value={form.poiId}
+              required
               onChange={(event) => setForm((current) => ({ ...current, poiId: event.target.value }))}
             >
+              <option value="">Chọn POI</option>
               {state.pois.map((poi) => (
                 <option key={poi.id} value={poi.id}>
                   {getPoiTitle(state, poi.id)}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <label className="field-label">Ngôn ngữ nội dung ưu đãi</label>
+            <Select
+              value={form.languageCode}
+              onChange={(event) => handlePromotionLanguageChange(event.target.value as LanguageCode)}
+            >
+              {Object.entries(languageLabels).map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
                 </option>
               ))}
             </Select>
@@ -199,6 +266,7 @@ export const PromotionsPage = () => {
                 type="datetime-local"
                 value={form.startAt}
                 onChange={(event) => setForm((current) => ({ ...current, startAt: event.target.value }))}
+                required
               />
             </div>
             <div>
@@ -207,6 +275,7 @@ export const PromotionsPage = () => {
                 type="datetime-local"
                 value={form.endAt}
                 onChange={(event) => setForm((current) => ({ ...current, endAt: event.target.value }))}
+                required
               />
             </div>
           </div>

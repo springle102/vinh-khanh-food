@@ -554,6 +554,12 @@ public sealed class HomeMapViewModel : LocalizedViewModelBase
         try
         {
             await StopNarrationAsync();
+            SelectedPoiDetail = null;
+            if (SelectedPoi is not null && IsBottomSheetVisible)
+            {
+                IsPoiDetailLoading = true;
+            }
+
             await LoadAsync(autoPlayNarrationForSelection: _isNarrationContextActive && IsBottomSheetVisible);
         }
         catch

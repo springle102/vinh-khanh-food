@@ -23,6 +23,7 @@ export const languageLocales: Record<LanguageCode, string> = {
 };
 
 const TTS_PROXY_MAX_CHARS = 180;
+const TTS_PROXY_MODEL_ID = "eleven_flash_v2_5";
 
 export const supportedNarrationLanguages = Object.keys(languageLabels) as LanguageCode[];
 
@@ -80,6 +81,39 @@ export const selectSpeechVoice = (
     availableVoices[0] ??
     null
   );
+};
+
+export const canUseBrowserSpeechSynthesis = () =>
+  typeof window !== "undefined" &&
+  "speechSynthesis" in window &&
+  typeof SpeechSynthesisUtterance !== "undefined";
+
+export const loadBrowserSpeechVoices = async () => {
+  if (!canUseBrowserSpeechSynthesis()) {
+    return [] as SpeechSynthesisVoice[];
+  }
+
+  const speechSynthesis = window.speechSynthesis;
+  const readyVoices = speechSynthesis.getVoices();
+  if (readyVoices.length > 0) {
+    return readyVoices;
+  }
+
+  return new Promise<SpeechSynthesisVoice[]>((resolve) => {
+    let settled = false;
+    const settle = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      window.clearTimeout(timeoutId);
+      speechSynthesis.removeEventListener("voiceschanged", settle);
+      resolve(speechSynthesis.getVoices());
+    };
+    const timeoutId = window.setTimeout(settle, 600);
+    speechSynthesis.addEventListener("voiceschanged", settle);
+  });
 };
 
 export const findPoiAudioGuide = (
@@ -161,10 +195,143 @@ export const buildTtsAudioUrls = (
       text: chunk,
       total: chunks.length.toString(),
       idx: index.toString(),
+      model_id: TTS_PROXY_MODEL_ID,
     });
 
     return resolveApiUrl(`/api/v1/tts?${query.toString()}`);
   });
+};
+
+type TtsPlaybackFetchResult =
+  | { audioUrl: string; error: null }
+  | { audioUrl: null; error: string };
+
+const fetchTtsPlaybackUrl = async (
+  url: string,
+  signal?: AbortSignal,
+): Promise<TtsPlaybackFetchResult> => {
+  const response = await fetch(url, {
+    method: "GET",
+    cache: "default",
+    signal,
+  });
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (!response.ok) {
+    if (contentType.includes("application/json")) {
+      try {
+        const payload = (await response.json()) as {
+          success?: boolean;
+          message?: string | null;
+        };
+
+        return {
+          audioUrl: null,
+          error: payload.message?.trim() || `TTS request failed (${response.status}).`,
+        };
+      } catch {
+        return {
+          audioUrl: null,
+          error: `TTS request failed (${response.status}).`,
+        };
+      }
+    }
+
+    return {
+      audioUrl: null,
+      error: `TTS request failed (${response.status}).`,
+    };
+  }
+
+  if (!contentType.includes("audio")) {
+    return {
+      audioUrl: null,
+      error: "Backend khong tra ve audio TTS hop le.",
+    };
+  }
+
+  const blob = await response.blob();
+  return {
+    audioUrl: URL.createObjectURL(blob),
+    error: null,
+  };
+};
+
+export type TtsPlaybackQueue = {
+  readonly segmentCount: number;
+  getSegmentUrl: (index: number) => Promise<string>;
+  prefetch: (index: number) => void;
+  dispose: () => void;
+};
+
+export const createTtsPlaybackQueue = (urls: string[]): TtsPlaybackQueue => {
+  const controller = new AbortController();
+  const objectUrls: string[] = [];
+  const readyUrls = new Map<number, string>();
+  const pendingUrls = new Map<number, Promise<string>>();
+  let disposed = false;
+
+  const getSegmentUrl = async (index: number) => {
+    if (disposed) {
+      throw new DOMException("TTS playback was stopped.", "AbortError");
+    }
+
+    if (index < 0 || index >= urls.length) {
+      throw new Error("TTS segment index is out of range.");
+    }
+
+    const readyUrl = readyUrls.get(index);
+    if (readyUrl) {
+      return readyUrl;
+    }
+
+    const pendingUrl = pendingUrls.get(index);
+    if (pendingUrl) {
+      return pendingUrl;
+    }
+
+    const nextUrl = fetchTtsPlaybackUrl(urls[index], controller.signal)
+      .then((result) => {
+        if (result.error || !result.audioUrl) {
+          throw new Error(result.error || "Unable to prepare TTS audio.");
+        }
+
+        if (disposed) {
+          URL.revokeObjectURL(result.audioUrl);
+          throw new DOMException("TTS playback was stopped.", "AbortError");
+        }
+
+        objectUrls.push(result.audioUrl);
+        readyUrls.set(index, result.audioUrl);
+        return result.audioUrl;
+      })
+      .finally(() => {
+        pendingUrls.delete(index);
+      });
+
+    pendingUrls.set(index, nextUrl);
+    return nextUrl;
+  };
+
+  return {
+    segmentCount: urls.length,
+    getSegmentUrl,
+    prefetch: (index: number) => {
+      if (index < 0 || index >= urls.length || disposed) {
+        return;
+      }
+
+      void getSegmentUrl(index).catch(() => undefined);
+    },
+    dispose: () => {
+      disposed = true;
+      controller.abort();
+      objectUrls.forEach((value) => URL.revokeObjectURL(value));
+      objectUrls.length = 0;
+      readyUrls.clear();
+      pendingUrls.clear();
+    },
+  };
 };
 
 export const fetchTtsPlaybackUrls = async (urls: string[]) => {
@@ -180,7 +347,7 @@ export const fetchTtsPlaybackUrls = async (urls: string[]) => {
     for (const url of urls) {
       const response = await fetch(url, {
         method: "GET",
-        cache: "no-store",
+        cache: "default",
       });
       const contentType = response.headers.get("content-type") ?? "";
 

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\apps\backend-api\Infrastructure\ITextToSpeechService.cs" Link="Backend\ITextToSpeechService.cs" />
+    <Compile Include="..\..\apps\backend-api\Infrastructure\TextToSpeechOptions.cs" Link="Backend\TextToSpeechOptions.cs" />
+    <Compile Include="..\..\apps\backend-api\Infrastructure\ElevenLabsTextToSpeechService.cs" Link="Backend\ElevenLabsTextToSpeechService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

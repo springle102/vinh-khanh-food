@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.AspNetCore.Http;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
@@ -14,22 +15,25 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
         }
 
         var normalized = value.Trim();
-        if (Uri.TryCreate(normalized, UriKind.Absolute, out _))
+        var request = httpContextAccessor.HttpContext?.Request;
+        if (Uri.TryCreate(normalized, UriKind.Absolute, out var absoluteUri))
         {
+            if (request is not null &&
+                !string.IsNullOrWhiteSpace(request.Host.Value) &&
+                ShouldRewriteToRequestHost(absoluteUri, request))
+            {
+                return BuildRequestAbsoluteUrl(request, absoluteUri.PathAndQuery);
+            }
+
             return normalized;
         }
 
-        var request = httpContextAccessor.HttpContext?.Request;
         if (request is null || string.IsNullOrWhiteSpace(request.Host.Value))
         {
             return normalized;
         }
 
-        var relativePath = normalized.StartsWith("/", StringComparison.Ordinal)
-            ? normalized
-            : $"/{normalized}";
-        var pathBase = request.PathBase.HasValue ? request.PathBase.Value : string.Empty;
-        return $"{request.Scheme}://{request.Host}{pathBase}{relativePath}";
+        return BuildRequestAbsoluteUrl(request, normalized);
     }
 
     public StoredFileResponse Normalize(StoredFileResponse response)
@@ -110,4 +114,51 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
             FoodItems = response.FoodItems.Select(Normalize).ToList(),
             Routes = response.Routes.Select(Normalize).ToList()
         };
+
+    private static bool ShouldRewriteToRequestHost(Uri absoluteUri, HttpRequest request)
+    {
+        if (!IsLoopbackHost(absoluteUri.Host))
+        {
+            return false;
+        }
+
+        var requestPort = request.Host.Port ?? GetDefaultPort(request.Scheme);
+        var absolutePort = absoluteUri.IsDefaultPort ? GetDefaultPort(absoluteUri.Scheme) : absoluteUri.Port;
+
+        return !string.Equals(absoluteUri.Host, request.Host.Host, StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(absoluteUri.Scheme, request.Scheme, StringComparison.OrdinalIgnoreCase) ||
+               absolutePort != requestPort;
+    }
+
+    private static bool IsLoopbackHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        return string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(host, "0.0.0.0", StringComparison.OrdinalIgnoreCase) ||
+               (IPAddress.TryParse(host, out var address) && IPAddress.IsLoopback(address));
+    }
+
+    private static int GetDefaultPort(string? scheme)
+        => string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? 443 : 80;
+
+    private static string BuildRequestAbsoluteUrl(HttpRequest request, string pathOrPathAndQuery)
+    {
+        var normalizedPath = pathOrPathAndQuery.StartsWith("/", StringComparison.Ordinal)
+            ? pathOrPathAndQuery
+            : $"/{pathOrPathAndQuery}";
+        var pathBase = request.PathBase.HasValue ? request.PathBase.Value ?? string.Empty : string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(pathBase) &&
+            !normalizedPath.StartsWith($"{pathBase}/", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(normalizedPath, pathBase, StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedPath = $"{pathBase}{normalizedPath}";
+        }
+
+        return $"{request.Scheme}://{request.Host}{normalizedPath}";
+    }
 }

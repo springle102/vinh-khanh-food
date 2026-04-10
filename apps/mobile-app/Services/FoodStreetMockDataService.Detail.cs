@@ -6,8 +6,6 @@ namespace VinhKhanh.MobileApp.Services;
 
 public sealed partial class FoodStreetApiDataService
 {
-    private readonly Dictionary<string, PoiExperienceDetail> _detailCache = new(StringComparer.OrdinalIgnoreCase);
-
     private PoiExperienceDetail BuildPoiDetail(
         PoiDto poi,
         string category,
@@ -19,7 +17,8 @@ public sealed partial class FoodStreetApiDataService
         IReadOnlyList<PromotionDto>? promotions,
         IReadOnlyDictionary<string, IReadOnlyList<TranslationDto>> promotionTranslationsById,
         IReadOnlyDictionary<string, IReadOnlyList<string>> poiImages,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> foodImages)
+        IReadOnlyDictionary<string, IReadOnlyList<string>> foodImages,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> foodItemImagesById)
     {
         var localizedCategory = LocalizeCategory(category);
         var localizedAddress = LocalizeAddress(poi.Address, poi.Id);
@@ -35,10 +34,11 @@ public sealed partial class FoodStreetApiDataService
             IsFeatured = poi.Featured,
             Tags = poi.Tags
                 .Where(item => !string.IsNullOrWhiteSpace(item))
-                .Select(item => TextEncodingHelper.NormalizeDisplayText(item.Trim()))
+                .Select(LocalizeTag)
+                .Where(item => !string.IsNullOrWhiteSpace(item))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList(),
-            FoodItems = BuildFoodItems(foodItems, foodItemTranslationsById).ToList(),
+            FoodItems = BuildFoodItems(foodItems, foodItemTranslationsById, foodItemImagesById).ToList(),
             Promotions = BuildPromotions(promotions, promotionTranslationsById).ToList()
         };
 
@@ -81,7 +81,7 @@ public sealed partial class FoodStreetApiDataService
         return new PoiLocation
         {
             Id = detail.Id,
-            Title = FirstNonEmpty(title, CreateTitleFromSlug(poi.Slug), poi.Id),
+            Title = FirstNonEmpty(title, CreateSafePoiTitleFallback(poi.Slug), poi.Id),
             ShortDescription = FirstNonEmpty(
                 summary,
                 LocalizedTextHelper.GetLocalizedText(detail.Description, _languageService.CurrentLanguage),
@@ -171,7 +171,8 @@ public sealed partial class FoodStreetApiDataService
 
     private IReadOnlyList<PoiFoodItemDetail> BuildFoodItems(
         IReadOnlyList<FoodItemDto>? foodItems,
-        IReadOnlyDictionary<string, IReadOnlyList<TranslationDto>> foodItemTranslationsById)
+        IReadOnlyDictionary<string, IReadOnlyList<TranslationDto>> foodItemTranslationsById,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> foodItemImagesById)
     {
         if (foodItems is null || foodItems.Count == 0)
         {
@@ -182,9 +183,14 @@ public sealed partial class FoodStreetApiDataService
             .Select(item =>
             {
                 foodItemTranslationsById.TryGetValue(item.Id, out var foodTranslations);
-                var translation = SelectTranslation(foodTranslations, _languageService.CurrentLanguage);
-                var name = TextEncodingHelper.NormalizeDisplayText(FirstNonEmpty(translation?.Title, item.Name, item.Id));
-                var description = TextEncodingHelper.NormalizeDisplayText(FirstNonEmpty(translation?.FullText, translation?.ShortText, item.Description));
+                var translation = SelectTranslation(foodTranslations, _languageService.CurrentLanguage, "food_item", item.Id);
+                var name = TextEncodingHelper.NormalizeDisplayText(FirstNonEmpty(
+                    GetTranslationText(translation, value => value.Title),
+                    GetSourceTextForCurrentLanguage(item.Name),
+                    item.Id));
+                var description = TextEncodingHelper.NormalizeDisplayText(FirstNonEmpty(
+                    GetTranslationText(translation, value => value.FullText, value => value.ShortText),
+                    GetSourceTextForCurrentLanguage(item.Description)));
                 var priceRange = TextEncodingHelper.NormalizeDisplayText(item.PriceRange);
 
                 return new PoiFoodItemDetail
@@ -193,7 +199,7 @@ public sealed partial class FoodStreetApiDataService
                     Name = name,
                     Description = description,
                     PriceRange = priceRange,
-                    ImageUrl = item.ImageUrl.Trim(),
+                    ImageUrl = ResolveFoodItemImageUrl(item, foodItemImagesById),
                     SpicyLevel = item.SpicyLevel.Trim(),
                     SpicyLevelLabel = LocalizeSpicyLevel(item.SpicyLevel)
                 };
@@ -205,6 +211,22 @@ public sealed partial class FoodStreetApiDataService
             .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static string ResolveFoodItemImageUrl(
+        FoodItemDto item,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> foodItemImagesById)
+    {
+        if (foodItemImagesById.TryGetValue(item.Id, out var imageUrls))
+        {
+            var mediaImage = imageUrls.FirstOrDefault(image => !string.IsNullOrWhiteSpace(image));
+            if (!string.IsNullOrWhiteSpace(mediaImage))
+            {
+                return mediaImage.Trim();
+            }
+        }
+
+        return item.ImageUrl.Trim();
     }
 
     private IReadOnlyList<PoiPromotionDetail> BuildPromotions(
@@ -223,9 +245,13 @@ public sealed partial class FoodStreetApiDataService
             .Select(item =>
             {
                 promotionTranslationsById.TryGetValue(item.Id, out var promotionTranslations);
-                var translation = SelectTranslation(promotionTranslations, _languageService.CurrentLanguage);
-                var title = TextEncodingHelper.NormalizeDisplayText(FirstNonEmpty(translation?.Title, item.Title));
-                var description = TextEncodingHelper.NormalizeDisplayText(FirstNonEmpty(translation?.FullText, translation?.ShortText, item.Description));
+                var translation = SelectTranslation(promotionTranslations, _languageService.CurrentLanguage, "promotion", item.Id);
+                var title = TextEncodingHelper.NormalizeDisplayText(FirstNonEmpty(
+                    GetTranslationText(translation, value => value.Title),
+                    GetSourceTextForCurrentLanguage(item.Title)));
+                var description = TextEncodingHelper.NormalizeDisplayText(FirstNonEmpty(
+                    GetTranslationText(translation, value => value.FullText, value => value.ShortText),
+                    GetSourceTextForCurrentLanguage(item.Description)));
 
                 return new PoiPromotionDetail
                 {
@@ -271,6 +297,52 @@ public sealed partial class FoodStreetApiDataService
             "expired" => _languageService.GetText("poi_detail_status_expired"),
             _ => _languageService.GetText("poi_detail_status_info")
         };
+
+    private string LocalizeTag(string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+        {
+            return string.Empty;
+        }
+
+        var normalizedTag = TextEncodingHelper.NormalizeDisplayText(tag).Trim();
+        return NormalizeLookupKey(normalizedTag) switch
+        {
+            "an-vat" => SelectLocalizedText(CreateLocalizedMap("Ä‚n váº·t", "Snacks", "å°åƒ", "ê°„ì‹", "è»½é£Ÿ", "Snacks")),
+            "che" => SelectLocalizedText(CreateLocalizedMap("ChÃ¨", "Sweet soup", "ç”œæ±¤", "ì²´ ë””ì €íŠ¸", "ãƒ™ãƒˆãƒŠãƒ ç”œå‘³", "Dessert vietnamien")),
+            "gia-dinh" => SelectLocalizedText(CreateLocalizedMap("Gia Ä‘Ã¬nh", "Family friendly", "é€‚åˆå®¶åº­", "ê°€ì¡±ì—ê²Œ ì¢‹ìŒ", "å®¶æ—å‘ã‘", "AdaptÃ© aux familles")),
+            "dac-san" => SelectLocalizedText(CreateLocalizedMap("Äáº·c sáº£n", "Signature dish", "æ‹›ç‰Œèœ", "ì‹œê·¸ë‹ˆì²˜ ë©”ë‰´", "åç‰©æ–™ç†", "SpÃ©cialitÃ©")),
+            "oc" => SelectLocalizedText(CreateLocalizedMap("á»c", "Snails", "èžºè´", "ë‹¬íŒ½ì´ ìš”ë¦¬", "è²æ–™ç†", "Escargots")),
+            "do-song" => SelectLocalizedText(CreateLocalizedMap("Äá»“ sá»‘ng", "Raw dishes", "ç”Ÿé£Ÿ", "ìƒì‹", "ç”Ÿã‚‚ã®", "Plats crus")),
+            "hai-san" => SelectLocalizedText(CreateLocalizedMap("Háº£i sáº£n", "Seafood", "æµ·é²œ", "í•´ì‚°ë¬¼", "æµ·é®®", "Fruits de mer")),
+            _ => LocalizationFallbackPolicy.SourceTextForLanguage(normalizedTag, CurrentLanguageCode)
+        };
+    }
+
+    private string GetSourceTextForCurrentLanguage(string? value)
+        => TextEncodingHelper.NormalizeDisplayText(
+            LocalizationFallbackPolicy.SourceTextForLanguage(value, CurrentLanguageCode));
+
+    private static string GetTranslationText(
+        TranslationDto? translation,
+        params Func<TranslationDto, string?>[] valueSelectors)
+    {
+        if (translation is null)
+        {
+            return string.Empty;
+        }
+
+        foreach (var selector in valueSelectors)
+        {
+            var value = selector(translation);
+            if (LocalizationFallbackPolicy.IsUsableTextForLanguage(value, translation.LanguageCode))
+            {
+                return TextEncodingHelper.NormalizeDisplayText(value);
+            }
+        }
+
+        return string.Empty;
+    }
 
     private string FormatPromotionPeriod(DateTimeOffset startAt, DateTimeOffset endAt)
     {
@@ -318,7 +390,7 @@ public sealed partial class FoodStreetApiDataService
         foreach (var translation in translations)
         {
             var value = valueSelector(translation);
-            if (!string.IsNullOrWhiteSpace(value))
+            if (LocalizationFallbackPolicy.IsUsableTextForLanguage(value, translation.LanguageCode))
             {
                 target.Set(translation.LanguageCode, value);
             }

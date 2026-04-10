@@ -104,14 +104,14 @@
                     <VerticalStackLayout Spacing="4">
                         <Label Style="{StaticResource MetaTextStyle}" Text="{Binding CardholderLabelText}" />
                         <Border Style="{StaticResource InputContainerStyle}">
-                            <Entry Text="{Binding CardholderName}" Placeholder="{Binding CardholderPlaceholderText}" />
+                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Text="{Binding CardholderName}" Placeholder="{Binding CardholderPlaceholderText}" />
                         </Border>
                     </VerticalStackLayout>
 
                     <VerticalStackLayout Spacing="4">
                         <Label Style="{StaticResource MetaTextStyle}" Text="{Binding CardNumberLabelText}" />
                         <Border Style="{StaticResource InputContainerStyle}">
-                            <Entry Keyboard="Numeric" MaxLength="19" Text="{Binding CardNumber}" Placeholder="{Binding CardNumberPlaceholderText}" />
+                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Numeric" MaxLength="19" Text="{Binding CardNumber}" Placeholder="{Binding CardNumberPlaceholderText}" />
                         </Border>
                     </VerticalStackLayout>
 
@@ -120,10 +120,10 @@
                             <Label Style="{StaticResource MetaTextStyle}" Text="{Binding CardExpiryLabelText}" />
                             <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                                 <Border Style="{StaticResource InputContainerStyle}">
-                                    <Entry Keyboard="Numeric" MaxLength="2" Text="{Binding ExpiryMonth}" Placeholder="{Binding ExpiryMonthPlaceholderText}" />
+                                    <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Numeric" MaxLength="2" Text="{Binding ExpiryMonth}" Placeholder="{Binding ExpiryMonthPlaceholderText}" />
                                 </Border>
                                 <Border Grid.Column="1" Style="{StaticResource InputContainerStyle}">
-                                    <Entry Keyboard="Numeric" MaxLength="4" Text="{Binding ExpiryYear}" Placeholder="{Binding ExpiryYearPlaceholderText}" />
+                                    <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Numeric" MaxLength="4" Text="{Binding ExpiryYear}" Placeholder="{Binding ExpiryYearPlaceholderText}" />
                                 </Border>
                             </Grid>
                         </VerticalStackLayout>
@@ -131,7 +131,7 @@
                         <VerticalStackLayout Grid.Column="1" Spacing="4">
                             <Label Style="{StaticResource MetaTextStyle}" Text="{Binding CardCvvLabelText}" />
                             <Border Style="{StaticResource InputContainerStyle}">
-                                <Entry IsPassword="True" Keyboard="Numeric" MaxLength="4" Text="{Binding Cvv}" Placeholder="{Binding CvvPlaceholderText}" />
+                                <Entry IsPassword="True" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Numeric" MaxLength="4" Text="{Binding Cvv}" Placeholder="{Binding CvvPlaceholderText}" />
                             </Border>
                         </VerticalStackLayout>
                     </Grid>
@@ -178,14 +178,14 @@
                     <VerticalStackLayout Spacing="4">
                         <Label Style="{StaticResource MetaTextStyle}" Text="{Binding WalletAccountLabelText}" />
                         <Border Style="{StaticResource InputContainerStyle}">
-                            <Entry Text="{Binding WalletAccount}" Placeholder="{Binding WalletAccountPlaceholderText}" />
+                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Text="{Binding WalletAccount}" Placeholder="{Binding WalletAccountPlaceholderText}" />
                         </Border>
                     </VerticalStackLayout>
 
                     <VerticalStackLayout Spacing="4">
                         <Label Style="{StaticResource MetaTextStyle}" Text="{Binding WalletPinLabelText}" />
                         <Border Style="{StaticResource InputContainerStyle}">
-                            <Entry IsPassword="True" Keyboard="Numeric" MaxLength="6" Text="{Binding WalletPin}" Placeholder="{Binding WalletPinPlaceholderText}" />
+                            <Entry IsPassword="True" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Numeric" MaxLength="6" Text="{Binding WalletPin}" Placeholder="{Binding WalletPinPlaceholderText}" />
                         </Border>
                     </VerticalStackLayout>
                 </VerticalStackLayout>

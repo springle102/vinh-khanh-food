@@ -248,7 +248,12 @@ public sealed record AdminBootstrapResponse(
 public sealed record PoiDetailResponse(
     Models.Poi Poi,
     IReadOnlyList<Models.Translation> Translations,
-    IReadOnlyList<Models.AudioGuide> AudioGuides);
+    IReadOnlyList<Models.AudioGuide> AudioGuides,
+    IReadOnlyList<Models.FoodItem> FoodItems,
+    IReadOnlyList<Models.Translation> FoodItemTranslations,
+    IReadOnlyList<Models.Promotion> Promotions,
+    IReadOnlyList<Models.Translation> PromotionTranslations,
+    IReadOnlyList<Models.MediaAsset> MediaAssets);
 
 public sealed record PoiNarrationResponse(
     string PoiId,

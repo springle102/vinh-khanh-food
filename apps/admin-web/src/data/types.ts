@@ -4,7 +4,7 @@ export type Role = "SUPER_ADMIN" | "PLACE_OWNER";
 export type AuditActorRole = Role | "SYSTEM";
 export type UserStatus = "active" | "locked";
 export type ContentStatus = "draft" | "pending" | "published" | "archived" | "deleted";
-export type EntityType = "poi" | "food_item" | "route";
+export type EntityType = "poi" | "food_item" | "route" | "promotion";
 export type AudioSourceType = "uploaded" | "tts";
 export type AudioStatus = "ready" | "processing" | "missing";
 export type MediaType = "image" | "video";
@@ -134,6 +134,11 @@ export interface PoiDetail {
   poi: Poi;
   translations: Translation[];
   audioGuides: AudioGuide[];
+  foodItems: FoodItem[];
+  foodItemTranslations: Translation[];
+  promotions: Promotion[];
+  promotionTranslations: Translation[];
+  mediaAssets: MediaAsset[];
 }
 
 export type NarrationResolutionStatus =

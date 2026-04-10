@@ -15,7 +15,7 @@ const fixedFreeLanguages: LanguageCode[] = ["vi", "en"];
 const fixedPremiumLanguages: LanguageCode[] = ["zh-CN", "ko", "ja"];
 
 export const SettingsPage = () => {
-  const { refreshData, saveSettings, state } = useAdminData();
+  const { isBootstrapping, refreshData, saveSettings, state } = useAdminData();
   const { user } = useAuth();
   const [form, setForm] = useState<SystemSetting>(state.settings);
   const [premiumPriceInput, setPremiumPriceInput] = useState(String(state.settings.premiumUnlockPriceUsd));
@@ -106,7 +106,13 @@ export const SettingsPage = () => {
         </Card>
       ) : null}
 
-      <form className="space-y-6" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit}>
+      {isBootstrapping ? (
+        <Card>
+          <p className="text-sm text-ink-500">Đang tải cấu hình từ backend...</p>
+        </Card>
+      ) : null}
+
+      <form className={isBootstrapping ? "hidden" : "space-y-6"} onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit} autoComplete="off">
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <Card>
             <h2 className="section-heading">Core information</h2>

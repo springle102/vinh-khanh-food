@@ -24,7 +24,9 @@ builder.Services.AddSingleton<IPremiumPaymentProcessor, MockPremiumPaymentProces
 builder.Services.AddSingleton<PremiumPurchaseService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<ResponseUrlNormalizer>();
+builder.Services.AddScoped<BootstrapLocalizationService>();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 builder.Services.AddScoped<PoiNarrationService>();
 builder.Services.AddOptions<TextToSpeechOptions>()
     .Configure<IConfiguration>((options, configuration) => TextToSpeechOptions.ApplyConfiguration(options, configuration));
@@ -40,6 +42,7 @@ builder.Services.AddHttpClient<TranslationProxyService>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("VinhKhanhAdmin/1.0");
     client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 });
+builder.Services.AddScoped<ITextTranslationClient>(provider => provider.GetRequiredService<TranslationProxyService>());
 builder.Services.AddHttpClient<ITextToSpeechService, ElevenLabsTextToSpeechService>(client =>
 {
     client.BaseAddress = new Uri("https://api.elevenlabs.io/");

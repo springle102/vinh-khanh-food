@@ -8,10 +8,11 @@ import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
-import type { FoodItem } from "../../data/types";
+import type { FoodItem, LanguageCode } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
 import { preventImplicitFormSubmit } from "../../lib/forms";
-import { getPoiTitle } from "../../lib/selectors";
+import { getEntityTranslation, getPoiTitle } from "../../lib/selectors";
+import { languageLabels } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
 
 type FoodForm = {
@@ -22,6 +23,7 @@ type FoodForm = {
   priceRange: string;
   imageUrl: string;
   spicyLevel: FoodItem["spicyLevel"];
+  languageCode: LanguageCode;
 };
 
 const defaultFoodForm: FoodForm = {
@@ -31,10 +33,11 @@ const defaultFoodForm: FoodForm = {
   priceRange: "",
   imageUrl: "",
   spicyLevel: "mild",
+  languageCode: "vi",
 };
 
 export const ContentPage = () => {
-  const { state, saveFoodItem } = useAdminData();
+  const { state, isBootstrapping, saveFoodItem, saveTranslation } = useAdminData();
   const { user } = useAuth();
   const [foodModalOpen, setFoodModalOpen] = useState(false);
   const [foodForm, setFoodForm] = useState<FoodForm>(defaultFoodForm);
@@ -44,23 +47,30 @@ export const ContentPage = () => {
   const poisWithDishes = new Set(state.foodItems.map((item) => item.poiId)).size;
   const hotDishes = state.foodItems.filter((item) => item.spicyLevel === "hot").length;
 
+  const resolveFoodTranslationFields = (item: FoodItem, languageCode: LanguageCode) => {
+    const translation = getEntityTranslation(state, "food_item", item.id, languageCode);
+
+    return {
+      name: translation?.title ?? item.name,
+      description: translation?.fullText || translation?.shortText || item.description,
+    };
+  };
+
   const openFoodModal = (item?: FoodItem) => {
+    const languageCode = state.settings.defaultLanguage;
     setFormError("");
     setFoodForm(
       item
         ? {
             id: item.id,
             poiId: item.poiId,
-            name: item.name,
-            description: item.description,
+            ...resolveFoodTranslationFields(item, languageCode),
             priceRange: item.priceRange,
             imageUrl: item.imageUrl,
             spicyLevel: item.spicyLevel,
+            languageCode,
           }
-        : {
-            ...defaultFoodForm,
-            poiId: state.pois[0]?.id ?? "",
-          },
+        : { ...defaultFoodForm, languageCode },
     );
     setFoodModalOpen(true);
   };
@@ -75,15 +85,42 @@ export const ContentPage = () => {
     setFormError("");
 
     try {
-      await saveFoodItem(
+      const existingFoodItem = foodForm.id
+        ? state.foodItems.find((item) => item.id === foodForm.id)
+        : null;
+      const shouldWriteBaseText =
+        !existingFoodItem ||
+        foodForm.languageCode === state.settings.defaultLanguage;
+      const savedFoodItem = await saveFoodItem(
         {
           id: foodForm.id,
           poiId: foodForm.poiId,
-          name: foodForm.name,
-          description: foodForm.description,
+          name: shouldWriteBaseText ? foodForm.name : existingFoodItem?.name ?? foodForm.name,
+          description: shouldWriteBaseText ? foodForm.description : existingFoodItem?.description ?? foodForm.description,
           priceRange: foodForm.priceRange,
           imageUrl: foodForm.imageUrl,
           spicyLevel: foodForm.spicyLevel,
+        },
+        user,
+      );
+      const existingTranslation = state.translations.find(
+        (item) =>
+          item.entityType === "food_item" &&
+          item.entityId === savedFoodItem.id &&
+          item.languageCode === foodForm.languageCode,
+      );
+      await saveTranslation(
+        {
+          id: existingTranslation?.id,
+          entityType: "food_item",
+          entityId: savedFoodItem.id,
+          languageCode: foodForm.languageCode,
+          title: foodForm.name,
+          shortText: foodForm.description,
+          fullText: foodForm.description,
+          seoTitle: foodForm.name,
+          seoDescription: foodForm.description || foodForm.name,
+          isPremium: !state.settings.freeLanguages.includes(foodForm.languageCode),
         },
         user,
       );
@@ -93,6 +130,21 @@ export const ContentPage = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleFoodLanguageChange = (languageCode: LanguageCode) => {
+    setFoodForm((current) => {
+      const item = current.id ? state.foodItems.find((value) => value.id === current.id) : null;
+      if (!item) {
+        return { ...current, languageCode };
+      }
+
+      return {
+        ...current,
+        languageCode,
+        ...resolveFoodTranslationFields(item, languageCode),
+      };
+    });
   };
 
   const foodColumns: DataColumn<FoodItem>[] = [
@@ -166,7 +218,9 @@ export const ContentPage = () => {
           <div>
             <h2 className="section-heading">Danh sách món ăn</h2>
           </div>
-          <Button onClick={() => openFoodModal()}>Thêm món ăn</Button>
+          <Button onClick={() => openFoodModal()} disabled={isBootstrapping}>
+            {isBootstrapping ? "Đang tải dữ liệu..." : "Thêm món ăn"}
+          </Button>
         </div>
         <div className="mt-6">
           <DataTable data={state.foodItems} columns={foodColumns} rowKey={(row) => row.id} />
@@ -174,18 +228,34 @@ export const ContentPage = () => {
       </Card>
 
       <Modal open={foodModalOpen} onClose={() => setFoodModalOpen(false)} title="Quản lý món ăn">
-        <form className="space-y-5" onSubmit={handleFoodSubmit} onKeyDown={preventImplicitFormSubmit}>
+        <form className="space-y-5" onSubmit={handleFoodSubmit} onKeyDown={preventImplicitFormSubmit} autoComplete="off">
           <div>
             <label className="field-label">POI</label>
             <Select
               value={foodForm.poiId}
+              required
               onChange={(event) =>
                 setFoodForm((current) => ({ ...current, poiId: event.target.value }))
               }
             >
+              <option value="">Chọn POI</option>
               {state.pois.map((poi) => (
                 <option key={poi.id} value={poi.id}>
                   {getPoiTitle(state, poi.id)}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <label className="field-label">Ngôn ngữ nội dung món ăn</label>
+            <Select
+              value={foodForm.languageCode}
+              onChange={(event) => handleFoodLanguageChange(event.target.value as LanguageCode)}
+            >
+              {Object.entries(languageLabels).map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
                 </option>
               ))}
             </Select>

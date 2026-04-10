@@ -20,7 +20,7 @@ public sealed class CustomerUsersController(
             return CreatedAtAction(
                 nameof(GetCustomerUserById),
                 new { id = created.Id },
-                ApiResponse<CustomerUser>.Ok(created, "Dang ky tai khoan thanh cong."));
+                ApiResponse<CustomerUser>.Ok(created, "Account created successfully."));
         }
         catch (ArgumentException exception)
         {
@@ -37,13 +37,13 @@ public sealed class CustomerUsersController(
     {
         if (string.IsNullOrWhiteSpace(request.Identifier) || string.IsNullOrWhiteSpace(request.Password))
         {
-            return BadRequest(ApiResponse<CustomerUser>.Fail("Email, username hoac so dien thoai va mat khau la bat buoc."));
+            return BadRequest(ApiResponse<CustomerUser>.Fail("Email, username, or phone number and password are required."));
         }
 
         var customer = repository.LoginCustomer(request.Identifier, request.Password);
         return customer is null
-            ? Unauthorized(ApiResponse<CustomerUser>.Fail("Thong tin dang nhap khong hop le."))
-            : Ok(ApiResponse<CustomerUser>.Ok(customer, "Dang nhap thanh cong."));
+            ? Unauthorized(ApiResponse<CustomerUser>.Fail("Invalid sign-in information."))
+            : Ok(ApiResponse<CustomerUser>.Ok(customer, "Signed in successfully."));
     }
 
     [HttpGet("{id}")]
@@ -51,7 +51,7 @@ public sealed class CustomerUsersController(
     {
         var customer = repository.GetCustomerUserById(id);
         return customer is null
-            ? NotFound(ApiResponse<CustomerUser>.Fail("Khong tim thay khach hang."))
+            ? NotFound(ApiResponse<CustomerUser>.Fail("Customer was not found."))
             : Ok(ApiResponse<CustomerUser>.Ok(customer));
     }
 
@@ -63,15 +63,15 @@ public sealed class CustomerUsersController(
             string.IsNullOrWhiteSpace(request.Email) ||
             string.IsNullOrWhiteSpace(request.Phone))
         {
-            return BadRequest(ApiResponse<CustomerUser>.Fail("Ten, username, email va so dien thoai la bat buoc."));
+            return BadRequest(ApiResponse<CustomerUser>.Fail("Name, username, email, and phone number are required."));
         }
 
         try
         {
             var updated = repository.UpdateCustomerProfile(id, request);
             return updated is null
-                ? NotFound(ApiResponse<CustomerUser>.Fail("Khong tim thay khach hang."))
-                : Ok(ApiResponse<CustomerUser>.Ok(updated, "Cap nhat ho so khach hang thanh cong."));
+                ? NotFound(ApiResponse<CustomerUser>.Fail("Customer was not found."))
+                : Ok(ApiResponse<CustomerUser>.Ok(updated, "Customer profile updated successfully."));
         }
         catch (ArgumentException exception)
         {
@@ -87,10 +87,10 @@ public sealed class CustomerUsersController(
         var customer = repository.GetCustomerUserById(id);
         if (customer is null)
         {
-            return NotFound(ApiResponse<PremiumPurchaseResponse>.Fail("Khong tim thay khach hang."));
+            return NotFound(ApiResponse<PremiumPurchaseResponse>.Fail("Customer was not found."));
         }
 
         var response = premiumPurchaseService.Purchase(id, request);
-        return Ok(ApiResponse<PremiumPurchaseResponse>.Ok(response, "Nang cap Premium thanh cong."));
+        return Ok(ApiResponse<PremiumPurchaseResponse>.Ok(response, "Premium upgraded successfully."));
     }
 }

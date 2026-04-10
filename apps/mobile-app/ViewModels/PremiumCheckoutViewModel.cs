@@ -281,14 +281,14 @@ public sealed class PremiumCheckoutViewModel : LocalizedViewModelBase
             return;
         }
 
-        CardholderName = _profile.FullName;
-        CardNumber = "4242424242424242";
-        ExpiryMonth = Math.Max(1, DateTimeOffset.UtcNow.Month).ToString("00", LanguageService.CurrentCulture);
-        ExpiryYear = (DateTimeOffset.UtcNow.Year + 1).ToString(LanguageService.CurrentCulture);
-        Cvv = "123";
+        CardholderName = string.Empty;
+        CardNumber = string.Empty;
+        ExpiryMonth = string.Empty;
+        ExpiryYear = string.Empty;
+        Cvv = string.Empty;
         WalletProvider = PremiumWalletProviderIds.Momo;
-        WalletAccount = string.IsNullOrWhiteSpace(_profile.Phone) ? _profile.Email : _profile.Phone;
-        WalletPin = "123456";
+        WalletAccount = string.Empty;
+        WalletPin = string.Empty;
         _hasInitializedForm = true;
     }
 

@@ -1,5 +1,54 @@
-import type { AdminDataState, LanguageCode, Poi } from "../data/types";
+import type { AdminDataState, EntityType, LanguageCode, Poi, Translation } from "../data/types";
 import { normalizeSearchText } from "./utils";
+
+type TranslationFallbackSettings = Pick<AdminDataState["settings"], "defaultLanguage" | "fallbackLanguage">;
+
+const addLanguageCandidate = (languages: LanguageCode[], language?: LanguageCode | null) => {
+  if (language && !languages.includes(language)) {
+    languages.push(language);
+  }
+};
+
+export const getTranslationLanguageOrder = (
+  state: { settings: TranslationFallbackSettings },
+  preferredLanguage?: LanguageCode,
+) => {
+  const languages: LanguageCode[] = [];
+  addLanguageCandidate(languages, preferredLanguage);
+  addLanguageCandidate(languages, state.settings.defaultLanguage);
+  addLanguageCandidate(languages, state.settings.fallbackLanguage);
+  return languages;
+};
+
+export const getEntityTranslationFromList = (
+  translations: Translation[],
+  state: { settings: TranslationFallbackSettings },
+  preferredLanguage?: LanguageCode,
+) => {
+  const languages = getTranslationLanguageOrder(state, preferredLanguage);
+
+  for (const language of languages) {
+    const matched = translations.find((item) => item.languageCode === language);
+    if (matched) {
+      return matched;
+    }
+  }
+
+  return null;
+};
+
+export const getEntityTranslation = (
+  state: AdminDataState,
+  entityType: EntityType,
+  entityId: string,
+  preferredLanguage?: LanguageCode,
+) => {
+  const translations = state.translations.filter(
+    (item) => item.entityType === entityType && item.entityId === entityId,
+  );
+
+  return getEntityTranslationFromList(translations, state, preferredLanguage);
+};
 
 export const getPoiTranslation = (
   state: AdminDataState,
@@ -10,26 +59,7 @@ export const getPoiTranslation = (
     return null;
   }
 
-  const languages = [
-    preferredLanguage,
-    state.settings.defaultLanguage,
-    state.settings.fallbackLanguage,
-  ].filter(Boolean) as LanguageCode[];
-
-  for (const language of languages) {
-    const matched = state.translations.find(
-      (item) =>
-        item.entityType === "poi" && item.entityId === poiId && item.languageCode === language,
-    );
-    if (matched) {
-      return matched;
-    }
-  }
-
-  return (
-    state.translations.find((item) => item.entityType === "poi" && item.entityId === poiId) ??
-    null
-  );
+  return getEntityTranslation(state, "poi", poiId, preferredLanguage);
 };
 
 export const getPoiTitle = (

@@ -10,14 +10,19 @@ import type {
 import {
   buildTtsAudioUrls,
   buildUiPlaybackKey,
+  canUseBrowserSpeechSynthesis,
+  createTtsPlaybackQueue,
   findPoiAudioGuide,
   hasValidAudioUrl,
   isPlaceholderAudioUrl,
+  languageLocales,
+  loadBrowserSpeechVoices,
   logNarrationDebug,
-  fetchTtsPlaybackUrls,
   resolvePoiNarration,
+  selectSpeechVoice,
   type NarrationResolutionStatus,
   type ResolvedPoiNarration,
+  type TtsPlaybackQueue,
 } from "../../lib/narration";
 import { languageLabels } from "../../lib/utils";
 
@@ -216,7 +221,8 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
   const hasUnlockedPlaybackRef = useRef(false);
   const playbackStatusRef = useRef<PlaybackStatus>(DEFAULT_PLAYBACK_STATE.status);
   const resolveAbortRef = useRef<AbortController | null>(null);
-  const generatedTtsObjectUrlsRef = useRef<string[]>([]);
+  const ttsPlaybackQueueRef = useRef<TtsPlaybackQueue | null>(null);
+  const browserSpeechCancelRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     playbackStatusRef.current = playbackState.status;
@@ -233,9 +239,14 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
     currentAudioGuideIdRef.current = null;
   }, []);
 
-  const revokeGeneratedTtsObjectUrls = useCallback(() => {
-    generatedTtsObjectUrlsRef.current.forEach((value) => URL.revokeObjectURL(value));
-    generatedTtsObjectUrlsRef.current = [];
+  const disposeTtsPlaybackQueue = useCallback(() => {
+    ttsPlaybackQueueRef.current?.dispose();
+    ttsPlaybackQueueRef.current = null;
+  }, []);
+
+  const stopBrowserSpeech = useCallback(() => {
+    browserSpeechCancelRef.current?.();
+    browserSpeechCancelRef.current = null;
   }, []);
 
   const stopCurrentAudio = useCallback(
@@ -252,6 +263,8 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
 
       resolveAbortRef.current?.abort();
       resolveAbortRef.current = null;
+      disposeTtsPlaybackQueue();
+      stopBrowserSpeech();
 
       if (audioRef.current) {
         audioRef.current.onplay = null;
@@ -260,10 +273,11 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         audioRef.current.onerror = null;
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
+        audioRef.current.removeAttribute("src");
+        audioRef.current.load();
         audioRef.current = null;
       }
 
-      revokeGeneratedTtsObjectUrls();
       resetPlaybackRefs();
 
       if (!options?.keepState) {
@@ -273,7 +287,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         });
       }
     },
-    [resetPlaybackRefs, revokeGeneratedTtsObjectUrls],
+    [disposeTtsPlaybackQueue, resetPlaybackRefs, stopBrowserSpeech],
   );
 
   useEffect(() => () => stopCurrentAudio(), [stopCurrentAudio]);
@@ -356,39 +370,138 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
     [resolvePoiNarrationForSelection],
   );
 
+  const playBrowserSpeechFallback = useCallback(
+    async (
+      audioSource: PoiAudioSource,
+      requestId: number,
+      reason: string,
+    ) => {
+      const narrationText = audioSource.ttsInputText.trim() || audioSource.displayText.trim();
+      if (!narrationText || !canUseBrowserSpeechSynthesis()) {
+        return false;
+      }
+
+      setPlaybackState({
+        playbackKey: audioSource.uiPlaybackKey,
+        poiId: audioSource.poiId,
+        audioGuideId: audioSource.audioGuideId,
+        status: "loading",
+        kind: "tts",
+        message: `${reason} Dang dung giong doc cua trinh duyet.`,
+        isLoadingPOI: false,
+        isGeneratingTTS: false,
+        isPlayingAudio: false,
+      });
+
+      const voices = await loadBrowserSpeechVoices();
+      if (requestId !== requestIdRef.current) {
+        return true;
+      }
+
+      const speechSynthesis = window.speechSynthesis;
+      stopBrowserSpeech();
+
+      const utterance = new SpeechSynthesisUtterance(narrationText);
+      utterance.lang = languageLocales[audioSource.effectiveLanguageCode];
+      utterance.voice = selectSpeechVoice(
+        voices,
+        audioSource.effectiveLanguageCode,
+        audioSource.voiceType,
+      );
+      utterance.rate = 1;
+      utterance.pitch = 1;
+
+      let cancelled = false;
+      browserSpeechCancelRef.current = () => {
+        cancelled = true;
+        speechSynthesis.cancel();
+      };
+
+      currentPlaybackKeyRef.current = audioSource.uiPlaybackKey;
+      currentPoiIdRef.current = audioSource.poiId;
+      currentKindRef.current = "tts";
+      currentAudioGuideIdRef.current = audioSource.audioGuideId;
+
+      utterance.onstart = () => {
+        if (requestId !== requestIdRef.current || cancelled) {
+          return;
+        }
+
+        setPlaybackState({
+          playbackKey: audioSource.uiPlaybackKey,
+          poiId: audioSource.poiId,
+          audioGuideId: audioSource.audioGuideId,
+          status: "playing",
+          kind: "tts",
+          message: `Dang phat thuyet minh bang giong doc cua trinh duyet (${languageLabels[audioSource.effectiveLanguageCode]}).`,
+          isLoadingPOI: false,
+          isGeneratingTTS: false,
+          isPlayingAudio: true,
+        });
+      };
+
+      utterance.onend = () => {
+        if (requestId !== requestIdRef.current || cancelled) {
+          return;
+        }
+
+        browserSpeechCancelRef.current = null;
+        resetPlaybackRefs();
+        setPlaybackState({
+          ...DEFAULT_PLAYBACK_STATE,
+          message: "Da phat xong bai thuyet minh.",
+        });
+      };
+
+      utterance.onerror = () => {
+        if (requestId !== requestIdRef.current || cancelled) {
+          return;
+        }
+
+        browserSpeechCancelRef.current = null;
+        resetPlaybackRefs();
+        setPlaybackState({
+          playbackKey: audioSource.uiPlaybackKey,
+          poiId: audioSource.poiId,
+          audioGuideId: audioSource.audioGuideId,
+          status: "error",
+          kind: "tts",
+          message: "Khong the phat thuyet minh bang ElevenLabs hoac giong doc cua trinh duyet.",
+          isLoadingPOI: false,
+          isGeneratingTTS: false,
+          isPlayingAudio: false,
+        });
+      };
+
+      speechSynthesis.cancel();
+      speechSynthesis.speak(utterance);
+      return true;
+    },
+    [resetPlaybackRefs, stopBrowserSpeech],
+  );
+
   const playPOIAudio = useCallback(
     async (audioSource: PoiAudioSource, requestId = requestIdRef.current) => {
       if (requestId !== requestIdRef.current) {
         return;
       }
 
-      let playbackUrls = audioSource.audioUrls;
-      if (audioSource.generatedFromTts && audioSource.audioUrls.length > 0) {
-        revokeGeneratedTtsObjectUrls();
-        const preparedTtsAudio = await fetchTtsPlaybackUrls(audioSource.audioUrls);
-        if (preparedTtsAudio.error || requestId !== requestIdRef.current) {
-          if (requestId !== requestIdRef.current) {
-            preparedTtsAudio.dispose();
-            return;
-          }
+      const playbackUrls = audioSource.audioUrls;
+      const playbackQueue = audioSource.generatedFromTts && playbackUrls.length > 0
+        ? createTtsPlaybackQueue(playbackUrls)
+        : null;
+      if (playbackQueue) {
+        disposeTtsPlaybackQueue();
+        ttsPlaybackQueueRef.current = playbackQueue;
+      }
 
-          setPlaybackState({
-            playbackKey: audioSource.uiPlaybackKey,
-            poiId: audioSource.poiId,
-            audioGuideId: audioSource.audioGuideId,
-            status: "error",
-            kind: "audio",
-            message: preparedTtsAudio.error ?? "Không thể tạo audio ElevenLabs TTS.",
-            isLoadingPOI: false,
-            isGeneratingTTS: false,
-            isPlayingAudio: false,
-          });
-          return;
+      const releasePlaybackQueue = () => {
+        if (ttsPlaybackQueueRef.current === playbackQueue) {
+          ttsPlaybackQueueRef.current = null;
         }
 
-        generatedTtsObjectUrlsRef.current = [...preparedTtsAudio.audioUrls];
-        playbackUrls = preparedTtsAudio.audioUrls;
-      }
+        playbackQueue?.dispose();
+      };
 
       currentPlaybackKeyRef.current = audioSource.uiPlaybackKey;
       currentPoiIdRef.current = audioSource.poiId;
@@ -439,7 +552,15 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         }
 
         currentSegmentIndex = segmentIndex;
-        nextAudio.src = playbackUrls[segmentIndex];
+        const segmentUrl = playbackQueue
+          ? await playbackQueue.getSegmentUrl(segmentIndex)
+          : playbackUrls[segmentIndex];
+        if (requestId !== requestIdRef.current) {
+          releasePlaybackQueue();
+          return;
+        }
+
+        nextAudio.src = segmentUrl;
         await nextAudio.play();
       };
 
@@ -459,6 +580,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           isGeneratingTTS: false,
           isPlayingAudio: true,
         });
+        playbackQueue?.prefetch(currentSegmentIndex + 1);
       };
 
       nextAudio.onpause = () => {
@@ -494,7 +616,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         }
 
         audioRef.current = null;
-        revokeGeneratedTtsObjectUrls();
+        releasePlaybackQueue();
         resetPlaybackRefs();
         setPlaybackState({
           ...DEFAULT_PLAYBACK_STATE,
@@ -508,11 +630,20 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         }
 
         audioRef.current = null;
-        revokeGeneratedTtsObjectUrls();
+        releasePlaybackQueue();
         resetPlaybackRefs();
         void (async () => {
           const handled = await fallbackToTts();
           if (handled || requestId !== requestIdRef.current) {
+            return;
+          }
+
+          const handledByBrowserSpeech = await playBrowserSpeechFallback(
+            audioSource,
+            requestId,
+            "ElevenLabs TTS khong phat duoc.",
+          );
+          if (handledByBrowserSpeech || requestId !== requestIdRef.current) {
             return;
           }
 
@@ -538,10 +669,21 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         }
 
         audioRef.current = null;
-        revokeGeneratedTtsObjectUrls();
+        releasePlaybackQueue();
         resetPlaybackRefs();
         const handled = await fallbackToTts();
         if (handled || requestId !== requestIdRef.current) {
+          return;
+        }
+
+        const handledByBrowserSpeech = await playBrowserSpeechFallback(
+          audioSource,
+          requestId,
+          error instanceof DOMException && error.name === "NotAllowedError"
+            ? "Trinh duyet chan audio ElevenLabs."
+            : "ElevenLabs TTS khong phat duoc.",
+        );
+        if (handledByBrowserSpeech || requestId !== requestIdRef.current) {
           return;
         }
 
@@ -561,7 +703,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         });
       }
     },
-    [resetPlaybackRefs, revokeGeneratedTtsObjectUrls],
+    [disposeTtsPlaybackQueue, playBrowserSpeechFallback, resetPlaybackRefs],
   );
 
   const toggleCurrentAudio = useCallback(
@@ -599,6 +741,30 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
             }));
             return true;
           }
+        }
+      }
+
+      if (currentKindRef.current === "tts" && canUseBrowserSpeechSynthesis()) {
+        if (playbackStatus === "playing" && window.speechSynthesis.speaking) {
+          window.speechSynthesis.pause();
+          setPlaybackState((current) => ({
+            ...current,
+            status: "paused",
+            message: "Da tam dung bai thuyet minh.",
+            isPlayingAudio: false,
+          }));
+          return true;
+        }
+
+        if (playbackStatus === "paused") {
+          window.speechSynthesis.resume();
+          setPlaybackState((current) => ({
+            ...current,
+            status: "playing",
+            message: "Dang tiep tuc phat thuyet minh bang giong doc cua trinh duyet.",
+            isPlayingAudio: true,
+          }));
+          return true;
         }
       }
 

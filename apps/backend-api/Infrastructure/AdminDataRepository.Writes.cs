@@ -251,6 +251,8 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        request = NormalizePoiRequestForPersistence(request);
+
         var now = DateTimeOffset.UtcNow;
         var existing = !string.IsNullOrWhiteSpace(id) ? GetPoiById(connection, transaction, id) : null;
         var isNew = existing is null;

@@ -1,4 +1,4 @@
-using VinhKhanh.BackendApi.Contracts;
+﻿using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
 
 namespace VinhKhanh.BackendApi.Infrastructure;
@@ -29,12 +29,12 @@ public sealed class PoiNarrationService(
 
     private static readonly Dictionary<string, string> LanguageLabels = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["vi"] = "Tiếng Việt",
-        ["en"] = "Tiếng Anh",
-        ["fr"] = "Tiếng Pháp",
-        ["zh-CN"] = "Tiếng Trung",
-        ["ko"] = "Tiếng Hàn",
-        ["ja"] = "Tiếng Nhật"
+        ["vi"] = "Vietnamese",
+        ["en"] = "English",
+        ["fr"] = "French",
+        ["zh-CN"] = "Chinese",
+        ["ko"] = "Korean",
+        ["ja"] = "Japanese"
     };
 
     public async Task<PoiNarrationResponse?> ResolveAsync(
@@ -77,11 +77,15 @@ public sealed class PoiNarrationService(
             settings.DefaultLanguage,
             settings.FallbackLanguage);
 
-        var exactTitle = CleanNullable(exactTranslation?.Title);
-        var exactBody = GetNarrationBody(exactTranslation);
+        var exactTitle = CleanNullableForLanguage(exactTranslation?.Title, normalizedRequestedLanguage);
+        var exactBody = GetNarrationBodyForLanguage(exactTranslation, normalizedRequestedLanguage);
         var exactText = BuildNarrationText(exactTitle, exactBody);
-        var sourceTitle = CleanNullable(sourceTranslation?.Title);
-        var sourceBody = GetNarrationBody(sourceTranslation);
+        var sourceLanguageForContent = NormalizeLanguageCode(
+            sourceTranslation?.LanguageCode,
+            settings.DefaultLanguage,
+            settings.FallbackLanguage);
+        var sourceTitle = CleanNullableForLanguage(sourceTranslation?.Title, sourceLanguageForContent);
+        var sourceBody = GetNarrationBodyForLanguage(sourceTranslation, sourceLanguageForContent);
         var sourceText = BuildNarrationText(sourceTitle, sourceBody);
         var hasExactNarration = HasNarrationContent(exactBody);
         var hasSourceNarration = HasNarrationContent(sourceBody);
@@ -132,7 +136,7 @@ public sealed class PoiNarrationService(
 
                 if (!HasNarrationContent(displayText))
                 {
-                    throw new InvalidOperationException("Không nhận được nội dung đã dịch hợp lệ.");
+                    throw new InvalidOperationException("The translated narration was empty.");
                 }
             }
             catch (Exception exception) when (
@@ -160,11 +164,16 @@ public sealed class PoiNarrationService(
                 }
                 else
                 {
-                    displayTitle = sourceTitle ?? poi.Slug;
-                    displayText = sourceText;
-                    ttsInputText = sourceText;
-                    effectiveLanguageCode = sourceLanguageCode!;
-                    translationStatus = fallbackSourceStatus;
+                    var canUseSourceFallback =
+                        string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) ||
+                        (!IsSourceLanguage(sourceLanguageCode) && IsUsableTextForLanguage(sourceText, sourceLanguageCode));
+                    displayTitle = canUseSourceFallback ? sourceTitle ?? poi.Slug : poi.Slug;
+                    displayText = canUseSourceFallback ? sourceText : string.Empty;
+                    ttsInputText = displayText;
+                    effectiveLanguageCode = canUseSourceFallback
+                        ? sourceLanguageCode!
+                        : normalizedRequestedLanguage;
+                    translationStatus = canUseSourceFallback ? fallbackSourceStatus : storedStatus;
                     fallbackMessage = BuildSourceFallbackMessage(
                         exception,
                         normalizedRequestedLanguage,
@@ -174,10 +183,15 @@ public sealed class PoiNarrationService(
         }
         else if (!hasExactNarration && hasSourceNarration && sourceTranslation is not null)
         {
-            displayTitle = sourceTitle ?? poi.Slug;
-            displayText = sourceText;
-            ttsInputText = sourceText;
-            effectiveLanguageCode = sourceLanguageCode ?? normalizedRequestedLanguage;
+            var canUseSourceFallback =
+                string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) ||
+                (!IsSourceLanguage(sourceLanguageCode) && IsUsableTextForLanguage(sourceText, sourceLanguageCode));
+            displayTitle = canUseSourceFallback ? sourceTitle ?? poi.Slug : poi.Slug;
+            displayText = canUseSourceFallback ? sourceText : string.Empty;
+            ttsInputText = displayText;
+            effectiveLanguageCode = canUseSourceFallback
+                ? sourceLanguageCode ?? normalizedRequestedLanguage
+                : normalizedRequestedLanguage;
         }
 
         if (!HasNarrationContent(ttsInputText))
@@ -266,9 +280,9 @@ public sealed class PoiNarrationService(
             cancellationToken);
 
         var translatedTitle = hasTitle
-            ? CleanNullable(translated.Texts.ElementAtOrDefault(0))
+            ? CleanNullableForLanguage(translated.Texts.ElementAtOrDefault(0), targetLanguageCode)
             : null;
-        var translatedBody = CleanNullable(translated.Texts.ElementAtOrDefault(hasTitle ? 1 : 0));
+        var translatedBody = CleanNullableForLanguage(translated.Texts.ElementAtOrDefault(hasTitle ? 1 : 0), targetLanguageCode);
 
         return (translatedTitle, translatedBody);
     }
@@ -277,7 +291,7 @@ public sealed class PoiNarrationService(
         IEnumerable<Translation> translations,
         string languageCode) =>
         translations.FirstOrDefault(item =>
-            string.Equals(item.LanguageCode, languageCode, StringComparison.OrdinalIgnoreCase));
+            string.Equals(NormalizeLanguageCode(item.LanguageCode), NormalizeLanguageCode(languageCode), StringComparison.OrdinalIgnoreCase));
 
     private static Translation? FindBestSourcePoiTranslation(
         IReadOnlyList<Translation> translations,
@@ -286,29 +300,30 @@ public sealed class PoiNarrationService(
         string fallbackLanguageCode)
     {
         var preferredLanguages = new List<string>();
-        AddPreferredLanguage(preferredLanguages, defaultLanguageCode);
-        AddPreferredLanguage(preferredLanguages, fallbackLanguageCode);
+        if (string.Equals(languageCode, NormalizeLanguageCode(defaultLanguageCode), StringComparison.OrdinalIgnoreCase))
+        {
+            AddPreferredLanguage(preferredLanguages, defaultLanguageCode);
+            AddPreferredLanguage(preferredLanguages, fallbackLanguageCode);
+        }
+        else
+        {
+            AddPreferredLanguage(preferredLanguages, fallbackLanguageCode);
+            AddPreferredLanguage(preferredLanguages, defaultLanguageCode);
+        }
 
         foreach (var currentLanguageCode in preferredLanguages)
         {
+            var normalizedCurrentLanguageCode = NormalizeLanguageCode(currentLanguageCode);
             var matched = translations.FirstOrDefault(item =>
-                string.Equals(item.LanguageCode, currentLanguageCode, StringComparison.OrdinalIgnoreCase) &&
-                HasNarrationContent(GetNarrationBody(item)));
+                string.Equals(NormalizeLanguageCode(item.LanguageCode), normalizedCurrentLanguageCode, StringComparison.OrdinalIgnoreCase) &&
+                HasNarrationContent(GetNarrationBodyForLanguage(item, normalizedCurrentLanguageCode)));
             if (matched is not null)
             {
                 return matched;
             }
         }
 
-        var nonRequested = translations.FirstOrDefault(item =>
-            !string.Equals(item.LanguageCode, languageCode, StringComparison.OrdinalIgnoreCase) &&
-            HasNarrationContent(GetNarrationBody(item)));
-        if (nonRequested is not null)
-        {
-            return nonRequested;
-        }
-
-        return translations.FirstOrDefault(item => HasNarrationContent(GetNarrationBody(item)));
+        return null;
     }
 
     private static AudioGuide? FindPoiAudioGuide(
@@ -352,10 +367,16 @@ public sealed class PoiNarrationService(
             parsed.Host.Contains("example.com", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string GetNarrationBody(Translation? translation) =>
-        NarrationTextSanitizer.Clean(translation?.FullText) is var fullText && !string.IsNullOrWhiteSpace(fullText)
-            ? fullText
-            : NarrationTextSanitizer.Clean(translation?.ShortText);
+    private static string GetNarrationBodyForLanguage(Translation? translation, string languageCode)
+    {
+        var fullText = CleanNullableForLanguage(translation?.FullText, languageCode);
+        if (!string.IsNullOrWhiteSpace(fullText))
+        {
+            return fullText;
+        }
+
+        return CleanNullableForLanguage(translation?.ShortText, languageCode) ?? string.Empty;
+    }
 
     private static bool ShouldRefreshAutoTranslation(
         Translation? exactTranslation,
@@ -470,7 +491,7 @@ public sealed class PoiNarrationService(
     private static string GetLocale(string languageCode) =>
         LanguageLocales.TryGetValue(languageCode, out var locale)
             ? locale
-            : "vi-VN";
+            : "en-US";
 
     private static string GetLanguageLabel(string? languageCode)
     {
@@ -480,23 +501,23 @@ public sealed class PoiNarrationService(
             return label;
         }
 
-        return languageCode?.Trim() ?? "ngôn ngữ hiện tại";
+        return languageCode?.Trim() ?? "the selected language";
     }
 
     private static string BuildStoredTranslationFallbackMessage(
         Exception exception,
         string requestedLanguageCode) =>
         IsTranslationServiceUnavailable(exception)
-            ? $"Không thể kết nối dịch vụ dịch để cập nhật bản {GetLanguageLabel(requestedLanguageCode)}. Đang dùng bản dịch đã lưu trước đó."
-            : $"Không thể dịch lại sang {GetLanguageLabel(requestedLanguageCode)}. Đang dùng bản dịch đã lưu trước đó.";
+            ? $"The translation service is unavailable for {GetLanguageLabel(requestedLanguageCode)}. Using the stored translation."
+            : $"Unable to refresh the {GetLanguageLabel(requestedLanguageCode)} translation. Using the stored translation.";
 
     private static string BuildSourceFallbackMessage(
         Exception exception,
         string requestedLanguageCode,
         string? sourceLanguageCode) =>
         IsTranslationServiceUnavailable(exception)
-            ? $"Không thể kết nối dịch vụ dịch cho {GetLanguageLabel(requestedLanguageCode)}. Đang dùng nội dung gốc {GetLanguageLabel(sourceLanguageCode)}."
-            : $"Chưa có bản dịch lưu sẵn cho {GetLanguageLabel(requestedLanguageCode)}. Đang dùng nội dung gốc {GetLanguageLabel(sourceLanguageCode)}.";
+            ? $"The translation service is unavailable for {GetLanguageLabel(requestedLanguageCode)}. Source content in {GetLanguageLabel(sourceLanguageCode)} is not used for playback."
+            : $"No stored translation is available for {GetLanguageLabel(requestedLanguageCode)}. Source content in {GetLanguageLabel(sourceLanguageCode)} is not used for playback.";
 
     private static bool IsTranslationServiceUnavailable(Exception exception) =>
         exception is HttpRequestException ||
@@ -571,6 +592,15 @@ public sealed class PoiNarrationService(
 
     private static bool HasNarrationContent(string? value) =>
         !string.IsNullOrWhiteSpace(value);
+
+    private static bool IsSourceLanguage(string? languageCode)
+        => LocalizationContentPolicy.IsSourceLanguage(languageCode);
+
+    private static bool IsUsableTextForLanguage(string? value, string? languageCode)
+        => LocalizationContentPolicy.IsUsableTextForLanguage(value, languageCode);
+
+    private static string? CleanNullableForLanguage(string? value, string? languageCode)
+        => LocalizationContentPolicy.CleanForLanguage(value, languageCode);
 
     private static string? CleanNullable(string? value)
     {

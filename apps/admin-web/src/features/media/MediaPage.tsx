@@ -66,6 +66,7 @@ const entityTypeLabels: Record<MediaAsset["entityType"], string> = {
   poi: "POI",
   food_item: "Món ăn",
   route: "Tour",
+  promotion: "Ưu đãi",
 };
 
 const defaultNarrationForm: NarrationForm = {
@@ -100,7 +101,7 @@ const buildNarrationPreviewText = (title: string, shortText: string, fullText: s
 };
 
 export const MediaPage = () => {
-  const { state, saveAudioGuide, saveMediaAsset, saveTranslation } = useAdminData();
+  const { state, isBootstrapping, saveAudioGuide, saveMediaAsset, saveTranslation } = useAdminData();
   const { user } = useAuth();
   const { previewState, previewAudioGuide, stopPreview } = useNarrationPreview(state);
   const [audioModalOpen, setAudioModalOpen] = useState(false);
@@ -126,6 +127,11 @@ export const MediaPage = () => {
           id: item.id,
           label: item.name,
         }));
+      case "promotion":
+        return state.promotions.map((item) => ({
+          id: item.id,
+          label: item.title,
+        }));
       case "poi":
       default:
         return state.pois.map((item) => ({
@@ -135,15 +141,14 @@ export const MediaPage = () => {
     }
   };
 
-  const resolveDefaultEntityId = (entityType: MediaAsset["entityType"]) =>
-    getEntityOptions(entityType)[0]?.id ?? "";
-
   const getEntityDisplayName = (entityType: MediaAsset["entityType"], entityId: string) => {
     switch (entityType) {
       case "food_item":
         return state.foodItems.find((item) => item.id === entityId)?.name ?? entityId;
       case "route":
         return state.routes.find((item) => item.id === entityId)?.name ?? entityId;
+      case "promotion":
+        return state.promotions.find((item) => item.id === entityId)?.title ?? entityId;
       case "poi":
       default:
         return getPoiTitle(state, entityId);
@@ -209,7 +214,7 @@ export const MediaPage = () => {
         }
       : {
           ...defaultAudioForm,
-          entityId: state.pois[0]?.id ?? "",
+          entityId: "",
         };
 
     setAudioForm(nextAudioForm);
@@ -235,10 +240,7 @@ export const MediaPage = () => {
             url: item.url,
             altText: item.altText,
           }
-        : {
-            ...defaultMediaAssetForm,
-            entityId: resolveDefaultEntityId(defaultMediaAssetForm.entityType),
-          },
+        : defaultMediaAssetForm,
     );
     setMediaModalOpen(true);
   };
@@ -247,7 +249,7 @@ export const MediaPage = () => {
     setMediaForm((current) => ({
       ...current,
       entityType,
-      entityId: resolveDefaultEntityId(entityType),
+      entityId: "",
     }));
   };
 
@@ -595,7 +597,9 @@ export const MediaPage = () => {
           <div>
             <h2 className="section-heading">Audio và nội dung phát</h2>
           </div>
-          <Button onClick={() => openAudioModal()}>Thêm audio</Button>
+          <Button onClick={() => openAudioModal()} disabled={isBootstrapping}>
+            {isBootstrapping ? "Đang tải dữ liệu..." : "Thêm audio"}
+          </Button>
         </div>
         <div className="mt-6">
           {previewState.message ? (
@@ -629,7 +633,9 @@ export const MediaPage = () => {
               Hiển thị đầy đủ các cột của bảng media asset để admin không bỏ sót dữ liệu liên kết.
             </p>
           </div>
-          <Button onClick={() => openMediaModal()}>Thêm media asset</Button>
+          <Button onClick={() => openMediaModal()} disabled={isBootstrapping}>
+            {isBootstrapping ? "Đang tải dữ liệu..." : "Thêm media asset"}
+          </Button>
         </div>
         <div className="mt-6">
           <DataTable
@@ -651,7 +657,7 @@ export const MediaPage = () => {
         description=""
         maxWidthClassName="max-w-6xl"
       >
-        <form className="space-y-6" onSubmit={handleAudioSubmit} onKeyDown={preventImplicitFormSubmit}>
+        <form className="space-y-6" onSubmit={handleAudioSubmit} onKeyDown={preventImplicitFormSubmit} autoComplete="off">
           <div className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <div className="space-y-5">
               <div className="grid gap-5 md:grid-cols-2">
@@ -730,6 +736,7 @@ export const MediaPage = () => {
                   <input
                     type="file"
                     accept=".mp3,audio/mpeg"
+                    autoComplete="off"
                     onChange={(event) => {
                       void handleAudioFileChange(event);
                     }}
@@ -954,7 +961,7 @@ export const MediaPage = () => {
         description="Hiển thị và lưu đầy đủ các cột đang có trong bảng MediaAssets."
         maxWidthClassName="max-w-4xl"
       >
-        <form className="space-y-6" onSubmit={handleMediaSubmit} onKeyDown={preventImplicitFormSubmit}>
+        <form className="space-y-6" onSubmit={handleMediaSubmit} onKeyDown={preventImplicitFormSubmit} autoComplete="off">
           <div className="grid gap-5 md:grid-cols-2">
             <div>
               <label className="field-label">Entity type</label>
@@ -975,10 +982,12 @@ export const MediaPage = () => {
               <label className="field-label">Entity ID</label>
               <Select
                 value={mediaForm.entityId}
+                required
                 onChange={(event) =>
                   setMediaForm((current) => ({ ...current, entityId: event.target.value }))
                 }
               >
+                <option value="">Chọn entity</option>
                 {getEntityOptions(mediaForm.entityType).map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.label}

@@ -16,25 +16,27 @@ public static class ApiResponseHttpWriter
         var messages = context.ModelState
             .Values
             .SelectMany(entry => entry.Errors)
-            .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage) ? "Dữ liệu gửi lên không hợp lệ." : error.ErrorMessage)
+            .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage)
+                ? "The submitted data is invalid."
+                : error.ErrorMessage)
             .Distinct()
             .ToArray();
 
         return messages.Length > 0
             ? string.Join("; ", messages)
-            : "Dữ liệu gửi lên không hợp lệ.";
+            : "The submitted data is invalid.";
     }
 
     public static string GetDefaultMessage(int statusCode) => statusCode switch
     {
-        StatusCodes.Status400BadRequest => "Dữ liệu gửi lên không hợp lệ.",
-        StatusCodes.Status401Unauthorized => "Bạn chưa đăng nhập hoặc phiên đăng nhập đã hết hạn.",
-        StatusCodes.Status403Forbidden => "Bạn không có quyền truy cập tài nguyên này.",
-        StatusCodes.Status404NotFound => "Không tìm thấy tài nguyên yêu cầu.",
-        StatusCodes.Status405MethodNotAllowed => "Phương thức yêu cầu không được hỗ trợ.",
-        StatusCodes.Status415UnsupportedMediaType => "Định dạng dữ liệu gửi lên không được hỗ trợ.",
-        StatusCodes.Status422UnprocessableEntity => "Dữ liệu gửi lên không hợp lệ.",
-        StatusCodes.Status500InternalServerError => "Hệ thống gặp lỗi trong quá trình xử lý.",
-        _ => "Yêu cầu đến backend thất bại."
+        StatusCodes.Status400BadRequest => "The submitted data is invalid.",
+        StatusCodes.Status401Unauthorized => "Please sign in again.",
+        StatusCodes.Status403Forbidden => "You do not have access to this resource.",
+        StatusCodes.Status404NotFound => "The requested resource was not found.",
+        StatusCodes.Status405MethodNotAllowed => "The request method is not supported.",
+        StatusCodes.Status415UnsupportedMediaType => "The submitted data format is not supported.",
+        StatusCodes.Status422UnprocessableEntity => "The submitted data is invalid.",
+        StatusCodes.Status500InternalServerError => "The system hit an error while processing the request.",
+        _ => "The backend request failed."
     };
 }

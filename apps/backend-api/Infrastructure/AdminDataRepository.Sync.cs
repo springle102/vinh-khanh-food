@@ -7,7 +7,7 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed partial class AdminDataRepository
 {
-    private const string SyncSchemaVersion = "asset-url-absolute-v1";
+    private const string SyncSchemaVersion = "bootstrap-auto-translation-v3";
 
     public DataSyncState GetSyncState()
     {

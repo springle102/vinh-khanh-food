@@ -1,223 +1,275 @@
 # Vinh Khanh Food
 
-README này là tài liệu tổng hợp duy nhất cho toàn bộ đồ án. Repository hiện tại gồm 3 phần chính:
+README này mô tả luồng hệ thống và công nghệ hiện tại của đồ án Vinh Khanh Food. Hệ thống gồm admin web, backend API và ứng dụng mobile Android cho khách hàng.
 
-- `apps/admin-web`: trang quản trị viết bằng React + TypeScript + Vite, dành cho `SUPER_ADMIN` và `PLACE_OWNER`
-- `apps/backend-api`: Web API viết bằng ASP.NET Core, làm trung tâm xử lý dữ liệu và kết nối SQL Server
-- `apps/mobile-app`: ứng dụng .NET MAUI Android dành cho người dùng cuối
-
-## Các lỗi đang phát sinh
-- Lỗi map hiện thành phố Thủ Đức, không hiện TPHCM
-- Chưa dịch được triệt để ngôn ngữ. (vẫn còn lẫn lộn ngôn ngữ)
-- Quản lý tour chưa hợp lí
-- Chưa xử lí backend đăng nhập bằng google, facebook
+## Các lỗi đang phát sinh cần fix và cần cải thiện
+- Tour chưa hợp lí
+- Chưa xử lí backend đăng nhập qua google, facebook
+- Chưa làm backend khi khách hàng quên mật khẩu
 - Cần thêm chatbox AI cho app (xài API key của Gemini)
-- Lỗi khi trạng thái người dùng là không hoạt động và đã ban thì vẫn đăng nhập bình thường
-## Tổng quan kiến trúc
+
+## Thành phần chính
+
+| Thành phần | Thư mục | Công nghệ | Vai trò |
+| --- | --- | --- | --- |
+| Admin web | `apps/admin-web` | React 19, TypeScript, Vite 6, React Router 7, Tailwind CSS, Recharts, Leaflet/OpenStreetMap | Quản trị nội dung, POI, tour, media, thuyết minh, người dùng, đánh giá, khuyến mãi và cấu hình |
+| Backend API | `apps/backend-api` | ASP.NET Core `.NET 10`, SQL Server, Swagger, SPA Proxy, HttpClient, MemoryCache | Xử lý nghiệp vụ, xác thực, phân quyền, bootstrap dữ liệu, dịch nội dung, TTS, upload, geocoding và premium |
+| Mobile app | `apps/mobile-app` | .NET MAUI `net10.0-android`, Plugin.Maui.Audio, ZXing.Net.Maui, WebView + Leaflet/OpenStreetMap | Trải nghiệm khách hàng: đăng nhập, đổi ngôn ngữ, bản đồ, POI, thuyết minh, My Tour, QR, premium và tài khoản |
+| Tools | `tools` | .NET console smoke tests | Kiểm tra nhanh các luồng i18n, TTS và chuẩn hóa địa chỉ POI |
+| Scripts | `scripts` | Node.js và PowerShell | Chạy backend, admin web, mobile watcher và toàn bộ môi trường local |
+
+## Kiến trúc tổng thể
 
 ```text
-Admin Web --------------------> Backend API --------------------> SQL Server
-   |                                  |
-   |                                  +--> Swagger
-   |                                  +--> Upload file
-   |                                  +--> Geocoding / Translation proxy
-   |
-   +-- đăng nhập, bootstrap, CRUD
-
-Mobile App -------------------> Backend API
-   |
-   +-- bản đồ, POI detail, audio, My Tour, QR
-   +-- nếu API chưa sẵn sàng thì dùng fallback mock data để demo giao diện
+Admin Web
+  |
+  |  /api/v1/auth, /api/v1/bootstrap, /api/v1/pois, /api/v1/tts, ...
+  v
+Backend API  -------------------->  SQL Server
+  |                                    |
+  |                                    +-- AdminUsers, CustomerUsers, Pois, Translations
+  |                                    +-- AudioGuides, MediaAssets, Routes, Promotions
+  |                                    +-- Reviews, ViewLogs, AudioListenLogs, Settings
+  |
+  +-- Geocoding proxy
+  +-- Google Translate proxy cho nội dung thiếu bản dịch
+  +-- ElevenLabs Text-to-Speech proxy
+  +-- Upload/static file qua /storage
+  +-- Premium language gate
+  |
+  v
+Mobile App
+  |
+  +-- Đọc bootstrap theo customerUserId và languageCode
+  +-- Hiển thị bản đồ OpenStreetMap/Leaflet trong WebView
+  +-- Resolve nội dung POI, popup, audio và thuyết minh theo ngôn ngữ đang chọn
 ```
 
-## Cấu trúc repository
+Backend API là nguồn dữ liệu trung tâm. Admin web tạo và cập nhật dữ liệu; mobile app đọc dữ liệu đã chuẩn hóa từ backend để hiển thị cho khách hàng.
 
-- `apps/admin-web`: giao diện quản trị, phân quyền theo vai trò và quản lý nội dung
-- `apps/backend-api`: API trung tâm, trả bootstrap dữ liệu, xác thực, CRUD, upload và nhật ký hệ thống
-- `apps/mobile-app`: ứng dụng Android cho khách, hiển thị bản đồ, điểm đến, tour và audio
-- `scripts`: các script hỗ trợ chạy backend và theo dõi/deploy mobile Android
-- `vinh-khanh-food.sln`: solution dùng để mở backend API và mobile app trong Visual Studio
+## Vai trò người dùng
 
-## Vai trò và cổng truy cập
-
-| Vai trò | Cổng truy cập | Mục đích |
+| Vai trò | Nơi sử dụng | Phạm vi |
 | --- | --- | --- |
-| `SUPER_ADMIN` | `/admin/*` | Quản lý toàn bộ hệ thống, người dùng, nội dung, khuyến mãi, đánh giá, cấu hình |
-| `PLACE_OWNER` | `/restaurant/*` | Quản lý dữ liệu liên quan đến POI hoặc quán mà chủ quán được phân công |
-| End user | Ứng dụng mobile | Xem điểm đến, nghe audio, lưu tour, quét QR, đổi ngôn ngữ |
+| `SUPER_ADMIN` | `/admin/*` trên admin web | Quản lý toàn bộ dữ liệu hệ thống |
+| `PLACE_OWNER` | `/restaurant/*` trên admin web | Quản lý dữ liệu của POI/quán được phân công |
+| Khách hàng | Mobile app | Xem bản đồ, POI, thuyết minh, tour, QR, tài khoản, ngôn ngữ và premium |
 
-## Luồng tổng thể của đồ án
+## Luồng admin web
 
-1. Quản trị viên hoặc chủ quán đăng nhập trên trang admin.
-2. Admin web gọi `api/v1/auth/login`, lưu phiên đăng nhập, sau đó gọi `api/v1/bootstrap`.
-3. Backend trả về bộ dữ liệu tổng hợp gồm users, customer users, categories, POIs, food items, translations, audio guides, media assets, routes, promotions, reviews, logs và settings.
-4. Quản trị viên cập nhật nội dung trên các module như POI, tour, món ăn, media, audio, đánh giá, khuyến mãi, người dùng và cấu hình hệ thống.
-5. Backend ghi dữ liệu xuống SQL Server và tạo bộ bootstrap mới cho frontend và mobile app sử dụng.
-6. Mobile app đọc dữ liệu từ `api/v1/bootstrap` để tạo bản đồ, heatmap, chi tiết POI, hình ảnh, review, audio và thông tin tour.
-7. Người dùng trên app xem nội dung, nghe thuyết minh, quét QR và lưu điểm đến vào hành trình cá nhân.
-8. Các đánh giá và log tương tác được gửi ngược lại backend để admin theo dõi trên dashboard và activity.
+1. Người dùng vào `/login`, `/admin/login` hoặc `/restaurant/login`.
+2. Admin web gọi `api/v1/auth/login` để nhận phiên đăng nhập, access token, refresh token và vai trò.
+3. Router điều hướng theo vai trò:
+   - `SUPER_ADMIN` vào `/admin/dashboard`.
+   - `PLACE_OWNER` vào `/restaurant/dashboard`.
+4. `AdminDataProvider` gọi `api/v1/bootstrap`, sau đó giữ state dùng chung cho dashboard, POI, tour, user, review, promotion, activity và settings.
+5. Khi tạo hoặc cập nhật dữ liệu, admin web gọi các API tương ứng như `pois`, `translations`, `audio-guides`, `media-assets`, `food-items`, `tours`, `promotions`, `reviews`, `admin-users` hoặc `settings`.
+6. Backend kiểm tra quyền bằng `AdminRequestContextResolver`. Với `PLACE_OWNER`, dữ liệu được giới hạn theo POI/quán mà chủ quán phụ trách.
+7. Sau khi lưu thành công, admin web refresh lại bootstrap hoặc cập nhật state để đồng bộ dữ liệu mới nhất.
 
-## Luồng của trang admin
+## Luồng POI, bản đồ và nội dung quản trị
 
-1. Người dùng truy cập `/login`.
-2. Router điều hướng theo vai trò:
-   - `SUPER_ADMIN` vào `/admin/dashboard`
-   - `PLACE_OWNER` vào `/restaurant/dashboard`
-3. `AdminDataProvider` tải bootstrap ban đầu và đồng bộ state cho toàn bộ hệ thống quản trị.
-4. Các module chính của admin gồm:
-   - `Dashboard`: tổng quan số liệu
-   - `POI`: quản lý địa điểm, tọa độ, geocoding và nội dung chi tiết
-   - `Tours`: quản lý tuyến tham quan và các điểm dừng
-   - `Content`: quản lý món ăn hoặc nội dung liên quan đến POI
-   - `Users`: quản lý tài khoản admin và chủ quán
-   - `End Users`: theo dõi người dùng cuối
-   - `Promotions`: tạo và cập nhật ưu đãi
-   - `Reviews`: duyệt hoặc thay đổi trạng thái đánh giá
-   - `Activity`: xem audit log
-   - `Settings`: cấu hình chung của hệ thống
-5. Mỗi thao tác tạo hoặc cập nhật trên admin sẽ gọi API tương ứng như `pois`, `tours`, `food-items`, `translations`, `audio-guides`, `media-assets`, `promotions`, `reviews`, `settings`.
-6. Sau khi lưu, frontend sẽ refresh bootstrap để giao diện đồng bộ lại dữ liệu mới nhất.
-7. Nếu đăng nhập bằng vai trò `PLACE_OWNER`, backend và frontend đều giới hạn dữ liệu theo POI mà chủ quán phụ trách.
+1. Admin quản lý POI trong `PoisPage`.
+2. Form POI dùng `OpenStreetMapPicker` để chọn tọa độ, xem marker, xem POI lân cận và cập nhật địa chỉ.
+3. Bản đồ admin dùng React Leaflet + OpenStreetMap tile. Khi bản đồ nằm trong popup/modal sửa POI, component có `ResizeObserver` và nhiều lần `invalidateSize()` để tránh lỗi bản đồ bị xanh hoặc không render đủ tile.
+4. Geocoding đi qua backend `api/v1/geocoding`, sau đó chuẩn hóa địa chỉ bằng `PoiAddressNormalizer` để tránh gán sai khu Vĩnh Khánh sang Thành phố Thủ Đức.
+5. Media, món ăn, khuyến mãi và thuyết minh của POI được quản lý cùng dữ liệu bản dịch và audio guide để mobile app có thể đọc lại qua bootstrap.
 
-## Luồng của ứng dụng mobile
+## Luồng mobile app
 
-1. Ứng dụng khởi động tại `LoginPage`.
-2. Người dùng có thể vào `LanguageSelectionPage` để chọn ngôn ngữ.
-3. Luồng đăng nhập hiện tại là mock flow phục vụ demo giao diện; sau khi tiếp tục, app chuyển vào `HomeMapPage`.
-4. `HomeMapPage` hiển thị danh sách POI, heatmap, bottom sheet chi tiết, hình ảnh, rating và audio narration.
-5. Khi app có cấu hình API hợp lệ trong `apps/mobile-app/Resources/Raw/appsettings.json`, dữ liệu sẽ được nạp từ backend thông qua `api/v1/bootstrap`.
-6. Nếu backend chưa sẵn sàng, mobile app sẽ fallback sang mock data để vẫn có thể demo giao diện và luồng sử dụng.
-7. Từ `HomeMapPage`, người dùng có thể chọn POI trên bản đồ, nghe narration/audio, mở chỉ đường và lưu POI vào `MyTourPage`.
-8. `QrScannerPage` quét mã QR, chuyển sang `LanguageSelectionPage`, sau đó mở đúng POI tương ứng trên `HomeMapPage`.
-9. `MyTourPage` hiển thị hành trình đã lưu và tiến độ tham quan.
-10. `SettingsPage` hiển thị hồ sơ, cho phép đổi ngôn ngữ và đăng xuất.
+1. App khởi động bằng `AppShell` tại `LoginPage`.
+2. `AppLanguageService` khởi tạo ngôn ngữ từ `Preferences` với key `vkfood.language.code`.
+3. Người dùng đăng nhập, đăng ký hoặc dùng tài khoản khách hàng hiện có qua `api/v1/customer-users`.
+4. `FoodStreetApiDataService` đọc cấu hình API từ `appsettings.json` hoặc file override `.android-settings/appsettings.json`.
+5. App gọi `api/v1/bootstrap?customerUserId=...&languageCode=...` để lấy dữ liệu theo khách hàng và ngôn ngữ hiện tại.
+6. `HomeMapPage` hiển thị bản đồ OpenStreetMap/Leaflet trong WebView, gồm marker, heat point, popup và bottom sheet chi tiết POI.
+7. Khi khách chọn POI, app resolve tên, mô tả, món ăn, khuyến mãi, tag, ảnh, audio và thuyết minh theo ngôn ngữ đang chọn.
+8. `MyTourPage` lưu POI đã chọn bằng `PoiTourStoreService` vào file local `vkfood.saved-pois.json`.
+9. `QrScannerPage` dùng ZXing để quét QR, sau đó điều hướng về luồng chọn ngôn ngữ hoặc mở POI tương ứng.
+10. `SettingsPage` cho phép đổi ngôn ngữ, cập nhật hồ sơ, bật/tắt auto narration, mua premium và đăng xuất.
 
-## Luồng dữ liệu từ admin sang app
+## Luồng đa ngôn ngữ hiện tại
 
-1. Admin tạo hoặc cập nhật POI, món ăn, media, bản dịch, audio guide, route, trạng thái review và settings.
-2. Backend tổng hợp toàn bộ dữ liệu này trong `api/v1/bootstrap`.
-3. Mobile app biến đổi bootstrap thành:
-   - danh sách POI hiển thị trên bản đồ
-   - heatmap mức độ quan tâm
-   - chi tiết POI theo ngôn ngữ
-   - audio narration sẵn sàng để phát
-   - tour và thông tin hồ sơ người dùng
-4. Nhờ luồng này, khi admin thay đổi nội dung trên web thì mobile app có thể đọc lại và hiển thị nội dung mới.
+1. Mobile UI có file resource trong `apps/mobile-app/Resources/Localization` cho `vi`, `en`, `zh-CN`, `ko`, `ja` và `fr`.
+2. Luồng nội dung khách hàng/premium trên backend hiện chuẩn hóa chính cho `vi`, `en`, `zh-CN`, `ko` và `ja`.
+3. Ngôn ngữ miễn phí: `vi`, `en`.
+4. Ngôn ngữ premium: `zh-CN`, `ko`, `ja`.
+5. Khi đổi ngôn ngữ, `AppLanguageService` lưu lựa chọn, cập nhật `CultureInfo`, phát sự kiện `LanguageChanged` và các ViewModel kế thừa `LocalizedViewModelBase` reload lại state/binding.
+6. `FoodStreetApiDataService` lắng nghe `LanguageChanged`, xóa bootstrap cache cũ và tải lại dữ liệu theo `languageCode` mới.
+7. Backend `BootstrapLocalizationService` tự tạo bản dịch thiếu cho bootstrap khách hàng bằng Google Translate proxy khi ngôn ngữ đích là `en`, `zh-CN`, `ko` hoặc `ja` và khách có quyền dùng ngôn ngữ đó.
+8. `LocalizationFallbackPolicy` ở cả backend và mobile chặn việc dùng text tiếng Việt hoặc text bị lỗi mã hóa làm fallback cho ngôn ngữ khác.
+9. Fallback chỉ áp dụng theo từng trường hoặc từng key. Nếu thiếu một trường dịch, hệ thống ưu tiên bản dịch cùng ngôn ngữ, sau đó mới xét tiếng Anh; không kéo cả màn hình quay về tiếng Việt.
 
-## Công nghệ sử dụng
+## Luồng thuyết minh và TTS
 
-- Admin web: React 19, TypeScript, Vite, Tailwind CSS, React Router, Recharts, Leaflet/OpenStreetMap
-- Backend: ASP.NET Core `.NET 10`, SQL Server, Swagger
-- Mobile app: .NET MAUI `net10.0-android`, ZXing QR Scanner, Plugin.Maui.Audio
+1. Khi cần phát thuyết minh, admin web và mobile gọi `api/v1/pois/{poiId}/narration?languageCode=...&voiceType=...`.
+2. `PoiNarrationService` resolve nội dung theo thứ tự:
+   - bản dịch đúng ngôn ngữ đã lưu;
+   - bản dịch tự động từ nguồn phù hợp nếu bản dịch đích thiếu hoặc quá cũ;
+   - fallback tối thiểu nếu không có nội dung đủ an toàn.
+3. Nếu có audio guide đã upload, trạng thái `ready`, đúng ngôn ngữ và URL hợp lệ, hệ thống ưu tiên phát file audio đó.
+4. Nếu không có audio upload hợp lệ, frontend tạo các URL `api/v1/tts` theo từng đoạn ngắn để backend gọi ElevenLabs Text-to-Speech.
+5. Backend TTS dùng `ElevenLabsTextToSpeechService`, model mặc định `eleven_flash_v2_5`, output mặc định `mp3_44100_128` và cache audio bằng `MemoryCache`.
+6. Admin web phát TTS bằng blob playback queue để không phải tải toàn bộ đoạn thuyết minh trước khi phát. Nếu audio web bị chặn hoặc lỗi, admin web fallback sang `speechSynthesis` của trình duyệt.
+7. Mobile app phát audio remote bằng `Plugin.Maui.Audio`; nếu remote audio hoặc proxy TTS lỗi/quá lâu, app fallback sang `TextToSpeech.Default` của thiết bị theo locale đã resolve.
 
-## Cấu hình cần lưu ý
+## Luồng premium
 
-- `apps/admin-web/.env.example`
-  - `VITE_API_BASE_URL=http://localhost:5080/api/v1`
-  - `VITE_API_PROXY_TARGET=http://localhost:5080`
-- `apps/backend-api/appsettings.Development.json`
-  - cấu hình `ConnectionStrings:AdminSqlServer`
-- `apps/mobile-app/Resources/Raw/appsettings.json`
-  - `ApiBaseUrl` cho môi trường local
-  - `PlatformApiBaseUrls.Android` nên đổi thành IP của máy đang chạy backend trong cùng mạng hoặc emulator
-  - khi build APK để cài lên điện thoại thật, không dùng `localhost` hoặc `127.0.0.1` vì các địa chỉ này sẽ trỏ về chính điện thoại
-  - tạo file `.android-settings/appsettings.json` bằng cách copy từ `apps/mobile-app/appsettings.android.sample.json`, rồi đổi `ApiBaseUrl` và `PlatformApiBaseUrls.Android` sang IP LAN của máy chạy backend, ví dụ `http://192.168.1.10:5080`
-  - backend cũng phải listen trên mạng nội bộ thay vì chỉ `localhost`; có thể chạy PowerShell với `$env:VK_BACKEND_URLS='http://0.0.0.0:5080'; .\scripts\dev-backend.cmd`
+1. Backend định nghĩa ngôn ngữ miễn phí và premium trong `PremiumAccessCatalog`.
+2. Khách hàng miễn phí chỉ dùng `vi` và `en`.
+3. Khi khách chọn `zh-CN`, `ko` hoặc `ja`, mobile kiểm tra quyền ngôn ngữ từ bootstrap.
+4. Nếu bị khóa, mobile điều hướng tới `PremiumCheckoutPage`.
+5. API mua premium là `api/v1/customer-users/{id}/premium/purchase`.
+6. Luồng thanh toán hiện là demo/mock qua `MockPremiumPaymentProcessor`, hỗ trợ bank card và e-wallet trong giao diện mobile.
+7. Sau khi mua thành công, backend cập nhật trạng thái premium của customer, mobile xóa cache bootstrap và kiểm tra lại ngôn ngữ đang chọn.
 
-## ElevenLabs TTS
+## Endpoint chính
 
-- Audio guide đã upload vẫn được ưu tiên cho admin web và mobile app
-- Khi không có audio sẵn, admin web và mobile app đều fallback sang ElevenLabs TTS từ cùng một nội dung narration đã resolve từ backend
-- Backend `api/v1/pois/{id}/narration` tiếp tục đồng bộ text, ngôn ngữ hiệu lực và audio guide giữa admin và app
+| Endpoint | Mục đích |
+| --- | --- |
+| `GET /api/v1/bootstrap` | Trả bootstrap cho admin web hoặc mobile app |
+| `GET /api/v1/sync-state` | Trả version dữ liệu để mobile biết khi nào cần refresh |
+| `POST /api/v1/auth/login` | Đăng nhập admin/chủ quán |
+| `GET /api/v1/auth/login-options` | Lấy tài khoản mẫu theo portal đăng nhập |
+| `POST /api/v1/customer-users` | Đăng ký khách hàng |
+| `POST /api/v1/customer-users/login` | Đăng nhập khách hàng |
+| `PUT /api/v1/customer-users/{id}/profile` | Cập nhật hồ sơ khách hàng |
+| `POST /api/v1/customer-users/{id}/premium/purchase` | Mua premium demo |
+| `GET /api/v1/pois/{id}/detail` | Lấy chi tiết POI cho admin |
+| `GET /api/v1/pois/{id}/narration` | Resolve thuyết minh POI theo ngôn ngữ |
+| `GET /api/v1/tts` | Tạo audio TTS qua ElevenLabs |
+| `GET /api/v1/geocoding/*` | Tìm kiếm hoặc reverse geocode địa chỉ |
+| `POST /api/v1/storage/upload` | Upload file media/audio |
 
-## Các lệnh root thường dùng
+## Cấu hình quan trọng
 
-```powershell
-npm run install:admin
-npm run dev
-npm run dev:all
-.\scripts\dev-backend.cmd
-npm run dev:mobile:android
-npm run build
-.\scripts\build-backend.cmd
-npm run lint
-```
+| File hoặc biến môi trường | Ý nghĩa |
+| --- | --- |
+| `apps/admin-web/.env.example` | Cấu hình `VITE_API_BASE_URL` và `VITE_API_PROXY_TARGET` cho admin web |
+| `apps/backend-api/appsettings.json` | CORS, SQL Server, seed path, cấu hình mặc định ElevenLabs |
+| `apps/backend-api/appsettings.Development.json` | Connection string SQL Server local |
+| `apps/mobile-app/Resources/Raw/appsettings.json` | API base URL mặc định của mobile |
+| `.android-settings/appsettings.json` | File override local cho Android/emulator hoặc điện thoại thật |
+| `ELEVENLABS_API_KEY` | API key bắt buộc để backend tạo TTS thật |
+| `ELEVENLABS_DEFAULT_VOICE_ID` | Voice ID mặc định cho ElevenLabs |
+| `ELEVENLABS_MODEL_ID` | Model TTS, mặc định `eleven_flash_v2_5` |
+| `ELEVENLABS_OUTPUT_FORMAT` | Output audio, mặc định `mp3_44100_128` |
+| `VK_BACKEND_URLS` | URL backend khi muốn listen trên LAN, ví dụ `http://0.0.0.0:5080` |
 
-Nếu dùng PowerShell và gặp lỗi `npm.ps1` do execution policy, hãy thay `npm` bằng `npm.cmd`.
+Khi chạy mobile trên emulator hoặc điện thoại thật, không dùng `localhost` nếu backend đang chạy trên máy tính. Hãy tạo `.android-settings/appsettings.json` từ `apps/mobile-app/appsettings.android.sample.json` và đổi API base URL sang IP LAN của máy chạy backend, ví dụ `http://192.168.1.10:5080`.
 
 ## Cách chạy local
 
-Mở đúng workspace trước khi chạy lệnh:
-
-- VS Code: mở thư mục `D:\vinh-khanh-food` hoặc file workspace/solution của repo. Repo đã có `.vscode/settings.json` để terminal mặc định mở tại root workspace.
-- Visual Studio: mở `vinh-khanh-food.sln` chứ không mở `vinh-khanh-food.slnLaunch`. File `.slnLaunch` chỉ là cấu hình profile chạy dùng chung cho solution.
-- Khi chạy web trong Visual Studio, ưu tiên profile backend (`VinhKhanh.BackendApi` hoặc `https`). Backend đã được cấu hình SPA proxy để tự bật Vite dev server cho `apps/admin-web` tại `http://localhost:5173`.
-- Nếu muốn chạy đa dự án trong Visual Studio, solution cũng có profile `Backend + Admin Web` trong file `vinh-khanh-food.slnLaunch`.
-
-### 1. Yêu cầu môi trường
-
-- Node.js + npm
-- .NET SDK 10
-- SQL Server hoặc SQL Server Express
-- Android SDK + emulator nếu muốn chạy mobile app
-
-### 2. Chạy backend API
+Mở terminal tại root repo:
 
 ```powershell
-.\scripts\dev-backend.cmd
+cd D:\vinh-khanh-food
 ```
 
-Hoặc dùng trực tiếp:
+Cài dependency cho admin web:
 
 ```powershell
-node .\scripts\run-backend.cjs dev
+npm.cmd run install:admin
 ```
 
-Mặc định backend chạy tại:
+Chạy backend API:
+
+```powershell
+npm.cmd run dev:backend
+```
+
+Backend mặc định chạy tại:
 
 - `http://localhost:5080`
 - `http://localhost:5080/swagger`
 
-### 3. Chạy admin web
+Chạy admin web:
 
 ```powershell
-npm run install:admin
-npm run dev
+npm.cmd run dev
 ```
 
-Mặc định admin web chạy tại:
+Admin web mặc định chạy tại:
 
 - `http://localhost:5173`
 
-### 4. Chạy mobile Android
+Chạy mobile Android watcher:
 
 ```powershell
-npm run dev:mobile:android
+npm.cmd run dev:mobile:android
 ```
 
-Script này sẽ build, cài lên emulator Android và tiếp tục watch để deploy lại khi file trong `apps/mobile-app` thay đổi.
-
-### 5. Chạy đồng thời backend + admin web + mobile
+Chạy backend, admin web và mobile watcher cùng lúc:
 
 ```powershell
-npm run dev:all
+npm.cmd run dev:all
 ```
 
-Lệnh này sẽ mở đồng thời backend, admin web và mobile watcher trong cùng một terminal. Nhấn `Ctrl+C` để dừng toàn bộ.
+Lệnh `dev:all` mở backend, admin web và watcher deploy Android trong cùng một terminal. Nhấn `Ctrl+C` để dừng toàn bộ.
+
+## Build, lint và smoke test
+
+Build admin web:
+
+```powershell
+npm.cmd run build
+```
+
+Lint/typecheck admin web:
+
+```powershell
+npm.cmd run lint
+```
+
+Build backend:
+
+```powershell
+npm.cmd run build:backend
+```
+
+Smoke test fallback đa ngôn ngữ:
+
+```powershell
+dotnet run --project tools\LocalizationFallbackSmoke\LocalizationFallbackSmoke.csproj
+```
+
+Smoke test TTS:
+
+```powershell
+dotnet run --project tools\TtsPlaybackSmoke\TtsPlaybackSmoke.csproj
+```
+
+Smoke test chuẩn hóa địa chỉ POI:
+
+```powershell
+dotnet run --project tools\PoiAddressNormalizationSmoke\PoiAddressNormalizationSmoke.csproj
+```
 
 ## Tài khoản mẫu
 
-Nếu database đang dùng seed mặc định, có thể đăng nhập bằng:
+Nếu database đang dùng seed mặc định, có thể đăng nhập admin web bằng:
 
 - `superadmin@vinhkhanh.vn` / `Admin@123`
 - `bbq@vinhkhanh.vn` / `Admin@123`
 - `oc@vinhkhanh.vn` / `Admin@123`
 
-## Các entry point nên đọc đầu tiên
+## Entry point nên đọc khi bảo trì
 
-- `apps/admin-web/src/app/router.tsx`
-- `apps/admin-web/src/data/store.tsx`
-- `apps/backend-api/Program.cs`
-- `apps/backend-api/Infrastructure/AdminDataRepository.cs`
-- `apps/mobile-app/App.xaml.cs`
-- `apps/mobile-app/ViewModels/HomeMapViewModel.cs`
+| Phần | File |
+| --- | --- |
+| Router admin | `apps/admin-web/src/app/router.tsx` |
+| State admin | `apps/admin-web/src/data/store.tsx` |
+| API client admin | `apps/admin-web/src/lib/api.ts` |
+| TTS/narration admin | `apps/admin-web/src/lib/narration.ts` |
+| Playback POI admin | `apps/admin-web/src/features/pois/usePoiNarrationPlayback.ts` |
+| Map POI admin | `apps/admin-web/src/features/pois/OpenStreetMapPicker.tsx` |
+| Backend startup | `apps/backend-api/Program.cs` |
+| Bootstrap backend | `apps/backend-api/Controllers/BootstrapController.cs` |
+| POI/narration backend | `apps/backend-api/Controllers/PoisController.cs` và `apps/backend-api/Infrastructure/PoiNarrationService.cs` |
+| TTS backend | `apps/backend-api/Controllers/TtsController.cs` và `apps/backend-api/Infrastructure/ElevenLabsTextToSpeechService.cs` |
+| Premium backend | `apps/backend-api/Infrastructure/PremiumAccessCatalog.cs` và `apps/backend-api/Infrastructure/PremiumPurchaseService.cs` |
+| Mobile startup | `apps/mobile-app/App.xaml.cs` và `apps/mobile-app/MauiProgram.cs` |
+| Mobile language | `apps/mobile-app/Services/AppLanguageService.cs` |
+| Mobile data | `apps/mobile-app/Services/FoodStreetMockDataService.cs` và `apps/mobile-app/Services/FoodStreetApiDataService.Profile.cs` |
+| Mobile POI map | `apps/mobile-app/Pages/HomeMapPage.xaml.cs` |
+| Mobile POI/TTS | `apps/mobile-app/Services/PoiExperienceServices.cs` |

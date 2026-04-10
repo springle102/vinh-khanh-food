@@ -102,6 +102,7 @@ public sealed class MediaAssetsController(
         {
             "poi" => repository.GetPois(actor).Any(item => item.Id == entityId),
             "food_item" => repository.GetFoodItems(actor).Any(item => item.Id == entityId),
+            "promotion" => repository.GetPromotions(actor).Any(item => item.Id == entityId),
             "route" => repository.GetRoutes(actor).Any(item =>
                 item.Id == entityId &&
                 (actor.IsSuperAdmin || string.Equals(item.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase))),

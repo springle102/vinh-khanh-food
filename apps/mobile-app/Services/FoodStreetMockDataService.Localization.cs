@@ -60,7 +60,7 @@ public sealed partial class FoodStreetApiDataService
                 "빈카인 커피 & 티 골목",
                 "ヴィンカイン コーヒー&ティー路地",
                 "Ruelle Café & Thé Vinh Khanh"),
-            _ => CreateFallbackTranslationMap(fallbackTitle)
+            _ => CreateFallbackTranslationMap(fallbackTitle, "Vinh Khanh food spot")
         };
     }
 
@@ -89,7 +89,7 @@ public sealed partial class FoodStreetApiDataService
                 "미식 여정 중간에 커피와 차로 잠시 쉬어 가기 좋은 곳입니다.",
                 "食べ歩きの途中でコーヒーやお茶を楽しみながらひと休みできる場所です。",
                 "Une pause café et thé idéale pour souffler au milieu du parcours gourmand."),
-            _ => CreateFallbackTranslationMap(fallbackSummary)
+            _ => CreateFallbackTranslationMap(fallbackSummary, "A food stop in the Vinh Khanh area.")
         };
     }
 
@@ -122,13 +122,7 @@ public sealed partial class FoodStreetApiDataService
                 "이 커피 골목은 해산물과 짭짤한 요리 뒤에 아이스커피나 과일차로 동선을 정리하기 좋은 휴식 코스입니다.",
                 "このコーヒー路地は、海鮮や塩気のある料理のあとにアイスコーヒーやフルーツティーでひと息つくのにちょうど良い立ち寄り先です。",
                 "Cette ruelle café est idéale pour faire une pause après les plats salés et les fruits de mer, autour d'un café glacé ou d'un thé fruité."),
-            _ => CreateLocalizedMap(
-                fallbackSummary,
-                $"{ToLatinText(fallbackSummary)} Address: {localizedAddress}. Category: {localizedCategory}.",
-                $"{ToLatinText(fallbackSummary)} 地址：{localizedAddress}。类别：{localizedCategory}。",
-                $"{ToLatinText(fallbackSummary)} 주소: {localizedAddress}. 분류: {localizedCategory}.",
-                $"{ToLatinText(fallbackSummary)} 住所: {localizedAddress}。カテゴリ: {localizedCategory}。",
-                $"{ToLatinText(fallbackSummary)} Adresse : {localizedAddress}. Catégorie : {localizedCategory}.")
+            _ => CreateFallbackTranslationMap(fallbackSummary, "A food stop in the Vinh Khanh area.")
         };
     }
 
@@ -140,6 +134,61 @@ public sealed partial class FoodStreetApiDataService
             "길거리 간식 코스",
             "ストリートスナック巡り",
             "Parcours street food"));
+
+    private string LocalizeRouteTheme(string? theme)
+    {
+        if (string.IsNullOrWhiteSpace(theme))
+        {
+            return string.Empty;
+        }
+
+        return NormalizeLookupKey(theme) switch
+        {
+            "an-vat" => SelectLocalizedText(CreateLocalizedMap(
+                "Ä‚n váº·t",
+                "Street snacks",
+                "å°åƒ",
+                "ê¸¸ê±°ë¦¬ ê°„ì‹",
+                "ã‚¹ãƒˆãƒªãƒ¼ãƒˆã‚¹ãƒŠãƒƒã‚¯",
+                "Street food")),
+            "hai-san" => SelectLocalizedText(CreateLocalizedMap(
+                "Háº£i sáº£n",
+                "Seafood",
+                "æµ·é²œ",
+                "í•´ì‚°ë¬¼",
+                "æµ·é®®",
+                "Fruits de mer")),
+            "buoi-toi" => SelectLocalizedText(CreateLocalizedMap(
+                "Buá»•i tá»‘i",
+                "Evening route",
+                "å¤œé—´è·¯çº¿",
+                "ì €ë… ì½”ìŠ¤",
+                "å¤œã®ãƒ«ãƒ¼ãƒˆ",
+                "Parcours du soir")),
+            "khach-quoc-te" => SelectLocalizedText(CreateLocalizedMap(
+                "KhÃ¡ch quá»‘c táº¿",
+                "International visitors",
+                "å›½é™…æ¸¸å®¢",
+                "í•´ì™¸ ë°©ë¬¸ê°",
+                "æµ·å¤–ã‹ã‚‰ã®è¨ªå•è€…",
+                "Visiteurs internationaux")),
+            "gia-dinh" => SelectLocalizedText(CreateLocalizedMap(
+                "Gia Ä‘Ã¬nh",
+                "Family friendly",
+                "é€‚åˆå®¶åº­",
+                "ê°€ì¡±ì—ê²Œ ì¢‹ìŒ",
+                "å®¶æ—å‘ã‘",
+                "AdaptÃ© aux familles")),
+            "tong-hop" => SelectLocalizedText(CreateLocalizedMap(
+                "Tá»•ng há»£p",
+                "Mixed highlights",
+                "ç²¾é€‰ç»„åˆ",
+                "ì¶”ì²œ ëª¨ìŒ",
+                "ãƒã‚¤ãƒ©ã‚¤ãƒˆãƒŸãƒƒã‚¯ã‚¹",
+                "SÃ©lection variÃ©e")),
+            _ => LocalizationFallbackPolicy.SourceTextForLanguage(theme, CurrentLanguageCode)
+        };
+    }
 
     /*
     private string GetTourDescriptionText()
@@ -312,7 +361,15 @@ public sealed partial class FoodStreetApiDataService
                 "커피 & 차",
                 "コーヒー&ティー",
                 "Café & thé")),
-            _ => CurrentLanguageCode == "vi" ? category.Trim() : ToLatinText(category)
+            _ => LocalizationFallbackPolicy.CanUseSourceLanguageText(CurrentLanguageCode)
+                ? TextEncodingHelper.NormalizeDisplayText(category)
+                : SelectLocalizedText(CreateLocalizedMap(
+                    "Äá»‹a Ä‘iá»ƒm áº©m thá»±c",
+                    "Food spot",
+                    "ç¾Žé£Ÿåœ°ç‚¹",
+                    "ë§›ì§‘",
+                    "ã‚°ãƒ«ãƒ¡ã‚¹ãƒãƒƒãƒˆ",
+                    "Spot gourmand"))
         };
     }
 
@@ -445,16 +502,19 @@ public sealed partial class FoodStreetApiDataService
             ["fr"] = frenchText
         };
 
-    private static IReadOnlyDictionary<string, string> CreateFallbackTranslationMap(string fallbackText)
+    private static IReadOnlyDictionary<string, string> CreateFallbackTranslationMap(string fallbackText, string englishFallback)
     {
-        var latinText = ToLatinText(fallbackText);
-        return CreateLocalizedMap(
-            fallbackText,
-            latinText,
-            latinText,
-            latinText,
-            latinText,
-            latinText);
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["en"] = englishFallback
+        };
+        var sourceText = TextEncodingHelper.NormalizeDisplayText(fallbackText).Trim();
+        if (!string.IsNullOrWhiteSpace(sourceText))
+        {
+            values["vi"] = sourceText;
+        }
+
+        return values;
     }
 
     private static string ApplyReplacements(string source, IEnumerable<(string From, string To)> replacements)

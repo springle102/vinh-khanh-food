@@ -20,7 +20,7 @@ public sealed partial class FoodStreetApiDataService
         var client = await GetClientAsync();
         if (client is null)
         {
-            throw new MobileBackendConnectionException("Mobile app chua cau hinh API base URL.");
+            throw new MobileBackendConnectionException("The mobile app has no API base URL configured.");
         }
 
         try
@@ -42,7 +42,7 @@ public sealed partial class FoodStreetApiDataService
 
             if (!response.IsSuccessStatusCode || envelope?.Success != true || envelope.Data is null)
             {
-                throw new InvalidOperationException(envelope?.Message ?? "Khong the dang nhap tai khoan luc nay.");
+                throw new InvalidOperationException(envelope?.Message ?? "Unable to sign in right now.");
             }
 
             SaveCurrentCustomerId(envelope.Data.Id);
@@ -53,12 +53,12 @@ public sealed partial class FoodStreetApiDataService
         catch (HttpRequestException exception)
         {
             _logger.LogWarning(exception, "Unable to log in customer {Identifier}.", normalizedIdentifier);
-            throw new MobileBackendConnectionException("Khong the ket noi backend de dang nhap tai khoan.", exception);
+            throw new MobileBackendConnectionException("Unable to connect to the backend for sign-in.", exception);
         }
         catch (TaskCanceledException exception)
         {
             _logger.LogWarning(exception, "Customer login timed out for {Identifier}.", normalizedIdentifier);
-            throw new MobileBackendConnectionException("Khong the ket noi backend de dang nhap tai khoan.", exception);
+            throw new MobileBackendConnectionException("Unable to connect to the backend for sign-in.", exception);
         }
     }
 
@@ -88,7 +88,7 @@ public sealed partial class FoodStreetApiDataService
         ArgumentNullException.ThrowIfNull(request);
 
         var client = await GetClientAsync()
-            ?? throw new InvalidOperationException("Mobile app chua cau hinh API base URL.");
+            ?? throw new InvalidOperationException("The mobile app has no API base URL configured.");
 
         var payload = new CustomerRegistrationRequest
         {
@@ -114,7 +114,7 @@ public sealed partial class FoodStreetApiDataService
 
         if (!response.IsSuccessStatusCode || envelope?.Success != true || envelope.Data is null)
         {
-            throw new InvalidOperationException(envelope?.Message ?? "Khong the tao tai khoan moi luc nay.");
+            throw new InvalidOperationException(envelope?.Message ?? "Unable to create a new account right now.");
         }
 
         SaveCurrentCustomerId(envelope.Data.Id);
@@ -126,10 +126,10 @@ public sealed partial class FoodStreetApiDataService
     public async Task<UserProfileCard> UpdateUserProfileAsync(UserProfileUpdateRequest request)
     {
         var customer = await GetResolvedCurrentCustomerAsync()
-            ?? throw new InvalidOperationException("Khong xac dinh duoc khach hang hien tai de cap nhat ho so.");
+            ?? throw new InvalidOperationException("Unable to resolve the current customer profile.");
 
         var client = await GetClientAsync()
-            ?? throw new InvalidOperationException("Mobile app chua cau hinh API base URL.");
+            ?? throw new InvalidOperationException("The mobile app has no API base URL configured.");
 
         using var response = await client.PutAsJsonAsync(
             $"api/v1/customer-users/{Uri.EscapeDataString(customer.Id)}/profile",
@@ -139,7 +139,7 @@ public sealed partial class FoodStreetApiDataService
 
         if (!response.IsSuccessStatusCode || envelope?.Success != true || envelope.Data is null)
         {
-            throw new InvalidOperationException(envelope?.Message ?? "Khong the cap nhat ho so khach hang.");
+            throw new InvalidOperationException(envelope?.Message ?? "Unable to update the customer profile.");
         }
 
         SaveCurrentCustomerId(envelope.Data.Id);
@@ -170,9 +170,9 @@ public sealed partial class FoodStreetApiDataService
     public async Task<PremiumPurchaseResult> PurchasePremiumAsync(PremiumCheckoutRequest request)
     {
         var customer = await GetResolvedCurrentCustomerAsync()
-            ?? throw new InvalidOperationException("Vui long dang nhap tai khoan de mua goi Premium.");
+            ?? throw new InvalidOperationException("Please sign in before purchasing Premium.");
         var client = await GetClientAsync()
-            ?? throw new InvalidOperationException("Mobile app chua cau hinh API base URL.");
+            ?? throw new InvalidOperationException("The mobile app has no API base URL configured.");
         var offer = await GetPremiumOfferAsync();
 
         ArgumentNullException.ThrowIfNull(request);
@@ -189,7 +189,7 @@ public sealed partial class FoodStreetApiDataService
 
         if (!response.IsSuccessStatusCode || envelope?.Success != true || envelope.Data is null)
         {
-            throw new InvalidOperationException(envelope?.Message ?? "Khong the kich hoat goi Premium luc nay.");
+            throw new InvalidOperationException(envelope?.Message ?? "Unable to activate Premium right now.");
         }
 
         SaveCurrentCustomerId(envelope.Data.Customer.Id);
@@ -251,8 +251,7 @@ public sealed partial class FoodStreetApiDataService
             }
         }
 
-        var customers = await GetCustomerUsersAsync();
-        return ResolvePreferredCustomer(customers);
+        return null;
     }
 
     private async Task<IReadOnlyList<CustomerUserDto>> GetCustomerUsersAsync(bool requireSuccess = false)
@@ -262,7 +261,7 @@ public sealed partial class FoodStreetApiDataService
         {
             if (requireSuccess)
             {
-                throw new MobileBackendConnectionException("Mobile app chua cau hinh API base URL.");
+                throw new MobileBackendConnectionException("The mobile app has no API base URL configured.");
             }
 
             return [];
@@ -282,7 +281,7 @@ public sealed partial class FoodStreetApiDataService
             if (requireSuccess)
             {
                 throw new MobileBackendConnectionException(
-                    envelope?.Message ?? "Khong the tai danh sach khach hang tu backend.");
+                    envelope?.Message ?? "Unable to load customers from the backend.");
             }
 
             return [];
@@ -294,7 +293,7 @@ public sealed partial class FoodStreetApiDataService
             if (requireSuccess)
             {
                 throw new MobileBackendConnectionException(
-                    "Khong the ket noi backend de tai danh sach khach hang.",
+                    "Unable to connect to the backend to load customers.",
                     exception);
             }
 
@@ -323,14 +322,6 @@ public sealed partial class FoodStreetApiDataService
             _logger.LogWarning(exception, "Unable to load customer profile {CustomerId} from backend.", customerId);
             return null;
         }
-    }
-
-    private static CustomerUserDto? ResolvePreferredCustomer(IReadOnlyList<CustomerUserDto> customerUsers)
-    {
-        return customerUsers
-            .OrderByDescending(item => item.LastActiveAt ?? item.CreatedAt)
-            .FirstOrDefault()
-            ?? customerUsers.FirstOrDefault();
     }
 
     private static CustomerUserDto? FindCustomerByIdentifier(
@@ -367,9 +358,9 @@ public sealed partial class FoodStreetApiDataService
     private void InvalidateBootstrapSnapshot()
     {
         _bootstrapSnapshot = null;
+        _bootstrapSnapshotLanguageCode = null;
         _syncState = null;
         _lastSyncCheckAt = DateTimeOffset.MinValue;
-        _detailCache.Clear();
     }
 
     private UserProfileCard MapUserProfile(CustomerUserDto customer)

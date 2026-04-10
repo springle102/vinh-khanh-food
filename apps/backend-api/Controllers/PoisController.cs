@@ -69,19 +69,62 @@ public sealed class PoisController(
             return NotFound(ApiResponse<PoiDetailResponse>.Fail("Khong tim thay POI."));
         }
 
-        var translations = repository.GetTranslations(actor)
+        var translations = repository.GetTranslations(actor).ToList();
+        var foodItems = repository.GetFoodItems(actor)
+            .Where(item => string.Equals(item.PoiId, id, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.Name)
+            .ToList();
+        var foodItemIds = foodItems
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var promotions = repository.GetPromotions(actor)
+            .Where(item => string.Equals(item.PoiId, id, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.StartAt)
+            .ThenBy(item => item.EndAt)
+            .ToList();
+        var promotionIds = promotions
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var poiTranslations = translations
             .Where(item => item.EntityType == "poi" && item.EntityId == id)
+            .OrderByDescending(item => item.UpdatedAt)
+            .ToList();
+        var foodItemTranslations = translations
+            .Where(item =>
+                string.Equals(item.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                foodItemIds.Contains(item.EntityId))
+            .OrderByDescending(item => item.UpdatedAt)
+            .ToList();
+        var promotionTranslations = translations
+            .Where(item =>
+                string.Equals(item.EntityType, "promotion", StringComparison.OrdinalIgnoreCase) &&
+                promotionIds.Contains(item.EntityId))
             .OrderByDescending(item => item.UpdatedAt)
             .ToList();
         var audioGuides = repository.GetAudioGuides(actor)
             .Where(item => item.EntityType == "poi" && item.EntityId == id)
             .OrderByDescending(item => item.UpdatedAt)
             .ToList();
+        var mediaAssets = repository.GetMediaAssets(actor)
+            .Where(item =>
+                (string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                 string.Equals(item.EntityId, id, StringComparison.OrdinalIgnoreCase)) ||
+                (string.Equals(item.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                 foodItemIds.Contains(item.EntityId)) ||
+                (string.Equals(item.EntityType, "promotion", StringComparison.OrdinalIgnoreCase) &&
+                 promotionIds.Contains(item.EntityId)))
+            .OrderByDescending(item => item.CreatedAt)
+            .ToList();
 
         return Ok(ApiResponse<PoiDetailResponse>.Ok(new PoiDetailResponse(
             poi,
-            translations,
-            audioGuides)));
+            poiTranslations,
+            audioGuides,
+            foodItems,
+            foodItemTranslations,
+            promotions,
+            promotionTranslations,
+            mediaAssets)));
     }
 
     [HttpGet("{id}/narration")]
@@ -94,7 +137,7 @@ public sealed class PoisController(
     {
         if (string.IsNullOrWhiteSpace(languageCode))
         {
-            return BadRequest(ApiResponse<PoiNarrationResponse>.Fail("LanguageCode la bat buoc."));
+            return BadRequest(ApiResponse<PoiNarrationResponse>.Fail("LanguageCode is required."));
         }
 
         var actor = adminRequestContextResolver.TryGetCurrentAdmin();
@@ -112,7 +155,7 @@ public sealed class PoisController(
             actor,
             cancellationToken);
         return narration is null
-            ? NotFound(ApiResponse<PoiNarrationResponse>.Fail("Khong tim thay POI."))
+            ? NotFound(ApiResponse<PoiNarrationResponse>.Fail("POI was not found."))
             : Ok(ApiResponse<PoiNarrationResponse>.Ok(narration));
     }
 

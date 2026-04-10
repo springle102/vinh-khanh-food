@@ -30,14 +30,14 @@ const defaultUserForm: UserForm = {
   email: "",
   phone: "",
   role: "PLACE_OWNER",
-  password: "Admin@123",
+  password: "",
   status: "active",
-  avatarColor: "#f97316",
+  avatarColor: "",
   managedPoiId: "",
 };
 
 export const UsersPage = () => {
-  const { state, saveUser } = useAdminData();
+  const { state, isBootstrapping, saveUser } = useAdminData();
   const { user } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<UserForm>(defaultUserForm);
@@ -102,7 +102,7 @@ export const UsersPage = () => {
         <div className="flex items-center gap-3">
           <div
             className="flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-bold text-white"
-            style={{ background: account.avatarColor }}
+            style={{ background: account.avatarColor || "#f97316" }}
           >
             {getInitials(account.name)}
           </div>
@@ -179,8 +179,8 @@ export const UsersPage = () => {
                 : "Chủ quán chỉ được cập nhật hồ sơ, mật khẩu và thông tin liên hệ của chính mình."}
             </p>
           </div>
-          <Button onClick={() => openModal(isSelfService ? user ?? undefined : undefined)} disabled={!canManageUsers && !isSelfService}>
-            {canManageUsers ? "Thêm tài khoản chủ quán" : "Chỉnh sửa hồ sơ"}
+          <Button onClick={() => openModal(isSelfService ? user ?? undefined : undefined)} disabled={isBootstrapping || (!canManageUsers && !isSelfService)}>
+            {isBootstrapping ? "Đang tải dữ liệu..." : canManageUsers ? "Thêm tài khoản chủ quán" : "Chỉnh sửa hồ sơ"}
           </Button>
         </div>
       </Card>
@@ -243,6 +243,7 @@ export const UsersPage = () => {
           className="space-y-5"
           onSubmit={(event) => void handleSubmit(event)}
           onKeyDown={preventImplicitFormSubmit}
+          autoComplete="off"
         >
           <div className="grid gap-5 md:grid-cols-2">
             <div>
@@ -272,7 +273,9 @@ export const UsersPage = () => {
             <div>
               <label className="field-label">Mật khẩu</label>
               <Input
+                type="password"
                 value={form.password}
+                autoComplete="new-password"
                 onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
               />
             </div>

@@ -139,6 +139,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private readonly IAppLanguageService _languageService;
     private readonly ILogger<FoodStreetApiDataService> _logger;
     private BootstrapSnapshot? _bootstrapSnapshot;
+    private string? _bootstrapSnapshotLanguageCode;
     private DataSyncStateDto? _syncState;
     private DateTimeOffset _lastSyncCheckAt = DateTimeOffset.MinValue;
     private MobileRuntimeAppSettings? _runtimeSettings;
@@ -154,9 +155,9 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         _languageService.LanguageChanged += (_, _) =>
         {
             _bootstrapSnapshot = null;
+            _bootstrapSnapshotLanguageCode = null;
             _syncState = null;
             _lastSyncCheckAt = DateTimeOffset.MinValue;
-            _detailCache.Clear();
         };
     }
 
@@ -214,13 +215,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         var snapshot = await GetBootstrapSnapshotAsync();
         if (snapshot?.PoiDetails.TryGetValue(poiId, out var detail) == true)
         {
-            _detailCache[poiId] = detail;
             return detail;
-        }
-
-        if (_detailCache.TryGetValue(poiId, out var cachedDetail))
-        {
-            return cachedDetail;
         }
 
         return null;
@@ -266,7 +261,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         }
 
         var snapshot = await GetBootstrapSnapshotAsync();
-        if (snapshot?.UserProfile is not null)
+        if (snapshot?.UserProfile.HasResolvedAccount == true)
         {
             return snapshot.UserProfile;
         }
@@ -330,7 +325,9 @@ public sealed partial class FoodStreetApiDataService
                 return _bootstrapSnapshot;
             }
 
-            if (_bootstrapSnapshot is null)
+            var currentLanguageCode = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
+            if (_bootstrapSnapshot is null ||
+                !string.Equals(_bootstrapSnapshotLanguageCode, currentLanguageCode, StringComparison.OrdinalIgnoreCase))
             {
                 return await RefreshBootstrapSnapshotAsync(client, null, "initial");
             }
@@ -385,15 +382,24 @@ public sealed partial class FoodStreetApiDataService
         return envelope?.Success == true ? envelope.Data : null;
     }
 
-    private static string BuildBootstrapEndpoint()
+    private static string BuildBootstrapEndpoint(string? languageCode)
     {
+        var query = new List<string>();
         var customerUserId = ReadCurrentCustomerId();
-        if (string.IsNullOrWhiteSpace(customerUserId))
+        if (!string.IsNullOrWhiteSpace(customerUserId))
         {
-            return BootstrapEndpoint;
+            query.Add($"customerUserId={Uri.EscapeDataString(customerUserId)}");
         }
 
-        return $"{BootstrapEndpoint}?customerUserId={Uri.EscapeDataString(customerUserId)}";
+        var normalizedLanguageCode = AppLanguage.NormalizeCode(languageCode);
+        if (!string.IsNullOrWhiteSpace(normalizedLanguageCode))
+        {
+            query.Add($"languageCode={Uri.EscapeDataString(normalizedLanguageCode)}");
+        }
+
+        return query.Count == 0
+            ? BootstrapEndpoint
+            : $"{BootstrapEndpoint}?{string.Join("&", query)}";
     }
 
     private async Task<BootstrapSnapshot?> RefreshBootstrapSnapshotAsync(
@@ -401,7 +407,7 @@ public sealed partial class FoodStreetApiDataService
         DataSyncStateDto? remoteSyncState,
         string reason)
     {
-        using var response = await client.GetAsync(BuildBootstrapEndpoint());
+        using var response = await client.GetAsync(BuildBootstrapEndpoint(_languageService.CurrentLanguage));
         if (!response.IsSuccessStatusCode)
         {
             return _bootstrapSnapshot;
@@ -415,13 +421,14 @@ public sealed partial class FoodStreetApiDataService
 
         var snapshot = CreateSnapshot(envelope.Data);
         _bootstrapSnapshot = snapshot;
+        _bootstrapSnapshotLanguageCode = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
         _syncState = envelope.Data.SyncState ?? remoteSyncState;
         _lastSyncCheckAt = DateTimeOffset.UtcNow;
-        _detailCache.Clear();
 
         _logger.LogInformation(
-            "Bootstrap snapshot refreshed ({Reason}). Version={Version}; pois={PoiCount}; routes={RouteCount}",
+            "Bootstrap snapshot refreshed ({Reason}). Language={LanguageCode}; Version={Version}; pois={PoiCount}; routes={RouteCount}",
             reason,
+            _bootstrapSnapshotLanguageCode,
             _syncState?.Version ?? "none",
             snapshot.Pois.Count,
             snapshot.Routes.Count);
@@ -516,18 +523,13 @@ public sealed partial class FoodStreetApiDataService
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<TranslationDto>)group.ToList(), StringComparer.OrdinalIgnoreCase);
 
-        var poiImages = bootstrap.MediaAssets
-            .Where(item =>
-                string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(item.Type, "image", StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(item.Url))
-            .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.CreatedAt).First().Url, StringComparer.OrdinalIgnoreCase);
-
-        var foodImages = bootstrap.FoodItems
-            .Where(item => !string.IsNullOrWhiteSpace(item.PoiId) && !string.IsNullOrWhiteSpace(item.ImageUrl))
-            .GroupBy(item => item.PoiId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First().ImageUrl, StringComparer.OrdinalIgnoreCase);
+        var poiImages = BuildMediaImageLookupByEntityId(bootstrap.MediaAssets, "poi")
+            .Where(pair => pair.Value.Count > 0)
+            .ToDictionary(pair => pair.Key, pair => pair.Value[0], StringComparer.OrdinalIgnoreCase);
+        var foodItemImagesById = BuildMediaImageLookupByEntityId(bootstrap.MediaAssets, "food_item");
+        var foodImages = BuildFoodImagesByPoiId(bootstrap.FoodItems, foodItemImagesById)
+            .Where(pair => pair.Value.Count > 0)
+            .ToDictionary(pair => pair.Key, pair => pair.Value[0], StringComparer.OrdinalIgnoreCase);
 
         var orderedPois = bootstrap.Pois
             .Where(item => IsPublishedContent(item.Status) && IsValidCoordinate(item.Lat) && IsValidCoordinate(item.Lng))
@@ -542,8 +544,8 @@ public sealed partial class FoodStreetApiDataService
         var poiLocations = orderedPois.Select(poi =>
         {
             translationsByPoiId.TryGetValue(poi.Id, out var poiTranslations);
-            var translation = SelectTranslation(poiTranslations, _languageService.CurrentLanguage);
-            var title = FirstNonEmpty(translation?.Title, CreateTitleFromSlug(poi.Slug), poi.Id);
+            var translation = SelectTranslation(poiTranslations, _languageService.CurrentLanguage, "poi", poi.Id);
+            var title = FirstNonEmpty(translation?.Title, CreateSafePoiTitleFallback(poi.Slug), poi.Id);
             var category = LocalizeCategory(GetCategoryName(categoriesById, poi.CategoryId));
             var shortDescription = FirstNonEmpty(translation?.ShortText, translation?.FullText);
 
@@ -611,31 +613,9 @@ public sealed partial class FoodStreetApiDataService
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<TranslationDto>)group.ToList(), StringComparer.OrdinalIgnoreCase);
 
-        var poiImages = bootstrap.MediaAssets
-            .Where(item =>
-                string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(item.Type, "image", StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(item.Url))
-            .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => (IReadOnlyList<string>)group
-                    .OrderByDescending(item => item.CreatedAt)
-                    .Select(item => item.Url)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList(),
-                StringComparer.OrdinalIgnoreCase);
-
-        var foodImages = bootstrap.FoodItems
-            .Where(item => !string.IsNullOrWhiteSpace(item.PoiId) && !string.IsNullOrWhiteSpace(item.ImageUrl))
-            .GroupBy(item => item.PoiId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => (IReadOnlyList<string>)group
-                    .Select(item => item.ImageUrl)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList(),
-                StringComparer.OrdinalIgnoreCase);
+        var poiImages = BuildMediaImageLookupByEntityId(bootstrap.MediaAssets, "poi");
+        var foodItemImagesById = BuildMediaImageLookupByEntityId(bootstrap.MediaAssets, "food_item");
+        var foodImages = BuildFoodImagesByPoiId(bootstrap.FoodItems, foodItemImagesById);
 
         var foodItemsByPoiId = bootstrap.FoodItems
             .Where(item => !string.IsNullOrWhiteSpace(item.PoiId))
@@ -692,7 +672,8 @@ public sealed partial class FoodStreetApiDataService
                 poiPromotions,
                 translationsByPromotionId,
                 poiImages,
-                foodImages);
+                foodImages,
+                foodItemImagesById);
         }, StringComparer.OrdinalIgnoreCase);
 
         var poiLocations = orderedPois
@@ -910,16 +891,22 @@ public sealed partial class FoodStreetApiDataService
             .Select(route =>
             {
                 routeTranslationsById.TryGetValue(route.Id, out var routeTranslations);
-                var translation = SelectRouteTranslation(routeTranslations);
+                var translation = SelectRouteTranslation(routeTranslations, route.Id);
                 var stopPoiIds = route.StopPoiIds
                     .Where(publishedPoiIds.Contains)
                     .ToList();
+                var localizedRouteTheme = LocalizeRouteTheme(route.Theme);
 
                 return new RouteSnapshot(
                     route.Id,
-                    FirstNonEmpty(translation?.Title, route.Name),
-                    route.Theme,
-                    FirstNonEmpty(translation?.FullText, translation?.ShortText, route.Description),
+                    FirstNonEmpty(
+                        GetTranslationText(translation, value => value.Title),
+                        localizedRouteTheme,
+                        GetTourThemeText()),
+                    FirstNonEmpty(localizedRouteTheme, GetTourThemeText()),
+                    FirstNonEmpty(
+                        GetTranslationText(translation, value => value.FullText, value => value.ShortText),
+                        GetSourceTextForCurrentLanguage(route.Description)),
                     route.UpdatedAt,
                     stopPoiIds);
             })
@@ -927,18 +914,64 @@ public sealed partial class FoodStreetApiDataService
             .ToList();
     }
 
-    private TranslationDto? SelectRouteTranslation(IReadOnlyList<TranslationDto>? translations)
+    private TranslationDto? SelectRouteTranslation(IReadOnlyList<TranslationDto>? translations, string routeId)
     {
-        if (translations is null || translations.Count == 0)
+        return SelectTranslation(translations, _languageService.CurrentLanguage, "route", routeId);
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> BuildMediaImageLookupByEntityId(
+        IReadOnlyList<MediaAssetDto> mediaAssets,
+        string entityType)
+    {
+        return mediaAssets
+            .Where(item =>
+                string.Equals(item.EntityType, entityType, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.Type, "image", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(item.EntityId) &&
+                !string.IsNullOrWhiteSpace(item.Url))
+            .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group
+                    .OrderByDescending(item => item.CreatedAt)
+                    .Select(item => item.Url.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> BuildFoodImagesByPoiId(
+        IReadOnlyList<FoodItemDto> foodItems,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> foodItemImagesById)
+    {
+        return foodItems
+            .Where(item => !string.IsNullOrWhiteSpace(item.PoiId))
+            .GroupBy(item => item.PoiId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group
+                    .SelectMany(item => EnumerateFoodItemImages(item, foodItemImagesById))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<string> EnumerateFoodItemImages(
+        FoodItemDto item,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> foodItemImagesById)
+    {
+        if (foodItemImagesById.TryGetValue(item.Id, out var mediaImages))
         {
-            return null;
+            foreach (var mediaImage in mediaImages.Where(image => !string.IsNullOrWhiteSpace(image)))
+            {
+                yield return mediaImage.Trim();
+            }
         }
 
-        return translations.FirstOrDefault(item =>
-                   !string.IsNullOrWhiteSpace(item.Title) &&
-                   string.Equals(item.LanguageCode, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase))
-               ?? translations.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.Title))
-               ?? translations[0];
+        if (!string.IsNullOrWhiteSpace(item.ImageUrl))
+        {
+            yield return item.ImageUrl.Trim();
+        }
     }
 
     private static bool IsPublishedContent(string? status)
@@ -1053,10 +1086,14 @@ public sealed partial class FoodStreetApiDataService
 
     private UserProfileCard ResolveUserProfile(IReadOnlyList<CustomerUserDto> customerUsers)
     {
-        var customer = customerUsers
-            .OrderByDescending(item => item.LastActiveAt ?? item.CreatedAt)
-            .FirstOrDefault()
-            ?? customerUsers.FirstOrDefault();
+        var currentCustomerId = ReadCurrentCustomerId();
+        if (string.IsNullOrWhiteSpace(currentCustomerId))
+        {
+            return new UserProfileCard();
+        }
+
+        var customer = customerUsers.FirstOrDefault(item =>
+            string.Equals(item.Id, currentCustomerId, StringComparison.OrdinalIgnoreCase));
 
         if (customer is null)
         {
@@ -1125,28 +1162,79 @@ public sealed partial class FoodStreetApiDataService
         return FallbackPoiImages.TryGetValue(poiId, out var fallbackImage) ? fallbackImage : DefaultBackdropImageUrl;
     }
 
-    private static TranslationDto? SelectTranslation(
+    private TranslationDto? SelectTranslation(
         IReadOnlyList<TranslationDto>? translations,
-        string currentLanguage)
+        string currentLanguage,
+        string? entityType = null,
+        string? entityId = null)
     {
         if (translations is null || translations.Count == 0)
         {
+            LogMissingTranslation(entityType, entityId, currentLanguage);
             return null;
         }
 
-        foreach (var candidate in AppLanguage.GetCandidateCodes(currentLanguage))
+        var requestedLanguage = AppLanguage.NormalizeCode(currentLanguage);
+        foreach (var candidate in GetTranslationFallbackCandidates(requestedLanguage))
         {
             var match = translations.FirstOrDefault(item =>
-                !string.IsNullOrWhiteSpace(item.Title) &&
+                HasTranslationContent(item, candidate) &&
                 string.Equals(item.LanguageCode, candidate, StringComparison.OrdinalIgnoreCase));
             if (match is not null)
             {
+                if (!AppLanguage.GetCandidateCodes(requestedLanguage, includeEnglishFallback: false)
+                        .Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                {
+                    _logger.LogInformation(
+                        "Using fallback translation for {EntityType}:{EntityId}. Requested={RequestedLanguage}; Fallback={FallbackLanguage}.",
+                        entityType ?? match.EntityType,
+                        entityId ?? match.EntityId,
+                        requestedLanguage,
+                        match.LanguageCode);
+                }
+
                 return match;
             }
         }
 
-        return translations.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.Title))
-               ?? translations[0];
+        LogMissingTranslation(entityType, entityId, requestedLanguage);
+        return null;
+    }
+
+    private static bool HasTranslationContent(TranslationDto translation, string languageCode)
+        => LocalizationFallbackPolicy.IsUsableTextForLanguage(translation.Title, languageCode) ||
+           LocalizationFallbackPolicy.IsUsableTextForLanguage(translation.ShortText, languageCode) ||
+           LocalizationFallbackPolicy.IsUsableTextForLanguage(translation.FullText, languageCode);
+
+    private static IReadOnlyList<string> GetTranslationFallbackCandidates(string currentLanguage)
+    {
+        return LocalizationFallbackPolicy.GetDisplayTextFallbackCandidates(currentLanguage);
+    }
+
+    private static void AddTranslationFallbackCandidates(ICollection<string> candidates, IEnumerable<string> values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value) &&
+                !candidates.Contains(value, StringComparer.OrdinalIgnoreCase))
+            {
+                candidates.Add(value.Trim());
+            }
+        }
+    }
+
+    private void LogMissingTranslation(string? entityType, string? entityId, string requestedLanguage)
+    {
+        if (string.IsNullOrWhiteSpace(entityType) && string.IsNullOrWhiteSpace(entityId))
+        {
+            return;
+        }
+
+        _logger.LogInformation(
+            "Missing translation for {EntityType}:{EntityId} in language {LanguageCode}. Falling back only to configured language order.",
+            entityType ?? "unknown",
+            entityId ?? "unknown",
+            AppLanguage.NormalizeCode(requestedLanguage));
     }
 
     private static string ResolveApiBaseUrl(MobileRuntimeAppSettings runtimeSettings)
@@ -1158,13 +1246,18 @@ public sealed partial class FoodStreetApiDataService
     private static string GetCategoryName(IReadOnlyDictionary<string, string> categoriesById, string categoryId)
         => categoriesById.TryGetValue(categoryId, out var categoryName) && !string.IsNullOrWhiteSpace(categoryName)
             ? categoryName
-            : "Địa điểm ẩm thực";
+            : string.Empty;
+
+    private string CreateSafePoiTitleFallback(string value)
+        => LocalizationFallbackPolicy.CanUseSourceLanguageText(CurrentLanguageCode)
+            ? CreateTitleFromSlug(value)
+            : "Vinh Khanh destination";
 
     private static string CreateTitleFromSlug(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return "Điểm đến Vĩnh Khánh";
+            return "Vinh Khanh destination";
         }
 
         var normalized = value.Replace('-', ' ').Trim();

@@ -105,18 +105,18 @@
                                     <VerticalStackLayout IsVisible="{Binding IsEditingProfile}" Spacing="10">
                                         <VerticalStackLayout Spacing="4">
                                             <Label Style="{StaticResource MetaTextStyle}" Text="{Binding FullNameLabelText}" />
-                                            <Entry Text="{Binding FullName}" Placeholder="{Binding NamePlaceholderText}" />
+                                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Text="{Binding FullName}" Placeholder="{Binding NamePlaceholderText}" />
                                         </VerticalStackLayout>
 
                                         <VerticalStackLayout Spacing="4">
                                             <Label Style="{StaticResource MetaTextStyle}" Text="{Binding UserNameLabelText}" />
-                                            <Entry Text="{Binding Username}" Placeholder="{Binding UsernamePlaceholderText}" />
+                                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Text="{Binding Username}" Placeholder="{Binding UsernamePlaceholderText}" />
                                         </VerticalStackLayout>
 
                                         <VerticalStackLayout Spacing="4">
                                             <Label Style="{StaticResource MetaTextStyle}" Text="{Binding ContactLabelText}" />
-                                            <Entry Keyboard="Email" Text="{Binding Email}" Placeholder="{Binding EmailPlaceholderText}" />
-                                            <Entry Keyboard="Telephone" Text="{Binding Phone}" Placeholder="{Binding PhonePlaceholderText}" />
+                                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Email" Text="{Binding Email}" Placeholder="{Binding EmailPlaceholderText}" />
+                                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Telephone" Text="{Binding Phone}" Placeholder="{Binding PhonePlaceholderText}" />
                                             <Label FontSize="12" Text="{Binding Profile.MetaLine}" TextColor="{StaticResource BrandTextMuted}" />
                                         </VerticalStackLayout>
                                     </VerticalStackLayout>

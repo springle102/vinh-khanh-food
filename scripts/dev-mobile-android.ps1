@@ -36,6 +36,26 @@ $env:LOCALAPPDATA = $localAppDataDirectory
 $env:NUGET_PACKAGES = $nugetPackagesDirectory
 $env:NUGET_HTTP_CACHE_PATH = $nugetHttpCacheDirectory
 
+$watchedExtensions = @(
+    ".cs",
+    ".csproj",
+    ".xaml",
+    ".json",
+    ".html",
+    ".css",
+    ".js",
+    ".svg",
+    ".xml",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".ttf",
+    ".otf",
+    ".resx",
+    ".txt"
+)
+
 function Resolve-AndroidSdkRoot {
     $candidates = @()
 
@@ -231,6 +251,28 @@ function Get-LatestWriteTimeUtc {
     return (@($items) | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1).LastWriteTimeUtc
 }
 
+function Get-MobileProjectInputPaths {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectFile
+    )
+
+    $projectDir = Split-Path -Path $ProjectFile -Parent
+    $files = @(Get-ChildItem -Path $projectDir -Recurse -File |
+        Where-Object {
+            $_.FullName -notmatch "\\(bin|obj)\\" -and
+            $watchedExtensions -contains $_.Extension.ToLowerInvariant()
+        } |
+        Select-Object -ExpandProperty FullName)
+
+    $androidSettingsPath = Join-Path $androidSettingsDirectory "appsettings.json"
+    if (Test-Path $androidSettingsPath) {
+        $files += (Resolve-Path $androidSettingsPath).Path
+    }
+
+    return @($files | Select-Object -Unique)
+}
+
 function Test-AndroidPackagingCacheStale {
     param(
         [Parameter(Mandatory = $true)]
@@ -241,7 +283,6 @@ function Test-AndroidPackagingCacheStale {
         [string]$BuildConfiguration
     )
 
-    $projectDir = Split-Path -Path $ProjectFile -Parent
     $projectName = [System.IO.Path]::GetFileNameWithoutExtension($ProjectFile)
     $intermediateRoot = Resolve-AndroidIntermediateRootDirectory -ProjectFile $ProjectFile -TargetFramework $TargetFramework -BuildConfiguration $BuildConfiguration
     $androidOutputDirectory = Resolve-AndroidIntermediateOutputDirectory -ProjectFile $ProjectFile -TargetFramework $TargetFramework -BuildConfiguration $BuildConfiguration
@@ -249,18 +290,14 @@ function Test-AndroidPackagingCacheStale {
     $androidManifestPath = Join-Path $androidOutputDirectory "AndroidManifest.xml"
     $primaryDexPath = Join-Path $androidOutputDirectory "bin\classes.dex"
     $secondaryDexPath = Join-Path $androidOutputDirectory "bin\classes2.dex"
+    $referencePaths = @(Get-MobileProjectInputPaths -ProjectFile $ProjectFile)
+    $referencePaths += $managedAssemblyPath
 
     if (-not (Test-Path $primaryDexPath)) {
         return $false
     }
 
-    $referenceWriteTimeUtc = Get-LatestWriteTimeUtc -Paths @(
-        $ProjectFile,
-        (Join-Path $projectDir "Platforms\Android\AndroidManifest.xml"),
-        (Join-Path $projectDir "Platforms\Android\MainActivity.cs"),
-        (Join-Path $projectDir "Platforms\Android\MainApplication.cs"),
-        $managedAssemblyPath
-    )
+    $referenceWriteTimeUtc = Get-LatestWriteTimeUtc -Paths $referencePaths
 
     $packagingWriteTimeUtc = Get-LatestWriteTimeUtc -Paths @(
         $androidManifestPath,
@@ -443,8 +480,15 @@ function Invoke-Deploy {
 }
 
 $adbPath = Resolve-AdbPath
+$watchRoots = @(
+    $projectDirectory,
+    $androidSettingsDirectory
+) |
+    Where-Object { Test-Path $_ } |
+    ForEach-Object { (Resolve-Path $_).Path } |
+    Select-Object -Unique
 
-Write-Host "[watch] Watching for changes in $projectDirectory" -ForegroundColor Yellow
+Write-Host "[watch] Watching for changes in $($watchRoots -join ', ')" -ForegroundColor Yellow
 Write-Host "[watch] Android SDK: $resolvedAndroidSdkRoot" -ForegroundColor Yellow
 Write-Host "[watch] If no emulator is online yet, the watcher will keep waiting and deploy automatically when one appears." -ForegroundColor Yellow
 
@@ -454,21 +498,10 @@ $watchState = [hashtable]::Synchronized(@{
     LastPath = ""
 })
 
-$eventNames = @(
-    "VKMobileAndroidChanged",
-    "VKMobileAndroidCreated",
-    "VKMobileAndroidDeleted",
-    "VKMobileAndroidRenamed"
-)
-
-$watcher = New-Object System.IO.FileSystemWatcher
-$watcher.Path = $projectDirectory
-$watcher.IncludeSubdirectories = $true
-$watcher.NotifyFilter = [System.IO.NotifyFilters]"FileName, LastWrite, DirectoryName"
-$watcher.EnableRaisingEvents = $true
+$watchers = @()
 
 $messageData = @{
-    Extensions = @(".cs", ".csproj", ".xaml", ".json", ".html", ".css", ".js", ".svg", ".xml", ".png", ".jpg", ".jpeg", ".webp", ".ttf", ".otf")
+    Extensions = $watchedExtensions
     State = $watchState
 }
 
@@ -499,10 +532,29 @@ $action = {
     $state.LastPath = $path
 }
 
-Register-ObjectEvent -InputObject $watcher -EventName Changed -SourceIdentifier $eventNames[0] -MessageData $messageData -Action $action | Out-Null
-Register-ObjectEvent -InputObject $watcher -EventName Created -SourceIdentifier $eventNames[1] -MessageData $messageData -Action $action | Out-Null
-Register-ObjectEvent -InputObject $watcher -EventName Deleted -SourceIdentifier $eventNames[2] -MessageData $messageData -Action $action | Out-Null
-Register-ObjectEvent -InputObject $watcher -EventName Renamed -SourceIdentifier $eventNames[3] -MessageData $messageData -Action $action | Out-Null
+$eventNames = @()
+
+for ($watcherIndex = 0; $watcherIndex -lt $watchRoots.Count; $watcherIndex++) {
+    $watcher = New-Object System.IO.FileSystemWatcher
+    $watcher.Path = $watchRoots[$watcherIndex]
+    $watcher.IncludeSubdirectories = $true
+    $watcher.NotifyFilter = [System.IO.NotifyFilters]"FileName, LastWrite, DirectoryName"
+    $watcher.EnableRaisingEvents = $true
+    $watchers += $watcher
+
+    $watcherEventNames = @(
+        "VKMobileAndroidChanged-$watcherIndex",
+        "VKMobileAndroidCreated-$watcherIndex",
+        "VKMobileAndroidDeleted-$watcherIndex",
+        "VKMobileAndroidRenamed-$watcherIndex"
+    )
+    $eventNames += $watcherEventNames
+
+    Register-ObjectEvent -InputObject $watcher -EventName Changed -SourceIdentifier $watcherEventNames[0] -MessageData $messageData -Action $action | Out-Null
+    Register-ObjectEvent -InputObject $watcher -EventName Created -SourceIdentifier $watcherEventNames[1] -MessageData $messageData -Action $action | Out-Null
+    Register-ObjectEvent -InputObject $watcher -EventName Deleted -SourceIdentifier $watcherEventNames[2] -MessageData $messageData -Action $action | Out-Null
+    Register-ObjectEvent -InputObject $watcher -EventName Renamed -SourceIdentifier $watcherEventNames[3] -MessageData $messageData -Action $action | Out-Null
+}
 
 try {
     $activeDeviceSerial = ""
@@ -565,8 +617,10 @@ try {
     }
 }
 finally {
-    $watcher.EnableRaisingEvents = $false
-    $watcher.Dispose()
+    foreach ($watcher in $watchers) {
+        $watcher.EnableRaisingEvents = $false
+        $watcher.Dispose()
+    }
 
     foreach ($eventName in $eventNames) {
         Unregister-Event -SourceIdentifier $eventName -ErrorAction SilentlyContinue

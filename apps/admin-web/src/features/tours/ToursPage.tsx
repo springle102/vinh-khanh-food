@@ -73,9 +73,9 @@ type TourForm = {
 
 const createDefaultTourForm = (): TourForm => ({
   name: "",
-  theme: suggestedThemes[0],
+  theme: "",
   description: "",
-  durationMinutes: "90",
+  durationMinutes: "",
   difficulty: "custom",
   coverImageUrl: "",
   stopPoiIds: [],
@@ -116,7 +116,7 @@ const getRouteIssues = (
 };
 
 export const ToursPage = () => {
-  const { state, saveRoute } = useAdminData();
+  const { state, isBootstrapping, saveRoute } = useAdminData();
   const { user } = useAuth();
   const canFeatureRoute = canEditFeaturedRoute(user?.role);
   const [keyword, setKeyword] = useState("");
@@ -520,8 +520,8 @@ export const ToursPage = () => {
               bạn chỉ cần cập nhật POI hoặc món ăn rồi quay lại đây để sắp xếp lại điểm dừng khi cần.
             </p>
           </div>
-          <Button onClick={() => openModal()} disabled={!state.pois.length}>
-            Tạo tour
+          <Button onClick={() => openModal()} disabled={isBootstrapping || !state.pois.length}>
+            {isBootstrapping ? "Đang tải dữ liệu..." : "Tạo tour"}
           </Button>
         </div>
       </Card>
@@ -598,7 +598,7 @@ export const ToursPage = () => {
         description="Gắn nhiều địa điểm vào một tour, sắp xếp thứ tự điểm đến và bật hoặc tắt tour khi cần."
         maxWidthClassName="max-w-6xl"
       >
-        <form className="space-y-6" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit}>
+        <form className="space-y-6" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit} autoComplete="off">
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <div className="xl:col-span-2">
               <label className="field-label">Tên tour</label>

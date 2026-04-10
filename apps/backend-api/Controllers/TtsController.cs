@@ -26,12 +26,12 @@ public sealed class TtsController(
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            return BadRequest(ApiResponse<string>.Fail("Text la bat buoc."));
+            return BadRequest(ApiResponse<string>.Fail("Text is required."));
         }
 
         if (string.IsNullOrWhiteSpace(languageCode))
         {
-            return BadRequest(ApiResponse<string>.Fail("LanguageCode la bat buoc."));
+            return BadRequest(ApiResponse<string>.Fail("LanguageCode is required."));
         }
 
         var actor = adminRequestContextResolver.TryGetCurrentAdmin();
@@ -59,6 +59,9 @@ public sealed class TtsController(
             Response.Headers["X-TTS-Voice-Id"] = audio.VoiceId;
             Response.Headers["X-TTS-Model-Id"] = audio.ModelId;
             Response.Headers["X-TTS-Output-Format"] = audio.OutputFormat;
+            Response.Headers.CacheControl = "public, max-age=3600";
+            Response.Headers.Remove("Pragma");
+            Response.Headers.Remove("Expires");
             return File(audio.Content, audio.ContentType);
         }
         catch (TextToSpeechConfigurationException exception)

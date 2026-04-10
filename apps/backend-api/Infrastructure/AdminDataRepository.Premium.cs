@@ -138,7 +138,7 @@ public sealed partial class AdminDataRepository
                 false,
                 false,
                 premiumPriceUsd,
-                "Ngon ngu duoc chon hien chua duoc he thong ho tro.",
+                "The selected language is not supported yet.",
                 null);
         }
 
@@ -149,7 +149,7 @@ public sealed partial class AdminDataRepository
         var requiresPremium = PremiumAccessCatalog.RequiresPremium(normalizedLanguageCode);
         var message = isAllowed
             ? string.Empty
-            : $"Ngon ngu nay chi danh cho tai khoan Premium. Vui long nang cap goi Premium ({premiumPriceUsd} USD) de tiep tuc.";
+            : $"This language requires Premium. Upgrade to Premium ({premiumPriceUsd} USD) to continue.";
 
         return new CustomerLanguageAccessDecision(
             normalizedLanguageCode,

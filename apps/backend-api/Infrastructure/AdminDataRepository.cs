@@ -95,30 +95,49 @@ public sealed partial class AdminDataRepository
     {
         using var connection = OpenConnection();
         var items = GetTranslations(connection, null);
-        if (actor is null)
+        var pois = actor is null
+            ? GetPois(connection, null)
+            : ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+        var foodItems = actor is null
+            ? GetFoodItems(connection, null)
+            : ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois);
+        var routes = actor is null
+            ? GetRoutes(connection, null)
+            : ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
+        var promotions = actor is null
+            ? GetPromotions(connection, null)
+            : ApplyPromotionScope(connection, null, GetPromotions(connection, null), actor);
+
+        if (actor is not null)
         {
-            return items;
+            items = ApplyTranslationScope(connection, null, items, actor, pois, foodItems, routes, promotions);
         }
 
-        var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
-        var foodItems = ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois);
-        var routes = ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
-        return ApplyTranslationScope(connection, null, items, actor, pois, foodItems, routes);
+        items = FilterOutdatedEntityTranslations(items, pois, routes);
+        return CollapseTranslations(items);
     }
 
     public IReadOnlyList<AudioGuide> GetAudioGuides(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
         var items = GetAudioGuides(connection, null);
-        if (actor is null)
+        var pois = actor is null
+            ? GetPois(connection, null)
+            : ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+        var foodItems = actor is null
+            ? GetFoodItems(connection, null)
+            : ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois);
+        var routes = actor is null
+            ? GetRoutes(connection, null)
+            : ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
+
+        if (actor is not null)
         {
-            return items;
+            items = ApplyAudioGuideScope(connection, null, items, actor, pois, foodItems, routes);
         }
 
-        var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
-        var foodItems = ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois);
-        var routes = ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
-        return ApplyAudioGuideScope(connection, null, items, actor, pois, foodItems, routes);
+        items = FilterOutdatedEntityAudioGuides(items, pois, routes);
+        return CollapseAudioGuides(items);
     }
 
     public IReadOnlyList<MediaAsset> GetMediaAssets(AdminRequestContext? actor = null)
@@ -133,7 +152,8 @@ public sealed partial class AdminDataRepository
         var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
         var foodItems = ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois);
         var routes = ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
-        return ApplyMediaAssetScope(connection, null, items, actor, pois, foodItems, routes);
+        var promotions = ApplyPromotionScope(connection, null, GetPromotions(connection, null), actor);
+        return ApplyMediaAssetScope(connection, null, items, actor, pois, foodItems, routes, promotions);
     }
 
     public IReadOnlyList<FoodItem> GetFoodItems(AdminRequestContext? actor = null)
@@ -234,9 +254,9 @@ public sealed partial class AdminDataRepository
             reviews = ApplyReviewScope(connection, null, reviews, admin);
             viewLogs = ApplyViewLogScope(connection, null, viewLogs, admin, pois);
             audioListenLogs = ApplyAudioListenLogScope(connection, null, audioListenLogs, admin, pois);
-            translations = ApplyTranslationScope(connection, null, translations, admin, pois, foodItems, routes);
+            translations = ApplyTranslationScope(connection, null, translations, admin, pois, foodItems, routes, promotions);
             audioGuides = ApplyAudioGuideScope(connection, null, audioGuides, admin, pois, foodItems, routes);
-            mediaAssets = ApplyMediaAssetScope(connection, null, mediaAssets, admin, pois, foodItems, routes);
+            mediaAssets = ApplyMediaAssetScope(connection, null, mediaAssets, admin, pois, foodItems, routes, promotions);
             auditLogs = ApplyAuditScope(connection, null, auditLogs, admin);
             customerUsers = admin.IsSuperAdmin ? customerUsers : [];
         }
@@ -259,14 +279,18 @@ public sealed partial class AdminDataRepository
             reviews = ApplyPublicReviewScope(reviews, pois);
             viewLogs = viewLogs.Where(log => pois.Any(poi => poi.Id == log.PoiId)).ToList();
             audioListenLogs = audioListenLogs.Where(log => pois.Any(poi => poi.Id == log.PoiId)).ToList();
-            translations = ApplyPublicTranslationScope(translations, pois, foodItems, routes, allowedLanguages);
+            translations = ApplyPublicTranslationScope(translations, pois, foodItems, routes, promotions, allowedLanguages);
             audioGuides = ApplyPublicAudioGuideScope(audioGuides, pois, foodItems, routes, allowedLanguages);
-            mediaAssets = ApplyPublicMediaAssetScope(mediaAssets, pois, foodItems, routes);
+            mediaAssets = ApplyPublicMediaAssetScope(mediaAssets, pois, foodItems, routes, promotions);
             users = [];
             customerUsers = customer is null ? [] : [customer];
             auditLogs = [];
         }
 
+        translations = FilterOutdatedEntityTranslations(translations, pois, routes);
+        audioGuides = FilterOutdatedEntityAudioGuides(audioGuides, pois, routes);
+        translations = CollapseTranslations(translations);
+        audioGuides = CollapseAudioGuides(audioGuides);
         var syncState = GetSyncState(connection, null);
 
         return new AdminBootstrapResponse(
@@ -286,6 +310,136 @@ public sealed partial class AdminDataRepository
             auditLogs,
             settings,
             syncState);
+    }
+
+    private static IReadOnlyList<Translation> CollapseTranslations(IReadOnlyList<Translation> translations)
+    {
+        if (translations.Count <= 1)
+        {
+            return translations;
+        }
+
+        return translations
+            .Where(item =>
+                !string.IsNullOrWhiteSpace(item.EntityType) &&
+                !string.IsNullOrWhiteSpace(item.EntityId) &&
+                !string.IsNullOrWhiteSpace(item.LanguageCode))
+            .GroupBy(
+                item => (
+                    EntityType: item.EntityType.Trim().ToLowerInvariant(),
+                    EntityId: item.EntityId.Trim(),
+                    LanguageCode: PremiumAccessCatalog.NormalizeLanguageCode(item.LanguageCode)))
+            .Select(group =>
+            {
+                return group
+                    .OrderByDescending(item => item.UpdatedAt)
+                    .ThenByDescending(item => item.Id, StringComparer.OrdinalIgnoreCase)
+                    .First();
+            })
+            .OrderByDescending(item => item.UpdatedAt)
+            .ThenByDescending(item => item.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<Translation> FilterOutdatedEntityTranslations(
+        IReadOnlyList<Translation> translations,
+        IReadOnlyList<Poi> pois,
+        IReadOnlyList<TourRoute> routes)
+    {
+        if (translations.Count == 0)
+        {
+            return translations;
+        }
+
+        var poiUpdatedAtById = pois
+            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+            .ToDictionary(item => item.Id, item => item.UpdatedAt, StringComparer.OrdinalIgnoreCase);
+        var routeUpdatedAtById = routes
+            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+            .ToDictionary(item => item.Id, item => item.UpdatedAt, StringComparer.OrdinalIgnoreCase);
+
+        return translations
+            .Where(translation =>
+            {
+                if (string.Equals(translation.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                    poiUpdatedAtById.TryGetValue(translation.EntityId, out var poiUpdatedAt))
+                {
+                    return translation.UpdatedAt >= poiUpdatedAt;
+                }
+
+                if (string.Equals(translation.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                    routeUpdatedAtById.TryGetValue(translation.EntityId, out var routeUpdatedAt))
+                {
+                    return translation.UpdatedAt >= routeUpdatedAt;
+                }
+
+                return true;
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyList<AudioGuide> CollapseAudioGuides(IReadOnlyList<AudioGuide> audioGuides)
+    {
+        if (audioGuides.Count <= 1)
+        {
+            return audioGuides;
+        }
+
+        return audioGuides
+            .Where(item =>
+                !string.IsNullOrWhiteSpace(item.EntityType) &&
+                !string.IsNullOrWhiteSpace(item.EntityId) &&
+                !string.IsNullOrWhiteSpace(item.LanguageCode))
+            .GroupBy(
+                item => (
+                    EntityType: item.EntityType.Trim().ToLowerInvariant(),
+                    EntityId: item.EntityId.Trim(),
+                    LanguageCode: PremiumAccessCatalog.NormalizeLanguageCode(item.LanguageCode)))
+            .Select(group =>
+                group
+                    .OrderByDescending(item => item.UpdatedAt)
+                    .ThenByDescending(item => item.Id, StringComparer.OrdinalIgnoreCase)
+                    .First())
+            .OrderByDescending(item => item.UpdatedAt)
+            .ThenByDescending(item => item.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<AudioGuide> FilterOutdatedEntityAudioGuides(
+        IReadOnlyList<AudioGuide> audioGuides,
+        IReadOnlyList<Poi> pois,
+        IReadOnlyList<TourRoute> routes)
+    {
+        if (audioGuides.Count == 0)
+        {
+            return audioGuides;
+        }
+
+        var poiUpdatedAtById = pois
+            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+            .ToDictionary(item => item.Id, item => item.UpdatedAt, StringComparer.OrdinalIgnoreCase);
+        var routeUpdatedAtById = routes
+            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+            .ToDictionary(item => item.Id, item => item.UpdatedAt, StringComparer.OrdinalIgnoreCase);
+
+        return audioGuides
+            .Where(audioGuide =>
+            {
+                if (string.Equals(audioGuide.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                    poiUpdatedAtById.TryGetValue(audioGuide.EntityId, out var poiUpdatedAt))
+                {
+                    return audioGuide.UpdatedAt >= poiUpdatedAt;
+                }
+
+                if (string.Equals(audioGuide.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
+                    routeUpdatedAtById.TryGetValue(audioGuide.EntityId, out var routeUpdatedAt))
+                {
+                    return audioGuide.UpdatedAt >= routeUpdatedAt;
+                }
+
+                return true;
+            })
+            .ToList();
     }
 
     public DashboardSummaryResponse GetDashboardSummary(AdminRequestContext actor)
@@ -335,6 +489,7 @@ public sealed partial class AdminDataRepository
 
             using var verifiedConnection = OpenConnection();
             EnsureRuntimeCompatibilitySchema(verifiedConnection);
+            NormalizePersistedPoiAddresses(verifiedConnection);
 
             if (!_allowSchemaUpdates)
             {
@@ -1601,7 +1756,8 @@ public sealed partial class AdminDataRepository
         AdminRequestContext actor,
         IReadOnlyList<Poi> scopedPois,
         IReadOnlyList<FoodItem> scopedFoodItems,
-        IReadOnlyList<TourRoute> scopedRoutes)
+        IReadOnlyList<TourRoute> scopedRoutes,
+        IReadOnlyList<Promotion> scopedPromotions)
     {
         if (actor.IsSuperAdmin)
         {
@@ -1611,6 +1767,7 @@ public sealed partial class AdminDataRepository
         var visiblePoiIds = scopedPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var visibleFoodItemIds = scopedFoodItems.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var visibleRouteIds = scopedRoutes.Select(route => route.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visiblePromotionIds = scopedPromotions.Select(promotion => promotion.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return translations
             .Where(translation =>
@@ -1619,7 +1776,9 @@ public sealed partial class AdminDataRepository
                 (string.Equals(translation.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
                  visibleFoodItemIds.Contains(translation.EntityId)) ||
                 (string.Equals(translation.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
-                 visibleRouteIds.Contains(translation.EntityId)))
+                 visibleRouteIds.Contains(translation.EntityId)) ||
+                (string.Equals(translation.EntityType, "promotion", StringComparison.OrdinalIgnoreCase) &&
+                 visiblePromotionIds.Contains(translation.EntityId)))
             .ToList();
     }
 
@@ -1659,7 +1818,8 @@ public sealed partial class AdminDataRepository
         AdminRequestContext actor,
         IReadOnlyList<Poi> scopedPois,
         IReadOnlyList<FoodItem> scopedFoodItems,
-        IReadOnlyList<TourRoute> scopedRoutes)
+        IReadOnlyList<TourRoute> scopedRoutes,
+        IReadOnlyList<Promotion> scopedPromotions)
     {
         if (actor.IsSuperAdmin)
         {
@@ -1669,6 +1829,7 @@ public sealed partial class AdminDataRepository
         var visiblePoiIds = scopedPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var visibleFoodItemIds = scopedFoodItems.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var visibleRouteIds = scopedRoutes.Select(route => route.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visiblePromotionIds = scopedPromotions.Select(promotion => promotion.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return mediaAssets
             .Where(asset =>
@@ -1677,7 +1838,9 @@ public sealed partial class AdminDataRepository
                 (string.Equals(asset.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
                  visibleFoodItemIds.Contains(asset.EntityId)) ||
                 (string.Equals(asset.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
-                 visibleRouteIds.Contains(asset.EntityId)))
+                 visibleRouteIds.Contains(asset.EntityId)) ||
+                (string.Equals(asset.EntityType, "promotion", StringComparison.OrdinalIgnoreCase) &&
+                 visiblePromotionIds.Contains(asset.EntityId)))
             .ToList();
     }
 
@@ -1686,11 +1849,13 @@ public sealed partial class AdminDataRepository
         IReadOnlyList<Poi> visiblePois,
         IReadOnlyList<FoodItem> visibleFoodItems,
         IReadOnlyList<TourRoute> visibleRoutes,
+        IReadOnlyList<Promotion> visiblePromotions,
         IReadOnlyCollection<string> allowedLanguages)
     {
         var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var visibleFoodItemIds = visibleFoodItems.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var visibleRouteIds = visibleRoutes.Select(route => route.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visiblePromotionIds = visiblePromotions.Select(promotion => promotion.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return translations
             .Where(translation =>
@@ -1701,7 +1866,9 @@ public sealed partial class AdminDataRepository
                     (string.Equals(translation.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
                      visibleFoodItemIds.Contains(translation.EntityId)) ||
                     (string.Equals(translation.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
-                     visibleRouteIds.Contains(translation.EntityId))
+                     visibleRouteIds.Contains(translation.EntityId)) ||
+                    (string.Equals(translation.EntityType, "promotion", StringComparison.OrdinalIgnoreCase) &&
+                     visiblePromotionIds.Contains(translation.EntityId))
                 ))
             .ToList();
     }
@@ -1735,11 +1902,13 @@ public sealed partial class AdminDataRepository
         IReadOnlyList<MediaAsset> mediaAssets,
         IReadOnlyList<Poi> visiblePois,
         IReadOnlyList<FoodItem> visibleFoodItems,
-        IReadOnlyList<TourRoute> visibleRoutes)
+        IReadOnlyList<TourRoute> visibleRoutes,
+        IReadOnlyList<Promotion> visiblePromotions)
     {
         var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var visibleFoodItemIds = visibleFoodItems.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var visibleRouteIds = visibleRoutes.Select(route => route.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visiblePromotionIds = visiblePromotions.Select(promotion => promotion.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return mediaAssets
             .Where(asset =>
@@ -1748,7 +1917,9 @@ public sealed partial class AdminDataRepository
                 (string.Equals(asset.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
                  visibleFoodItemIds.Contains(asset.EntityId)) ||
                 (string.Equals(asset.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
-                 visibleRouteIds.Contains(asset.EntityId)))
+                 visibleRouteIds.Contains(asset.EntityId)) ||
+                (string.Equals(asset.EntityType, "promotion", StringComparison.OrdinalIgnoreCase) &&
+                 visiblePromotionIds.Contains(asset.EntityId)))
             .ToList();
     }
 

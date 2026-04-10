@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { adminApi, getErrorMessage, type LoginAccountOption } from "../../lib/api";
+import { ApiError, adminApi, getErrorMessage, type LoginAccountOption } from "../../lib/api";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Icon } from "../../components/ui/Icons";
@@ -10,6 +10,15 @@ import { getHomePathForRole, isPathAllowedForRole } from "./auth-routing";
 
 const getAccountRoleLabel = (role: LoginAccountOption["role"]) =>
   role === "SUPER_ADMIN" ? "Super Admin" : "Chủ quán";
+
+const shouldRetryLoginOptions = (error: unknown) =>
+  error instanceof ApiError &&
+  (error.kind === "network" ||
+    error.kind === "invalid_response" ||
+    [404, 502, 503, 504].includes(error.status));
+
+const wait = (milliseconds: number) =>
+  new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
 export const LoginPage = () => {
   const navigate = useNavigate();
@@ -29,16 +38,6 @@ export const LoginPage = () => {
     setEmail(account.email);
     setPassword(account.password);
     setError("");
-
-    window.requestAnimationFrame(() => {
-      if (emailInputRef.current) {
-        emailInputRef.current.value = account.email;
-      }
-
-      if (passwordInputRef.current) {
-        passwordInputRef.current.value = account.password;
-      }
-    });
   };
 
   useEffect(() => {
@@ -57,26 +56,29 @@ export const LoginPage = () => {
       setAccountsError("");
 
       try {
-        const nextAccounts = await adminApi.getLoginOptions();
-        if (!isMounted) {
-          return;
-        }
+        for (let attempt = 1; attempt <= 8; attempt += 1) {
+          try {
+            const nextAccounts = await adminApi.getLoginOptions();
+            if (!isMounted) {
+              return;
+            }
 
-        setLoginAccounts(nextAccounts);
-        const firstAccount = nextAccounts[0];
-        if (
-          firstAccount &&
-          !emailInputRef.current?.value.trim() &&
-          !passwordInputRef.current?.value
-        ) {
-          applyAccountCredentials(firstAccount);
-        }
-      } catch (nextError) {
-        if (!isMounted) {
-          return;
-        }
+            setLoginAccounts(nextAccounts);
+            setAccountsError("");
+            return;
+          } catch (nextError) {
+            if (!isMounted) {
+              return;
+            }
 
-        setAccountsError(getErrorMessage(nextError));
+            if (!shouldRetryLoginOptions(nextError) || attempt === 8) {
+              setAccountsError(getErrorMessage(nextError));
+              return;
+            }
+
+            await wait(Math.min(2500, 400 * attempt));
+          }
+        }
       } finally {
         if (isMounted) {
           setLoadingAccounts(false);
@@ -133,14 +135,14 @@ export const LoginPage = () => {
             </div>
           </div>
 
-          <form className="space-y-5" onSubmit={onSubmit}>
+          <form className="space-y-5" onSubmit={onSubmit} autoComplete="off">
             <div>
               <label className="field-label">Email</label>
               <Input
                 ref={emailInputRef}
                 type="email"
                 name="email"
-                autoComplete="username"
+                autoComplete="off"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="Nhập email"
@@ -152,7 +154,7 @@ export const LoginPage = () => {
                 ref={passwordInputRef}
                 type="password"
                 name="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Nhập mật khẩu"

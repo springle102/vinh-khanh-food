@@ -118,13 +118,7 @@ public sealed class LoginViewModel : LocalizedViewModelBase
     {
         if (!_isLoaded)
         {
-            var profile = await _dataService.GetUserProfileAsync();
             await _dataService.EnsureAllowedLanguageSelectionAsync();
-            if (string.IsNullOrWhiteSpace(Identifier))
-            {
-                Identifier = !string.IsNullOrWhiteSpace(profile.Email) ? profile.Email : profile.Phone;
-            }
-
             _isLoaded = true;
         }
 

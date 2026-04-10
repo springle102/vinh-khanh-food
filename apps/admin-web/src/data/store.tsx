@@ -120,7 +120,7 @@ type AdminDataContextValue = {
   savePromotion: (
     promotion: Omit<Promotion, "id"> & { id?: string },
     actor: AdminUser,
-  ) => Promise<void>;
+  ) => Promise<Promotion>;
   saveRoute: (
     route: Omit<TourRoute, "id" | "updatedBy" | "updatedAt" | "isSystemRoute" | "ownerUserId"> & { id?: string },
     actor: AdminUser,
@@ -132,7 +132,7 @@ type AdminDataContextValue = {
   saveTranslation: (
     translation: Omit<Translation, "id" | "updatedAt" | "updatedBy"> & { id?: string },
     actor: AdminUser,
-  ) => Promise<void>;
+  ) => Promise<Translation>;
   saveReviewStatus: (
     reviewId: string,
     status: Review["status"],
@@ -146,7 +146,7 @@ type AdminDataContextValue = {
   saveFoodItem: (
     foodItem: Omit<FoodItem, "id"> & { id?: string },
     actor: AdminUser,
-  ) => Promise<void>;
+  ) => Promise<FoodItem>;
 };
 
 const AdminDataContext = createContext<AdminDataContextValue | null>(null);
@@ -312,7 +312,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
 
   const savePromotion = useCallback(
     async (promotion: Omit<Promotion, "id"> & { id?: string }, actor: AdminUser) => {
-      await adminApi.savePromotion({
+      const saved = await adminApi.savePromotion({
         id: promotion.id,
         poiId: promotion.poiId,
         title: promotion.title,
@@ -325,6 +325,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       });
 
       await refreshData();
+      return saved;
     },
     [refreshData],
   );
@@ -382,12 +383,13 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       translation: Omit<Translation, "id" | "updatedAt" | "updatedBy"> & { id?: string },
       actor: AdminUser,
     ) => {
-      await adminApi.saveTranslation({
+      const saved = await adminApi.saveTranslation({
         ...translation,
         updatedBy: actor.name,
       });
 
       await refreshData();
+      return saved;
     },
     [refreshData],
   );
@@ -436,8 +438,9 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
 
   const saveFoodItem = useCallback(
     async (foodItem: Omit<FoodItem, "id"> & { id?: string }, _actor: AdminUser) => {
-      await adminApi.saveFoodItem(foodItem);
+      const saved = await adminApi.saveFoodItem(foodItem);
       await refreshData();
+      return saved;
     },
     [refreshData],
   );

@@ -2,19 +2,26 @@ import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } fro
 import { cn } from "../../lib/utils";
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...props }, ref) => (
-    <input ref={ref} className={cn("field-input", className)} {...props} />
+  ({ autoComplete, className, type, ...props }, ref) => (
+    <input
+      {...props}
+      ref={ref}
+      type={type}
+      autoComplete={autoComplete ?? (type === "password" ? "new-password" : "off")}
+      className={cn("field-input", className)}
+    />
   ),
 );
 
 Input.displayName = "Input";
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, ...props }, ref) => (
+  ({ autoComplete, className, ...props }, ref) => (
     <textarea
-      ref={ref}
-      className={cn("field-input min-h-[120px] resize-y", className)}
       {...props}
+      ref={ref}
+      autoComplete={autoComplete ?? "off"}
+      className={cn("field-input min-h-[120px] resize-y", className)}
     />
   ),
 );

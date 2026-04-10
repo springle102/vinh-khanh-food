@@ -29,16 +29,16 @@ public static class LocalizedTextHelper
             return string.Empty;
         }
 
-        foreach (var candidate in AppLanguage.GetCandidateCodes(languageCode))
+        foreach (var candidate in LocalizationFallbackPolicy.GetDisplayTextFallbackCandidates(languageCode))
         {
-            if (values.TryGetValue(candidate, out var value) && !string.IsNullOrWhiteSpace(value))
+            if (values.TryGetValue(candidate, out var value) &&
+                LocalizationFallbackPolicy.IsUsableTextForLanguage(value, candidate))
             {
                 return TextEncodingHelper.NormalizeDisplayText(value);
             }
         }
 
-        return TextEncodingHelper.NormalizeDisplayText(
-            values.Values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)));
+        return string.Empty;
     }
 
     private static IReadOnlyDictionary<string, string> ReadFromObject(object source)

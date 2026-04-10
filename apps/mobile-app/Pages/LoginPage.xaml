@@ -136,7 +136,7 @@
                         <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill" IsVisible="{Binding IsLoginMode}">
                             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                 <Label FontSize="17" Text="@" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
-                                <Entry Grid.Column="1" Placeholder="{Binding IdentifierPlaceholderText}" Text="{Binding Identifier}" />
+                                <Entry Grid.Column="1" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Placeholder="{Binding IdentifierPlaceholderText}" Text="{Binding Identifier}" />
                             </Grid>
                         </Border>
 
@@ -144,28 +144,28 @@
                             <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                     <Label FontSize="17" Text="o" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
-                                    <Entry Grid.Column="1" Placeholder="{Binding SignUpNamePlaceholderText}" Text="{Binding SignUpName}" />
+                                    <Entry Grid.Column="1" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Placeholder="{Binding SignUpNamePlaceholderText}" Text="{Binding SignUpName}" />
                                 </Grid>
                             </Border>
 
                             <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                     <Label FontSize="17" Text="@" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
-                                    <Entry Grid.Column="1" Keyboard="Email" Placeholder="{Binding SignUpEmailPlaceholderText}" Text="{Binding SignUpEmail}" />
+                                    <Entry Grid.Column="1" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Email" Placeholder="{Binding SignUpEmailPlaceholderText}" Text="{Binding SignUpEmail}" />
                                 </Grid>
                             </Border>
 
                             <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                     <Label FontSize="17" Text="u" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
-                                    <Entry Grid.Column="1" Placeholder="{Binding SignUpUsernamePlaceholderText}" Text="{Binding SignUpUsername}" />
+                                    <Entry Grid.Column="1" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Placeholder="{Binding SignUpUsernamePlaceholderText}" Text="{Binding SignUpUsername}" />
                                 </Grid>
                             </Border>
 
                             <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                     <Label FontSize="17" Text="#" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
-                                    <Entry Grid.Column="1" Keyboard="Telephone" Placeholder="{Binding SignUpPhonePlaceholderText}" Text="{Binding SignUpPhone}" />
+                                    <Entry Grid.Column="1" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Telephone" Placeholder="{Binding SignUpPhonePlaceholderText}" Text="{Binding SignUpPhone}" />
                                 </Grid>
                             </Border>
                         </VerticalStackLayout>
@@ -173,7 +173,7 @@
                         <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
                                 <Label FontSize="17" Text="*" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
-                                <Entry Grid.Column="1" IsPassword="True" Placeholder="{Binding PasswordPlaceholderText}" Text="{Binding Password}" />
+                                <Entry Grid.Column="1" IsPassword="True" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Placeholder="{Binding PasswordPlaceholderText}" Text="{Binding Password}" />
                                 <Label Grid.Column="2" FontSize="16" Text="o" VerticalOptions="Center" TextColor="{StaticResource BrandTextMuted}" />
                             </Grid>
                         </Border>
@@ -181,7 +181,7 @@
                         <Border Style="{StaticResource InputContainerStyle}" HorizontalOptions="Fill" IsVisible="{Binding IsSignUpMode}">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
                                 <Label FontSize="17" Text="*" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
-                                <Entry Grid.Column="1" IsPassword="True" Placeholder="{Binding ConfirmPasswordPlaceholderText}" Text="{Binding ConfirmPassword}" />
+                                <Entry Grid.Column="1" IsPassword="True" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Placeholder="{Binding ConfirmPasswordPlaceholderText}" Text="{Binding ConfirmPassword}" />
                                 <Label Grid.Column="2" FontSize="16" Text="o" VerticalOptions="Center" TextColor="{StaticResource BrandTextMuted}" />
                             </Grid>
                         </Border>

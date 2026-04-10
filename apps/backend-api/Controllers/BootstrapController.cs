@@ -10,26 +10,38 @@ namespace VinhKhanh.BackendApi.Controllers;
 public sealed class BootstrapController(
     AdminDataRepository repository,
     AdminRequestContextResolver adminRequestContextResolver,
+    BootstrapLocalizationService bootstrapLocalizationService,
     ResponseUrlNormalizer responseUrlNormalizer,
     ILogger<BootstrapController> logger) : ControllerBase
 {
     [HttpGet("bootstrap")]
-    public ActionResult<ApiResponse<AdminBootstrapResponse>> GetBootstrap(
-        [FromQuery] string? customerUserId)
+    public async Task<ActionResult<ApiResponse<AdminBootstrapResponse>>> GetBootstrap(
+        [FromQuery] string? customerUserId,
+        [FromQuery] string? languageCode,
+        CancellationToken cancellationToken)
     {
         var admin = adminRequestContextResolver.TryGetCurrentAdmin();
-        var bootstrap = responseUrlNormalizer.Normalize(
-            repository.GetBootstrap(admin, customerUserId));
+        var bootstrap = repository.GetBootstrap(admin, customerUserId);
+        if (admin is null)
+        {
+            bootstrap = await bootstrapLocalizationService.ApplyAutoTranslationsAsync(
+                bootstrap,
+                languageCode,
+                cancellationToken);
+        }
+
+        bootstrap = responseUrlNormalizer.Normalize(bootstrap);
         if (bootstrap.SyncState is not null)
         {
             Response.Headers["X-Data-Version"] = bootstrap.SyncState.Version;
         }
 
         logger.LogDebug(
-            "Bootstrap served for adminUserId={AdminUserId}, role={Role}, customerUserId={CustomerUserId}, version={Version}",
+            "Bootstrap served for adminUserId={AdminUserId}, role={Role}, customerUserId={CustomerUserId}, languageCode={LanguageCode}, version={Version}",
             admin?.UserId,
             admin?.Role,
             customerUserId,
+            languageCode,
             bootstrap.SyncState?.Version);
 
         return Ok(ApiResponse<AdminBootstrapResponse>.Ok(bootstrap));

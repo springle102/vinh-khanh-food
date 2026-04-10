@@ -174,7 +174,7 @@ const MapInstanceBinder = ({
     mapRef.current = map;
     const container = map.getContainer();
     let frameId: number | null = null;
-    let timeoutId: number | null = null;
+    const timeoutIds: number[] = [];
 
     const invalidateSize = () => {
       if (frameId !== null) {
@@ -187,8 +187,13 @@ const MapInstanceBinder = ({
       });
     };
 
+    const scheduleInvalidate = (delayMs: number) => {
+      const timeoutId = window.setTimeout(invalidateSize, delayMs);
+      timeoutIds.push(timeoutId);
+    };
+
     invalidateSize();
-    timeoutId = window.setTimeout(invalidateSize, 150);
+    [50, 150, 350, 700, 1200].forEach(scheduleInvalidate);
 
     const resizeObserver =
       typeof ResizeObserver === "undefined"
@@ -197,12 +202,13 @@ const MapInstanceBinder = ({
             invalidateSize();
           });
     resizeObserver?.observe(container);
+    if (container.parentElement) {
+      resizeObserver?.observe(container.parentElement);
+    }
     window.addEventListener("resize", invalidateSize);
 
     return () => {
-      if (timeoutId !== null) {
-        window.clearTimeout(timeoutId);
-      }
+      timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
 
       if (frameId !== null) {
         window.cancelAnimationFrame(frameId);
@@ -415,6 +421,11 @@ export const OpenStreetMapPicker = ({
         lng: location.lng,
       };
 
+      console.debug("[admin-poi] map-location-resolved", {
+        location,
+        flyTo: options?.flyTo ?? false,
+      });
+
       setPosition(nextPosition);
       onChangeRef.current?.(nextPosition.lat, nextPosition.lng);
       onLocationResolvedRef.current?.(location);
@@ -440,6 +451,8 @@ export const OpenStreetMapPicker = ({
 
       const controller = new AbortController();
       reverseAbortRef.current = controller;
+
+      console.debug("[admin-poi] map-reverse-geocode-request", nextPosition);
 
       setLoading(true);
       setError(null);
@@ -525,6 +538,10 @@ export const OpenStreetMapPicker = ({
 
     const controller = new AbortController();
     forwardAbortRef.current = controller;
+
+    console.debug("[admin-poi] map-forward-geocode-request", {
+      address: normalizedAddress,
+    });
 
     setLoading(true);
     setError(null);
@@ -669,7 +686,12 @@ export const OpenStreetMapPicker = ({
                 }}
               >
                 <Popup autoClose={false} closeButton={false} offset={[0, -18]}>
-                  Vị trí POI đang chọn
+                  <div style={{ minWidth: 220 }}>
+                    <div style={{ fontWeight: 700, color: "#111827" }}>Vị trí POI đang chọn</div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#475569" }}>
+                      {address || "Đang chờ địa chỉ chuẩn từ geocoding..."}
+                    </div>
+                  </div>
                 </Popup>
               </Marker>
             </>

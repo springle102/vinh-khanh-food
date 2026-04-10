@@ -61,19 +61,32 @@ export type TextTranslationResponse = {
 
 export class ApiError extends Error {
   status: number;
+  kind: "backend" | "invalid_response" | "network";
+  requestUrl: string | null;
 
-  constructor(message: string, status: number) {
+  constructor(
+    message: string,
+    status: number,
+    kind: "backend" | "invalid_response" | "network" = "backend",
+    requestUrl: string | null = null,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.kind = kind;
+    this.requestUrl = requestUrl;
   }
 }
 
 const ABSOLUTE_URL_PATTERN = /^[a-z]+:\/\//i;
 const INVALID_RESPONSE_MESSAGE = "Backend trả về phản hồi không hợp lệ.";
 const NETWORK_ERROR_MESSAGE =
-  "Không thể kết nối tới backend. Hãy kiểm tra API base URL, CORS, hoặc tránh dùng localhost nếu web đang mở từ cổng hay thiết bị khác.";
+  "Không thể kết nối tới backend. Hãy kiểm tra API base URL, proxy /api, CORS, hoặc backend có đang chạy trên cổng 5080 hay không.";
 const SESSION_KEY = "vinh-khanh-admin-web:session";
+const API_BASE_URL_KEY = "vinh-khanh-admin-web:api-base-url";
+const DEFAULT_LOCAL_API_PORT = "5080";
+const DIRECT_LOCALHOST_API_BASE_URL = `http://localhost:${DEFAULT_LOCAL_API_PORT}/api/v1`;
+const DIRECT_LOOPBACK_API_BASE_URL = `http://127.0.0.1:${DEFAULT_LOCAL_API_PORT}/api/v1`;
 
 const normalizeConfiguredBaseUrl = (value: string | undefined) => {
   const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
@@ -98,8 +111,104 @@ const resolveConfiguredBasePath = (baseUrl: string) => {
   }
 };
 
+const normalizeDirectApiBaseUrl = (value: string | undefined) => {
+  const normalized = normalizeConfiguredBaseUrl(value);
+  if (!normalized) {
+    return "";
+  }
+
+  return normalized.endsWith("/api/v1") ? normalized : `${normalized}/api/v1`;
+};
+
+const readStoredApiBaseUrl = () => {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return normalizeConfiguredBaseUrl(localStorage.getItem(API_BASE_URL_KEY) ?? undefined);
+};
+
 const API_BASE_URL = normalizeConfiguredBaseUrl(import.meta.env.VITE_API_BASE_URL);
-const API_BASE_PATH = resolveConfiguredBasePath(API_BASE_URL);
+const DIRECT_PROXY_API_BASE_URL = normalizeDirectApiBaseUrl(import.meta.env.VITE_API_PROXY_TARGET);
+let preferredApiBaseUrl: string | null = readStoredApiBaseUrl() || API_BASE_URL || null;
+
+const rememberApiBaseUrl = (baseUrl: string) => {
+  preferredApiBaseUrl = baseUrl;
+
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (baseUrl) {
+    localStorage.setItem(API_BASE_URL_KEY, baseUrl);
+    return;
+  }
+
+  localStorage.removeItem(API_BASE_URL_KEY);
+};
+
+const getPrimaryApiBaseUrl = () => preferredApiBaseUrl ?? API_BASE_URL;
+
+const inferLocalApiBaseUrl = () => {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  try {
+    const url = new URL(window.location.origin);
+    if (!url.hostname) {
+      return "";
+    }
+
+    url.port = DEFAULT_LOCAL_API_PORT;
+    return `${url.origin}/api/v1`;
+  } catch {
+    return "";
+  }
+};
+
+const buildApiBaseCandidates = (method: string) => {
+  const candidates: string[] = [];
+  const isReadRequest = method === "GET" || method === "HEAD";
+
+  const pushCandidate = (value: string | null | undefined) => {
+    const candidate = value ?? "";
+    if (!candidates.includes(candidate)) {
+      candidates.push(candidate);
+    }
+  };
+
+  pushCandidate(getPrimaryApiBaseUrl());
+
+  if (isReadRequest) {
+    pushCandidate("");
+    pushCandidate(DIRECT_PROXY_API_BASE_URL);
+    pushCandidate(inferLocalApiBaseUrl());
+    pushCandidate(DIRECT_LOCALHOST_API_BASE_URL);
+    pushCandidate(DIRECT_LOOPBACK_API_BASE_URL);
+  }
+
+  if (candidates.length === 0) {
+    pushCandidate("");
+  }
+
+  return candidates;
+};
+
+const buildApiUrl = (path: string, baseUrl: string) => {
+  if (!baseUrl || ABSOLUTE_URL_PATTERN.test(path)) {
+    return path;
+  }
+
+  const basePath = resolveConfiguredBasePath(baseUrl);
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const nextPath =
+    basePath && (normalizedPath === basePath || normalizedPath.startsWith(`${basePath}/`))
+      ? normalizedPath.slice(basePath.length)
+      : normalizedPath;
+
+  return `${baseUrl}${nextPath || "/"}`;
+};
 
 const readSession = () => {
   if (typeof window === "undefined") {
@@ -140,63 +249,131 @@ const buildHeaders = (headers?: HeadersInit) => {
 };
 
 export const resolveApiUrl = (path: string) => {
-  if (!API_BASE_URL || ABSOLUTE_URL_PATTERN.test(path)) {
-    return path;
-  }
-
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const nextPath =
-    API_BASE_PATH &&
-    (normalizedPath === API_BASE_PATH || normalizedPath.startsWith(`${API_BASE_PATH}/`))
-      ? normalizedPath.slice(API_BASE_PATH.length)
-      : normalizedPath;
-
-  return `${API_BASE_URL}${nextPath || "/"}`;
+  return buildApiUrl(path, getPrimaryApiBaseUrl());
 };
 
-const parseResponse = async <T>(response: Response) => {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("application/json")) {
-    if (!response.ok) {
-      throw new ApiError(INVALID_RESPONSE_MESSAGE, response.status);
-    }
+const isJsonResponse = (contentType: string) => {
+  const normalized = contentType.toLowerCase();
+  return normalized.includes("application/json") || normalized.includes("+json");
+};
 
-    return null as T;
+const buildInvalidResponseMessage = (response: Response, requestUrl: string, bodyPreview: string) => {
+  const normalizedPreview = bodyPreview.trim().toLowerCase();
+  const normalizedContentType = (response.headers.get("content-type") ?? "").toLowerCase();
+  const looksLikeHtml =
+    normalizedContentType.includes("text/html") ||
+    normalizedPreview.startsWith("<!doctype html") ||
+    normalizedPreview.startsWith("<html");
+
+  if (looksLikeHtml) {
+    return `Frontend đang nhận HTML thay vì JSON từ ${requestUrl}. Hãy kiểm tra proxy /api hoặc VITE_API_BASE_URL.`;
+  }
+
+  if (response.status === 404) {
+    return `Không tìm thấy endpoint ${requestUrl}. Hãy kiểm tra API base URL hoặc proxy /api.`;
+  }
+
+  if ([502, 503, 504].includes(response.status)) {
+    return `Không kết nối được tới backend qua ${requestUrl}. Hãy kiểm tra backend có đang chạy và proxy có trỏ đúng cổng 5080 không.`;
+  }
+
+  return INVALID_RESPONSE_MESSAGE;
+};
+
+const parseResponse = async <T>(response: Response, requestUrl: string) => {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!isJsonResponse(contentType)) {
+    const bodyPreview = await response.text().catch(() => "");
+    throw new ApiError(
+      buildInvalidResponseMessage(response, requestUrl, bodyPreview),
+      response.status,
+      "invalid_response",
+      requestUrl,
+    );
   }
 
   let payload: ApiEnvelope<T>;
+  const clonedResponse = response.clone();
 
   try {
     payload = (await response.json()) as ApiEnvelope<T>;
   } catch {
-    throw new ApiError("Backend trả về phản hồi không hợp lệ.", response.status);
+    const bodyPreview = await clonedResponse.text().catch(() => "");
+    throw new ApiError(
+      buildInvalidResponseMessage(response, requestUrl, bodyPreview),
+      response.status,
+      "invalid_response",
+      requestUrl,
+    );
   }
 
   if (!response.ok || !payload.success || payload.data === null) {
-    throw new ApiError(payload.message ?? "Yêu cầu đến backend thất bại.", response.status);
+    throw new ApiError(
+      payload.message ?? "Yêu cầu đến backend thất bại.",
+      response.status,
+      "backend",
+      requestUrl,
+    );
   }
 
   return payload.data;
 };
 
 const request = async <T>(path: string, init?: RequestInit) => {
-  let response: Response;
+  const method = init?.method?.toUpperCase() ?? "GET";
+  const candidateBaseUrls = buildApiBaseCandidates(method);
+  let lastError: unknown = null;
 
-  try {
-    response = await fetch(resolveApiUrl(path), {
-      ...init,
-      cache: "no-store",
-      headers: buildHeaders(init?.headers),
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw error;
+  for (let index = 0; index < candidateBaseUrls.length; index += 1) {
+    const baseUrl = candidateBaseUrls[index] ?? "";
+    const requestUrl = buildApiUrl(path, baseUrl);
+
+    try {
+      const response = await fetch(requestUrl, {
+        ...init,
+        cache: "no-store",
+        headers: buildHeaders(init?.headers),
+      });
+
+      const data = await parseResponse<T>(response, requestUrl);
+      rememberApiBaseUrl(baseUrl);
+      return data;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw error;
+      }
+
+      const apiError =
+        error instanceof ApiError
+          ? error
+          : new ApiError(NETWORK_ERROR_MESSAGE, 0, "network", requestUrl);
+      const canTryAnotherCandidate =
+        (method === "GET" || method === "HEAD") &&
+        index < candidateBaseUrls.length - 1 &&
+        (apiError.kind === "network" || apiError.kind === "invalid_response");
+
+      if (canTryAnotherCandidate) {
+        console.warn("Retrying API request with alternate base URL", {
+          path,
+          failedUrl: requestUrl,
+          message: apiError.message,
+        });
+        lastError = apiError;
+        continue;
+      }
+
+      throw apiError;
     }
-
-    throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
   }
 
-  return parseResponse<T>(response);
+  throw (lastError instanceof ApiError
+    ? lastError
+    : new ApiError(
+        NETWORK_ERROR_MESSAGE,
+        0,
+        "network",
+        buildApiUrl(path, getPrimaryApiBaseUrl()),
+      ));
 };
 
 const jsonRequest = async <T>(

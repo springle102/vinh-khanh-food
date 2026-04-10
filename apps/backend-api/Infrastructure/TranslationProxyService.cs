@@ -1,11 +1,11 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using VinhKhanh.BackendApi.Contracts;
 
 namespace VinhKhanh.BackendApi.Infrastructure;
 
-public sealed class TranslationProxyService(HttpClient httpClient, ILogger<TranslationProxyService> logger)
+public sealed class TranslationProxyService(HttpClient httpClient, ILogger<TranslationProxyService> logger) : ITextTranslationClient
 {
     public async Task<TextTranslationResponse> TranslateAsync(
         TextTranslationRequest request,
@@ -15,12 +15,12 @@ public sealed class TranslationProxyService(HttpClient httpClient, ILogger<Trans
 
         if (string.IsNullOrWhiteSpace(request.TargetLanguageCode))
         {
-            throw new InvalidOperationException("TargetLanguageCode là bắt buộc.");
+            throw new InvalidOperationException("TargetLanguageCode is required.");
         }
 
         if (request.Texts is null || request.Texts.Count == 0)
         {
-            throw new InvalidOperationException("Cần ít nhất một đoạn văn bản để dịch.");
+            throw new InvalidOperationException("At least one text segment is required for translation.");
         }
 
         var targetLanguageCode = NormalizeLanguageCode(request.TargetLanguageCode);
@@ -89,7 +89,7 @@ public sealed class TranslationProxyService(HttpClient httpClient, ILogger<Trans
                 "Translation proxy request failed with status {StatusCode} for target language {TargetLanguageCode}.",
                 response.StatusCode,
                 targetLanguageCode);
-            throw new InvalidOperationException("Không thể dịch nội dung sang ngôn ngữ đã chọn.");
+            throw new InvalidOperationException("Unable to translate the content to the selected language.");
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -103,7 +103,7 @@ public sealed class TranslationProxyService(HttpClient httpClient, ILogger<Trans
         logger.LogWarning(
             "Translation proxy returned an empty translation for target language {TargetLanguageCode}.",
             targetLanguageCode);
-        throw new InvalidOperationException("Không nhận được nội dung đã dịch từ dịch vụ dịch.");
+        throw new InvalidOperationException("Unable to translate the content to the selected language.");
     }
 
     private static string ReadTranslatedText(JsonElement root)
