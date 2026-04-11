@@ -7,6 +7,7 @@ README này mô tả luồng hệ thống và công nghệ hiện tại của đ
 - Chưa xử lí backend đăng nhập qua google, facebook
 - Chưa làm backend khi khách hàng quên mật khẩu
 - Cần thêm chatbox AI cho app (xài API key của Gemini)
+- Chưa tạo định vị ảo để khi người dùng vào bán kính 10m của quán thì tự động phát thuyết minh quán đó.
 
 ## Thành phần chính
 
