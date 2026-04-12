@@ -14,8 +14,7 @@ public sealed partial class AdminDataRepository
 
         return GetUsers(connection, null)
             .Where(user =>
-                string.Equals(user.Status, "active", StringComparison.OrdinalIgnoreCase) &&
-                AdminRoleCatalog.IsAdminRole(user.Role) &&
+                CanUserStartAdminSession(user) &&
                 CanAccessPortal(user.Role, normalizedPortal))
             .OrderByDescending(user => AdminRoleCatalog.IsSuperAdmin(user.Role))
             .ThenBy(user => user.Name, StringComparer.OrdinalIgnoreCase)
@@ -35,12 +34,14 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
-        var user = GetUserByCredentials(connection, transaction, email, password);
+        var user = GetUserByCredentialsIgnoringStatus(connection, transaction, email, password);
         if (user is null || !CanAccessPortal(user.Role, portal))
         {
             transaction.Rollback();
             return null;
         }
+
+        EnsureUserCanStartSession(user);
 
         var now = DateTimeOffset.UtcNow;
         ExecuteNonQuery(
@@ -97,9 +98,7 @@ public sealed partial class AdminDataRepository
         }
 
         var user = GetUserById(connection, transaction, session.UserId);
-        if (user is null ||
-            !string.Equals(user.Status, "active", StringComparison.OrdinalIgnoreCase) ||
-            !AdminRoleCatalog.IsAdminRole(user.Role))
+        if (user is null || !CanUserStartAdminSession(user))
         {
             transaction.Rollback();
             return null;
@@ -171,6 +170,13 @@ public sealed partial class AdminDataRepository
                 ? request.ManagedPoiId
                 : null
             : existing?.ManagedPoiId ?? actor.ManagedPoiId;
+        var approvalStatus = ResolveApprovalStatusForAdminUserSave(existing, nextRole);
+        var rejectionReason = AdminApprovalCatalog.IsRejected(approvalStatus)
+            ? existing?.RejectionReason
+            : null;
+        var registrationSubmittedAt = existing?.RegistrationSubmittedAt ?? now;
+        var registrationReviewedAt = existing?.RegistrationReviewedAt ??
+            (AdminApprovalCatalog.IsApproved(approvalStatus) ? now : null);
 
         if (isNew)
         {
@@ -185,9 +191,10 @@ public sealed partial class AdminDataRepository
                 transaction,
                 """
                 INSERT INTO dbo.AdminUsers (
-                    Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId
+                    Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId,
+                    ApprovalStatus, RejectionReason, RegistrationSubmittedAt, RegistrationReviewedAt
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 userId,
                 request.Name,
@@ -199,7 +206,11 @@ public sealed partial class AdminDataRepository
                 now,
                 null,
                 request.AvatarColor,
-                managedPoiId);
+                managedPoiId,
+                approvalStatus,
+                rejectionReason,
+                registrationSubmittedAt,
+                registrationReviewedAt);
         }
         else
         {
@@ -221,7 +232,11 @@ public sealed partial class AdminDataRepository
                     [Password] = ?,
                     [Status] = ?,
                     AvatarColor = ?,
-                    ManagedPoiId = ?
+                    ManagedPoiId = ?,
+                    ApprovalStatus = ?,
+                    RejectionReason = ?,
+                    RegistrationSubmittedAt = ?,
+                    RegistrationReviewedAt = ?
                 WHERE Id = ?;
                 """,
                 request.Name,
@@ -232,6 +247,10 @@ public sealed partial class AdminDataRepository
                 nextStatus,
                 request.AvatarColor,
                 managedPoiId,
+                approvalStatus,
+                rejectionReason,
+                registrationSubmittedAt,
+                registrationReviewedAt,
                 userId);
         }
 
@@ -267,6 +286,7 @@ public sealed partial class AdminDataRepository
 
         var now = DateTimeOffset.UtcNow;
         var existing = !string.IsNullOrWhiteSpace(id) ? GetPoiById(connection, transaction, id) : null;
+        EnsureActorCanManagePoiContent(connection, transaction, actor, existing, "chỉnh sửa nội dung POI");
         var isNew = existing is null;
         var currentPoiId = existing?.Id ?? id;
         var poiId = ResolveRequestedPoiId(request.RequestedId, currentPoiId);
@@ -288,7 +308,9 @@ public sealed partial class AdminDataRepository
 
         var nextStatus = NormalizePoiStatus(request.Status, isOwnerActor);
         var nextFeatured = isOwnerActor ? false : request.Featured;
+        var nextPublicationMetadata = ResolvePoiPublicationMetadataForSave(existing, nextStatus, isOwnerActor);
         var nextOwnerUserId = isOwnerActor ? actor.UserId : request.OwnerUserId;
+        var nextReviewMetadata = ResolvePoiReviewMetadataForSave(existing, nextStatus, isOwnerActor);
 
         _logger.LogInformation(
             "SavePoi request received. currentPoiId={CurrentPoiId}, requestedPoiId={RequestedPoiId}, resolvedPoiId={ResolvedPoiId}, slug={Slug}, address={Address}, tags={Tags}, actorRole={ActorRole}, isNew={IsNew}",
@@ -318,7 +340,12 @@ public sealed partial class AdminDataRepository
                 actor.Name,
                 nextStatus,
                 nextFeatured,
+                nextPublicationMetadata.IsActive,
+                nextPublicationMetadata.LockedBySuperAdmin,
                 nextOwnerUserId,
+                nextPublicationMetadata.ApprovedAt,
+                nextReviewMetadata.RejectionReason,
+                nextReviewMetadata.RejectedAt,
                 createdAt,
                 now);
         }
@@ -334,7 +361,12 @@ public sealed partial class AdminDataRepository
                 actor.Name,
                 nextStatus,
                 nextFeatured,
+                nextPublicationMetadata.IsActive,
+                nextPublicationMetadata.LockedBySuperAdmin,
                 nextOwnerUserId,
+                nextPublicationMetadata.ApprovedAt,
+                nextReviewMetadata.RejectionReason,
+                nextReviewMetadata.RejectedAt,
                 now);
         }
         else
@@ -354,20 +386,54 @@ public sealed partial class AdminDataRepository
                 actor.Name,
                 nextStatus,
                 nextFeatured,
+                nextPublicationMetadata.IsActive,
+                nextPublicationMetadata.LockedBySuperAdmin,
                 nextOwnerUserId,
+                nextPublicationMetadata.ApprovedAt,
+                nextReviewMetadata.RejectionReason,
+                nextReviewMetadata.RejectedAt,
                 now);
         }
 
         ReplacePoiTags(connection, transaction, poiId, request.Tags);
 
-        AppendAdminAuditLog(
-            connection,
-            transaction,
-            actor,
-            ResolvePoiAuditAction(existing, nextStatus, isOwnerActor),
-            "POI",
-            poiId,
-            request.Slug);
+        var beforeStatusSummary = existing is null ? null : $"status={existing.Status}";
+        var afterStatusSummary = $"status={nextStatus}";
+
+        if (isOwnerActor && IsRejectedPoi(existing) && string.Equals(nextStatus, "pending", StringComparison.OrdinalIgnoreCase))
+        {
+            AppendAdminAuditLog(
+                connection,
+                transaction,
+                actor,
+                "Chỉnh sửa POI bị từ chối",
+                "POI",
+                poiId,
+                request.Slug,
+                beforeStatusSummary,
+                afterStatusSummary);
+            AppendAdminAuditLog(
+                connection,
+                transaction,
+                actor,
+                "Gửi duyệt lại POI",
+                "POI",
+                poiId,
+                request.Slug,
+                beforeStatusSummary,
+                afterStatusSummary);
+        }
+        else
+        {
+            AppendAdminAuditLog(
+                connection,
+                transaction,
+                actor,
+                ResolvePoiAuditAction(existing, nextStatus, isOwnerActor),
+                "POI",
+                poiId,
+                request.Slug);
+        }
 
         var saved = GetPoiById(connection, transaction, poiId)
             ?? throw new InvalidOperationException("Không thể đọc lại POI sau khi lưu.");
@@ -394,9 +460,35 @@ public sealed partial class AdminDataRepository
             "draft" => "draft",
             "pending" => "pending",
             "published" => "published",
+            "rejected" => "rejected",
             "archived" => "archived",
+            "deleted" => "deleted",
             _ => "draft",
         };
+    }
+
+    private static PoiPublicationMetadata ResolvePoiPublicationMetadataForSave(
+        Poi? existing,
+        string nextStatus,
+        bool isOwnerActor)
+    {
+        if (existing is null)
+        {
+            return new(
+                IsActive: !isOwnerActor && string.Equals(nextStatus, "published", StringComparison.OrdinalIgnoreCase),
+                LockedBySuperAdmin: false,
+                ApprovedAt: null);
+        }
+
+        if (isOwnerActor)
+        {
+            return new(
+                IsActive: false,
+                LockedBySuperAdmin: false,
+                ApprovedAt: existing.ApprovedAt);
+        }
+
+        return new(existing.IsActive, existing.LockedBySuperAdmin, existing.ApprovedAt);
     }
 
     private static string ResolvePoiAuditAction(Poi? existing, string nextStatus, bool isOwnerActor)
@@ -414,6 +506,11 @@ public sealed partial class AdminDataRepository
 
         return existing is null ? "Tạo POI" : "Cập nhật POI";
     }
+
+    private sealed record PoiPublicationMetadata(
+        bool IsActive,
+        bool LockedBySuperAdmin,
+        DateTimeOffset? ApprovedAt);
 
     private static string ResolveRequestedPoiId(string? requestedId, string? currentPoiId)
     {
@@ -468,7 +565,12 @@ public sealed partial class AdminDataRepository
         string updatedBy,
         string status,
         bool featured,
+        bool isActive,
+        bool lockedBySuperAdmin,
         string? ownerUserId,
+        DateTimeOffset? approvedAt,
+        string? rejectionReason,
+        DateTimeOffset? rejectedAt,
         DateTimeOffset createdAt,
         DateTimeOffset updatedAt)
     {
@@ -477,10 +579,11 @@ public sealed partial class AdminDataRepository
             transaction,
             """
             INSERT INTO dbo.Pois (
-                Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured,
-                District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt
+                Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, IsActive, LockedBySuperAdmin,
+                District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId,
+                ApprovedAt, RejectionReason, RejectedAt, UpdatedBy, CreatedAt, UpdatedAt
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             poiId,
             request.Slug,
@@ -490,12 +593,17 @@ public sealed partial class AdminDataRepository
             request.CategoryId,
             status,
             featured,
+            isActive,
+            lockedBySuperAdmin,
             request.District,
             request.Ward,
             request.PriceRange,
             request.AverageVisitDuration,
             request.PopularityScore,
             ownerUserId,
+            approvedAt,
+            rejectionReason,
+            rejectedAt,
             updatedBy,
             createdAt,
             updatedAt);
@@ -509,7 +617,12 @@ public sealed partial class AdminDataRepository
         string updatedBy,
         string status,
         bool featured,
+        bool isActive,
+        bool lockedBySuperAdmin,
         string? ownerUserId,
+        DateTimeOffset? approvedAt,
+        string? rejectionReason,
+        DateTimeOffset? rejectedAt,
         DateTimeOffset updatedAt)
     {
         ExecuteNonQuery(
@@ -524,12 +637,17 @@ public sealed partial class AdminDataRepository
                 CategoryId = ?,
                 [Status] = ?,
                 IsFeatured = ?,
+                IsActive = ?,
+                LockedBySuperAdmin = ?,
                 District = ?,
                 Ward = ?,
                 PriceRange = ?,
                 AverageVisitDurationMinutes = ?,
                 PopularityScore = ?,
                 OwnerUserId = ?,
+                ApprovedAt = ?,
+                RejectionReason = ?,
+                RejectedAt = ?,
                 UpdatedBy = ?,
                 UpdatedAt = ?
             WHERE Id = ?;
@@ -541,12 +659,17 @@ public sealed partial class AdminDataRepository
             request.CategoryId,
             status,
             featured,
+            isActive,
+            lockedBySuperAdmin,
             request.District,
             request.Ward,
             request.PriceRange,
             request.AverageVisitDuration,
             request.PopularityScore,
             ownerUserId,
+            approvedAt,
+            rejectionReason,
+            rejectedAt,
             updatedBy,
             updatedAt,
             poiId);
@@ -561,7 +684,12 @@ public sealed partial class AdminDataRepository
         string updatedBy,
         string status,
         bool featured,
+        bool isActive,
+        bool lockedBySuperAdmin,
         string? ownerUserId,
+        DateTimeOffset? approvedAt,
+        string? rejectionReason,
+        DateTimeOffset? rejectedAt,
         DateTimeOffset updatedAt)
     {
         _logger.LogDebug(
@@ -581,7 +709,12 @@ public sealed partial class AdminDataRepository
             updatedBy,
             status,
             featured,
+            isActive,
+            lockedBySuperAdmin,
             ownerUserId,
+            approvedAt,
+            rejectionReason,
+            rejectedAt,
             existing.CreatedAt,
             updatedAt);
 
@@ -653,11 +786,19 @@ public bool DeletePoi(string id, AdminRequestContext actor)
             """
             UPDATE dbo.Pois
             SET [Status] = ?,
+                IsActive = ?,
+                LockedBySuperAdmin = ?,
+                ApprovedAt = ?,
+                RejectionReason = NULL,
+                RejectedAt = NULL,
                 UpdatedBy = ?,
                 UpdatedAt = ?
             WHERE Id = ?;
             """,
             "deleted",
+            false,
+            false,
+            poi.ApprovedAt,
             actor.Name,
             DateTimeOffset.UtcNow,
             id);
@@ -681,6 +822,7 @@ public bool DeletePoi(string id, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
+        EnsureActorCanManagePoiContentEntity(connection, transaction, actor, request.EntityType, request.EntityId, "chỉnh sửa nội dung POI");
 
         var now = DateTimeOffset.UtcNow;
         var normalizedEntityType = NormalizeEntityType(request.EntityType);
@@ -805,6 +947,7 @@ public bool DeletePoi(string id, AdminRequestContext actor)
         using var transaction = connection.BeginTransaction();
 
         var existing = GetTranslationById(connection, transaction, id);
+        EnsureActorCanManagePoiContentEntity(connection, transaction, actor, existing?.EntityType, existing?.EntityId, "xóa nội dung POI");
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTranslations WHERE Id = ?;", id) > 0;
         if (deleted)
         {
@@ -826,6 +969,7 @@ public bool DeletePoi(string id, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
+        EnsureActorCanManagePoiContentEntity(connection, transaction, actor, request.EntityType, request.EntityId, "chỉnh sửa audio của POI");
 
         var now = DateTimeOffset.UtcNow;
         var normalizedEntityType = NormalizeEntityType(request.EntityType);
@@ -949,6 +1093,7 @@ public bool DeletePoi(string id, AdminRequestContext actor)
         using var transaction = connection.BeginTransaction();
 
         var existing = GetAudioGuideById(connection, transaction, id);
+        EnsureActorCanManagePoiContentEntity(connection, transaction, actor, existing?.EntityType, existing?.EntityId, "xóa audio của POI");
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioGuides WHERE Id = ?;", id) > 0;
         if (deleted)
         {

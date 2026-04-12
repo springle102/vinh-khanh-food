@@ -156,6 +156,10 @@ public sealed class PoisController(
     public ActionResult<ApiResponse<Poi>> CreatePoi([FromBody] PoiUpsertRequest request)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        if (actor.IsSuperAdmin)
+        {
+            throw new ApiForbiddenException("Super Admin không có quyền tạo hoặc chỉnh sửa nội dung POI.");
+        }
 
         logger.LogInformation(
             "CreatePoi request received. requestedPoiId={RequestedPoiId}, slug={Slug}, address={Address}, tags={Tags}, actorRole={ActorRole}, actorUserId={ActorUserId}",
@@ -187,6 +191,10 @@ public sealed class PoisController(
     public ActionResult<ApiResponse<Poi>> UpdatePoi(string id, [FromBody] PoiUpsertRequest request)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        if (actor.IsSuperAdmin)
+        {
+            throw new ApiForbiddenException("Bạn không có quyền chỉnh sửa nội dung POI.");
+        }
 
         logger.LogInformation(
             "UpdatePoi request received. poiId={PoiId}, requestedPoiId={RequestedPoiId}, slug={Slug}, address={Address}, tags={Tags}, actorRole={ActorRole}, actorUserId={ActorUserId}",
@@ -214,6 +222,37 @@ public sealed class PoisController(
 
         var saved = repository.SavePoi(id, sanitizedRequest, actor);
         return Ok(ApiResponse<Poi>.Ok(saved, "Cap nhat POI thanh cong."));
+    }
+
+    [HttpPost("{id}/approve")]
+    public ActionResult<ApiResponse<Poi>> ApprovePoi(string id)
+    {
+        var actor = adminRequestContextResolver.RequireSuperAdmin();
+        var saved = repository.ApprovePoi(id, actor);
+        return Ok(ApiResponse<Poi>.Ok(saved, "Đã duyệt POI."));
+    }
+
+    [HttpPost("{id}/reject")]
+    public ActionResult<ApiResponse<Poi>> RejectPoi(string id, [FromBody] PoiDecisionRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return BadRequest(ApiResponse<Poi>.Fail("Lý do từ chối là bắt buộc."));
+        }
+
+        var actor = adminRequestContextResolver.RequireSuperAdmin();
+        var saved = repository.RejectPoi(id, request.Reason, actor);
+        return Ok(ApiResponse<Poi>.Ok(saved, "Đã từ chối POI."));
+    }
+
+    [HttpPatch("{id}/toggle-active")]
+    public ActionResult<ApiResponse<Poi>> TogglePoiActive(string id, [FromBody] PoiActiveToggleRequest request)
+    {
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var saved = repository.TogglePoiActive(id, request.IsActive, actor);
+        return Ok(ApiResponse<Poi>.Ok(
+            saved,
+            request.IsActive ? "POI đã được bật hoạt động." : "POI đã được chuyển sang ngừng hoạt động."));
     }
 
     [HttpDelete("{id}")]

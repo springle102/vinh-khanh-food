@@ -96,25 +96,26 @@ public sealed partial class AdminDataRepository
             ORDER BY OccurredAt DESC, Id DESC;
             """;
 
-        using var command = CreateCommand(connection, transaction, sql);
-        using var reader = command.ExecuteReader();
-
         var items = new List<AppUsageEvent>();
-        while (reader.Read())
+        using (var command = CreateCommand(connection, transaction, sql))
+        using (var reader = command.ExecuteReader())
         {
-            items.Add(new AppUsageEvent
+            while (reader.Read())
             {
-                Id = ReadString(reader, "Id"),
-                EventType = ReadString(reader, "EventType"),
-                PoiId = ReadNullableString(reader, "PoiId"),
-                LanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(ReadString(reader, "LanguageCode")),
-                Platform = ReadString(reader, "Platform"),
-                SessionId = ReadString(reader, "SessionId"),
-                Source = ReadString(reader, "Source"),
-                Metadata = ReadString(reader, "Metadata"),
-                DurationInSeconds = ReadNullableInt(reader, "DurationInSeconds"),
-                OccurredAt = ReadDateTimeOffset(reader, "OccurredAt")
-            });
+                items.Add(new AppUsageEvent
+                {
+                    Id = ReadString(reader, "Id"),
+                    EventType = ReadString(reader, "EventType"),
+                    PoiId = ReadNullableString(reader, "PoiId"),
+                    LanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(ReadString(reader, "LanguageCode")),
+                    Platform = ReadString(reader, "Platform"),
+                    SessionId = ReadString(reader, "SessionId"),
+                    Source = ReadString(reader, "Source"),
+                    Metadata = ReadString(reader, "Metadata"),
+                    DurationInSeconds = ReadNullableInt(reader, "DurationInSeconds"),
+                    OccurredAt = ReadDateTimeOffset(reader, "OccurredAt")
+                });
+            }
         }
 
         if (items.Count > 0)

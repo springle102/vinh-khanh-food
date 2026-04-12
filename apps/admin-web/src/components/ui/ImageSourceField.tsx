@@ -5,6 +5,7 @@ type ImageSourceFieldProps = {
   value: string;
   onChange: (value: string) => void;
   onUpload: (file: File) => Promise<string>;
+  disabled?: boolean;
   accept?: string;
   previewType?: "image" | "video";
   helperText?: string;
@@ -16,6 +17,7 @@ export const ImageSourceField = ({
   value,
   onChange,
   onUpload,
+  disabled = false,
   accept = "image/*",
   previewType = "image",
   helperText = "Tệp từ thiết bị sẽ được upload lên backend storage trước khi lưu dữ liệu.",
@@ -30,6 +32,10 @@ export const ImageSourceField = ({
     event.target.value = "";
 
     if (!nextFile) {
+      return;
+    }
+
+    if (disabled) {
       return;
     }
 
@@ -58,6 +64,7 @@ export const ImageSourceField = ({
           type="file"
           accept={accept}
           autoComplete="off"
+          disabled={disabled}
           onChange={(event) => {
             void handleFileChange(event);
           }}

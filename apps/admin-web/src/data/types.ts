@@ -3,7 +3,8 @@ export type RegionVoice = "north" | "central" | "south" | "standard";
 export type Role = "SUPER_ADMIN" | "PLACE_OWNER";
 export type AuditActorRole = Role | "SYSTEM";
 export type UserStatus = "active" | "locked";
-export type ContentStatus = "draft" | "pending" | "published" | "archived" | "deleted";
+export type ApprovalStatus = "pending" | "approved" | "rejected";
+export type ContentStatus = "draft" | "pending" | "published" | "rejected" | "archived" | "deleted";
 export type EntityType = "poi" | "food_item" | "route" | "promotion";
 export type AudioSourceType = "uploaded" | "tts";
 export type AudioStatus = "ready" | "processing" | "missing";
@@ -34,6 +35,23 @@ export interface AdminUser {
   lastLoginAt: string | null;
   avatarColor: string;
   managedPoiId: string | null;
+  approvalStatus: ApprovalStatus;
+  rejectionReason: string | null;
+  registrationSubmittedAt: string | null;
+  registrationReviewedAt: string | null;
+}
+
+export interface PlaceOwnerRegistrationRecord {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  status: UserStatus;
+  approvalStatus: ApprovalStatus;
+  rejectionReason: string | null;
+  createdAt: string;
+  registrationSubmittedAt: string | null;
+  registrationReviewedAt: string | null;
 }
 
 export interface CustomerUser {
@@ -81,6 +99,8 @@ export interface Poi {
   categoryId: string;
   status: ContentStatus;
   featured: boolean;
+  isActive: boolean;
+  lockedBySuperAdmin: boolean;
   district: string;
   ward: string;
   priceRange: string;
@@ -91,6 +111,9 @@ export interface Poi {
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
+  approvedAt: string | null;
+  rejectionReason: string | null;
+  rejectedAt: string | null;
 }
 
 export interface FoodItem {

@@ -1,0 +1,179 @@
+﻿PRODUCT REQUIREMENTS DOCUMENT
+I. ThÃ´ng tin tá»•ng quan dá»± Ã¡n
+VÄ©nh KhÃ¡nh Food lÃ  há»‡ thá»‘ng thÃ´ng tin sá»‘ Ä‘Æ°á»£c xÃ¢y dá»±ng nháº±m há»— trá»£ giá»›i thiá»‡u, tra cá»©u vÃ  quáº£n lÃ½ cÃ¡c Ä‘iá»ƒm Äƒn uá»‘ng theo mÃ´ hÃ¬nh POI (Point of Interest) táº¡i khu vá»±c VÄ©nh KhÃ¡nh, Quáº­n 4, ThÃ nh phá»‘ Há»“ ChÃ­ Minh. Há»‡ thá»‘ng hÆ°á»›ng Ä‘áº¿n hai nhÃ³m ngÆ°á»i dÃ¹ng chÃ­nh gá»“m ngÆ°á»i dÃ¹ng cuá»‘i trÃªn thiáº¿t bá»‹ di Ä‘á»™ng vÃ  nhÃ³m quáº£n trá»‹ váº­n hÃ nh ná»™i dung. Má»¥c tiÃªu cá»§a Ä‘á»“ Ã¡n lÃ  sá»‘ hÃ³a dá»¯ liá»‡u Ä‘iá»ƒm Ä‘áº¿n áº©m thá»±c, nÃ¢ng cao tráº£i nghiá»‡m tra cá»©u thÃ´ng tin, Ä‘á»“ng thá»i xÃ¢y dá»±ng má»™t ná»n táº£ng quáº£n trá»‹ táº­p trung Ä‘á»ƒ cáº­p nháº­t vÃ  Ä‘á»“ng bá»™ dá»¯ liá»‡u giá»¯a cÃ¡c thÃ nh pháº§n cá»§a há»‡ thá»‘ng.
+Vá» máº·t triá»ƒn khai, há»‡ thá»‘ng gá»“m bá»‘n thÃ nh pháº§n chÃ­nh. Thá»© nháº¥t lÃ  á»©ng dá»¥ng mobile phÃ¡t triá»ƒn báº±ng .NET MAUI, phá»¥c vá»¥ ngÆ°á»i dÃ¹ng cuá»‘i trÃªn ná»n táº£ng Android. Thá»© hai lÃ  Backend API phÃ¡t triá»ƒn báº±ng ASP.NET Core .NET 10, Ä‘Ã³ng vai trÃ² trung tÃ¢m xá»­ lÃ½ nghiá»‡p vá»¥, phÃ¢n quyá»n truy cáº­p, Ä‘á»“ng bá»™ dá»¯ liá»‡u vÃ  káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u SQL Server. Thá»© ba lÃ  trang Admin Web phÃ¡t triá»ƒn báº±ng React, TypeScript vÃ  Vite, há»— trá»£ quáº£n trá»‹ viÃªn vÃ  chá»§ Ä‘iá»ƒm Ä‘áº¿n cáº­p nháº­t ná»™i dung. Thá»© tÆ° lÃ  cÆ¡ sá»Ÿ dá»¯ liá»‡u SQL Server, nÆ¡i lÆ°u trá»¯ táº­p trung toÃ n bá»™ dá»¯ liá»‡u POI, báº£n dá»‹ch, audio guide, media, mÃ³n Äƒn, tuyáº¿n tham quan, khuyáº¿n mÃ£i, Ä‘Ã¡nh giÃ¡, tÃ i khoáº£n ngÆ°á»i dÃ¹ng vÃ  cáº¥u hÃ¬nh há»‡ thá»‘ng.
+Há»‡ thá»‘ng Ä‘Æ°á»£c tá»• chá»©c theo mÃ´ hÃ¬nh client-server, trong Ä‘Ã³ Backend API lÃ  háº¡t nhÃ¢n káº¿t ná»‘i giá»¯a Admin Web, Mobile App vÃ  cÆ¡ sá»Ÿ dá»¯ liá»‡u. Dá»¯ liá»‡u sau khi Ä‘Æ°á»£c cáº­p nháº­t tá»« trang quáº£n trá»‹ sáº½ Ä‘Æ°á»£c backend tá»•ng há»£p thÃ nh má»™t gÃ³i dá»¯ liá»‡u dÃ¹ng chung Ä‘á»ƒ Ä‘á»“ng bá»™ cho á»©ng dá»¥ng mobile, qua Ä‘Ã³ giÃºp báº£o Ä‘áº£m tÃ­nh nháº¥t quÃ¡n, giáº£m sá»‘ láº§n truy váº¥n vÃ  há»— trá»£ cáº­p nháº­t nhanh khi ná»™i dung thay Ä‘á»•i.
+Vá» nghiá»‡p vá»¥, Ä‘á»“ Ã¡n táº­p trung giáº£i quyáº¿t cÃ¡c bÃ i toÃ¡n chÃ­nh sau:
+Hiá»ƒn thá»‹ cÃ¡c Ä‘iá»ƒm Äƒn uá»‘ng trÃªn báº£n Ä‘á»“ sá»‘ dÆ°á»›i dáº¡ng POI, há»— trá»£ xem nhanh vá»‹ trÃ­, thÃ´ng tin mÃ´ táº£ vÃ  má»©c Ä‘á»™ ná»•i báº­t cá»§a Ä‘iá»ƒm Ä‘áº¿n.
+QuÃ©t mÃ£ QR Ä‘á»ƒ má»Ÿ trá»±c tiáº¿p Ä‘Ãºng POI tÆ°Æ¡ng á»©ng, rÃºt ngáº¯n thao tÃ¡c tÃ¬m kiáº¿m cá»§a ngÆ°á»i dÃ¹ng.
+Há»— trá»£ lá»±a chá»n ngÃ´n ngá»¯ sá»­ dá»¥ng; ná»™i dung Ä‘Æ°á»£c tá»• chá»©c theo tá»«ng ngÃ´n ngá»¯ vÃ  cÃ³ cÆ¡ cháº¿ phÃ¢n quyá»n giá»¯a nhÃ³m ngÃ´n ngá»¯ miá»…n phÃ­ vÃ  nhÃ³m ngÃ´n ngá»¯ má»Ÿ rá»™ng.
+Cung cáº¥p tráº£i nghiá»‡m nghe thuyáº¿t minh thÃ´ng qua audio guide Ä‘Ã£ táº£i lÃªn sáºµn hoáº·c sinh giá»ng nÃ³i TTS khi chÆ°a cÃ³ tá»‡p Ã¢m thanh phÃ¹ há»£p.
+Há»— trá»£ xem tuyáº¿n/tour tham quan, lÆ°u POI vÃ o hÃ nh trÃ¬nh cÃ¡ nhÃ¢n vÃ  theo dÃµi tráº£i nghiá»‡m khÃ¡m phÃ¡ áº©m thá»±c.
+Cho phÃ©p quáº£n trá»‹ dá»¯ liá»‡u tá»« trang admin nhÆ° POI, báº£n dá»‹ch, audio guide, media, mÃ³n Äƒn, tour, khuyáº¿n mÃ£i, Ä‘Ã¡nh giÃ¡, ngÆ°á»i dÃ¹ng vÃ  cáº¥u hÃ¬nh há»‡ thá»‘ng.
+Ghi nháº­n má»™t sá»‘ dá»¯ liá»‡u tÆ°Æ¡ng tÃ¡c nhÆ° lÆ°á»£t xem, lÆ°á»£t nghe audio vÃ  nháº­t kÃ½ quáº£n trá»‹ Ä‘á»ƒ phá»¥c vá»¥ theo dÃµi váº­n hÃ nh.
+Vá» Ä‘á»‘i tÆ°á»£ng sá»­ dá»¥ng, há»‡ thá»‘ng hiá»‡n phÃ¢n thÃ nh ba nhÃ³m chÃ­nh:Â SUPER_ADMINÂ quáº£n trá»‹ toÃ n bá»™ há»‡ thá»‘ng,Â PLACE_OWNERÂ quáº£n lÃ½ dá»¯ liá»‡u thuá»™c Ä‘iá»ƒm Ä‘áº¿n Ä‘Æ°á»£c phÃ¢n cÃ´ng, vÃ  ngÆ°á»i dÃ¹ng cuá»‘i sá»­ dá»¥ng mobile app Ä‘á»ƒ tra cá»©u thÃ´ng tin, nghe thuyáº¿t minh, quÃ©t QR vÃ  tráº£i nghiá»‡m hÃ nh trÃ¬nh khÃ¡m phÃ¡ áº©m thá»±c. NhÃ¬n tá»•ng thá»ƒ, VÄ©nh KhÃ¡nh Food khÃ´ng chá»‰ lÃ  má»™t á»©ng dá»¥ng giá»›i thiá»‡u Ä‘á»‹a Ä‘iá»ƒm Äƒn uá»‘ng, mÃ  cÃ²n lÃ  má»™t ná»n táº£ng quáº£n trá»‹ ná»™i dung sá»‘ cho khÃ´ng gian áº©m thá»±c Ä‘á»‹a phÆ°Æ¡ng theo hÆ°á»›ng Ä‘a ngÃ´n ngá»¯, trá»±c quan vÃ  cÃ³ kháº£ nÄƒng má»Ÿ rá»™ng.
+II. Má»¥c tiÃªu Ä‘á»“ Ã¡n
+Äá»“ Ã¡n VÄ©nh KhÃ¡nh Food Ä‘Æ°á»£c xÃ¢y dá»±ng vá»›i má»¥c tiÃªu phÃ¡t triá»ƒn má»™t há»‡ thá»‘ng sá»‘ há»— trá»£ quáº£ng bÃ¡, tra cá»©u vÃ  quáº£n lÃ½ cÃ¡c Ä‘iá»ƒm Äƒn uá»‘ng táº¡i khu vá»±c VÄ©nh KhÃ¡nh theo mÃ´ hÃ¬nh POI. Há»‡ thá»‘ng khÃ´ng chá»‰ hÆ°á»›ng Ä‘áº¿n viá»‡c nÃ¢ng cao tráº£i nghiá»‡m ngÆ°á»i dÃ¹ng cuá»‘i trÃªn thiáº¿t bá»‹ di Ä‘á»™ng mÃ  cÃ²n há»— trá»£ quáº£n trá»‹ táº­p trung dá»¯ liá»‡u ná»™i dung, báº£o Ä‘áº£m tÃ­nh Ä‘á»“ng bá»™ giá»¯a cÃ¡c ná»n táº£ng vÃ  táº¡o tiá»n Ä‘á» cho viá»‡c má»Ÿ rá»™ng cÃ¡c dá»‹ch vá»¥ du lá»‹ch áº©m thá»±c thÃ´ng minh.
+XÃ¢y dá»±ng cÃ´ng cá»¥ há»— trá»£ ngÆ°á»i dÃ¹ng khÃ¡m phÃ¡ cÃ¡c Ä‘iá»ƒm Äƒn uá»‘ng ná»•i báº­t táº¡i khu vá»±c VÄ©nh KhÃ¡nh thÃ´ng qua giao diá»‡n báº£n Ä‘á»“ sá»‘ káº¿t há»£p danh sÃ¡ch POI, giÃºp ngÆ°á»i dÃ¹ng dá»… dÃ ng tra cá»©u vá»‹ trÃ­, thÃ´ng tin mÃ´ táº£ vÃ  lá»±a chá»n Ä‘iá»ƒm Ä‘áº¿n phÃ¹ há»£p.
+Há»— trá»£ trÃ¬nh bÃ y ná»™i dung theo nhiá»u ngÃ´n ngá»¯, bao gá»“m mÃ´ táº£ POI, ná»™i dung thuyáº¿t minh vÃ  tráº£i nghiá»‡m nghe audio, qua Ä‘Ã³ phá»¥c vá»¥ Ä‘a dáº¡ng nhÃ³m ngÆ°á»i dÃ¹ng vÃ  nÃ¢ng cao kháº£ nÄƒng tiáº¿p cáº­n thÃ´ng tin.
+TÃ­ch há»£p chá»©c nÄƒng quÃ©t mÃ£ QR Ä‘á»ƒ ngÆ°á»i dÃ¹ng cÃ³ thá»ƒ má»Ÿ nhanh Ä‘Ãºng POI tÆ°Æ¡ng á»©ng, rÃºt ngáº¯n thao tÃ¡c tÃ¬m kiáº¿m vÃ  tÄƒng tÃ­nh thuáº­n tiá»‡n trong quÃ¡ trÃ¬nh tráº£i nghiá»‡m thá»±c táº¿ táº¡i Ä‘á»‹a Ä‘iá»ƒm.
+XÃ¢y dá»±ng há»‡ thá»‘ng quáº£n trá»‹ cho phÃ©p quáº£n trá»‹ viÃªn vÃ  chá»§ Ä‘iá»ƒm Ä‘áº¿n cáº­p nháº­t dá»¯ liá»‡u quan trá»ng nhÆ° POI, tuyáº¿n tham quan, media, báº£n dá»‹ch, audio guide, khuyáº¿n mÃ£i, Ä‘Ã¡nh giÃ¡ vÃ  cÃ¡c cáº¥u hÃ¬nh váº­n hÃ nh liÃªn quan.
+Thiáº¿t káº¿ cÆ¡ cháº¿ Ä‘á»“ng bá»™ dá»¯ liá»‡u táº­p trung tá»« backend Ä‘áº¿n Admin Web vÃ  Mobile App thÃ´ng qua mÃ´ hÃ¬nh bootstrap, nháº±m báº£o Ä‘áº£m tÃ­nh nháº¥t quÃ¡n dá»¯ liá»‡u, giáº£m Ä‘á»™ trá»… cáº­p nháº­t vÃ  há»— trá»£ khai thÃ¡c ná»™i dung dÃ¹ng chung giá»¯a cÃ¡c thÃ nh pháº§n há»‡ thá»‘ng.
+Ghi nháº­n vÃ  theo dÃµi cÃ¡c tÆ°Æ¡ng tÃ¡c cÆ¡ báº£n cá»§a ngÆ°á»i dÃ¹ng nhÆ° lÆ°á»£t xem POI vÃ  lÆ°á»£t nghe audio thÃ´ng qua cÃ¡c táº­p dá»¯ liá»‡uÂ ViewLogsÂ vÃ Â AudioListenLogs, tá»« Ä‘Ã³ phá»¥c vá»¥ thá»‘ng kÃª váº­n hÃ nh vÃ  xÃ¢y dá»±ng heatmap hiá»ƒn thá»‹ má»©c Ä‘á»™ quan tÃ¢m trÃªn á»©ng dá»¥ng mobile.
+III. Äá»‘i tÆ°á»£ng sá»­ dá»¥ng
+1. Quáº£n trá»‹ viÃªn há»‡ thá»‘ng (Admin / SUPER_ADMIN)
+Quáº£n trá»‹ viÃªn há»‡ thá»‘ngÄ‘á»‘i tÆ°á»£ng cÃ³ quyá»n cao nháº¥t trong há»‡ thá»‘ng VÄ©nh KhÃ¡nh Food, chá»‹u trÃ¡ch nhiá»‡m tá»• chá»©c, váº­n hÃ nh vÃ  kiá»ƒm soÃ¡t toÃ n bá»™ dá»¯ liá»‡u cÅ©ng nhÆ° cÃ¡c chá»©c nÄƒng quáº£n trá»‹. Vai trÃ² nÃ y báº£o Ä‘áº£m há»‡ thá»‘ng hoáº¡t Ä‘á»™ng á»•n Ä‘á»‹nh, ná»™i dung Ä‘Æ°á»£c cáº­p nháº­t nháº¥t quÃ¡n, dá»¯ liá»‡u Ä‘Æ°á»£c quáº£n lÃ½ táº­p trung vÃ  cÃ¡c hoáº¡t Ä‘á»™ng trÃªn ná»n táº£ng diá»…n ra Ä‘Ãºng pháº¡m vi phÃ¢n quyá»n. Äá»“ng thá»i, quáº£n trá»‹ viÃªn cÅ©ng lÃ  chá»§ thá»ƒ theo dÃµi tÃ¬nh tráº¡ng váº­n hÃ nh chung, giÃ¡m sÃ¡t cháº¥t lÆ°á»£ng ná»™i dung vÃ  há»— trá»£ duy trÃ¬ tÃ­nh chÃ­nh xÃ¡c cá»§a thÃ´ng tin hiá»ƒn thá»‹ trÃªn cáº£ trang quáº£n trá»‹ vÃ  á»©ng dá»¥ng mobile.
+2. Chá»§ Ä‘iá»ƒm Ä‘áº¿n (Vendor / PLACE_OWNER)
+Chá»§ Ä‘iá»ƒm Ä‘áº¿n lÃ  Ä‘á»‘i tÆ°á»£ng Ä‘áº¡i diá»‡n cho nhÃ  hÃ ng, quÃ¡n Äƒn hoáº·c Ä‘Æ¡n vá»‹ trá»±c tiáº¿p sá»Ÿ há»¯u vÃ  váº­n hÃ nh cÃ¡c Ä‘iá»ƒm quan tÃ¢m (POI) trÃªn há»‡ thá»‘ng VÄ©nh KhÃ¡nh Food. Vai trÃ² nÃ y Ä‘Æ°á»£c xÃ¢y dá»±ng nháº±m táº¡o Ä‘iá»u kiá»‡n cho cÃ¡c Ä‘Æ¡n vá»‹ chá»§ Ä‘á»™ng cáº­p nháº­t, quáº£n lÃ½ vÃ  duy trÃ¬ thÃ´ng tin liÃªn quan Ä‘áº¿n Ä‘á»‹a Ä‘iá»ƒm cá»§a mÃ¬nh trÃªn ná»n táº£ng sá»‘. ThÃ´ng qua cÆ¡ cháº¿ phÃ¢n quyá»n, chá»§ Ä‘iá»ƒm Ä‘áº¿n cÃ³ thá»ƒ thao tÃ¡c trÃªn cÃ¡c dá»¯ liá»‡u thuá»™c pháº¡m vi quáº£n lÃ½ Ä‘Æ°á»£c gÃ¡n, tá»« Ä‘Ã³ gÃ³p pháº§n báº£o Ä‘áº£m ná»™i dung luÃ´n chÃ­nh xÃ¡c, ká»‹p thá»i vÃ  phÃ¹ há»£p vá»›i tÃ¬nh hÃ¬nh váº­n hÃ nh thá»±c táº¿.
+KhÃ¡c vá»›i quáº£n trá»‹ viÃªn há»‡ thá»‘ng, chá»§ Ä‘iá»ƒm Ä‘áº¿n khÃ´ng cÃ³ quyá»n quáº£n lÃ½ toÃ n bá»™ ná»n táº£ng mÃ  chá»‰ Ä‘Æ°á»£c phÃ©p truy cáº­p vÃ  xá»­ lÃ½ cÃ¡c dá»¯ liá»‡u liÃªn quan Ä‘áº¿n POI mÃ  mÃ¬nh phá»¥ trÃ¡ch. CÃ¡ch tá»• chá»©c nÃ y giÃºp tÄƒng tÃ­nh linh hoáº¡t trong cáº­p nháº­t ná»™i dung, Ä‘á»“ng thá»i váº«n báº£o Ä‘áº£m sá»± kiá»ƒm soÃ¡t táº­p trung cá»§a há»‡ thá»‘ng.
+3. NgÆ°á»i dÃ¹ng cuá»‘i (User / Customer User)
+NgÆ°á»i dÃ¹ng cuá»‘i lÃ  Ä‘á»‘i tÆ°á»£ng trá»±c tiáº¿p sá»­ dá»¥ng há»‡ thá»‘ng VÄ©nh KhÃ¡nh Food Ä‘á»ƒ tra cá»©u, khÃ¡m phÃ¡ vÃ  tráº£i nghiá»‡m cÃ¡c Ä‘iá»ƒm Äƒn uá»‘ng táº¡i khu vá»±c VÄ©nh KhÃ¡nh. Vai trÃ² nÃ y Ä‘Æ°á»£c thiáº¿t káº¿ theo hÆ°á»›ng thÃ¢n thiá»‡n, trá»±c quan vÃ  dá»… sá»­ dá»¥ng, táº­p trung vÃ o viá»‡c há»— trá»£ ngÆ°á»i dÃ¹ng tiáº¿p cáº­n nhanh thÃ´ng tin vá» Ä‘á»‹a Ä‘iá»ƒm, ná»™i dung thuyáº¿t minh vÃ  cÃ¡c tuyáº¿n tham quan trÃªn thiáº¿t bá»‹ di Ä‘á»™ng. ThÃ´ng qua á»©ng dá»¥ng mobile, ngÆ°á»i dÃ¹ng cÃ³ thá»ƒ tÆ°Æ¡ng tÃ¡c vá»›i há»‡ thá»‘ng trong suá»‘t quÃ¡ trÃ¬nh tÃ¬m hiá»ƒu vÃ  tráº£i nghiá»‡m thá»±c táº¿ táº¡i Ä‘iá»ƒm Ä‘áº¿n.
+BÃªn cáº¡nh chá»©c nÄƒng xem thÃ´ng tin, ngÆ°á»i dÃ¹ng cuá»‘i cÃ²n lÃ  nguá»“n phÃ¡t sinh dá»¯ liá»‡u tÆ°Æ¡ng tÃ¡c quan trá»ng cho há»‡ thá»‘ng, nhÆ° lÆ°á»£t xem ná»™i dung vÃ  lÆ°á»£t nghe audio. Nhá»¯ng dá»¯ liá»‡u nÃ y Ä‘Æ°á»£c sá»­ dá»¥ng Ä‘á»ƒ phá»¥c vá»¥ thá»‘ng kÃª, Ä‘Ã¡nh giÃ¡ má»©c Ä‘á»™ quan tÃ¢m vÃ  há»— trá»£ trá»±c quan hÃ³a tráº£i nghiá»‡m thÃ´ng qua heatmap trÃªn báº£n Ä‘á»“.
+IV. Pháº¡m vi dá»± Ã¡n
+Pháº¡m vi thá»±c hiá»‡n cá»§a Ä‘á»“ Ã¡n VÄ©nh KhÃ¡nh Food táº­p trung vÃ o viá»‡c xÃ¢y dá»±ng há»‡ thá»‘ng quáº£n trá»‹ ná»™i dung vÃ  á»©ng dá»¥ng di Ä‘á»™ng há»— trá»£ tráº£i nghiá»‡m khÃ¡m phÃ¡ áº©m thá»±c theo mÃ´ hÃ¬nh POI táº¡i khu vá»±c VÄ©nh KhÃ¡nh. Dá»±a trÃªn mÃ£ nguá»“n hiá»‡n táº¡i vÃ  hÆ°á»›ng triá»ƒn khai cá»§a Ä‘á»“ Ã¡n, pháº¡m vi thá»±c hiá»‡n cÃ³ thá»ƒ trÃ¬nh bÃ y láº¡i nhÆ° sau:
+1. Khá»‘i Admin Web vÃ  Backend API
+XÃ¢y dá»±ng chá»©c nÄƒng xÃ¡c thá»±c cho trang quáº£n trá»‹, bao gá»“m Ä‘Äƒng nháº­p, lÃ m má»›i phiÃªn lÃ m viá»‡c vÃ  Ä‘Äƒng xuáº¥t tÃ i khoáº£n quáº£n trá»‹.
+XÃ¢y dá»±ng cÆ¡ cháº¿ bootstrap dá»¯ liá»‡u tá»•ng thá»ƒ Ä‘á»ƒ Ä‘á»“ng bá»™ dá»¯ liá»‡u tá»« backend Ä‘áº¿n Admin Web vÃ  Mobile App.
+Triá»ƒn khai chá»©c nÄƒng quáº£n lÃ½ POI, bao gá»“m táº¡o má»›i, cáº­p nháº­t, xÃ³a vÃ  kiá»ƒm soÃ¡t tráº¡ng thÃ¡i hiá»ƒn thá»‹ cá»§a Ä‘iá»ƒm Ä‘áº¿n.
+Triá»ƒn khai chá»©c nÄƒng quáº£n lÃ½ translation nháº±m há»— trá»£ ná»™i dung Ä‘a ngÃ´n ngá»¯ cho POI vÃ  cÃ¡c dá»¯ liá»‡u liÃªn quan.
+Triá»ƒn khai chá»©c nÄƒng quáº£n lÃ½ audio guide, bao gá»“m cáº¥u hÃ¬nh nguá»“n audio vÃ  tráº¡ng thÃ¡i sáºµn sÃ ng phÃ¡t thuyáº¿t minh.
+Triá»ƒn khai chá»©c nÄƒng quáº£n lÃ½ media asset phá»¥c vá»¥ hÃ¬nh áº£nh vÃ  tÃ i nguyÃªn truyá»n thÃ´ng cá»§a Ä‘iá»ƒm Ä‘áº¿n.
+Triá»ƒn khai chá»©c nÄƒng quáº£n lÃ½ food item gáº¯n vá»›i tá»«ng POI Ä‘á»ƒ má»Ÿ rá»™ng ná»™i dung giá»›i thiá»‡u áº©m thá»±c.
+Triá»ƒn khai chá»©c nÄƒng quáº£n lÃ½ tour/tuyáº¿n tham quan, bao gá»“m thÃ´ng tin tuyáº¿n vÃ  danh sÃ¡ch Ä‘iá»ƒm dá»«ng.
+Triá»ƒn khai chá»©c nÄƒng quáº£n lÃ½ promotion phá»¥c vá»¥ cÃ¡c chÆ°Æ¡ng trÃ¬nh Æ°u Ä‘Ã£i vÃ  quáº£ng bÃ¡ Ä‘iá»ƒm Ä‘áº¿n.
+Triá»ƒn khai chá»©c nÄƒng quáº£n lÃ½ review; trong Ä‘Ã³ há»‡ thá»‘ng há»— trá»£ theo dÃµi Ä‘Ã¡nh giÃ¡ vÃ  kiá»ƒm duyá»‡t Ä‘Ã¡nh giÃ¡ theo pháº¡m vi phÃ¢n quyá»n.
+Triá»ƒn khai chá»©c nÄƒng quáº£n lÃ½ settings nháº±m cáº¥u hÃ¬nh cÃ¡c tham sá»‘ váº­n hÃ nh chung cá»§a há»‡ thá»‘ng.
+Hiá»ƒn thá»‹ dashboard tá»•ng quan Ä‘á»ƒ há»— trá»£ theo dÃµi dá»¯ liá»‡u váº­n hÃ nh vÃ  má»©c Ä‘á»™ tÆ°Æ¡ng tÃ¡c trÃªn há»‡ thá»‘ng.
+XÃ¢y dá»±ng chá»©c nÄƒng xem activity log nháº±m phá»¥c vá»¥ kiá»ƒm tra lá»‹ch sá»­ thao tÃ¡c quáº£n trá»‹.
+Há»— trá»£ geocoding Ä‘á»‹a chá»‰ Ä‘á»ƒ chuáº©n hÃ³a thÃ´ng tin vá»‹ trÃ­ vÃ  há»— trá»£ nháº­p liá»‡u POI trÃªn báº£n Ä‘á»“.
+Há»— trá»£ upload file vÃ  lÆ°u trá»¯ tÃ i nguyÃªn cá»¥c bá»™ trong thÆ° má»¥cÂ wwwroot/storage.
+2. Khá»‘i Mobile App
+Hiá»ƒn thá»‹ báº£n Ä‘á»“ sá»‘ vá»›i danh sÃ¡ch POI vÃ  heatmap nháº±m trá»±c quan hÃ³a má»©c Ä‘á»™ quan tÃ¢m cá»§a ngÆ°á»i dÃ¹ng Ä‘á»‘i vá»›i cÃ¡c Ä‘iá»ƒm Ä‘áº¿n.
+Há»— trá»£ quÃ©t mÃ£ QR Ä‘á»ƒ má»Ÿ nhanh Ä‘Ãºng POI tÆ°Æ¡ng á»©ng trÃªn á»©ng dá»¥ng.
+Há»— trá»£ mobile narration, bao gá»“m phÃ¡t audio guide cÃ³ sáºµn vÃ  cÆ¡ cháº¿ thuyáº¿t minh báº±ng TTS khi phÃ¹ há»£p.
+Há»— trá»£ cáº­p nháº­t thÃ´ng tin há»“ sÆ¡ cÃ¡ nhÃ¢n cá»§a ngÆ°á»i dÃ¹ng trÃªn á»©ng dá»¥ng.
+Há»— trá»£ chá»©c nÄƒngÂ My TourÂ Ä‘á»ƒ ngÆ°á»i dÃ¹ng theo dÃµi hÃ nh trÃ¬nh khÃ¡m phÃ¡ vÃ  cÃ¡c Ä‘iá»ƒm Ä‘Ã£ lÆ°u.
+Há»— trá»£ lÆ°u POI cá»¥c bá»™ trÃªn thiáº¿t bá»‹ Ä‘á»ƒ phá»¥c vá»¥ tráº£i nghiá»‡m cÃ¡ nhÃ¢n hÃ³a vÃ  truy cáº­p nhanh.
+V. Danh sÃ¡ch tÃ­nh nÄƒng
+Há»‡ thá»‘ng Ä‘Æ°á»£c xÃ¢y dá»±ng vá»›i cÃ¡c tÃ­nh nÄƒng cá»‘t lÃµi nháº±m Ä‘Ã¡p á»©ng nhu cáº§u sá»­ dá»¥ng cá»§a ba nhÃ³m Ä‘á»‘i tÆ°á»£ng chÃ­nh: ADMIN, VENDOR vÃ  USER. CÃ¡c tÃ­nh nÄƒng Ä‘Æ°á»£c thiáº¿t káº¿ theo hÆ°á»›ng phÃ¢n quyá»n rÃµ rÃ ng, Ä‘áº£m báº£o tÃ­nh báº£o máº­t, dá»… sá»­ dá»¥ng vÃ  kháº£ nÄƒng má»Ÿ rá»™ng trong tÆ°Æ¡ng lai.
+1. NhÃ³m tÃ­nh nÄƒng quáº£n lÃ½ tÃ i khoáº£n vÃ  phÃ¢n quyá»n
+2. NhÃ³m tÃ­nh nÄƒng quáº£n lÃ½ POI vÃ  tour
+3. NhÃ³m tÃ­nh nÄƒng ná»™i dung Ä‘a ngÃ´n ngá»¯
+4. NhÃ³m tÃ­nh nÄƒng tráº£i nghiá»‡m ngÆ°á»i dÃ¹ng trÃªn mobile
+5. NhÃ³m tÃ­nh nÄƒng há»‡ thá»‘ng há»— trá»£
+VI. YÃªu cáº§u chá»©c nÄƒng
+1. YÃªu cáº§u chá»©c nÄƒng vá» quáº£n lÃ½ tÃ i khoáº£n
+Há»‡ thá»‘ng pháº£i cho phÃ©pÂ SUPER_ADMINÂ vÃ Â PLACE_OWNERÂ Ä‘Äƒng nháº­p quáº£n trá»‹ thÃ´ng quaÂ POST /api/v1/auth/login.
+Há»‡ thá»‘ng pháº£i há»— trá»£ lÃ m má»›i phiÃªn Ä‘Äƒng nháº­p quáº£n trá»‹ thÃ´ng quaÂ POST /api/v1/auth/refresh.
+Há»‡ thá»‘ng pháº£i há»— trá»£ Ä‘Äƒng xuáº¥t quáº£n trá»‹ thÃ´ng quaÂ POST /api/v1/auth/logout.
+Há»‡ thá»‘ng pháº£i lÆ°uÂ access tokenÂ vÃ Â refresh tokenÂ cá»§a phiÃªn quáº£n trá»‹ trong báº£ngÂ RefreshSessionsÂ Ä‘á»ƒ phá»¥c vá»¥ xÃ¡c thá»±c vÃ  lÃ m má»›i phiÃªn.
+Há»‡ thá»‘ng pháº£i cho phÃ©p quáº£n lÃ½ tÃ i khoáº£n quáº£n trá»‹ quaÂ GET/POST/PUT /api/v1/admin-users.
+Há»‡ thá»‘ng pháº£i cho phÃ©pÂ SUPER_ADMINÂ xem danh sÃ¡ch vÃ  chi tiáº¿t ngÆ°á»i dÃ¹ng cuá»‘i quaÂ GET /api/v1/usersÂ vÃ Â GET /api/v1/users/{id}.
+Há»‡ thá»‘ng pháº£i cho phÃ©p ngÆ°á»i dÃ¹ng mobile Ä‘Äƒng kÃ½ tÃ i khoáº£n quaÂ POST /api/v1/customer-users, Ä‘Äƒng nháº­p quaÂ POST /api/v1/customer-users/loginÂ vÃ  cáº­p nháº­t há»“ sÆ¡ quaÂ PUT /api/v1/customer-users/{id}/profile.
+Há»‡ thá»‘ng pháº£i há»— trá»£ nÃ¢ng cáº¥p gÃ³i ngÃ´n ngá»¯ premium cho khÃ¡ch hÃ ng quaÂ POST /api/v1/customer-users/{id}/premium/purchase.
+2. YÃªu cáº§u chá»©c nÄƒng vá» quáº£n lÃ½ POI
+Há»‡ thá»‘ng pháº£i cho phÃ©p láº¥y danh sÃ¡ch POI quaÂ GET /api/v1/pois, há»— trá»£ lá»c theoÂ status,Â categoryId,Â featuredÂ vÃ Â search.
+Há»‡ thá»‘ng pháº£i cho phÃ©p láº¥y chi tiáº¿t POI quaÂ GET /api/v1/pois/{id}Â vÃ Â GET /api/v1/pois/{id}/detail.
+Há»‡ thá»‘ng pháº£i cho phÃ©p táº¡o, cáº­p nháº­t vÃ  xÃ³a POI quaÂ POST /api/v1/pois,Â PUT /api/v1/pois/{id}Â vÃ Â DELETE /api/v1/pois/{id}.
+Má»—i POI pháº£i há»— trá»£ cÃ¡c thuá»™c tÃ­nh nghiá»‡p vá»¥ nhÆ°Â CategoryId,Â OwnerUserId,Â Tags,Â PriceRange,Â AverageVisitDuration,Â PopularityScore,Â District,Â Ward,Â StatusÂ vÃ Â Featured.
+Náº¿u ngÆ°á»i thao tÃ¡c lÃ Â PLACE_OWNER, backend pháº£i giá»›i háº¡n pháº¡m vi POI Ä‘Æ°á»£c phÃ©p cáº­p nháº­t vÃ  tá»± chuáº©n hÃ³a tráº¡ng thÃ¡i POI vá»Â pending.
+Náº¿u POI Ä‘Æ°á»£c Ä‘á»•i mÃ£ Ä‘á»‹nh danh thÃ´ng quaÂ requestedId, backend pháº£i cáº­p nháº­t láº¡i cÃ¡c tham chiáº¿u liÃªn quan nhÆ°Â CustomerFavoritePois,Â PoiTags,Â FoodItems,Â RouteStops,Â Promotions,Â Reviews,Â ViewLogs,Â AudioListenLogs,Â AdminUsers.ManagedPoiId,Â PoiTranslations,Â AudioGuidesÂ vÃ Â MediaAssets.
+3. YÃªu cáº§u chá»©c nÄƒng vá» tour vÃ  tráº£i nghiá»‡m POI
+Há»‡ thá»‘ng pháº£i cho phÃ©p quáº£n lÃ½ tour quaÂ GET/POST/PUT/DELETE /api/v1/tours.
+Má»—i tour pháº£i cÃ³ danh sÃ¡chÂ StopPoiIdsÂ Ä‘á»ƒ xÃ¡c Ä‘á»‹nh cÃ¡c Ä‘iá»ƒm dá»«ng trong tuyáº¿n tham quan.
+Náº¿u ngÆ°á»i thao tÃ¡c lÃ Â PLACE_OWNER, backend chá»‰ cho phÃ©p quáº£n lÃ½ cÃ¡c tour thuá»™c pháº¡m vi POI Ä‘Æ°á»£c phÃ¢n cÃ´ng vÃ  khÃ´ng Ä‘Æ°á»£c chá»‰nh sá»­aÂ system route.
+Mobile app pháº£i hiá»ƒn thá»‹ POI trÃªn báº£n Ä‘á»“, cho phÃ©p chá»n marker Ä‘á»ƒ má»Ÿ thÃ´ng tin chi tiáº¿t á»ŸÂ bottom sheet.
+Mobile app pháº£i há»— trá»£ má»Ÿ á»©ng dá»¥ng báº£n Ä‘á»“ Ä‘á»ƒ chá»‰ Ä‘Æ°á»ng báº±ngÂ Map.Default.OpenAsync(...).
+Mobile app pháº£i xÃ¢y dá»±ngÂ TourPlanÂ tá»« dá»¯ liá»‡u route Ä‘Ã£ Ä‘Æ°á»£c backend tá»•ng há»£p trong bootstrap.
+Mobile app pháº£i cho phÃ©p lÆ°u POI cá»¥c bá»™ trÃªn thiáº¿t bá»‹ thÃ´ng quaÂ PoiTourStoreServiceÂ vÃ  hiá»ƒn thá»‹ láº¡i trongÂ My Tour.
+Mobile app pháº£i há»— trá»£ quÃ©t QR, chuyá»ƒn qua bÆ°á»›c chá»n ngÃ´n ngá»¯ vÃ  má»Ÿ Ä‘Ãºng POI tÆ°Æ¡ng á»©ng.
+4. YÃªu cáº§u chá»©c nÄƒng vá» thuyáº¿t minh Ä‘a ngÃ´n ngá»¯
+Há»‡ thá»‘ng pháº£i cho phÃ©p lÆ°u báº£n dá»‹ch ná»™i dung trong báº£ngÂ PoiTranslationsÂ vÃ  quáº£n lÃ½ chÃºng quaÂ TranslationsController.
+Há»‡ thá»‘ng pháº£i cho phÃ©p lÆ°uÂ audio guideÂ trong báº£ngÂ AudioGuidesÂ vÃ  quáº£n lÃ½ chÃºng quaÂ AudioGuidesController.
+APIÂ GET /api/v1/pois/{id}/narrationÂ pháº£i tráº£ vá» Ä‘áº§y Ä‘á»§ cÃ¡c thÃ´ng tin nhÆ° ngÃ´n ngá»¯ yÃªu cáº§u, ngÃ´n ngá»¯ hiá»‡u lá»±c, ná»™i dung hiá»ƒn thá»‹, ná»™i dung dÃ¹ng cho TTS,Â audio guideÂ náº¿u cÃ³, tráº¡ng thÃ¡i dá»‹ch vÃ  thÃ´ng tin fallback.
+Khi khÃ´ng cÃ³ translation Ä‘Ãºng ngÃ´n ngá»¯ yÃªu cáº§u, backend pháº£i thá»­ láº¥y translation nguá»“n phÃ¹ há»£p theo ngÃ´n ngá»¯ máº·c Ä‘á»‹nh hoáº·c ngÃ´n ngá»¯ dá»± phÃ²ng.
+Khi cáº§n, backend pháº£i gá»iÂ TranslationProxyServiceÂ Ä‘á»ƒ dá»‹ch tá»± Ä‘á»™ng ná»™i dung narration.
+Khi khÃ´ng cÃ³Â audio guideÂ uploaded vÃ  sáºµn sÃ ng phÃ¡t, mobile app pháº£i fallback sang endpointÂ GET /api/v1/tts, cÃ²n backend pháº£i sinh audio thÃ´ng quaÂ ElevenLabsTextToSpeechService.
+Há»‡ thá»‘ng pháº£i kiá»ƒm soÃ¡t quyá»n truy cáº­p ngÃ´n ngá»¯ theo nhÃ³m miá»…n phÃ­ vÃ  premium thÃ´ng qua cÆ¡ cháº¿ Ä‘Ã¡nh giÃ¡ quyá»n ngÃ´n ngá»¯ cá»§a khÃ¡ch hÃ ng.
+5. YÃªu cáº§u chá»©c nÄƒng vá» ná»™i dung vÃ  media
+Há»‡ thá»‘ng pháº£i cho phÃ©p CRUDÂ translationÂ quaÂ GET/POST/PUT/DELETE /api/v1/translations.
+Há»‡ thá»‘ng pháº£i cho phÃ©p CRUDÂ audio guideÂ quaÂ GET/POST/PUT/DELETE /api/v1/audio-guides.
+Há»‡ thá»‘ng pháº£i cho phÃ©p CRUDÂ media assetÂ quaÂ GET/POST/PUT/DELETE /api/v1/media-assets.
+Há»‡ thá»‘ng pháº£i cho phÃ©p CRUDÂ food itemÂ quaÂ GET/POST/PUT/DELETE /api/v1/food-items.
+Há»‡ thá»‘ng pháº£i cho phÃ©p CRUDÂ promotionÂ quaÂ GET/POST/PUT/DELETE /api/v1/promotions.
+Há»‡ thá»‘ng pháº£i cho phÃ©p gá»­i vÃ  kiá»ƒm duyá»‡tÂ reviewÂ quaÂ POST /api/v1/reviews,Â GET /api/v1/reviewsÂ vÃ Â PATCH /api/v1/reviews/{id}/status.
+Há»‡ thá»‘ng pháº£i cho phÃ©p upload file quaÂ POST /api/v1/storage/uploadÂ vÃ  lÆ°u file trongÂ wwwroot/storage.
+Há»‡ thá»‘ng pháº£i há»— trá»£ geocoding Ä‘á»‹a chá»‰ quaÂ GET /api/v1/geocoding/searchÂ vÃ Â GET /api/v1/geocoding/reverse.
+VII. Luá»“ng ngÆ°á»i dÃ¹ng tá»•ng quÃ¡t
+1. SÆ¡ Ä‘á»“ USE CASE
+2. SÆ¡ Ä‘á»“ ACTIVITY DIAGRAM
+Activity Diagram cho luá»“ng táº¡o hoáº·c cáº­p nháº­t POI
+Luá»“ng táº¡o hoáº·c cáº­p nháº­t POI báº¯t Ä‘áº§u khi ngÆ°á»i dÃ¹ng má»Ÿ form quáº£n lÃ½ POI vÃ  nháº­p hoáº·c chá»‰nh sá»­a cÃ¡c thÃ´ng tin cá»§a Ä‘á»‹a Ä‘iá»ƒm. Sau Ä‘Ã³, há»‡ thá»‘ng kiá»ƒm tra tÃ­nh há»£p lá»‡ cá»§a dá»¯ liá»‡u Ä‘áº§u vÃ o. Náº¿u thÃ´ng tin chÆ°a há»£p lá»‡ thÃ¬ há»‡ thá»‘ng bÃ¡o lá»—i vÃ  yÃªu cáº§u ngÆ°á»i dÃ¹ng nháº­p láº¡i. Khi dá»¯ liá»‡u há»£p lá»‡, luá»“ng Ä‘Æ°á»£c tÃ¡ch thÃ nh hai trÆ°á»ng há»£p lÃ  táº¡o má»›i hoáº·c cáº­p nháº­t. Vá»›i trÆ°á»ng há»£p táº¡o má»›i, há»‡ thá»‘ng táº¡o báº£n ghi POI má»›i vÃ  Ä‘Æ°a POI vá» tráº¡ng thÃ¡i `pending` Ä‘á»ƒ chá» duyá»‡t. Vá»›i trÆ°á»ng há»£p cáº­p nháº­t, há»‡ thá»‘ng trÆ°á»›c háº¿t cáº­p nháº­t thÃ´ng tin cá»§a POI hiá»‡n cÃ³, sau Ä‘Ã³ kiá»ƒm tra ngÆ°á»i thao tÃ¡c cÃ³ pháº£i lÃ  `PLACE_OWNER` hay khÃ´ng. Náº¿u ngÆ°á»i thao tÃ¡c lÃ  chá»§ quÃ¡n thÃ¬ POI cÅ©ng Ä‘Æ°á»£c Ä‘Æ°a vá» tráº¡ng thÃ¡i `pending` Ä‘á»ƒ chá» duyá»‡t láº¡i. NgÆ°á»£c láº¡i, náº¿u ngÆ°á»i thao tÃ¡c lÃ  SUPER-ADMIN há»‡ thá»‘ng tiáº¿p tá»¥c lÆ°u cÃ¡c dá»¯ liá»‡u liÃªn quan nhÆ° tags, translation vÃ  audio guide. Sau khi hoÃ n táº¥t quÃ¡ trÃ¬nh xá»­ lÃ½, há»‡ thá»‘ng hiá»ƒn thá»‹ láº¡i POI trÃªn giao diá»‡n quáº£n lÃ½, tá»« Ä‘Ã³ káº¿t thÃºc luá»“ng hoáº¡t Ä‘á»™ng.
+Activity Diagram cho luá»“ng phÃª duyá»‡t vÃ  xuáº¥t báº£n POI
+Luá»“ng phÃª duyá»‡t vÃ  xuáº¥t báº£n POI báº¯t Ä‘áº§u khi super admin truy cáº­p trang quáº£n lÃ½ POI vÃ  má»Ÿ danh sÃ¡ch cÃ¡c POI Ä‘ang á»Ÿ tráº¡ng thÃ¡i chá» duyá»‡t. Sau Ä‘Ã³, super admin chá»n má»™t POI cáº§n xem xÃ©t. Táº¡i thá»i Ä‘iá»ƒm nÃ y, há»‡ thá»‘ng kiá»ƒm tra hai Ä‘iá»u kiá»‡n chÃ­nh: ngÆ°á»i thá»±c hiá»‡n thao tÃ¡c pháº£i lÃ Â SUPER_ADMINÂ vÃ  POI Ä‘Æ°á»£c chá»n pháº£i Ä‘ang á»Ÿ tráº¡ng thÃ¡iÂ pending. Náº¿u má»™t trong hai Ä‘iá»u kiá»‡n khÃ´ng thá»a mÃ£n thÃ¬ luá»“ng dá»«ng vÃ  POI khÃ´ng Ä‘Æ°á»£c duyá»‡t. NgÆ°á»£c láº¡i, khi super admin nháº¥n nÃºt â€œDuyá»‡t POIâ€, giao diá»‡n quáº£n trá»‹ sáº½ láº¥y dá»¯ liá»‡u hiá»‡n táº¡i cá»§a POI, táº¡o yÃªu cáº§u cáº­p nháº­t vá»›i tráº¡ng thÃ¡i má»›i lÃ Â published, rá»“i gá»­i dá»¯ liá»‡u nÃ y lÃªn backend Ä‘á»ƒ lÆ°u láº¡i.
+á»ž phÃ­a backend, há»‡ thá»‘ng kiá»ƒm tra POI cÃ²n tá»“n táº¡i hay khÃ´ng, sau Ä‘Ã³ cáº­p nháº­t báº£n ghi POI vá»›i tráº¡ng thÃ¡i má»›i lÃ Â published. Do Ä‘Ã¢y lÃ  trÆ°á»ng há»£p POI chuyá»ƒn tá»« tráº¡ng thÃ¡i chÆ°a xuáº¥t báº£n sang Ä‘Ã£ xuáº¥t báº£n, há»‡ thá»‘ng Ä‘á»“ng thá»i ghi nháº­n audit log vá»›i hÃ nh Ä‘á»™ng duyá»‡t POI. Sau khi cáº­p nháº­t thÃ nh cÃ´ng, giao diá»‡n quáº£n trá»‹ lÃ m má»›i láº¡i dá»¯ liá»‡u chi tiáº¿t vÃ  danh sÃ¡ch POI, nhá» Ä‘Ã³ POI vá»«a duyá»‡t sáº½ khÃ´ng cÃ²n náº±m trong nhÃ³m chá» duyá»‡t mÃ  chuyá»ƒn sang tráº¡ng thÃ¡i Ä‘Ã£ xuáº¥t báº£n. Káº¿t thÃºc luá»“ng, POI chÃ­nh thá»©c Ä‘Æ°á»£c xuáº¥t báº£n lÃªn há»‡ thá»‘ng vÃ  sáºµn sÃ ng cho cÃ¡c pháº§n khÃ¡c cá»§a á»©ng dá»¥ng sá»­ dá»¥ng
+Activity Diagram cho luá»“ng quÃ©t QR vÃ  má»Ÿ POI
+Luá»“ng hoáº¡t Ä‘á»™ng quÃ©t QR vÃ  má»Ÿ POI trong há»‡ thá»‘ng diá»…n ra nhÆ° sau: ngÆ°á»i dÃ¹ng trÆ°á»›c háº¿t má»Ÿ mÃ n hÃ¬nh quÃ©t QR, khi Ä‘Ã³ á»©ng dá»¥ng yÃªu cáº§u quyá»n truy cáº­p camera vÃ  Ä‘á»“ng thá»i cho phÃ©p nháº­p mÃ£ thá»§ cÃ´ng náº¿u khÃ´ng thá»ƒ quÃ©t trá»±c tiáº¿p. Sau khi nháº­n Ä‘Æ°á»£c dá»¯ liá»‡u tá»« QR hoáº·c mÃ£ nháº­p tay, há»‡ thá»‘ng kiá»ƒm tra tÃ­nh há»£p lá»‡ cá»§a giÃ¡ trá»‹ nÃ y. Náº¿u mÃ£ khÃ´ng há»£p lá»‡ hoáº·c rá»—ng thÃ¬ á»©ng dá»¥ng giá»¯ ngÆ°á»i dÃ¹ng á»Ÿ mÃ n hÃ¬nh hiá»‡n táº¡i Ä‘á»ƒ tiáº¿p tá»¥c quÃ©t hoáº·c nháº­p láº¡i. Náº¿u mÃ£ há»£p lá»‡, á»©ng dá»¥ng chuyá»ƒn sang mÃ n hÃ¬nh chá»n ngÃ´n ngá»¯ vÃ  lÆ°u láº¡i giÃ¡ trá»‹ QR Ä‘á»ƒ xá»­ lÃ½ á»Ÿ bÆ°á»›c tiáº¿p theo. Táº¡i Ä‘Ã¢y, há»‡ thá»‘ng táº£i danh sÃ¡ch ngÃ´n ngá»¯ kháº£ dá»¥ng, thÃ´ng tin há»“ sÆ¡ ngÆ°á»i dÃ¹ng vÃ  tráº¡ng thÃ¡i Premium. Náº¿u ngÆ°á»i dÃ¹ng chá»n má»™t ngÃ´n ngá»¯ Ä‘ang bá»‹ khÃ³a, há»‡ thá»‘ng sáº½ kiá»ƒm tra tÃ i khoáº£n hiá»‡n táº¡i; trÆ°á»ng há»£p chÆ°a cÃ³ tÃ i khoáº£n há»£p lá»‡ thÃ¬ chuyá»ƒn vá» mÃ n hÃ¬nh Ä‘Äƒng nháº­p, cÃ²n náº¿u cÃ³ tÃ i khoáº£n thÃ¬ ngÆ°á»i dÃ¹ng pháº£i thá»±c hiá»‡n nÃ¢ng cáº¥p Premium trÆ°á»›c khi tiáº¿p tá»¥c. Khi Ä‘Ã£ chá»n Ä‘Æ°á»£c ngÃ´n ngá»¯ há»£p lá»‡, á»©ng dá»¥ng tÃ¡ch `poiId` tá»« ná»™i dung QR vÃ  Ä‘iá»u hÆ°á»›ng sang mÃ n hÃ¬nh báº£n Ä‘á»“ kÃ¨m theo mÃ£ POI Ä‘Ã³.
+Khi mÃ n hÃ¬nh báº£n Ä‘á»“ Ä‘Æ°á»£c má»Ÿ, há»‡ thá»‘ng táº£i dá»¯ liá»‡u cÃ¡c POI vÃ  tÃ¬m POI tÆ°Æ¡ng á»©ng vá»›i â€œpoiIdâ€ nháº­n tá»« bÆ°á»›c trÆ°á»›c. Náº¿u khÃ´ng tÃ¬m tháº¥y POI phÃ¹ há»£p thÃ¬ á»©ng dá»¥ng chá»‰ hiá»ƒn thá»‹ báº£n Ä‘á»“ chung. NgÆ°á»£c láº¡i, náº¿u tÃ¬m tháº¥y, há»‡ thá»‘ng sáº½ má»Ÿ chi tiáº¿t POI vÃ  tiáº¿p tá»¥c láº¥y ná»™i dung thuyáº¿t minh cÃ¹ng audio guide theo ngÃ´n ngá»¯ mÃ  ngÆ°á»i dÃ¹ng Ä‘Ã£ chá»n. Trong trÆ°á»ng há»£p cÃ³ audio guide há»£p lá»‡, á»©ng dá»¥ng sáº½ phÃ¡t trá»±c tiáº¿p ná»™i dung hÆ°á»›ng dáº«n cho ngÆ°á»i dÃ¹ng; náº¿u khÃ´ng cÃ³ audio guide phÃ¹ há»£p thÃ¬ há»‡ thá»‘ng sá»­ dá»¥ng cÆ¡ cháº¿ TTS Ä‘á»ƒ thay tháº¿. NhÆ° váº­y, toÃ n bá»™ luá»“ng káº¿t thÃºc khi ngÆ°á»i dÃ¹ng má»Ÿ Ä‘Æ°á»£c POI mong muá»‘n vÃ  báº¯t Ä‘áº§u nghe pháº§n hÆ°á»›ng dáº«n tÆ°Æ¡ng á»©ng.
+Activity Diagram cho luá»“ng nghe thuyáº¿t minh
+Luá»“ng nghe thuyáº¿t minh trong há»‡ thá»‘ng báº¯t Ä‘áº§u khi ngÆ°á»i dÃ¹ng má»Ÿ chi tiáº¿t POI hoáº·c nháº¥n nÃºt nghe thuyáº¿t minh. Khi Ä‘Ã³ á»©ng dá»¥ng di Ä‘á»™ng trÆ°á»›c tiÃªn kiá»ƒm tra xem POI detail Ä‘Ã£ tá»“n táº¡i vÃ  ngÆ°á»i dÃ¹ng cÃ²n Ä‘ang á»Ÿ Ä‘Ãºng ngá»¯ cáº£nh mÃ n hÃ¬nh hiá»‡n táº¡i hay khÃ´ng; náº¿u khÃ´ng thá»a Ä‘iá»u kiá»‡n thÃ¬ luá»“ng sáº½ dá»«ng. Náº¿u há»£p lá»‡, á»©ng dá»¥ng gá»­i yÃªu cáº§u láº¥y narration theo ngÃ´n ngá»¯ hiá»‡n táº¡i cá»§a ngÆ°á»i dÃ¹ng. á»ž phÃ­a backend, há»‡ thá»‘ng kiá»ƒm tra quyá»n truy cáº­p ngÃ´n ngá»¯; náº¿u ngÃ´n ngá»¯ nÃ y khÃ´ng Ä‘Æ°á»£c phÃ©p sá»­ dá»¥ng thÃ¬ viá»‡c phÃ¡t thuyáº¿t minh sáº½ bá»‹ dá»«ng. NgÆ°á»£c láº¡i, náº¿u ngÆ°á»i dÃ¹ng cÃ³ quyá»n truy cáº­p, há»‡ thá»‘ng sáº½ resolve ná»™i dung thuyáº¿t minh vÃ  audio guide tÆ°Æ¡ng á»©ng vá»›i POI. TrÆ°á»ng há»£p cÃ³ audio guide há»£p lá»‡, á»©ng dá»¥ng sáº½ táº£i vÃ  phÃ¡t trá»±c tiáº¿p file audio. Náº¿u khÃ´ng cÃ³ audio guide phÃ¹ há»£p, á»©ng dá»¥ng sáº½ dÃ¹ng ná»™i dung thuyáº¿t minh Ä‘á»ƒ táº¡o nguá»“n phÃ¡t thay tháº¿ báº±ng Google TTS vÃ  phÃ¡t theo dáº¡ng audio tá»« xa. Trong trÆ°á»ng há»£p khÃ´ng láº¥y Ä‘Æ°á»£c ná»™i dung thuyáº¿t minh hoáº·c khÃ´ng táº¡o Ä‘Æ°á»£c nguá»“n phÃ¡t phÃ¹ há»£p, luá»“ng sáº½ káº¿t thÃºc mÃ  khÃ´ng phÃ¡t Ã¢m thanh
+Activity Diagram cho luá»“ng xem báº£n Ä‘á»“, chá»n POI vÃ  má»Ÿ chi tiáº¿t POI
+Luá»“ng xem báº£n Ä‘á»“, chá»n POI vÃ  má»Ÿ chi tiáº¿t POI báº¯t Ä‘áº§u khi ngÆ°á»i dÃ¹ng má»Ÿ mÃ n hÃ¬nh báº£n Ä‘á»“ trong á»©ng dá»¥ng. Khi Ä‘Ã³, há»‡ thá»‘ng táº£i dá»¯ liá»‡u POI vÃ  hiá»ƒn thá»‹ cÃ¡c Ä‘á»‹a Ä‘iá»ƒm lÃªn báº£n Ä‘á»“. Náº¿u ngÆ°á»i dÃ¹ng chÆ°a chá»n POI nÃ o thÃ¬ á»©ng dá»¥ng tiáº¿p tá»¥c giá»¯ nguyÃªn mÃ n hÃ¬nh báº£n Ä‘á»“ Ä‘á»ƒ ngÆ°á»i dÃ¹ng quan sÃ¡t vÃ  tÆ°Æ¡ng tÃ¡c. Sau Ä‘Ã³ má»Ÿ pháº§n chi tiáº¿t POI tÆ°Æ¡ng á»©ng, á»©ng dá»¥ng láº¥y dá»¯ liá»‡u chi tiáº¿t cá»§a POI; náº¿u láº¥y thÃ nh cÃ´ng thÃ¬ hiá»ƒn thá»‹ chi tiáº¿t Ä‘áº§y Ä‘á»§, cÃ²n náº¿u khÃ´ng thÃ¬ dÃ¹ng dá»¯ liá»‡u fallback tá»« thÃ´ng tin POI hiá»‡n cÃ³. Sau khi chi tiáº¿t POI Ä‘Æ°á»£c má»Ÿ, há»‡ thá»‘ng tá»± Ä‘á»™ng phÃ¡t thuyáº¿t minh theo ngÃ´n ngá»¯ hiá»‡n táº¡i, báº±ng audio guide náº¿u cÃ³ hoáº·c TTS náº¿u khÃ´ng cÃ³ audio phÃ¹ há»£p.
+Activity Diagram cho luá»“ng tá»± Ä‘á»™ng phÃ¡t khi Ä‘áº¿n gáº§n POI
+IX. Thiáº¿t káº¿ vÃ  phÃ¡t triá»ƒn há»‡ thá»‘ng
+1. CÆ¡ sá»Ÿ dá»¯ liá»‡u
+Database thá»±c táº¿ trong code lÃ  SQL Server. File seed chÃ­nh náº±m táº¡i: â€œapps/admin-web/src/data/sql/admin-seed-sqlserver.sqlâ€
+Schema chÃ­nh Ä‘Æ°á»£c backend map vÃ o cÃ¡c model:
+- AdminUser
+- CustomerUser
+- EndUser
+- Poi
+- Translation
+- AudioGuide
+- MediaAsset
+- FoodItem
+- TourRoute
+- Promotion
+- Review
+- ViewLog
+- AudioListenLog
+- AuditLog
+- SystemSetting
+SÆ¡ Ä‘á»“ ERD tá»•ng quÃ¡t
+2. MÃ´ táº£ chi tiáº¿t cÃ¡c báº£ng
+a. Báº£ng CustomerUsers
+b. Báº£ng Pois
+c. Báº£ng Routes
+d. Báº£ng RouteStops
+e. Báº£ng PoiTranslations
+f. Báº£ng AudioGuides
+g. Báº£ng SystemSettings
+3. Kiáº¿n trÃºc há»‡ thá»‘ng
+a. Kiáº¿n trÃºc tá»•ng quan
+Há»‡ thá»‘ng VÄ©nh KhÃ¡nh Food Ä‘Æ°á»£c xÃ¢y dá»±ng theo mÃ´ hÃ¬nh nhiá»u client dÃ¹ng chung má»™t backend trung tÃ¢m. Trong Ä‘Ã³, `Admin Web` phá»¥c vá»¥ `SUPER_ADMIN` vÃ  `PLACE_OWNER` Ä‘á»ƒ quáº£n trá»‹ ná»™i dung, xÃ¡c thá»±c phiÃªn vÃ  thá»±c hiá»‡n cÃ¡c thao tÃ¡c CRUD (Create,Read,Update,Delete); cÃ²n `Mobile App` phá»¥c vá»¥ ngÆ°á»i dÃ¹ng cuá»‘i, láº¥y dá»¯ liá»‡u táº­p trung tá»« backend Ä‘á»ƒ hiá»ƒn thá»‹ POI, báº£n Ä‘á»“, heatmap, tour, ná»™i dung Ä‘a ngÃ´n ngá»¯, há»“ sÆ¡ ngÆ°á»i dÃ¹ng vÃ  há»— trá»£ cÃ¡c tÃ­nh nÄƒng nhÆ° quÃ©t QR, má»Ÿ Ä‘Ãºng POI, phÃ¡t thuyáº¿t minh theo ngÃ´n ngá»¯ Ä‘Ã£ chá»n.
+`Backend API` lÃ  háº¡t nhÃ¢n cá»§a há»‡ thá»‘ng, Ä‘Æ°á»£c xÃ¢y dá»±ng báº±ng ASP.NET Core .NET 10, chá»‹u trÃ¡ch nhiá»‡m xá»­ lÃ½ nghiá»‡p vá»¥, xÃ¡c thá»±c vÃ  phÃ¢n quyá»n, tá»•ng há»£p dá»¯ liá»‡u bootstrap, quáº£n lÃ½ sync-state, chuáº©n hÃ³a pháº£n há»“i API, káº¿t ná»‘i SQL Server vÃ  tÃ­ch há»£p cÃ¡c dá»‹ch vá»¥ ngoÃ i nhÆ° geocoding, translation proxy, text-to-speech qua ElevenLabs. ToÃ n bá»™ dá»¯ liá»‡u Ä‘Æ°á»£c lÆ°u táº­p trung trong `SQL Server`, bao gá»“m tÃ i khoáº£n, ngÆ°á»i dÃ¹ng, POI, translation, audio guide, media asset, food item, tour, promotion, review, log vÃ  cáº¥u hÃ¬nh há»‡ thá»‘ng, giÃºp báº£o Ä‘áº£m tÃ­nh nháº¥t quÃ¡n, phÃ¢n quyá»n rÃµ rÃ ng vÃ  Ä‘á»“ng bá»™ ná»™i dung giá»¯a web quáº£n trá»‹ vÃ  á»©ng dá»¥ng mobile.
+b. SÆ¡ Ä‘á»“ kiáº¿n trÃºc tá»•ng quÃ¡t
+c. Vai trÃ² cÃ¡c service chÃ­nh
+4. CÃ´ng nghá»‡ sá»­ dá»¥ng
+4.1. Frontend Admin
+- React
+- TypeScript
+- Vite
+- React Router
+- Recharts
+- Leaflet
+4.2. Backend
+- ASP.NET Core .NET 10
+- Microsoft.Data.SqlClient
+- Swagger
+- HttpClient
+4.3. Mobile
+- .NET MAUI
+- ZXing.Net.Maui.Controls
+- Plugin.Maui.Audio
+- WebView + Leaflet/OpenStreetMap
+4.4. Database vÃ  dá»‹ch vá»¥ ngoÃ i
+- SQL Server
+- OpenStreetMap Nominatim
+- Google Translate
+- Google Translate TTS

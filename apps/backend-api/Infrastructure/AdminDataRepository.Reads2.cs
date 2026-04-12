@@ -308,7 +308,8 @@ public sealed partial class AdminDataRepository
     private AdminUser? GetUserByCredentials(SqlConnection connection, SqlTransaction? transaction, string email, string password)
     {
         const string sql = """
-            SELECT TOP 1 Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId
+            SELECT TOP 1 Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId,
+                   ApprovalStatus, RejectionReason, RegistrationSubmittedAt, RegistrationReviewedAt
             FROM dbo.AdminUsers
             WHERE LOWER(Email) = LOWER(?) AND [Password] = ? AND [Status] = ?
             ORDER BY CreatedAt DESC;
@@ -322,7 +323,8 @@ public sealed partial class AdminDataRepository
     private AdminUser? GetUserById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId
+            SELECT TOP 1 Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId,
+                   ApprovalStatus, RejectionReason, RegistrationSubmittedAt, RegistrationReviewedAt
             FROM dbo.AdminUsers
             WHERE Id = ?;
             """;
@@ -345,7 +347,8 @@ public sealed partial class AdminDataRepository
                 userAccount.Email,
                 userAccount.Role,
                 userAccount.[Status],
-                userAccount.ManagedPoiId
+                userAccount.ManagedPoiId,
+                userAccount.ApprovalStatus
             FROM dbo.RefreshSessions sessionToken
             INNER JOIN dbo.AdminUsers userAccount
                 ON userAccount.Id = sessionToken.UserId
@@ -364,6 +367,12 @@ public sealed partial class AdminDataRepository
 
         var normalizedRole = AdminRoleCatalog.NormalizeRole(ReadString(reader, "Role"));
         if (!AdminRoleCatalog.IsAdminRole(normalizedRole))
+        {
+            return null;
+        }
+
+        if (AdminRoleCatalog.IsPlaceOwner(normalizedRole) &&
+            !AdminApprovalCatalog.IsApproved(ReadNullableString(reader, "ApprovalStatus")))
         {
             return null;
         }

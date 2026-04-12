@@ -76,7 +76,11 @@ public sealed partial class AdminDataRepository
             CreatedAt = ReadDateTimeOffset(reader, "CreatedAt"),
             LastLoginAt = ReadNullableDateTimeOffset(reader, "LastLoginAt"),
             AvatarColor = ReadString(reader, "AvatarColor"),
-            ManagedPoiId = ReadNullableString(reader, "ManagedPoiId")
+            ManagedPoiId = ReadNullableString(reader, "ManagedPoiId"),
+            ApprovalStatus = AdminApprovalCatalog.NormalizeKnownOrDefault(ReadNullableString(reader, "ApprovalStatus")),
+            RejectionReason = ReadNullableString(reader, "RejectionReason"),
+            RegistrationSubmittedAt = ReadNullableDateTimeOffset(reader, "RegistrationSubmittedAt") ?? ReadDateTimeOffset(reader, "CreatedAt"),
+            RegistrationReviewedAt = ReadNullableDateTimeOffset(reader, "RegistrationReviewedAt")
         };
     }
 

@@ -9,6 +9,7 @@ import type {
   MediaAsset,
   Poi,
   PoiDetail,
+  PlaceOwnerRegistrationRecord,
   Promotion,
   RegionVoice,
   ResolvedPoiNarration,
@@ -406,6 +407,44 @@ export const adminApi = {
     jsonRequest<AuthSessionResponse>("/api/v1/auth/refresh", "POST", { refreshToken }),
   logout: (refreshToken: string) =>
     jsonRequest<string>("/api/v1/auth/logout", "POST", { refreshToken }),
+  createPlaceOwnerRegistration: (registration: {
+    name: string;
+    email: string;
+    password: string;
+    confirmPassword: string;
+    phone: string;
+  }) =>
+    jsonRequest<PlaceOwnerRegistrationRecord>("/api/v1/place-owner-registrations", "POST", registration),
+  accessPlaceOwnerRegistration: (credentials: { email: string; password: string }) =>
+    jsonRequest<PlaceOwnerRegistrationRecord>(
+      "/api/v1/place-owner-registrations/access",
+      "POST",
+      credentials,
+    ),
+  resubmitPlaceOwnerRegistration: (
+    id: string,
+    registration: {
+      name: string;
+      email: string;
+      password: string;
+      confirmPassword: string;
+      phone: string;
+      currentPassword: string;
+    },
+  ) =>
+    jsonRequest<PlaceOwnerRegistrationRecord>(
+      `/api/v1/place-owner-registrations/${id}/self`,
+      "PUT",
+      registration,
+    ),
+  approvePlaceOwnerRegistration: (id: string) =>
+    jsonRequest<PlaceOwnerRegistrationRecord>(`/api/v1/place-owner-registrations/${id}/approve`, "POST"),
+  rejectPlaceOwnerRegistration: (id: string, reason: string) =>
+    jsonRequest<PlaceOwnerRegistrationRecord>(
+      `/api/v1/place-owner-registrations/${id}/reject`,
+      "POST",
+      { reason },
+    ),
   uploadFile: async (file: File, folder: string) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -427,6 +466,12 @@ export const adminApi = {
     request<Poi>(`/api/v1/pois/${poiId}`, { signal }),
   getPoiDetail: (poiId: string, signal?: AbortSignal) =>
     request<PoiDetail>(`/api/v1/pois/${poiId}/detail`, { signal }),
+  approvePoi: (poiId: string) =>
+    jsonRequest<Poi>(`/api/v1/pois/${poiId}/approve`, "POST"),
+  rejectPoi: (poiId: string, reason: string) =>
+    jsonRequest<Poi>(`/api/v1/pois/${poiId}/reject`, "POST", { reason }),
+  togglePoiActive: (poiId: string, isActive: boolean) =>
+    jsonRequest<Poi>(`/api/v1/pois/${poiId}/toggle-active`, "PATCH", { isActive }),
   getPoiNarration: (
     poiId: string,
     languageCode: LanguageCode,
