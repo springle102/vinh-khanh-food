@@ -8,7 +8,8 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<AdminUser> GetUsers(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId
+            SELECT Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId,
+                   ApprovalStatus, RejectionReason, RegistrationSubmittedAt, RegistrationReviewedAt
             FROM dbo.AdminUsers
             ORDER BY CreatedAt DESC, Id DESC;
             """;
@@ -142,12 +143,17 @@ public sealed partial class AdminDataRepository
                 CategoryId,
                 [Status],
                 IsFeatured,
+                IsActive,
+                LockedBySuperAdmin,
                 District,
                 Ward,
                 PriceRange,
                 AverageVisitDurationMinutes,
                 PopularityScore,
                 OwnerUserId,
+                ApprovedAt,
+                RejectionReason,
+                RejectedAt,
                 UpdatedBy,
                 CreatedAt,
                 UpdatedAt
@@ -194,6 +200,8 @@ public sealed partial class AdminDataRepository
                     CategoryId = ReadString(poisReader, "CategoryId"),
                     Status = ReadString(poisReader, "Status"),
                     Featured = ReadBool(poisReader, "IsFeatured"),
+                    IsActive = ReadBool(poisReader, "IsActive"),
+                    LockedBySuperAdmin = ReadBool(poisReader, "LockedBySuperAdmin"),
                     District = ReadString(poisReader, "District"),
                     Ward = ReadString(poisReader, "Ward"),
                     PriceRange = ReadString(poisReader, "PriceRange"),
@@ -201,6 +209,9 @@ public sealed partial class AdminDataRepository
                     PopularityScore = ReadInt(poisReader, "PopularityScore"),
                     Tags = tagMap.GetValueOrDefault(poiId, []),
                     OwnerUserId = ReadNullableString(poisReader, "OwnerUserId"),
+                    ApprovedAt = ReadNullableDateTimeOffset(poisReader, "ApprovedAt"),
+                    RejectionReason = ReadNullableString(poisReader, "RejectionReason"),
+                    RejectedAt = ReadNullableDateTimeOffset(poisReader, "RejectedAt"),
                     UpdatedBy = ReadString(poisReader, "UpdatedBy"),
                     CreatedAt = ReadDateTimeOffset(poisReader, "CreatedAt"),
                     UpdatedAt = ReadDateTimeOffset(poisReader, "UpdatedAt")

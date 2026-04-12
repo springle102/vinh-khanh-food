@@ -55,7 +55,7 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["\"Plus Jakarta Sans\"", "\"Segoe UI\"", "\"Helvetica Neue\"", "sans-serif"],
+        sans: ["\"Segoe UI\"", "\"Plus Jakarta Sans\"", "\"Helvetica Neue\"", "Arial", "sans-serif"],
       },
       boxShadow: {
         soft: "0 18px 45px -24px rgba(124, 45, 18, 0.25)",

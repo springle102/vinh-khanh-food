@@ -13,6 +13,10 @@ public sealed class AdminUser
     public DateTimeOffset? LastLoginAt { get; set; }
     public string AvatarColor { get; set; } = string.Empty;
     public string? ManagedPoiId { get; set; }
+    public string ApprovalStatus { get; set; } = string.Empty;
+    public string? RejectionReason { get; set; }
+    public DateTimeOffset? RegistrationSubmittedAt { get; set; }
+    public DateTimeOffset? RegistrationReviewedAt { get; set; }
 }
 
 public sealed class CustomerUser
@@ -64,6 +68,8 @@ public sealed class Poi
     public string CategoryId { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool Featured { get; set; }
+    public bool IsActive { get; set; }
+    public bool LockedBySuperAdmin { get; set; }
     public string District { get; set; } = string.Empty;
     public string Ward { get; set; } = string.Empty;
     public string PriceRange { get; set; } = string.Empty;
@@ -74,6 +80,9 @@ public sealed class Poi
     public string UpdatedBy { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? ApprovedAt { get; set; }
+    public string? RejectionReason { get; set; }
+    public DateTimeOffset? RejectedAt { get; set; }
 }
 
 public sealed class Translation

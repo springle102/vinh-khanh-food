@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, adminApi, getErrorMessage, type LoginAccountOption } from "../../lib/api";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -168,6 +168,14 @@ export const LoginPage = () => {
             <Button type="submit" className="w-full" disabled={submitting || isInitializing}>
               {submitting || isInitializing ? "Đang đăng nhập..." : "Đăng nhập"}
             </Button>
+            <div className="flex justify-end">
+              <Link
+                to={email ? `/register-owner?email=${encodeURIComponent(email)}` : "/register-owner"}
+                className="text-sm font-medium text-primary-700 transition hover:text-primary-800"
+              >
+                Đăng ký chủ quán
+              </Link>
+            </div>
           </form>
 
           <div className="mt-6 rounded-3xl bg-sand-50 p-4 text-sm text-ink-500">

@@ -6,6 +6,7 @@ const SUPER_ADMIN_NAV: AppShellNavItem[] = [
   { to: "/admin/pois", label: "POI", icon: "map" },
   { to: "/admin/tours", label: "Tuyen tham quan", icon: "route" },
   { to: "/admin/users", label: "Chu quan", icon: "users" },
+  { to: "/admin/owner-registrations", label: "Don dang ky", icon: "content" },
   { to: "/admin/promotions", label: "Uu dai", icon: "gift" },
   { to: "/admin/reviews", label: "Danh gia", icon: "star" },
   { to: "/admin/activity", label: "Nhat ky", icon: "activity" },

@@ -1,11 +1,13 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useParams } from "react-router-dom";
 import { AppShell } from "../components/layout/AppShell";
 import { ActivityPage } from "../features/activity/ActivityPage";
 import { useAuth } from "../features/auth/AuthContext";
 import { getHomePathForRole } from "../features/auth/auth-routing";
 import { LoginPage } from "../features/auth/LoginPage";
+import { PlaceOwnerRegistrationPage } from "../features/auth/PlaceOwnerRegistrationPage";
 import { AuthLoadingScreen, RequireAuth } from "../features/auth/RequireAuth";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
+import { OwnerRegistrationsPage } from "../features/owner-registrations/OwnerRegistrationsPage";
 import { PoisPage } from "../features/pois/PoisPage";
 import { PromotionsPage } from "../features/promotions/PromotionsPage";
 import { ReviewsPage } from "../features/reviews/ReviewsPage";
@@ -44,6 +46,29 @@ const RootRedirect = () => {
   return <Navigate to={user ? getHomePathForRole(user.role) : "/login"} replace />;
 };
 
+const PoiEditRedirect = () => {
+  const { isInitializing, user } = useAuth();
+  const { poiId } = useParams();
+
+  if (isInitializing) {
+    return <AuthLoadingScreen />;
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!poiId) {
+    return <Navigate to={getHomePathForRole(user.role)} replace />;
+  }
+
+  if (user.role === "SUPER_ADMIN") {
+    return <Navigate to={`/admin/pois?viewPoiId=${encodeURIComponent(poiId)}`} replace />;
+  }
+
+  return <Navigate to={`/restaurant/pois?editPoiId=${encodeURIComponent(poiId)}`} replace />;
+};
+
 export const router = createBrowserRouter([
   {
     path: "/",
@@ -52,6 +77,14 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     element: <LoginPage />,
+  },
+  {
+    path: "/edit-poi/:poiId",
+    element: <PoiEditRedirect />,
+  },
+  {
+    path: "/register-owner",
+    element: <PlaceOwnerRegistrationPage />,
   },
   {
     path: "/dashboard",
@@ -79,6 +112,7 @@ export const router = createBrowserRouter([
           { path: "content", element: <Navigate to="/admin/pois" replace /> },
           { path: "media", element: <Navigate to="/admin/pois" replace /> },
           { path: "users", element: <UsersPage /> },
+          { path: "owner-registrations", element: <OwnerRegistrationsPage /> },
           { path: "promotions", element: <PromotionsPage /> },
           { path: "reviews", element: <ReviewsPage /> },
           { path: "analytics", element: <Navigate to="/admin/dashboard" replace /> },

@@ -63,6 +63,46 @@ public sealed record AdminUserUpsertRequest(
     string ActorName,
     string ActorRole);
 
+public sealed record PlaceOwnerRegistrationRequest(
+    string Name,
+    string Email,
+    string Password,
+    string ConfirmPassword,
+    string Phone);
+
+public sealed record PlaceOwnerRegistrationAccessRequest(
+    string Email,
+    string Password);
+
+public sealed record PlaceOwnerRegistrationResubmitRequest(
+    string Name,
+    string Email,
+    string Password,
+    string ConfirmPassword,
+    string Phone,
+    string CurrentPassword);
+
+public sealed record PlaceOwnerRegistrationDecisionRequest(
+    string? Reason);
+
+public sealed record PoiDecisionRequest(
+    string? Reason);
+
+public sealed record PoiActiveToggleRequest(
+    bool IsActive);
+
+public sealed record PlaceOwnerRegistrationResponse(
+    string Id,
+    string Name,
+    string Email,
+    string Phone,
+    string Status,
+    string ApprovalStatus,
+    string? RejectionReason,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? RegistrationSubmittedAt,
+    DateTimeOffset? RegistrationReviewedAt);
+
 public sealed record CustomerProfileUpdateRequest(
     string Name,
     string Username,

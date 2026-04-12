@@ -45,7 +45,12 @@ export const UsersPage = () => {
   const canManageUsers = user?.role === "SUPER_ADMIN";
   const isSelfService = user?.role === "PLACE_OWNER";
   const visibleUsers = useMemo(
-    () => (isSelfService && user ? state.users.filter((account) => account.id === user.id) : state.users),
+    () =>
+      isSelfService && user
+        ? state.users.filter((account) => account.id === user.id)
+        : state.users.filter(
+            (account) => account.role === "SUPER_ADMIN" || account.approvalStatus === "approved",
+          ),
     [isSelfService, state.users, user],
   );
   const ownerAccounts = useMemo(

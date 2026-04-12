@@ -91,7 +91,7 @@ const toState = (payload: Partial<AdminDataState>): AdminDataState => ({
   settings: normalizeSystemSetting(payload.settings ?? EMPTY_ADMIN_STATE.settings),
 });
 
-type PoiDraft = Omit<Poi, "id" | "createdAt" | "updatedAt" | "updatedBy"> & {
+type PoiDraft = Omit<Poi, "id" | "createdAt" | "updatedAt" | "updatedBy" | "approvedAt" | "rejectionReason" | "rejectedAt" | "isActive" | "lockedBySuperAdmin"> & {
   id?: string;
   requestedId?: string;
   translationLanguageCode: Translation["languageCode"];
@@ -110,7 +110,16 @@ type AdminDataContextValue = {
   refreshData: () => Promise<AdminDataState>;
   savePoi: (draft: PoiDraft, actor: AdminUser) => Promise<Poi>;
   saveUser: (
-    user: Omit<AdminUser, "id" | "createdAt" | "lastLoginAt"> & { id?: string },
+    user: Omit<
+      AdminUser,
+      | "id"
+      | "createdAt"
+      | "lastLoginAt"
+      | "approvalStatus"
+      | "rejectionReason"
+      | "registrationSubmittedAt"
+      | "registrationReviewedAt"
+    > & { id?: string },
     actor: AdminUser,
   ) => Promise<void>;
   savePromotion: (
@@ -283,7 +292,16 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
 
   const saveUser = useCallback(
     async (
-      user: Omit<AdminUser, "id" | "createdAt" | "lastLoginAt"> & { id?: string },
+      user: Omit<
+        AdminUser,
+        | "id"
+        | "createdAt"
+        | "lastLoginAt"
+        | "approvalStatus"
+        | "rejectionReason"
+        | "registrationSubmittedAt"
+        | "registrationReviewedAt"
+      > & { id?: string },
       actor: AdminUser,
     ) => {
       await adminApi.saveUser({

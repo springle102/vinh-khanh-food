@@ -259,7 +259,8 @@ public sealed partial class AdminDataRepository
         {
             users = ApplyAdminUserScope(users, admin);
             pois = ApplyPoiScope(connection, null, pois, admin);
-            categories = categories.Where(category => pois.Any(poi => poi.CategoryId == category.Id)).ToList();
+            // Admin POI forms need the full category catalog so create/edit can always choose a category,
+            // even when the current actor has no POIs yet.
             foodItems = ApplyFoodItemScope(connection, null, foodItems, admin, pois);
             routes = ApplyRouteScope(connection, null, routes, admin);
             promotions = ApplyPromotionScope(connection, null, promotions, admin);
@@ -577,10 +578,55 @@ public sealed partial class AdminDataRepository
             IF COL_LENGTH(N'dbo.AdminUsers', N'ManagedPoiId') IS NULL
                 ALTER TABLE dbo.AdminUsers ADD ManagedPoiId NVARCHAR(50) NULL;
 
+            IF COL_LENGTH(N'dbo.AdminUsers', N'ApprovalStatus') IS NULL
+                ALTER TABLE dbo.AdminUsers ADD ApprovalStatus NVARCHAR(20) NULL;
+
+            IF COL_LENGTH(N'dbo.AdminUsers', N'RejectionReason') IS NULL
+                ALTER TABLE dbo.AdminUsers ADD RejectionReason NVARCHAR(1000) NULL;
+
+            IF COL_LENGTH(N'dbo.AdminUsers', N'RegistrationSubmittedAt') IS NULL
+                ALTER TABLE dbo.AdminUsers ADD RegistrationSubmittedAt DATETIMEOFFSET(7) NULL;
+
+            IF COL_LENGTH(N'dbo.AdminUsers', N'RegistrationReviewedAt') IS NULL
+                ALTER TABLE dbo.AdminUsers ADD RegistrationReviewedAt DATETIMEOFFSET(7) NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
             UPDATE dbo.AdminUsers
             SET AvatarColor = COALESCE(NULLIF(LTRIM(RTRIM(AvatarColor)), N''), N'#f97316')
-            WHERE COL_LENGTH(N'dbo.AdminUsers', N'AvatarColor') IS NOT NULL
-              AND (AvatarColor IS NULL OR NULLIF(LTRIM(RTRIM(AvatarColor)), N'') IS NULL);
+            WHERE AvatarColor IS NULL OR NULLIF(LTRIM(RTRIM(AvatarColor)), N'') IS NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE adminUser
+            SET ApprovalStatus = normalized.ApprovalStatus,
+                RegistrationSubmittedAt = COALESCE(RegistrationSubmittedAt, CreatedAt),
+                RegistrationReviewedAt = CASE
+                    WHEN normalized.ApprovalStatus = N'rejected'
+                        THEN RegistrationReviewedAt
+                    WHEN normalized.ApprovalStatus = N'pending'
+                        THEN RegistrationReviewedAt
+                    ELSE COALESCE(RegistrationReviewedAt, CreatedAt)
+                END,
+                RejectionReason = CASE
+                    WHEN normalized.ApprovalStatus = N'rejected'
+                        THEN NULLIF(LTRIM(RTRIM(RejectionReason)), N'')
+                    ELSE NULL
+                END
+            FROM dbo.AdminUsers adminUser
+            CROSS APPLY (
+                SELECT CASE
+                    WHEN LOWER(COALESCE(LTRIM(RTRIM(adminUser.ApprovalStatus)), N'')) IN (N'pending', N'approved', N'rejected')
+                        THEN LOWER(LTRIM(RTRIM(adminUser.ApprovalStatus)))
+                    ELSE N'approved'
+                END AS ApprovalStatus
+            ) normalized;
             """);
     }
 
@@ -593,6 +639,60 @@ public sealed partial class AdminDataRepository
             IF COL_LENGTH(N'dbo.Pois', N'OwnerUserId') IS NULL
                 ALTER TABLE dbo.Pois ADD OwnerUserId NVARCHAR(50) NULL;
 
+            IF COL_LENGTH(N'dbo.Pois', N'IsActive') IS NULL
+                ALTER TABLE dbo.Pois ADD IsActive BIT NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'LockedBySuperAdmin') IS NULL
+                ALTER TABLE dbo.Pois ADD LockedBySuperAdmin BIT NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'ApprovedAt') IS NULL
+                ALTER TABLE dbo.Pois ADD ApprovedAt DATETIMEOFFSET(7) NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'RejectionReason') IS NULL
+                ALTER TABLE dbo.Pois ADD RejectionReason NVARCHAR(1000) NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'RejectedAt') IS NULL
+                ALTER TABLE dbo.Pois ADD RejectedAt DATETIMEOFFSET(7) NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF COL_LENGTH(N'dbo.Pois', N'IsActive') IS NOT NULL
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM sys.default_constraints defaultConstraint
+                   INNER JOIN sys.columns columnInfo
+                       ON columnInfo.object_id = defaultConstraint.parent_object_id
+                      AND columnInfo.column_id = defaultConstraint.parent_column_id
+                   WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.Pois')
+                     AND columnInfo.name = N'IsActive'
+               )
+                ALTER TABLE dbo.Pois ADD CONSTRAINT DF_Pois_IsActive DEFAULT ((1)) FOR IsActive;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF COL_LENGTH(N'dbo.Pois', N'LockedBySuperAdmin') IS NOT NULL
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM sys.default_constraints defaultConstraint
+                   INNER JOIN sys.columns columnInfo
+                       ON columnInfo.object_id = defaultConstraint.parent_object_id
+                      AND columnInfo.column_id = defaultConstraint.parent_column_id
+                   WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.Pois')
+                     AND columnInfo.name = N'LockedBySuperAdmin'
+               )
+                ALTER TABLE dbo.Pois ADD CONSTRAINT DF_Pois_LockedBySuperAdmin DEFAULT ((0)) FOR LockedBySuperAdmin;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
             IF OBJECT_ID(N'dbo.PoiTags', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.PoiTags (
@@ -601,6 +701,62 @@ public sealed partial class AdminDataRepository
                     PRIMARY KEY (PoiId, TagValue),
                     CONSTRAINT FK_PoiTags_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id)
                 );
+            END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE dbo.Pois
+            SET IsActive = COALESCE(IsActive, 1),
+                LockedBySuperAdmin = COALESCE(LockedBySuperAdmin, 0),
+                ApprovedAt = CASE
+                    WHEN LOWER(COALESCE(LTRIM(RTRIM([Status])), N'')) = N'published'
+                        THEN COALESCE(ApprovedAt, UpdatedAt, CreatedAt)
+                    ELSE ApprovedAt
+                END,
+                RejectionReason = CASE
+                    WHEN LOWER(COALESCE(LTRIM(RTRIM([Status])), N'')) = N'rejected'
+                        THEN NULLIF(LTRIM(RTRIM(RejectionReason)), N'')
+                    ELSE NULL
+                END,
+                RejectedAt = CASE
+                    WHEN LOWER(COALESCE(LTRIM(RTRIM([Status])), N'')) = N'rejected'
+                        THEN COALESCE(RejectedAt, UpdatedAt)
+                    ELSE NULL
+                END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Pois')
+                  AND name = N'IsActive'
+                  AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Pois ALTER COLUMN IsActive BIT NOT NULL;
+            END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Pois')
+                  AND name = N'LockedBySuperAdmin'
+                  AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Pois ALTER COLUMN LockedBySuperAdmin BIT NOT NULL;
             END;
             """);
     }
@@ -696,20 +852,35 @@ public sealed partial class AdminDataRepository
                     CONSTRAINT FK_RefreshSessions_AdminUsers FOREIGN KEY (UserId) REFERENCES dbo.AdminUsers(Id)
                 );
             END;
+            """);
 
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
             IF COL_LENGTH(N'dbo.RefreshSessions', N'AccessToken') IS NULL
                 ALTER TABLE dbo.RefreshSessions ADD AccessToken NVARCHAR(200) NULL;
 
             IF COL_LENGTH(N'dbo.RefreshSessions', N'AccessTokenExpiresAt') IS NULL
                 ALTER TABLE dbo.RefreshSessions ADD AccessTokenExpiresAt DATETIMEOFFSET(7) NULL;
+            """);
 
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
             UPDATE dbo.RefreshSessions
             SET AccessToken = COALESCE(NULLIF(LTRIM(RTRIM(AccessToken)), N''), CONCAT(N'legacy_access_', REPLACE(CONVERT(NVARCHAR(36), NEWID()), N'-', N''))),
                 AccessTokenExpiresAt = COALESCE(AccessTokenExpiresAt, ExpiresAt)
             WHERE AccessToken IS NULL
                OR NULLIF(LTRIM(RTRIM(AccessToken)), N'') IS NULL
                OR AccessTokenExpiresAt IS NULL;
+            """);
 
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
             IF EXISTS (
                 SELECT 1
                 FROM sys.columns
@@ -731,7 +902,12 @@ public sealed partial class AdminDataRepository
             BEGIN
                 ALTER TABLE dbo.RefreshSessions ALTER COLUMN AccessTokenExpiresAt DATETIMEOFFSET(7) NOT NULL;
             END;
+            """);
 
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
             IF NOT EXISTS (
                 SELECT 1
                 FROM sys.indexes
@@ -1630,7 +1806,9 @@ public sealed partial class AdminDataRepository
 
     private static IReadOnlyList<Poi> ApplyPublicPoiScope(IReadOnlyList<Poi> pois) =>
         pois
-            .Where(poi => string.Equals(poi.Status, "published", StringComparison.OrdinalIgnoreCase))
+            .Where(poi =>
+                string.Equals(poi.Status, "published", StringComparison.OrdinalIgnoreCase) &&
+                poi.IsActive)
             .ToList();
 
     private IReadOnlyList<FoodItem> ApplyFoodItemScope(

@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import type { AuditActorRole, LanguageCode, UserStatus } from "../data/types";
+import type { ApprovalStatus, AuditActorRole, ContentStatus, LanguageCode, UserStatus } from "../data/types";
 
 export const cn = (...values: Array<string | false | null | undefined>) => clsx(values);
 
@@ -21,6 +21,26 @@ export const userStatusLabels: Record<UserStatus, string> = {
   active: "Đang hoạt động",
   locked: "Đã khóa",
 };
+
+export const approvalStatusLabels: Record<ApprovalStatus, string> = {
+  pending: "Chờ duyệt",
+  approved: "Đã duyệt",
+  rejected: "Từ chối",
+};
+
+export const contentStatusLabels: Record<ContentStatus, string> = {
+  draft: "Bản nháp",
+  pending: "Chờ duyệt",
+  published: "Đã duyệt",
+  rejected: "Từ chối",
+  archived: "Lưu trữ",
+  deleted: "Đã xóa",
+};
+
+export const poiActivityLabels = {
+  active: "Đang hoạt động",
+  inactive: "Ngừng hoạt động",
+} as const;
 
 export const formatDateTime = (value: string | null) => {
   if (!value) {

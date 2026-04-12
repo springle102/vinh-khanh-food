@@ -7,6 +7,80 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed partial class AdminDataRepository
 {
+    private void EnsureActorCanManagePoiContent(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        AdminRequestContext actor,
+        Poi? poi,
+        string action)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            throw new ApiForbiddenException($"Super Admin không có quyền {action}.");
+        }
+
+        if (actor.IsPlaceOwner && poi?.LockedBySuperAdmin == true)
+        {
+            throw new ApiForbiddenException("POI này đang bị Super Admin ngừng hoạt động nên chủ quán không thể chỉnh sửa hoặc tự bật lại.");
+        }
+    }
+
+    private void EnsureActorCanManagePoiContentEntity(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        AdminRequestContext actor,
+        string? entityType,
+        string? entityId,
+        string action)
+    {
+        var normalizedEntityType = NormalizePoiContentEntityType(entityType);
+        if (normalizedEntityType is not ("poi" or "food_item" or "promotion"))
+        {
+            return;
+        }
+
+        var relatedPoi = ResolvePoiForContentEntity(connection, transaction, normalizedEntityType, entityId);
+        EnsureActorCanManagePoiContent(connection, transaction, actor, relatedPoi, action);
+    }
+
+    private Poi? ResolvePoiForContentEntity(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string? entityType,
+        string? entityId)
+    {
+        if (string.IsNullOrWhiteSpace(entityId))
+        {
+            return null;
+        }
+
+        switch (NormalizePoiContentEntityType(entityType))
+        {
+            case "poi":
+                return GetPoiById(connection, transaction, entityId);
+            case "food_item":
+            {
+                var foodItem = GetFoodItemById(connection, transaction, entityId);
+                return foodItem is null ? null : GetPoiById(connection, transaction, foodItem.PoiId);
+            }
+            case "promotion":
+            {
+                var promotion = GetPromotionById(connection, transaction, entityId);
+                return promotion is null ? null : GetPoiById(connection, transaction, promotion.PoiId);
+            }
+        }
+
+        return null;
+    }
+
+    private static string NormalizePoiContentEntityType(string? entityType)
+    {
+        var normalizedEntityType = entityType?.Trim() ?? string.Empty;
+        return string.Equals(normalizedEntityType, "food-item", StringComparison.OrdinalIgnoreCase)
+            ? "food_item"
+            : normalizedEntityType.ToLowerInvariant();
+    }
+
     public CustomerUser? LoginCustomer(string identifier, string password)
     {
         using var connection = OpenConnection();
@@ -99,6 +173,7 @@ public sealed partial class AdminDataRepository
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
+        EnsureActorCanManagePoiContentEntity(connection, transaction, actor, request.EntityType, request.EntityId, "chỉnh sửa media của POI");
 
         var existing = !string.IsNullOrWhiteSpace(id) ? GetMediaAssetById(connection, transaction, id) : null;
         var isNew = existing is null;
@@ -182,6 +257,7 @@ public sealed partial class AdminDataRepository
         using var transaction = connection.BeginTransaction();
 
         var existing = GetMediaAssetById(connection, transaction, id);
+        EnsureActorCanManagePoiContentEntity(connection, transaction, actor, existing?.EntityType, existing?.EntityId, "xóa media của POI");
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.MediaAssets WHERE Id = ?;", id) > 0;
         if (deleted)
         {
@@ -205,6 +281,9 @@ public sealed partial class AdminDataRepository
         using var transaction = connection.BeginTransaction();
 
         var existing = !string.IsNullOrWhiteSpace(id) ? GetFoodItemById(connection, transaction, id) : null;
+        var targetPoi = GetPoiById(connection, transaction, request.PoiId)
+            ?? (existing is null ? null : GetPoiById(connection, transaction, existing.PoiId));
+        EnsureActorCanManagePoiContent(connection, transaction, actor, targetPoi, "chỉnh sửa món ăn của POI");
         var isNew = existing is null;
         var foodId = existing?.Id ?? id ?? CreateId("food");
 
@@ -271,6 +350,8 @@ public sealed partial class AdminDataRepository
         using var transaction = connection.BeginTransaction();
 
         var existing = GetFoodItemById(connection, transaction, id);
+        var targetPoi = existing is null ? null : GetPoiById(connection, transaction, existing.PoiId);
+        EnsureActorCanManagePoiContent(connection, transaction, actor, targetPoi, "xóa món ăn của POI");
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.FoodItems WHERE Id = ?;", id) > 0;
         if (deleted)
         {

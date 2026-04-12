@@ -69,6 +69,10 @@ const clearSession = () => {
   localStorage.removeItem(SESSION_KEY);
 };
 
+const canRestoreAdminUser = (account: AdminUser) =>
+  account.status === "active" &&
+  (account.role !== "PLACE_OWNER" || account.approvalStatus === "approved");
+
 export const AuthProvider = ({ children }: PropsWithChildren) => {
   const { state, refreshData } = useAdminData();
   const [user, setUser] = useState<AdminUser | null>(null);
@@ -80,7 +84,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         (item) =>
           item.id === userId &&
           item.role === role &&
-          item.status === "active",
+          canRestoreAdminUser(item),
       ) ?? null,
     [],
   );
