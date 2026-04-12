@@ -302,8 +302,8 @@ public sealed partial class AdminDataRepository
         var isNew = existing is null;
         var routeId = existing?.Id ?? id ?? CreateId("route");
         var actorName = request.ActorName?.Trim() ?? "SYSTEM";
-        var actorRole = request.ActorRole?.Trim() ?? string.Empty;
-        var isOwnerActor = string.Equals(actorRole, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase);
+        var actorRole = AdminRoleCatalog.NormalizeKnownRoleOrOriginal(request.ActorRole);
+        var isOwnerActor = AdminRoleCatalog.IsPlaceOwner(actorRole);
         var actorUserId = request.ActorUserId?.Trim() ?? string.Empty;
         var actorUser = !string.IsNullOrWhiteSpace(actorUserId)
             ? GetUserById(connection, transaction, actorUserId)
@@ -354,7 +354,7 @@ public sealed partial class AdminDataRepository
 
         if (isOwnerActor)
         {
-            if (actorUser is null || !string.Equals(actorUser.Role, "PLACE_OWNER", StringComparison.OrdinalIgnoreCase))
+            if (actorUser is null || !AdminRoleCatalog.IsPlaceOwner(actorUser.Role))
             {
                 throw new InvalidOperationException("Không xác định được chủ quán thực hiện thao tác tour.");
             }
@@ -652,13 +652,28 @@ public sealed partial class AdminDataRepository
         {
             DefaultLanguage = PremiumAccessCatalog.NormalizeLanguageCode(request.DefaultLanguage),
             FallbackLanguage = PremiumAccessCatalog.NormalizeLanguageCode(request.FallbackLanguage),
-            FreeLanguages = [.. PremiumAccessCatalog.FreeLanguages],
-            PremiumLanguages = [.. PremiumAccessCatalog.PremiumLanguages],
+            SupportedLanguages = request.SupportedLanguages
+                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .Select(PremiumAccessCatalog.NormalizeLanguageCode)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            FreeLanguages = [],
+            PremiumLanguages = [],
             TtsProvider = NormalizeTtsProvider(request.TtsProvider),
-            PremiumUnlockPriceUsd = request.PremiumUnlockPriceUsd > 0
-                ? request.PremiumUnlockPriceUsd
-                : PremiumAccessCatalog.DefaultPremiumPriceUsd
+            PremiumUnlockPriceUsd = 0
         };
+
+        if (normalizedRequest.SupportedLanguages.Count == 0)
+        {
+            normalizedRequest = normalizedRequest with
+            {
+                SupportedLanguages =
+                [
+                    normalizedRequest.DefaultLanguage,
+                    normalizedRequest.FallbackLanguage
+                ]
+            };
+        }
 
         var exists = ExecuteScalarInt(connection, transaction, "SELECT COUNT(*) FROM dbo.SystemSettings WHERE Id = 1;") > 0;
         if (exists)
@@ -718,8 +733,9 @@ public sealed partial class AdminDataRepository
                 normalizedRequest.AnalyticsRetentionDays);
         }
 
-        ReplaceSettingLanguages(connection, transaction, "free", normalizedRequest.FreeLanguages);
-        ReplaceSettingLanguages(connection, transaction, "premium", normalizedRequest.PremiumLanguages);
+        ReplaceSettingLanguages(connection, transaction, "supported", normalizedRequest.SupportedLanguages);
+        ReplaceSettingLanguages(connection, transaction, "free", []);
+        ReplaceSettingLanguages(connection, transaction, "premium", []);
 
         AppendAdminAuditLog(connection, transaction, actor, "Cap nhat cai dat he thong", "SETTINGS", "system", request.AppName);
 
@@ -862,13 +878,14 @@ public sealed partial class AdminDataRepository
         string? beforeSummary = null,
         string? afterSummary = null)
     {
+        var normalizedActorRole = AdminRoleCatalog.NormalizeKnownRoleOrOriginal(actorRole);
         if (!HasAdminAuditLogTable(connection, transaction))
         {
             AppendLegacyAuditLog(
                 connection,
                 transaction,
                 actorName,
-                actorRole,
+                normalizedActorRole,
                 action,
                 string.IsNullOrWhiteSpace(targetSummary) ? targetId : targetSummary);
             return;
@@ -887,7 +904,7 @@ public sealed partial class AdminDataRepository
             CreateId("audit"),
             actorId,
             actorName,
-            actorRole,
+            normalizedActorRole,
             AdminRoleCatalog.AdminActorType,
             action,
             module,
@@ -928,6 +945,7 @@ public sealed partial class AdminDataRepository
             return;
         }
 
+        var normalizedActorRole = AdminRoleCatalog.NormalizeKnownRoleOrOriginal(actorRole);
         ExecuteNonQuery(
             connection,
             transaction,
@@ -939,7 +957,7 @@ public sealed partial class AdminDataRepository
             """,
             CreateId("audit"),
             TruncateLegacyAuditValue(actorName, 120),
-            TruncateLegacyAuditValue(actorRole, 30),
+            TruncateLegacyAuditValue(normalizedActorRole, 30),
             TruncateLegacyAuditValue(action, 200),
             TruncateLegacyAuditValue(targetValue, 300),
             DateTimeOffset.UtcNow);
@@ -1000,7 +1018,7 @@ public sealed partial class AdminDataRepository
         string action,
         string targetValue)
     {
-        var normalizedActorRole = (actorRole ?? string.Empty).Trim();
+        var normalizedActorRole = AdminRoleCatalog.NormalizeKnownRoleOrOriginal(actorRole);
         if (AdminRoleCatalog.IsAdminRole(normalizedActorRole) ||
             string.Equals(normalizedActorRole, "SYSTEM", StringComparison.OrdinalIgnoreCase))
         {
@@ -1046,7 +1064,7 @@ public sealed partial class AdminDataRepository
         var matchedAdmin = GetUsers(connection, transaction)
             .FirstOrDefault(user =>
                 string.Equals(user.Name, actorName, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(user.Role, actorRole, StringComparison.OrdinalIgnoreCase));
+                AdminRoleCatalog.RoleEquals(user.Role, actorRole));
 
         return matchedAdmin is null
             ? (actorName, actorName, actorRole)

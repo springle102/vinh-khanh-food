@@ -87,6 +87,7 @@ public sealed class Translation
     public string FullText { get; set; } = string.Empty;
     public string SeoTitle { get; set; } = string.Empty;
     public string SeoDescription { get; set; } = string.Empty;
+    [Obsolete("Premium gating is deprecated for the public Android app.")]
     public bool IsPremium { get; set; }
     public string UpdatedBy { get; set; } = string.Empty;
     public DateTimeOffset UpdatedAt { get; set; }
@@ -144,6 +145,20 @@ public sealed class AudioListenLog
     public string LanguageCode { get; set; } = "vi";
     public DateTimeOffset ListenedAt { get; set; }
     public int DurationInSeconds { get; set; }
+}
+
+public sealed class AppUsageEvent
+{
+    public string Id { get; set; } = string.Empty;
+    public string EventType { get; set; } = string.Empty;
+    public string? PoiId { get; set; }
+    public string LanguageCode { get; set; } = "vi";
+    public string Platform { get; set; } = "android";
+    public string SessionId { get; set; } = string.Empty;
+    public string Source { get; set; } = "mobile-app";
+    public string Metadata { get; set; } = string.Empty;
+    public int? DurationInSeconds { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
 }
 
 public sealed class Review
@@ -247,8 +262,12 @@ public sealed class SystemSetting
     public string SupportEmail { get; set; } = string.Empty;
     public string DefaultLanguage { get; set; } = "vi";
     public string FallbackLanguage { get; set; } = "en";
+    public List<string> SupportedLanguages { get; set; } = [];
+    [Obsolete("Use SupportedLanguages instead.")]
     public List<string> FreeLanguages { get; set; } = [];
+    [Obsolete("Premium language access is deprecated.")]
     public List<string> PremiumLanguages { get; set; } = [];
+    [Obsolete("Premium pricing is deprecated.")]
     public int PremiumUnlockPriceUsd { get; set; }
     public string MapProvider { get; set; } = "openstreetmap";
     public string StorageProvider { get; set; } = "cloudinary";

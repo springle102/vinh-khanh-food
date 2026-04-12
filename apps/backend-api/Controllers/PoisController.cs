@@ -141,16 +141,9 @@ public sealed class PoisController(
         }
 
         var actor = adminRequestContextResolver.TryGetCurrentAdmin();
-        var accessDecision = repository.EvaluateCustomerLanguageAccess(customerUserId, languageCode);
-        var bypassPremiumGate = actor is not null || string.IsNullOrWhiteSpace(customerUserId);
-        if (!accessDecision.IsAllowed && !(bypassPremiumGate && accessDecision.RequiresPremium))
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<PoiNarrationResponse>.Fail(accessDecision.Message));
-        }
-
         var narration = await poiNarrationService.ResolveAsync(
             id,
-            accessDecision.LanguageCode,
+            languageCode,
             voiceType,
             actor,
             cancellationToken);

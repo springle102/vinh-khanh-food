@@ -8,16 +8,8 @@
     Shell.NavBarIsVisible="False">
 
     <ShellContent
-        Route="LoginPage"
-        ContentTemplate="{DataTemplate pages:LoginPage}" />
-
-    <ShellContent
         Route="HomeMapPage"
         ContentTemplate="{DataTemplate pages:HomeMapPage}" />
-
-    <ShellContent
-        Route="MyTourPage"
-        ContentTemplate="{DataTemplate pages:MyTourPage}" />
 
     <ShellContent
         Route="QrScannerPage"
@@ -26,8 +18,4 @@
     <ShellContent
         Route="SettingsPage"
         ContentTemplate="{DataTemplate pages:SettingsPage}" />
-
-    <ShellContent
-        Route="LanguageSelectionPage"
-        ContentTemplate="{DataTemplate pages:LanguageSelectionPage}" />
 </Shell>

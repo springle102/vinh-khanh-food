@@ -403,7 +403,7 @@
                         </VerticalStackLayout>
                     </ScrollView>
 
-                    <Grid Grid.Row="3" Padding="18,16,18,18" ColumnDefinitions="*,*,*">
+                    <Grid Grid.Row="3" Padding="18,16,18,18" ColumnDefinitions="*,*">
                         <Border
                             BackgroundColor="{StaticResource BrandPrimary}"
                             Grid.Column="0"
@@ -436,21 +436,6 @@
                             </Border.GestureRecognizers>
                         </Border>
 
-                        <Border
-                            BackgroundColor="#FFF1EE"
-                            Grid.Column="2"
-                            Margin="8,0,0,0"
-                            Padding="10,12"
-                            Stroke="#F2D5CF"
-                            StrokeShape="RoundRectangle 18">
-                            <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
-                                <Label FontSize="17" HorizontalTextAlignment="Center" Text="+" TextColor="#D15A3C" />
-                                <Label FontFamily="OpenSansSemibold" FontSize="11" HorizontalTextAlignment="Center" Text="{Binding SaveActionText}" TextColor="{StaticResource BrandTextPrimary}" />
-                            </VerticalStackLayout>
-                            <Border.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding ToggleSaveToTourCommand}" />
-                            </Border.GestureRecognizers>
-                        </Border>
                     </Grid>
                 </Grid>
             </Border>

@@ -125,17 +125,6 @@ public sealed class TranslationsController(
             return BadRequest(ApiResponse<TextTranslationResponse>.Fail("TargetLanguageCode la bat buoc."));
         }
 
-        if (!string.IsNullOrWhiteSpace(customerUserId))
-        {
-            var accessDecision = repository.EvaluateCustomerLanguageAccess(customerUserId, request.TargetLanguageCode);
-            if (!accessDecision.IsAllowed)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<TextTranslationResponse>.Fail(accessDecision.Message));
-            }
-
-            request = request with { TargetLanguageCode = accessDecision.LanguageCode };
-        }
-
         var translated = await translationProxyService.TranslateAsync(request, cancellationToken);
         return Ok(ApiResponse<TextTranslationResponse>.Ok(translated));
     }

@@ -13,7 +13,6 @@ import type {
   AdminDataState,
   AdminUser,
   AudioGuide,
-  CustomerUser,
   FoodItem,
   MediaAsset,
   Poi,
@@ -24,9 +23,7 @@ import type {
   Translation,
 } from "./types";
 
-const DEFAULT_PREMIUM_PRICE_USD = 10;
-const FIXED_FREE_LANGUAGES: SystemSetting["freeLanguages"] = ["vi", "en"];
-const FIXED_PREMIUM_LANGUAGES: SystemSetting["premiumLanguages"] = ["zh-CN", "ko", "ja"];
+const DEFAULT_SUPPORTED_LANGUAGES: SystemSetting["supportedLanguages"] = ["vi", "en", "zh-CN", "ko", "ja"];
 
 const normalizeTtsProvider = (_value: string | undefined): SystemSetting["ttsProvider"] => "elevenlabs";
 
@@ -34,12 +31,10 @@ const normalizeSystemSetting = (settings: SystemSetting): SystemSetting => ({
   ...settings,
   defaultLanguage: settings.defaultLanguage || "vi",
   fallbackLanguage: settings.fallbackLanguage || "en",
-  freeLanguages: [...FIXED_FREE_LANGUAGES],
-  premiumLanguages: [...FIXED_PREMIUM_LANGUAGES],
-  premiumUnlockPriceUsd:
-    Number.isFinite(settings.premiumUnlockPriceUsd) && settings.premiumUnlockPriceUsd > 0
-      ? Math.round(settings.premiumUnlockPriceUsd)
-      : DEFAULT_PREMIUM_PRICE_USD,
+  supportedLanguages:
+    settings.supportedLanguages && settings.supportedLanguages.length > 0
+      ? [...settings.supportedLanguages]
+      : [...DEFAULT_SUPPORTED_LANGUAGES],
   ttsProvider: normalizeTtsProvider(settings.ttsProvider),
 });
 
@@ -55,6 +50,7 @@ const EMPTY_ADMIN_STATE: AdminDataState = {
   routes: [],
   promotions: [],
   reviews: [],
+  usageEvents: [],
   viewLogs: [],
   audioListenLogs: [],
   auditLogs: [],
@@ -63,9 +59,7 @@ const EMPTY_ADMIN_STATE: AdminDataState = {
     supportEmail: "",
     defaultLanguage: "vi",
     fallbackLanguage: "en",
-    freeLanguages: [...FIXED_FREE_LANGUAGES],
-    premiumLanguages: [...FIXED_PREMIUM_LANGUAGES],
-    premiumUnlockPriceUsd: DEFAULT_PREMIUM_PRICE_USD,
+    supportedLanguages: [...DEFAULT_SUPPORTED_LANGUAGES],
     mapProvider: "openstreetmap",
     storageProvider: "cloudinary",
     ttsProvider: "elevenlabs",
@@ -79,7 +73,8 @@ const toState = (payload: Partial<AdminDataState>): AdminDataState => ({
   ...EMPTY_ADMIN_STATE,
   ...payload,
   users: payload.users ?? [],
-  customerUsers: payload.customerUsers ?? [],
+  // Customer-account data is deprecated and disconnected from the active admin flow.
+  customerUsers: [],
   categories: payload.categories ?? [],
   pois: payload.pois ?? [],
   foodItems: payload.foodItems ?? [],
@@ -89,8 +84,9 @@ const toState = (payload: Partial<AdminDataState>): AdminDataState => ({
   routes: payload.routes ?? [],
   promotions: payload.promotions ?? [],
   reviews: payload.reviews ?? [],
-  viewLogs: payload.viewLogs ?? [],
-  audioListenLogs: payload.audioListenLogs ?? [],
+  usageEvents: payload.usageEvents ?? [],
+  viewLogs: [],
+  audioListenLogs: [],
   auditLogs: payload.auditLogs ?? [],
   settings: normalizeSystemSetting(payload.settings ?? EMPTY_ADMIN_STATE.settings),
 });
@@ -262,7 +258,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
           fullText: draft.fullText,
           seoTitle: draft.seoTitle,
           seoDescription: draft.seoDescription,
-          isPremium: !state.settings.freeLanguages.includes(draft.translationLanguageCode),
           updatedBy: actor.name,
         };
         console.debug("[admin-poi] translation-api-payload", translationPayload);
@@ -283,7 +278,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
 
       return nextState.pois.find((item) => item.id === savedPoi.id) ?? savedPoi;
     },
-    [refreshData, state, state.settings.freeLanguages, state.translations],
+    [refreshData, state, state.translations],
   );
 
   const saveUser = useCallback(

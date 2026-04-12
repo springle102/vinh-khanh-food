@@ -207,6 +207,19 @@ public sealed partial class AdminDataRepository
         return ApplyAudioListenLogScope(connection, null, items, actor, pois);
     }
 
+    public IReadOnlyList<AppUsageEvent> GetAppUsageEvents(AdminRequestContext? actor = null)
+    {
+        using var connection = OpenConnection();
+        var items = GetAppUsageEvents(connection, null);
+        if (actor is null)
+        {
+            return items;
+        }
+
+        var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
+        return ApplyUsageEventScope(items, actor, pois);
+    }
+
     public IReadOnlyList<AuditLog> GetAuditLogs(AdminRequestContext actor)
     {
         using var connection = OpenConnection();
@@ -226,9 +239,7 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
 
         var users = admin is null ? [] : GetUsers(connection, null);
-        var customerUsers = admin is not null && admin.IsSuperAdmin
-            ? GetCustomerUsers(connection, null)
-            : [];
+        var customerUsers = Array.Empty<CustomerUser>();
         var categories = GetCategories(connection, null);
         var pois = GetPois(connection, null);
         var translations = GetTranslations(connection, null);
@@ -238,6 +249,7 @@ public sealed partial class AdminDataRepository
         var routes = GetRoutes(connection, null);
         var promotions = GetPromotions(connection, null);
         var reviews = GetReviews(connection, null);
+        var usageEvents = GetAppUsageEvents(connection, null);
         var viewLogs = GetViewLogs(connection, null);
         var audioListenLogs = GetAudioListenLogs(connection, null);
         var auditLogs = admin is null ? [] : GetAuditLogs(connection, null);
@@ -252,24 +264,17 @@ public sealed partial class AdminDataRepository
             routes = ApplyRouteScope(connection, null, routes, admin);
             promotions = ApplyPromotionScope(connection, null, promotions, admin);
             reviews = ApplyReviewScope(connection, null, reviews, admin);
+            usageEvents = ApplyUsageEventScope(usageEvents, admin, pois);
             viewLogs = ApplyViewLogScope(connection, null, viewLogs, admin, pois);
             audioListenLogs = ApplyAudioListenLogScope(connection, null, audioListenLogs, admin, pois);
             translations = ApplyTranslationScope(connection, null, translations, admin, pois, foodItems, routes, promotions);
             audioGuides = ApplyAudioGuideScope(connection, null, audioGuides, admin, pois, foodItems, routes);
             mediaAssets = ApplyMediaAssetScope(connection, null, mediaAssets, admin, pois, foodItems, routes, promotions);
             auditLogs = ApplyAuditScope(connection, null, auditLogs, admin);
-            customerUsers = admin.IsSuperAdmin ? customerUsers : [];
         }
         else
         {
-            var allowedLanguages = !string.IsNullOrWhiteSpace(customerUserId)
-                ? GetAllowedLanguageCodesForCustomer(connection, null, customerUserId, settings)
-                : settings.FreeLanguages
-                    .Select(PremiumAccessCatalog.NormalizeLanguageCode)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var customer = !string.IsNullOrWhiteSpace(customerUserId)
-                ? GetCustomerUserById(connection, null, customerUserId)
-                : null;
+            var allowedLanguages = GetSupportedLanguageCodeSet(settings);
 
             pois = ApplyPublicPoiScope(pois);
             categories = categories.Where(category => pois.Any(poi => poi.CategoryId == category.Id)).ToList();
@@ -277,13 +282,15 @@ public sealed partial class AdminDataRepository
             routes = ApplyPublicRouteScope(routes, pois);
             promotions = ApplyPublicPromotionScope(promotions, pois);
             reviews = ApplyPublicReviewScope(reviews, pois);
+            usageEvents = usageEvents
+                .Where(item => string.IsNullOrWhiteSpace(item.PoiId) || pois.Any(poi => poi.Id == item.PoiId))
+                .ToList();
             viewLogs = viewLogs.Where(log => pois.Any(poi => poi.Id == log.PoiId)).ToList();
             audioListenLogs = audioListenLogs.Where(log => pois.Any(poi => poi.Id == log.PoiId)).ToList();
             translations = ApplyPublicTranslationScope(translations, pois, foodItems, routes, promotions, allowedLanguages);
             audioGuides = ApplyPublicAudioGuideScope(audioGuides, pois, foodItems, routes, allowedLanguages);
             mediaAssets = ApplyPublicMediaAssetScope(mediaAssets, pois, foodItems, routes, promotions);
             users = [];
-            customerUsers = customer is null ? [] : [customer];
             auditLogs = [];
         }
 
@@ -305,6 +312,7 @@ public sealed partial class AdminDataRepository
             routes,
             promotions,
             reviews,
+            usageEvents,
             viewLogs,
             audioListenLogs,
             auditLogs,
@@ -455,17 +463,46 @@ public sealed partial class AdminDataRepository
             pois,
             ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois),
             ApplyRouteScope(connection, null, GetRoutes(connection, null), actor));
-        var viewLogs = ApplyViewLogScope(connection, null, GetViewLogs(connection, null), actor, pois);
-        var audioListenLogs = ApplyAudioListenLogScope(connection, null, GetAudioListenLogs(connection, null), actor, pois);
+        var usageEvents = ApplyUsageEventScope(GetAppUsageEvents(connection, null), actor, pois);
 
         return new DashboardSummaryResponse(
-            viewLogs.Count,
-            audioListenLogs.Count,
+            usageEvents.Count(item => string.Equals(item.EventType, "poi_view", StringComparison.OrdinalIgnoreCase)),
+            usageEvents.Count(item => string.Equals(item.EventType, "audio_play", StringComparison.OrdinalIgnoreCase)),
+            usageEvents.Count(item => string.Equals(item.EventType, "qr_scan", StringComparison.OrdinalIgnoreCase)),
             pois.Count(item => string.Equals(item.Status, "published", StringComparison.OrdinalIgnoreCase)),
             pois.Count(item => item.Featured),
             audioGuides.Count(item => !string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase)),
-            reviews.Count(item => string.Equals(item.Status, "pending", StringComparison.OrdinalIgnoreCase)),
-            ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.SystemSettingLanguages WHERE LanguageType = ?;", "premium"));
+            reviews.Count(item => string.Equals(item.Status, "pending", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static IReadOnlyCollection<string> GetSupportedLanguageCodeSet(SystemSetting settings)
+    {
+        var languageCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var code in settings.SupportedLanguages)
+        {
+            languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(code));
+        }
+
+        foreach (var code in settings.FreeLanguages)
+        {
+            languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(code));
+        }
+
+        foreach (var code in settings.PremiumLanguages)
+        {
+            languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(code));
+        }
+
+        if (languageCodes.Count == 0)
+        {
+            languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.DefaultLanguage));
+            languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.FallbackLanguage));
+        }
+
+        return languageCodes
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .ToList();
     }
 
     private void InitializeDatabase()
@@ -500,8 +537,6 @@ public sealed partial class AdminDataRepository
 
             RemoveLegacyPoiDefaultLanguageColumn(verifiedConnection);
             EnsureRefreshSessionsTable(verifiedConnection);
-            EnsureEndUserManagementSchema(verifiedConnection);
-            EnsurePremiumPurchaseSchema(verifiedConnection);
             NormalizeLegacyEntityTypes(verifiedConnection);
         }
         catch (SqlException exception)
@@ -526,7 +561,7 @@ public sealed partial class AdminDataRepository
         EnsureRefreshSessionsTable(connection);
         EnsureSeparatedAuditLogSchema(connection);
         EnsureSystemSettingsSchema(connection);
-        EnsureCustomerUsersRuntimeSchema(connection);
+        EnsureAppUsageEventSchema(connection);
         EnsureTourManagementSchema(connection);
     }
 
@@ -820,7 +855,7 @@ public sealed partial class AdminDataRepository
                 FROM dbo.AuditLogs legacy
                 LEFT JOIN dbo.AdminUsers adminUser
                     ON adminUser.Email = legacy.TargetValue
-                WHERE UPPER(COALESCE(legacy.ActorRole, N'')) IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')
+                WHERE UPPER(COALESCE(legacy.ActorRole, N'')) IN (N'SUPER_ADMIN', N'SUPERADMIN', N'PLACE_OWNER', N'PLACEOWNER', N'SYSTEM')
                   AND NOT EXISTS (
                       SELECT 1
                       FROM dbo.AdminAuditLogs migrated
@@ -840,7 +875,7 @@ public sealed partial class AdminDataRepository
                     legacy.Id,
                     legacy.CreatedAt
                 FROM dbo.AuditLogs legacy
-                WHERE UPPER(COALESCE(legacy.ActorRole, N'')) NOT IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')
+                WHERE UPPER(COALESCE(legacy.ActorRole, N'')) NOT IN (N'SUPER_ADMIN', N'SUPERADMIN', N'PLACE_OWNER', N'PLACEOWNER', N'SYSTEM')
                   AND NOT EXISTS (
                       SELECT 1
                       FROM dbo.UserActivityLogs migrated
@@ -1634,7 +1669,10 @@ public sealed partial class AdminDataRepository
         return routes
             .Where(route =>
                 string.Equals(route.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase) ||
-                route.StopPoiIds.Any(ownerPoiIds.Contains))
+                (!route.IsSystemRoute &&
+                 string.IsNullOrWhiteSpace(route.OwnerUserId) &&
+                 route.StopPoiIds.Count > 0 &&
+                 route.StopPoiIds.All(ownerPoiIds.Contains)))
             .ToList();
     }
 
@@ -1747,6 +1785,22 @@ public sealed partial class AdminDataRepository
 
         var visiblePoiIds = scopedPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         return audioListenLogs.Where(log => visiblePoiIds.Contains(log.PoiId)).ToList();
+    }
+
+    private IReadOnlyList<AppUsageEvent> ApplyUsageEventScope(
+        IReadOnlyList<AppUsageEvent> usageEvents,
+        AdminRequestContext actor,
+        IReadOnlyList<Poi> scopedPois)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return usageEvents;
+        }
+
+        var visiblePoiIds = scopedPois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return usageEvents
+            .Where(item => string.IsNullOrWhiteSpace(item.PoiId) || visiblePoiIds.Contains(item.PoiId))
+            .ToList();
     }
 
     private IReadOnlyList<Translation> ApplyTranslationScope(

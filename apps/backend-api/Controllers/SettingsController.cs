@@ -27,9 +27,9 @@ public sealed class SettingsController(
             return BadRequest(ApiResponse<SystemSetting>.Fail("AppName va supportEmail la bat buoc."));
         }
 
-        if (request.PremiumUnlockPriceUsd <= 0)
+        if (request.SupportedLanguages is null || request.SupportedLanguages.Count == 0)
         {
-            return BadRequest(ApiResponse<SystemSetting>.Fail("Gia goi Premium phai lon hon 0 USD."));
+            return BadRequest(ApiResponse<SystemSetting>.Fail("Can cau hinh it nhat mot ngon ngu ho tro."));
         }
 
         var saved = repository.SaveSettings(request, actor);

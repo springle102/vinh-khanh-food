@@ -63,6 +63,40 @@
       }
     }
 
+    @keyframes active-marker-pulse {
+      0% {
+        transform: scale(1.9);
+        opacity: 0.82;
+      }
+
+      50% {
+        transform: scale(2.18);
+        opacity: 0.3;
+      }
+
+      100% {
+        transform: scale(1.9);
+        opacity: 0.82;
+      }
+    }
+
+    @keyframes user-marker-pulse {
+      0% {
+        transform: scale(0.84);
+        opacity: 0.8;
+      }
+
+      50% {
+        transform: scale(1.24);
+        opacity: 0.18;
+      }
+
+      100% {
+        transform: scale(0.84);
+        opacity: 0.8;
+      }
+    }
+
     .poi-marker__dot {
       position: absolute;
       inset: 0;
@@ -80,6 +114,46 @@
     .poi-marker.selected .poi-marker__dot {
       transform: scale(1.1);
       box-shadow: 0 12px 22px rgba(15, 23, 42, 0.24);
+    }
+
+    .poi-marker.active .poi-marker__halo {
+      transform: scale(2.02);
+      animation: active-marker-pulse 1.25s ease-in-out infinite;
+    }
+
+    .poi-marker.active .poi-marker__dot {
+      transform: scale(1.14);
+      box-shadow: 0 14px 24px rgba(194, 65, 12, 0.32);
+    }
+
+    .user-marker {
+      position: relative;
+      width: 30px;
+      height: 30px;
+    }
+
+    .user-marker__pulse {
+      position: absolute;
+      inset: 1px;
+      border-radius: 9999px;
+      background: rgba(37, 99, 235, 0.24);
+      animation: user-marker-pulse 1.55s ease-in-out infinite;
+    }
+
+    .user-marker__dot {
+      position: absolute;
+      inset: 4px;
+      border-radius: 9999px;
+      background: linear-gradient(180deg, #60a5fa 0%, #2563eb 100%);
+      border: 3px solid #ffffff;
+      box-shadow: 0 12px 24px rgba(37, 99, 235, 0.32);
+    }
+
+    .user-marker__core {
+      position: absolute;
+      inset: 11px;
+      border-radius: 9999px;
+      background: #ffffff;
     }
 
     .heat-point {
@@ -122,6 +196,31 @@
       line-height: 1.45;
       color: #5f5f5f;
     }
+
+    .popup-grid {
+      display: grid;
+      row-gap: 8px;
+      margin-top: 8px;
+    }
+
+    .popup-row {
+      display: grid;
+      row-gap: 2px;
+    }
+
+    .popup-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #7c7c7c;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+
+    .popup-value {
+      font-size: 12px;
+      line-height: 1.4;
+      color: #262626;
+    }
   </style>
 </head>
 <body>
@@ -136,7 +235,6 @@
 
     const DEFAULT_CENTER = [10.7578, 106.7033];
     const DEFAULT_BROWSE_ZOOM = 15;
-    const SELECTION_RADIUS_METERS = 180;
     const state = decodeBase64Json("__MAP_STATE_BASE64__");
     const map = L.map("map", {
       zoomControl: false,
@@ -144,38 +242,34 @@
       attributionControl: false
     }).setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM);
 
+    const poiMarkers = new Map();
+    const heatLayers = [];
+    let selectedPoiId = state.selectedPoiId ?? null;
+    let activePoiId = state.activePoiId ?? null;
+    let virtualUserState = state.virtualUser ?? null;
+    let userMarker = null;
+
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap contributors"
     }).addTo(map);
 
-    const poiMarkers = new Map();
-    const heatLayers = [];
-    let selectedPoiId = state.selectedPoiId ?? null;
+    const createPoiIcon = (poi, selected, active) => {
+      const color = active ? "#ea580c" : selected ? "#0f766e" : poi.isFeatured ? "#f97316" : "#1f2937";
+      const halo = active ? "rgba(234, 88, 12, 0.24)" : selected ? "rgba(15, 118, 110, 0.18)" : "rgba(31, 41, 55, 0.12)";
+      const classes = ["poi-marker"];
+      if (selected) {
+        classes.push("selected");
+      }
 
-    const haversineDistanceInMeters = (lat1, lng1, lat2, lng2) => {
-      const toRadians = (value) => (value * Math.PI) / 180;
-      const earthRadius = 6371000;
-      const dLat = toRadians(lat2 - lat1);
-      const dLng = toRadians(lng2 - lng1);
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(toRadians(lat1)) *
-          Math.cos(toRadians(lat2)) *
-          Math.sin(dLng / 2) *
-          Math.sin(dLng / 2);
-
-      return 2 * earthRadius * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    };
-
-    const createPoiIcon = (poi, selected) => {
-      const color = selected ? "#0f766e" : poi.isFeatured ? "#f97316" : "#1f2937";
-      const halo = selected ? "rgba(15, 118, 110, 0.18)" : "rgba(31, 41, 55, 0.12)";
+      if (active) {
+        classes.push("active");
+      }
 
       return L.divIcon({
         className: "",
         html: `
-          <div class="poi-marker ${selected ? "selected" : ""}">
+          <div class="${classes.join(" ")}">
             <span class="poi-marker__halo" style="background:${halo};"></span>
             <span class="poi-marker__dot" style="background:${color};"></span>
           </div>`,
@@ -191,7 +285,19 @@
       iconAnchor: [62, 62]
     });
 
-    const buildPopupHtml = (poi) => {
+    const createUserIcon = () => L.divIcon({
+      className: "",
+      html: `
+        <div class="user-marker">
+          <span class="user-marker__pulse"></span>
+          <span class="user-marker__dot"></span>
+          <span class="user-marker__core"></span>
+        </div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15]
+    });
+
+    const buildPoiPopupHtml = (poi) => {
       const featuredText = poi.isFeatured && state.featuredLabel ? ` &bull; ${state.featuredLabel}` : "";
       return `
       <div>
@@ -201,17 +307,51 @@
       </div>`;
     };
 
-    const setSelectedMarker = (poiId, openPopup) => {
-      selectedPoiId = poiId;
+    const buildUserPopupHtml = (user) => {
+      if (!user) {
+        return "";
+      }
+
+      return `
+      <div>
+        <p class="popup-title">${user.popupTitle || "Virtual user"}</p>
+        <div class="popup-grid">
+          <div class="popup-row">
+            <span class="popup-label">${user.coordinatesLabel || "Coordinates"}</span>
+            <span class="popup-value">${user.coordinatesText || "--"}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">${user.statusLabel || "Status"}</span>
+            <span class="popup-value">${user.statusText || "--"}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">${user.nearestPoiLabel || "Nearest POI"}</span>
+            <span class="popup-value">${user.nearestPoiText || "--"}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">${user.nearestDistanceLabel || "Nearest distance"}</span>
+            <span class="popup-value">${user.nearestDistanceText || "--"}</span>
+          </div>
+        </div>
+      </div>`;
+    };
+
+    const refreshPoiMarkers = (openPopupForSelection) => {
       state.pois.forEach((poi) => {
         const marker = poiMarkers.get(poi.id);
         if (!marker) {
           return;
         }
 
-        marker.setIcon(createPoiIcon(poi, poi.id === poiId));
-        if (poi.id === poiId && openPopup) {
-          marker.openPopup();
+        const isSelected = poi.id === selectedPoiId;
+        const isActive = poi.id === activePoiId;
+        marker.setIcon(createPoiIcon(poi, isSelected, isActive));
+
+        if (isSelected) {
+          if (openPopupForSelection) {
+            marker.openPopup();
+          }
+
           return;
         }
 
@@ -219,13 +359,66 @@
       });
     };
 
+    const setSelectedPoi = (poiId, openPopup) => {
+      selectedPoiId = poiId;
+      refreshPoiMarkers(openPopup);
+    };
+
+    const setActivePoi = (poiId) => {
+      activePoiId = poiId;
+      refreshPoiMarkers(false);
+    };
+
     const notifyPoiSelected = (poiId, openPopup) => {
       if (!poiId || !poiMarkers.has(poiId)) {
         return;
       }
 
-      setSelectedMarker(poiId, openPopup);
+      setSelectedPoi(poiId, openPopup);
       window.location.href = `vkfood://select-poi/${encodeURIComponent(poiId)}`;
+    };
+
+    const notifyVirtualUserMoved = (latitude, longitude) => {
+      window.location.href = `vkfood://set-virtual-location?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`;
+    };
+
+    const upsertVirtualUserMarker = (nextState) => {
+      const hasCoordinates = nextState &&
+        nextState.latitude != null &&
+        nextState.longitude != null;
+
+      virtualUserState = hasCoordinates ? nextState : null;
+      if (!virtualUserState) {
+        if (userMarker) {
+          map.removeLayer(userMarker);
+          userMarker = null;
+        }
+
+        return;
+      }
+
+      const latLng = [virtualUserState.latitude, virtualUserState.longitude];
+      const keepPopupOpen = Boolean(userMarker && userMarker.isPopupOpen());
+
+      if (!userMarker) {
+        userMarker = L.marker(latLng, {
+          icon: createUserIcon(),
+          keyboard: false,
+          zIndexOffset: 1200
+        }).addTo(map);
+
+        userMarker.on("click", () => {
+          userMarker.openPopup();
+        });
+      } else {
+        userMarker.setLatLng(latLng);
+        userMarker.setIcon(createUserIcon());
+      }
+
+      userMarker.bindPopup(buildUserPopupHtml(virtualUserState));
+      if (keepPopupOpen) {
+        userMarker.openPopup();
+      }
     };
 
     state.heatPoints.forEach((point) => {
@@ -240,11 +433,11 @@
 
     state.pois.forEach((poi) => {
       const marker = L.marker([poi.latitude, poi.longitude], {
-        icon: createPoiIcon(poi, poi.id === selectedPoiId),
+        icon: createPoiIcon(poi, poi.id === selectedPoiId, poi.id === activePoiId),
         keyboard: false
       }).addTo(map);
 
-      marker.bindPopup(buildPopupHtml(poi));
+      marker.bindPopup(buildPoiPopupHtml(poi));
       marker.on("click", () => {
         notifyPoiSelected(poi.id, true);
       });
@@ -254,6 +447,11 @@
 
     const fitMap = () => {
       if (!state.pois.length) {
+        if (virtualUserState && virtualUserState.latitude != null && virtualUserState.longitude != null) {
+          map.setView([virtualUserState.latitude, virtualUserState.longitude], 17, { animate: false });
+          return;
+        }
+
         map.setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM, { animate: false });
         return;
       }
@@ -275,30 +473,17 @@
     };
 
     map.on("click", (event) => {
-      const nearestPoi = state.pois
-        .map((poi) => ({
-          poi,
-          distance: haversineDistanceInMeters(event.latlng.lat, event.latlng.lng, poi.latitude, poi.longitude)
-        }))
-        .sort((left, right) => left.distance - right.distance)[0];
-
-      if (nearestPoi && nearestPoi.distance <= SELECTION_RADIUS_METERS) {
-        notifyPoiSelected(nearestPoi.poi.id, true);
-      } else if (selectedPoiId) {
-        setSelectedMarker(null, false);
-        window.location.href = "vkfood://dismiss-detail";
-      }
+      notifyVirtualUserMoved(event.latlng.lat, event.latlng.lng);
     });
 
     fitMap();
-    if (selectedPoiId) {
-      setSelectedMarker(selectedPoiId, true);
-    }
+    upsertVirtualUserMarker(virtualUserState);
+    refreshPoiMarkers(Boolean(selectedPoiId));
 
     window.vkFoodMap = {
       selectPoi: (poiId) => {
         if (!poiId) {
-          setSelectedMarker(null, false);
+          setSelectedPoi(null, false);
           return;
         }
 
@@ -306,7 +491,13 @@
           return;
         }
 
-        setSelectedMarker(poiId, true);
+        setSelectedPoi(poiId, true);
+      },
+      setActivePoi: (poiId) => {
+        setActivePoi(poiId || null);
+      },
+      setVirtualUser: (nextState) => {
+        upsertVirtualUserMarker(nextState);
       },
       setHeatmapVisible: (isVisible) => {
         heatLayers.forEach((heat) => {

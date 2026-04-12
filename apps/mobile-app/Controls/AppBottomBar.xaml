@@ -9,10 +9,10 @@
     <Grid
         HeightRequest="104"
         Padding="16,4,16,10"
-        ColumnDefinitions="*,*,92,*">
+        ColumnDefinitions="*,92,*">
 
         <Border
-            Grid.ColumnSpan="4"
+            Grid.ColumnSpan="3"
             Margin="0,18,0,0"
             BackgroundColor="#FFFDFC"
             Padding="10,8,10,10"
@@ -23,7 +23,7 @@
                 <Shadow Brush="{StaticResource BrandShadow}" Offset="0,6" Radius="18" Opacity="0.10" />
             </Border.Shadow>
 
-            <Grid ColumnDefinitions="*,*,92,*" ColumnSpacing="4">
+            <Grid ColumnDefinitions="*,92,*" ColumnSpacing="4">
                 <Border
                     x:Name="PoiTab"
                     Grid.Column="0"
@@ -54,38 +54,10 @@
                 </Border>
 
                 <Border
-                    x:Name="TourTab"
-                    Grid.Column="1"
-                    HeightRequest="54"
-                    Margin="0,0,10,0"
-                    Padding="10,7,10,6"
-                    BackgroundColor="Transparent"
-                    StrokeThickness="0"
-                    StrokeShape="RoundRectangle 18"
-                    VerticalOptions="Center">
-                    <VerticalStackLayout HorizontalOptions="Center" Spacing="4" VerticalOptions="Center">
-                        <Grid WidthRequest="20" HeightRequest="20">
-                            <Path x:Name="TourPath1" Data="M 6 5 A 2 2 0 1 1 5.99 5 Z M 16 17 A 2 2 0 1 1 15.99 17 Z M 6 7 V 10.2 C 6 11.6 7.2 12.8 8.6 12.8 H 13.2 C 14.8 12.8 16 14 16 15.6 V 15" StrokeThickness="1.8" StrokeLineCap="Round" StrokeLineJoin="Round" />
-                            <Path x:Name="TourPath2" Data="M 9.8 3 H 18 M 13.8 19 H 4" StrokeThickness="1.8" StrokeLineCap="Round" />
-                        </Grid>
-                        <Label
-                            x:Name="TourLabel"
-                            FontSize="10"
-                            HorizontalTextAlignment="Center"
-                            LineBreakMode="NoWrap"
-                            MaxLines="1"
-                            Text="" />
-                    </VerticalStackLayout>
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Command="{Binding NavigateToMyTourCommand}" />
-                    </Border.GestureRecognizers>
-                </Border>
-
-                <Border
                     x:Name="SettingsTab"
-                    Grid.Column="3"
+                    Grid.Column="2"
                     HeightRequest="54"
-                    Margin="10,0,0,0"
+                    Margin="4,0,0,0"
                     Padding="10,7,10,6"
                     BackgroundColor="Transparent"
                     StrokeThickness="0"
@@ -113,7 +85,7 @@
 
         <Border
             x:Name="QrTab"
-            Grid.Column="2"
+            Grid.Column="1"
             WidthRequest="74"
             HeightRequest="74"
             BackgroundColor="{StaticResource BrandPrimary}"

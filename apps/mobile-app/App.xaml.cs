@@ -20,7 +20,7 @@ public partial class App : Application
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        var window = new Window(new AppShell(AppRoutes.Login));
+        var window = new Window(new AppShell(AppRoutes.HomeMap));
         window.Created += OnWindowCreated;
         return window;
     }

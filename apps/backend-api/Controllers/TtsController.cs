@@ -34,20 +34,12 @@ public sealed class TtsController(
             return BadRequest(ApiResponse<string>.Fail("LanguageCode is required."));
         }
 
-        var actor = adminRequestContextResolver.TryGetCurrentAdmin();
-        var accessDecision = repository.EvaluateCustomerLanguageAccess(customerUserId, languageCode);
-        var bypassPremiumGate = string.IsNullOrWhiteSpace(customerUserId) || actor is not null;
-        if (!accessDecision.IsAllowed && !(bypassPremiumGate && accessDecision.RequiresPremium))
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<string>.Fail(accessDecision.Message));
-        }
-
         try
         {
             var audio = await textToSpeechService.GenerateAudioAsync(
                 new TextToSpeechRequest(
                     text,
-                    accessDecision.LanguageCode,
+                    languageCode,
                     voiceId,
                     modelId,
                     outputFormat,
@@ -69,7 +61,7 @@ public sealed class TtsController(
             logger.LogError(
                 exception,
                 "ElevenLabs Text-to-Speech is not configured. language={LanguageCode}; segment={SegmentIndex}/{TotalSegments}",
-                accessDecision.LanguageCode,
+                languageCode,
                 idx,
                 total);
             return StatusCode(
@@ -84,7 +76,7 @@ public sealed class TtsController(
             logger.LogWarning(
                 exception,
                 "Unable to generate ElevenLabs TTS audio. language={LanguageCode}; segment={SegmentIndex}/{TotalSegments}",
-                accessDecision.LanguageCode,
+                languageCode,
                 idx,
                 total);
             return StatusCode(

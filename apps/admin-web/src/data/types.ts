@@ -12,6 +12,7 @@ export type PromotionStatus = "upcoming" | "active" | "expired" | "hidden" | "de
 export type ReviewStatus = "pending" | "approved" | "hidden";
 export type DeviceType = "ios" | "android" | "web";
 export type TtsProvider = "elevenlabs";
+export type UsageEventType = "poi_view" | "audio_play" | "qr_scan";
 
 export interface GeocodingLocation {
   address: string;
@@ -112,7 +113,8 @@ export interface Translation {
   fullText: string;
   seoTitle: string;
   seoDescription: string;
-  isPremium: boolean;
+  /** @deprecated Premium gating is no longer used by the public app. */
+  isPremium?: boolean;
   updatedBy: string;
   updatedAt: string;
 }
@@ -221,12 +223,26 @@ export interface ViewLog {
   viewedAt: string;
 }
 
+/** @deprecated Replaced by AppUsageEvent with eventType="audio_play". */
 export interface AudioListenLog {
   id: string;
   poiId: string;
   languageCode: LanguageCode;
   listenedAt: string;
   durationInSeconds: number;
+}
+
+export interface AppUsageEvent {
+  id: string;
+  eventType: UsageEventType;
+  poiId: string | null;
+  languageCode: LanguageCode;
+  platform: DeviceType;
+  sessionId: string;
+  source: string;
+  metadata: string;
+  durationInSeconds: number | null;
+  occurredAt: string;
 }
 
 export interface AuditLog {
@@ -250,9 +266,13 @@ export interface SystemSetting {
   supportEmail: string;
   defaultLanguage: LanguageCode;
   fallbackLanguage: LanguageCode;
-  freeLanguages: LanguageCode[];
-  premiumLanguages: LanguageCode[];
-  premiumUnlockPriceUsd: number;
+  supportedLanguages: LanguageCode[];
+  /** @deprecated Replaced by supportedLanguages. */
+  freeLanguages?: LanguageCode[];
+  /** @deprecated Replaced by supportedLanguages. */
+  premiumLanguages?: LanguageCode[];
+  /** @deprecated Premium unlock is no longer used by the public app. */
+  premiumUnlockPriceUsd?: number;
   mapProvider: "google" | "mapbox" | "openstreetmap";
   storageProvider: "cloudinary" | "s3";
   ttsProvider: TtsProvider;
@@ -269,6 +289,7 @@ export interface DataSyncState {
 
 export interface AdminDataState {
   users: AdminUser[];
+  /** @deprecated Customer accounts are no longer part of the active admin flow. */
   customerUsers: CustomerUser[];
   categories: PoiCategory[];
   pois: Poi[];
@@ -279,7 +300,10 @@ export interface AdminDataState {
   routes: TourRoute[];
   promotions: Promotion[];
   reviews: Review[];
+  usageEvents: AppUsageEvent[];
+  /** @deprecated Replaced by usageEvents. */
   viewLogs: ViewLog[];
+  /** @deprecated Replaced by usageEvents. */
   audioListenLogs: AudioListenLog[];
   auditLogs: AuditLog[];
   settings: SystemSetting;

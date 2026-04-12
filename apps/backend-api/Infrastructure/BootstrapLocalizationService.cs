@@ -24,15 +24,6 @@ public sealed class BootstrapLocalizationService(
             return bootstrap;
         }
 
-        var isPremiumCustomer = bootstrap.CustomerUsers.FirstOrDefault()?.IsPremium == true;
-        if (!PremiumAccessCatalog.CanUseLanguage(isPremiumCustomer, targetLanguageCode))
-        {
-            logger.LogInformation(
-                "Skipping bootstrap auto-translation for locked language {LanguageCode}.",
-                targetLanguageCode);
-            return bootstrap;
-        }
-
         var translations = bootstrap.Translations.ToList();
         var workItems = BuildWorkItems(bootstrap, translations, targetLanguageCode).ToList();
         if (workItems.Count == 0)
@@ -276,7 +267,7 @@ public sealed class BootstrapLocalizationService(
                 FullText = FullText,
                 SeoTitle = LocalizationContentPolicy.CleanForLanguage(_existing?.SeoTitle, targetLanguageCode) ?? string.Empty,
                 SeoDescription = LocalizationContentPolicy.CleanForLanguage(_existing?.SeoDescription, targetLanguageCode) ?? string.Empty,
-                IsPremium = PremiumAccessCatalog.RequiresPremium(targetLanguageCode),
+                IsPremium = false,
                 UpdatedBy = string.IsNullOrWhiteSpace(_existing?.UpdatedBy) ? "auto-translation" : _existing.UpdatedBy,
                 UpdatedAt = _existing?.UpdatedAt ?? DateTimeOffset.UtcNow
             };

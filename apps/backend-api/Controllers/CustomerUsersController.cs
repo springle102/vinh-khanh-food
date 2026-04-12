@@ -12,85 +12,24 @@ public sealed class CustomerUsersController(
     PremiumPurchaseService premiumPurchaseService) : ControllerBase
 {
     [HttpPost]
-    public ActionResult<ApiResponse<CustomerUser>> Register([FromBody] CustomerRegistrationRequest request)
-    {
-        try
-        {
-            var created = repository.CreateCustomerUser(request);
-            return CreatedAtAction(
-                nameof(GetCustomerUserById),
-                new { id = created.Id },
-                ApiResponse<CustomerUser>.Ok(created, "Account created successfully."));
-        }
-        catch (ArgumentException exception)
-        {
-            return BadRequest(ApiResponse<CustomerUser>.Fail(exception.Message));
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Conflict(ApiResponse<CustomerUser>.Fail(exception.Message));
-        }
-    }
+    public ActionResult<ApiResponse<string>> Register([FromBody] CustomerRegistrationRequest request)
+        => StatusCode(StatusCodes.Status410Gone, ApiResponse<string>.Fail("Customer registration has been removed from the public Android app."));
 
     [HttpPost("login")]
-    public ActionResult<ApiResponse<CustomerUser>> Login([FromBody] CustomerLoginRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.Identifier) || string.IsNullOrWhiteSpace(request.Password))
-        {
-            return BadRequest(ApiResponse<CustomerUser>.Fail("Email, username, or phone number and password are required."));
-        }
-
-        var customer = repository.LoginCustomer(request.Identifier, request.Password);
-        return customer is null
-            ? Unauthorized(ApiResponse<CustomerUser>.Fail("Invalid sign-in information."))
-            : Ok(ApiResponse<CustomerUser>.Ok(customer, "Signed in successfully."));
-    }
+    public ActionResult<ApiResponse<string>> Login([FromBody] CustomerLoginRequest request)
+        => StatusCode(StatusCodes.Status410Gone, ApiResponse<string>.Fail("Customer sign-in has been removed from the public Android app."));
 
     [HttpGet("{id}")]
-    public ActionResult<ApiResponse<CustomerUser>> GetCustomerUserById(string id)
-    {
-        var customer = repository.GetCustomerUserById(id);
-        return customer is null
-            ? NotFound(ApiResponse<CustomerUser>.Fail("Customer was not found."))
-            : Ok(ApiResponse<CustomerUser>.Ok(customer));
-    }
+    public ActionResult<ApiResponse<string>> GetCustomerUserById(string id)
+        => StatusCode(StatusCodes.Status410Gone, ApiResponse<string>.Fail("Customer account APIs have been deprecated."));
 
     [HttpPut("{id}/profile")]
-    public ActionResult<ApiResponse<CustomerUser>> UpdateProfile(string id, [FromBody] CustomerProfileUpdateRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.Name) ||
-            string.IsNullOrWhiteSpace(request.Username) ||
-            string.IsNullOrWhiteSpace(request.Email) ||
-            string.IsNullOrWhiteSpace(request.Phone))
-        {
-            return BadRequest(ApiResponse<CustomerUser>.Fail("Name, username, email, and phone number are required."));
-        }
-
-        try
-        {
-            var updated = repository.UpdateCustomerProfile(id, request);
-            return updated is null
-                ? NotFound(ApiResponse<CustomerUser>.Fail("Customer was not found."))
-                : Ok(ApiResponse<CustomerUser>.Ok(updated, "Customer profile updated successfully."));
-        }
-        catch (ArgumentException exception)
-        {
-            return BadRequest(ApiResponse<CustomerUser>.Fail(exception.Message));
-        }
-    }
+    public ActionResult<ApiResponse<string>> UpdateProfile(string id, [FromBody] CustomerProfileUpdateRequest request)
+        => StatusCode(StatusCodes.Status410Gone, ApiResponse<string>.Fail("Customer profile APIs have been deprecated."));
 
     [HttpPost("{id}/premium/purchase")]
-    public ActionResult<ApiResponse<PremiumPurchaseResponse>> PurchasePremium(
+    public ActionResult<ApiResponse<string>> PurchasePremium(
         string id,
         [FromBody] PremiumPurchaseRequest request)
-    {
-        var customer = repository.GetCustomerUserById(id);
-        if (customer is null)
-        {
-            return NotFound(ApiResponse<PremiumPurchaseResponse>.Fail("Customer was not found."));
-        }
-
-        var response = premiumPurchaseService.Purchase(id, request);
-        return Ok(ApiResponse<PremiumPurchaseResponse>.Ok(response, "Premium upgraded successfully."));
-    }
+        => StatusCode(StatusCodes.Status410Gone, ApiResponse<string>.Fail("Premium purchases have been removed from the public Android app."));
 }

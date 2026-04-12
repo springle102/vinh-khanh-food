@@ -69,7 +69,6 @@ public partial class AppBottomBar : ContentView
     private void ApplyState()
     {
         ApplyItemState(_viewModel.SelectedTab == AppBottomBarTab.Poi, PoiTab, PoiLabel, PoiPath1, PoiPath2, PoiPath3);
-        ApplyItemState(_viewModel.SelectedTab == AppBottomBarTab.MyTour, TourTab, TourLabel, TourPath1, TourPath2);
         ApplyItemState(_viewModel.SelectedTab == AppBottomBarTab.Settings, SettingsTab, SettingsLabel, SettingsPath1, SettingsPath2);
         ApplyQrState(_viewModel.SelectedTab == AppBottomBarTab.QrScanner);
     }
@@ -78,7 +77,6 @@ public partial class AppBottomBar : ContentView
     {
         QrLabel.Text = _languageService.GetText("bottom_qr");
         PoiLabel.Text = _languageService.GetText("bottom_poi");
-        TourLabel.Text = _languageService.GetText("bottom_tour");
         SettingsLabel.Text = _languageService.GetText("bottom_settings");
     }
 

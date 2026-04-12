@@ -546,13 +546,13 @@ export const adminApi = {
     fullText: string;
     seoTitle: string;
     seoDescription: string;
-    isPremium: boolean;
+    isPremium?: boolean;
     updatedBy: string;
   }) =>
     jsonRequest<Translation>(
       translation.id ? `/api/v1/translations/${translation.id}` : "/api/v1/translations",
       translation.id ? "PUT" : "POST",
-      translation,
+      { ...translation, isPremium: translation.isPremium ?? false },
     ),
   translateTexts: (
     payload: {

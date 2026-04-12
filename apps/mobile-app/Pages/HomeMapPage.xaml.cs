@@ -93,6 +93,17 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
             return;
         }
 
+        if (string.Equals(uri.Host, "set-virtual-location", StringComparison.OrdinalIgnoreCase))
+        {
+            if (TryReadCoordinate(uri, "lat", out var latitude) &&
+                TryReadCoordinate(uri, "lng", out var longitude))
+            {
+                await _viewModel.SetVirtualLocationAsync(latitude, longitude);
+            }
+
+            return;
+        }
+
         if (!string.Equals(uri.Host, "select-poi", StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -115,6 +126,14 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         if (_viewModel.SelectedPoi is not null)
         {
             await FlyToCoordinateAsync(_viewModel.SelectedPoi.Latitude, _viewModel.SelectedPoi.Longitude, 17);
+            return;
+        }
+
+        var virtualUser = _viewModel.GetMapVirtualUserState();
+        if (virtualUser.Latitude is double latitude &&
+            virtualUser.Longitude is double longitude)
+        {
+            await FlyToCoordinateAsync(latitude, longitude, 18);
         }
     }
 
@@ -134,7 +153,9 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         {
             featuredLabel = _viewModel.FeaturedBadgeText,
             selectedPoiId = _viewModel.SelectedPoi?.Id,
+            activePoiId = _viewModel.CurrentActivePoiId,
             isHeatmapVisible = _viewModel.IsHeatmapVisible,
+            virtualUser = _viewModel.GetMapVirtualUserState(),
             pois = _viewModel.Pois.Select(poi => new
             {
                 id = poi.Id,
@@ -197,6 +218,10 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
                 MainThread.BeginInvokeOnMainThread(() => _ = RefreshMapStateAsync());
                 break;
 
+            case nameof(HomeMapViewModel.VirtualLocationVersion):
+                MainThread.BeginInvokeOnMainThread(() => _ = RefreshMapStateAsync());
+                break;
+
             case nameof(HomeMapViewModel.IsBottomSheetVisible):
                 MainThread.BeginInvokeOnMainThread(() => _ = PoiDetailBottomSheet.SetPresentedAsync(_viewModel.IsBottomSheetVisible));
                 break;
@@ -221,8 +246,14 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         var selectedPoiIdLiteral = _viewModel.SelectedPoi?.Id is null
             ? "null"
             : JsonSerializer.Serialize(_viewModel.SelectedPoi.Id, _jsonOptions);
+        var activePoiIdLiteral = _viewModel.CurrentActivePoiId is null
+            ? "null"
+            : JsonSerializer.Serialize(_viewModel.CurrentActivePoiId, _jsonOptions);
+        var virtualUserStateLiteral = JsonSerializer.Serialize(_viewModel.GetMapVirtualUserState(), _jsonOptions);
         await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.selectPoi({selectedPoiIdLiteral});");
+        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setActivePoi({activePoiIdLiteral});");
         await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setHeatmapVisible({(_viewModel.IsHeatmapVisible ? "true" : "false")});");
+        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setVirtualUser({virtualUserStateLiteral});");
     }
 
     private async Task FlyToCoordinateAsync(double latitude, double longitude, int zoom)
@@ -235,5 +266,35 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         var latitudeLiteral = latitude.ToString(CultureInfo.InvariantCulture);
         var longitudeLiteral = longitude.ToString(CultureInfo.InvariantCulture);
         await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.flyToCoordinate({latitudeLiteral}, {longitudeLiteral}, {zoom}, true);");
+    }
+
+    private static bool TryReadCoordinate(Uri uri, string key, out double value)
+    {
+        value = default;
+        if (string.IsNullOrWhiteSpace(uri.Query))
+        {
+            return false;
+        }
+
+        var pairs = uri.Query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (var pair in pairs)
+        {
+            var segments = pair.Split('=', 2);
+            if (segments.Length != 2 ||
+                !string.Equals(segments[0], key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return double.TryParse(
+                Uri.UnescapeDataString(segments[1]),
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out value);
+        }
+
+        return false;
     }
 }

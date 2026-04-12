@@ -212,7 +212,7 @@ public sealed partial class FoodStreetApiDataService
         var snapshot = await GetBootstrapSnapshotAsync();
         var languages = snapshot?.SupportedLanguages.Count > 0
             ? snapshot.SupportedLanguages
-            : BuildSupportedLanguages(null, null);
+            : BuildSupportedLanguages(null);
         var currentLanguageCode = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
         var currentLanguage = languages.FirstOrDefault(item =>
             string.Equals(item.Code, currentLanguageCode, StringComparison.OrdinalIgnoreCase));

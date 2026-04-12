@@ -78,9 +78,8 @@ const defaultNarrationForm: NarrationForm = {
   isPremium: false,
 };
 
-const createBlankNarrationForm = (isPremium = false): NarrationForm => ({
+const createBlankNarrationForm = (): NarrationForm => ({
   ...defaultNarrationForm,
-  isPremium,
 });
 
 const buildNarrationPreviewText = (title: string, shortText: string, fullText: string) => {
@@ -160,7 +159,7 @@ export const MediaPage = () => {
     languageCode: AudioGuide["languageCode"],
   ): NarrationForm => {
     if (!entityId) {
-      return createBlankNarrationForm(state.settings.premiumLanguages.includes(languageCode));
+      return createBlankNarrationForm();
     }
 
     const existing = state.translations.find(
@@ -178,11 +177,11 @@ export const MediaPage = () => {
         fullText: existing.fullText,
         seoTitle: existing.seoTitle,
         seoDescription: existing.seoDescription,
-        isPremium: existing.isPremium,
+        isPremium: false,
       };
     }
 
-    return createBlankNarrationForm(state.settings.premiumLanguages.includes(languageCode));
+    return createBlankNarrationForm();
   };
 
   const updateAudioSelection = (
@@ -221,9 +220,7 @@ export const MediaPage = () => {
     setNarrationForm(
       item
         ? loadNarrationForm(nextAudioForm.entityId, nextAudioForm.languageCode)
-        : createBlankNarrationForm(
-            state.settings.premiumLanguages.includes(nextAudioForm.languageCode),
-          ),
+        : createBlankNarrationForm(),
     );
     setAudioModalOpen(true);
   };
@@ -319,7 +316,7 @@ export const MediaPage = () => {
           fullText: narrationForm.fullText,
           seoTitle: narrationForm.seoTitle,
           seoDescription: narrationForm.seoDescription,
-          isPremium: narrationForm.isPremium,
+          isPremium: false,
         },
         user,
       );
@@ -436,10 +433,7 @@ export const MediaPage = () => {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium text-ink-800">{translation.title}</p>
-              <StatusBadge
-                status={translation.isPremium ? "processing" : "published"}
-                label={translation.isPremium ? "Premium" : "Free"}
-              />
+              <StatusBadge status="published" label="Public" />
             </div>
             <p className="mt-1 text-sm text-ink-500">
               {translation.shortText || "Đã có tiêu đề, chưa có mô tả ngắn."}
@@ -660,7 +654,7 @@ export const MediaPage = () => {
         <form className="space-y-6" onSubmit={handleAudioSubmit} onKeyDown={preventImplicitFormSubmit} autoComplete="off">
           <div className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <div className="space-y-5">
-              <div className="grid gap-5 md:grid-cols-2">
+              <div className="grid gap-5 md:grid-cols-1">
                 <div>
                   <label className="field-label">POI</label>
                   <Select
@@ -689,9 +683,9 @@ export const MediaPage = () => {
                       )
                     }
                   >
-                    {Object.entries(languageLabels).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
+                    {state.settings.supportedLanguages.map((code) => (
+                      <option key={code} value={code}>
+                        {languageLabels[code]}
                       </option>
                     ))}
                   </Select>
@@ -781,7 +775,7 @@ export const MediaPage = () => {
                     <option value="missing">Missing</option>
                   </Select>
                 </div>
-                <div className="flex items-end">
+                <div className="hidden">
                   <label className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
                     <input
                       type="checkbox"

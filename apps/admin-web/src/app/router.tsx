@@ -6,7 +6,6 @@ import { getHomePathForRole } from "../features/auth/auth-routing";
 import { LoginPage } from "../features/auth/LoginPage";
 import { AuthLoadingScreen, RequireAuth } from "../features/auth/RequireAuth";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
-import { EndUsersPage } from "../features/end-users/EndUsersPage";
 import { PoisPage } from "../features/pois/PoisPage";
 import { PromotionsPage } from "../features/promotions/PromotionsPage";
 import { ReviewsPage } from "../features/reviews/ReviewsPage";
@@ -80,7 +79,6 @@ export const router = createBrowserRouter([
           { path: "content", element: <Navigate to="/admin/pois" replace /> },
           { path: "media", element: <Navigate to="/admin/pois" replace /> },
           { path: "users", element: <UsersPage /> },
-          { path: "end-users", element: <EndUsersPage /> },
           { path: "promotions", element: <PromotionsPage /> },
           { path: "reviews", element: <ReviewsPage /> },
           { path: "analytics", element: <Navigate to="/admin/dashboard" replace /> },
@@ -104,7 +102,6 @@ export const router = createBrowserRouter([
           { path: "content", element: <Navigate to="/restaurant/pois" replace /> },
           { path: "media", element: <Navigate to="/restaurant/pois" replace /> },
           { path: "users", element: <Navigate to="/restaurant/profile" replace /> },
-          { path: "end-users", element: <Navigate to="/restaurant/dashboard" replace /> },
           { path: "promotions", element: <PromotionsPage /> },
           { path: "reviews", element: <ReviewsPage /> },
           { path: "analytics", element: <Navigate to="/restaurant/dashboard" replace /> },

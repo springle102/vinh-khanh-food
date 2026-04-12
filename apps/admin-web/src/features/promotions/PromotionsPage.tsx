@@ -108,7 +108,6 @@ export const PromotionsPage = () => {
         fullText: form.description,
         seoTitle: form.title,
         seoDescription: form.description || form.title,
-        isPremium: !state.settings.freeLanguages.includes(form.languageCode),
       },
       user,
     );

@@ -16,6 +16,9 @@ public class ApiRequestException : Exception
 public sealed class ApiUnauthorizedException(string message)
     : ApiRequestException(StatusCodes.Status401Unauthorized, message);
 
+public sealed class ApiBadRequestException(string message)
+    : ApiRequestException(StatusCodes.Status400BadRequest, message);
+
 public sealed class ApiForbiddenException(string message)
     : ApiRequestException(StatusCodes.Status403Forbidden, message);
 

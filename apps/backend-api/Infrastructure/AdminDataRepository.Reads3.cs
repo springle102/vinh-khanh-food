@@ -70,7 +70,7 @@ public sealed partial class AdminDataRepository
             Name = ReadString(reader, "Name"),
             Email = ReadString(reader, "Email"),
             Phone = ReadString(reader, "Phone"),
-            Role = ReadString(reader, "Role"),
+            Role = AdminRoleCatalog.NormalizeKnownRoleOrOriginal(ReadString(reader, "Role")),
             Password = ReadString(reader, "Password"),
             Status = ReadString(reader, "Status"),
             CreatedAt = ReadDateTimeOffset(reader, "CreatedAt"),

@@ -1,6 +1,5 @@
 using Microsoft.Maui.ApplicationModel;
 using VinhKhanh.MobileApp.Helpers;
-using VinhKhanh.MobileApp.Pages;
 using VinhKhanh.MobileApp.Services;
 using VinhKhanh.MobileApp.ViewModels;
 
@@ -20,7 +19,6 @@ public partial class AppShell : Shell
         _languageService = ServiceHelper.GetService<IAppLanguageService>();
         _bottomBarViewModel.AttachShell(this);
         _languageService.LanguageChanged += OnLanguageChanged;
-        Routing.RegisterRoute(AppRoutes.PremiumCheckout, typeof(PremiumCheckoutPage));
         ApplyLocalization();
         Loaded += OnLoaded;
     }

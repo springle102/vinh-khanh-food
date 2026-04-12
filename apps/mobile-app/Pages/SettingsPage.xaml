@@ -40,172 +40,9 @@
                             <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
                         </Border.Shadow>
 
-                        <VerticalStackLayout Spacing="14">
-                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
-                                <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding AccountTitleText}" VerticalOptions="Center" />
-
-                                <Button
-                                    Grid.Column="1"
-                                    Padding="14,8"
-                                    BackgroundColor="{StaticResource BrandPrimaryPale}"
-                                    Command="{Binding StartEditProfileCommand}"
-                                    FontSize="13"
-                                    IsVisible="{Binding IsViewingProfile}"
-                                    Text="{Binding EditProfileText}"
-                                    TextColor="{StaticResource BrandPrimary}" />
-
-                                <Button
-                                    Grid.Column="2"
-                                    Padding="14,8"
-                                    BackgroundColor="#F4EEE6"
-                                    Command="{Binding CancelEditProfileCommand}"
-                                    FontSize="13"
-                                    IsVisible="{Binding IsEditingProfile}"
-                                    Text="{Binding CancelProfileEditText}"
-                                    TextColor="{StaticResource BrandTextSecondary}" />
-
-                                <Button
-                                    Grid.Column="3"
-                                    Padding="14,8"
-                                    Command="{Binding SaveProfileCommand}"
-                                    FontSize="13"
-                                    IsVisible="{Binding IsEditingProfile}"
-                                    Text="{Binding SaveProfileText}" />
-                            </Grid>
-
-                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
-                                <Grid WidthRequest="76" HeightRequest="76">
-                                    <Border BackgroundColor="#F6DFC0" Padding="0" StrokeThickness="0" StrokeShape="RoundRectangle 38">
-                                        <Label HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontFamily="OpenSansSemibold" FontSize="22" Text="{Binding Profile.AvatarInitials}" TextColor="#4B4B4B" />
-                                    </Border>
-                                </Grid>
-
-                                <VerticalStackLayout Grid.Column="1" Spacing="10" VerticalOptions="Center">
-                                    <VerticalStackLayout IsVisible="{Binding IsViewingProfile}" Spacing="10">
-                                        <VerticalStackLayout Spacing="1">
-                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding FullNameLabelText}" />
-                                            <Label FontFamily="OpenSansSemibold" FontSize="18" Text="{Binding Profile.FullName}" />
-                                        </VerticalStackLayout>
-
-                                        <VerticalStackLayout Spacing="1">
-                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding UserNameLabelText}" />
-                                            <Label FontFamily="OpenSansSemibold" FontSize="15" Text="{Binding Profile.Username}" />
-                                        </VerticalStackLayout>
-
-                                        <BoxView HeightRequest="1" Color="#F0E8DE" />
-
-                                        <VerticalStackLayout Spacing="1">
-                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding ContactLabelText}" />
-                                            <Label FontFamily="OpenSansSemibold" FontSize="15" Text="{Binding Profile.Email}" />
-                                            <Label FontFamily="OpenSansSemibold" FontSize="15" Text="{Binding Profile.Phone}" />
-                                            <Label FontSize="12" Text="{Binding Profile.MetaLine}" TextColor="{StaticResource BrandTextMuted}" />
-                                        </VerticalStackLayout>
-                                    </VerticalStackLayout>
-
-                                    <VerticalStackLayout IsVisible="{Binding IsEditingProfile}" Spacing="10">
-                                        <VerticalStackLayout Spacing="4">
-                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding FullNameLabelText}" />
-                                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Text="{Binding FullName}" Placeholder="{Binding NamePlaceholderText}" />
-                                        </VerticalStackLayout>
-
-                                        <VerticalStackLayout Spacing="4">
-                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding UserNameLabelText}" />
-                                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Text="{Binding Username}" Placeholder="{Binding UsernamePlaceholderText}" />
-                                        </VerticalStackLayout>
-
-                                        <VerticalStackLayout Spacing="4">
-                                            <Label Style="{StaticResource MetaTextStyle}" Text="{Binding ContactLabelText}" />
-                                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Email" Text="{Binding Email}" Placeholder="{Binding EmailPlaceholderText}" />
-                                            <Entry IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" Keyboard="Telephone" Text="{Binding Phone}" Placeholder="{Binding PhonePlaceholderText}" />
-                                            <Label FontSize="12" Text="{Binding Profile.MetaLine}" TextColor="{StaticResource BrandTextMuted}" />
-                                        </VerticalStackLayout>
-                                    </VerticalStackLayout>
-                                </VerticalStackLayout>
-                            </Grid>
-
-                            <Border
-                                Padding="12,10"
-                                BackgroundColor="#EDF7EE"
-                                IsVisible="{Binding HasProfileMessage}"
-                                StrokeThickness="0"
-                                StrokeShape="RoundRectangle 14">
-                                <Border.Triggers>
-                                    <DataTrigger TargetType="Border" Binding="{Binding IsProfileMessageError}" Value="True">
-                                        <Setter Property="BackgroundColor" Value="#FDECEC" />
-                                    </DataTrigger>
-                                </Border.Triggers>
-                                <Label FontSize="12" Text="{Binding ProfileMessage}">
-                                    <Label.Triggers>
-                                        <DataTrigger TargetType="Label" Binding="{Binding IsProfileMessageError}" Value="True">
-                                            <Setter Property="TextColor" Value="#B42318" />
-                                        </DataTrigger>
-                                    </Label.Triggers>
-                                </Label>
-                            </Border>
-                        </VerticalStackLayout>
-                    </Border>
-
-                    <Border
-                        Padding="16"
-                        BackgroundColor="White"
-                        Stroke="#E8D2A8"
-                        StrokeThickness="1"
-                        StrokeShape="RoundRectangle 22">
-                        <Border.Shadow>
-                            <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
-                        </Border.Shadow>
-
-                        <VerticalStackLayout Spacing="12">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding PremiumTitleText}" />
-                                <Border Grid.Column="1" Padding="10,4" BackgroundColor="#FFF5E6" StrokeThickness="0" StrokeShape="RoundRectangle 999">
-                                    <Label FontFamily="OpenSansSemibold" FontSize="11" Text="{Binding PremiumStatusText}" TextColor="#9A5B12" />
-                                </Border>
-                            </Grid>
-
-                            <Label FontSize="13" Text="{Binding PremiumDescriptionText}" TextColor="{StaticResource BrandTextSecondary}" />
-
-                            <VerticalStackLayout Spacing="3">
-                                <Label Style="{StaticResource MetaTextStyle}" Text="{Binding PremiumLanguageListTitleText}" />
-                                <Label FontFamily="OpenSansSemibold" FontSize="14" Text="{Binding PremiumLanguageListText}" />
-                            </VerticalStackLayout>
-
-                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-                                <Label FontSize="12" Text="{Binding PremiumPriceLabelText}" TextColor="{StaticResource BrandTextMuted}" VerticalOptions="Center" />
-                                <Label
-                                    Grid.Column="1"
-                                    FontFamily="OpenSansSemibold"
-                                    FontSize="18"
-                                    HorizontalOptions="End"
-                                    Text="{Binding PremiumPriceText}"
-                                    TextColor="{StaticResource BrandPrimary}" />
-                            </Grid>
-
-                            <Button
-                                Command="{Binding BuyPremiumCommand}"
-                                IsEnabled="{Binding CanPurchasePremium}"
-                                IsVisible="{Binding CanPurchasePremium}"
-                                Text="{Binding PremiumActionText}" />
-
-                            <Border
-                                Padding="12,10"
-                                BackgroundColor="#EDF7EE"
-                                IsVisible="{Binding HasPremiumMessage}"
-                                StrokeThickness="0"
-                                StrokeShape="RoundRectangle 14">
-                                <Border.Triggers>
-                                    <DataTrigger TargetType="Border" Binding="{Binding IsPremiumMessageError}" Value="True">
-                                        <Setter Property="BackgroundColor" Value="#FDECEC" />
-                                    </DataTrigger>
-                                </Border.Triggers>
-                                <Label FontSize="12" Text="{Binding PremiumMessage}">
-                                    <Label.Triggers>
-                                        <DataTrigger TargetType="Label" Binding="{Binding IsPremiumMessageError}" Value="True">
-                                            <Setter Property="TextColor" Value="#B42318" />
-                                        </DataTrigger>
-                                    </Label.Triggers>
-                                </Label>
-                            </Border>
+                        <VerticalStackLayout Spacing="10">
+                            <Label FontFamily="OpenSansSemibold" FontSize="18" Text="{Binding PublicModeTitleText}" />
+                            <Label FontSize="14" LineBreakMode="WordWrap" Text="{Binding PublicModeDescriptionText}" TextColor="{StaticResource BrandTextSecondary}" />
                         </VerticalStackLayout>
                     </Border>
 
@@ -233,7 +70,7 @@
                                             Margin="0,0,0,12"
                                             Padding="14,14,14,12"
                                             BackgroundColor="White"
-                                            MinimumHeightRequest="94"
+                                            MinimumHeightRequest="84"
                                             Stroke="{StaticResource BrandStrokeStrong}"
                                             StrokeShape="RoundRectangle 16"
                                             FlexLayout.Basis="48%"
@@ -244,15 +81,10 @@
                                                     <Setter Property="Stroke" Value="{StaticResource BrandPrimary}" />
                                                     <Setter Property="StrokeThickness" Value="1.6" />
                                                 </DataTrigger>
-                                                <DataTrigger TargetType="Border" Binding="{Binding IsLocked}" Value="True">
-                                                    <Setter Property="BackgroundColor" Value="#FFF8F1" />
-                                                    <Setter Property="Stroke" Value="#E8D2A8" />
-                                                </DataTrigger>
                                             </Border.Triggers>
 
-                                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                                                 <Label
-                                                    Grid.RowSpan="2"
                                                     FontSize="28"
                                                     Text="{Binding Flag}"
                                                     VerticalOptions="Center" />
@@ -264,21 +96,6 @@
                                                     MaxLines="2"
                                                     Text="{Binding DisplayName}"
                                                     VerticalOptions="Center" />
-                                                <Border
-                                                    Grid.Row="1"
-                                                    Grid.Column="1"
-                                                    Padding="10,4"
-                                                    BackgroundColor="#FFF1D6"
-                                                    HorizontalOptions="Start"
-                                                    IsVisible="{Binding IsPremium}"
-                                                    StrokeThickness="0"
-                                                    StrokeShape="RoundRectangle 12">
-                                                    <Label
-                                                        FontFamily="OpenSansSemibold"
-                                                        FontSize="10"
-                                                        Text="{Binding Source={x:Reference PageRoot}, Path=BindingContext.PremiumBadgeText}"
-                                                        TextColor="#9A5B12" />
-                                                </Border>
                                             </Grid>
 
                                             <Border.GestureRecognizers>
@@ -301,28 +118,29 @@
                             <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
                         </Border.Shadow>
 
-                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding MenuItems}" Spacing="0">
-                            <BindableLayout.ItemTemplate>
-                                <DataTemplate x:DataType="models:SettingsMenuItem">
-                                    <Grid RowDefinitions="Auto,1">
-                                        <Grid Padding="16,14" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                            <Label FontSize="19" Text="{Binding Icon}" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
-                                            <Label Grid.Column="1" FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding Title}" VerticalOptions="Center" />
-                                            <Label Grid.Column="2" FontSize="22" Text="&#x203A;" TextColor="{StaticResource BrandTextMuted}" VerticalOptions="Center" />
+                        <VerticalStackLayout Spacing="0">
+                            <Label
+                                Margin="16,16,16,0"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="16"
+                                Text="{Binding MoreTitleText}" />
+
+                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding MenuItems}" Spacing="0">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate x:DataType="models:SettingsMenuItem">
+                                        <Grid RowDefinitions="Auto,1">
+                                            <Grid Padding="16,14" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                                <Label FontSize="19" Text="{Binding Icon}" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
+                                                <Label Grid.Column="1" FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding Title}" VerticalOptions="Center" />
+                                                <Label Grid.Column="2" FontSize="22" Text="&#x203A;" TextColor="{StaticResource BrandTextMuted}" VerticalOptions="Center" />
+                                            </Grid>
+                                            <BoxView Grid.Row="1" Margin="16,0" HeightRequest="1" Color="#F2ECE4" />
                                         </Grid>
-                                        <BoxView Grid.Row="1" Margin="16,0" HeightRequest="1" Color="#F2ECE4" />
-                                    </Grid>
-                                </DataTemplate>
-                            </BindableLayout.ItemTemplate>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
                         </VerticalStackLayout>
                     </Border>
-
-                    <Button
-                        Margin="0,4,0,0"
-                        Command="{Binding LogoutCommand}"
-                        CornerRadius="20"
-                        FontSize="16"
-                        Text="{Binding LogoutText}" />
                 </VerticalStackLayout>
             </ScrollView>
         </Grid>

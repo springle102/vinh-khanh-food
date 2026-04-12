@@ -184,7 +184,7 @@ public sealed partial class AdminDataRepository
             FROM dbo.AuditLogs legacy
             LEFT JOIN dbo.AdminUsers adminUser
                 ON adminUser.Email = legacy.TargetValue
-            WHERE UPPER(COALESCE(legacy.ActorRole, N'')) IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')
+            WHERE UPPER(COALESCE(legacy.ActorRole, N'')) IN (N'SUPER_ADMIN', N'SUPERADMIN', N'PLACE_OWNER', N'PLACEOWNER', N'SYSTEM')
             ORDER BY legacy.CreatedAt DESC, legacy.Id DESC;
             """;
 
@@ -212,7 +212,7 @@ public sealed partial class AdminDataRepository
                 Id = ReadString(reader, "Id"),
                 ActorId = ReadString(reader, "ActorId"),
                 ActorName = ReadString(reader, "ActorName"),
-                ActorRole = ReadString(reader, "ActorRole"),
+                ActorRole = AdminRoleCatalog.NormalizeKnownRoleOrOriginal(ReadString(reader, "ActorRole")),
                 ActorType = ReadString(reader, "ActorType"),
                 Action = action,
                 Module = useSeparatedAuditLogs ? ReadString(reader, "Module") : GuessLegacyAuditModule(action),
@@ -283,6 +283,22 @@ public sealed partial class AdminDataRepository
                 {
                     setting.PremiumLanguages.Add(languageCode);
                 }
+
+                if (!setting.SupportedLanguages.Contains(languageCode, StringComparer.OrdinalIgnoreCase))
+                {
+                    setting.SupportedLanguages.Add(languageCode);
+                }
+            }
+        }
+
+        if (setting.SupportedLanguages.Count == 0)
+        {
+            foreach (var languageCode in setting.FreeLanguages.Concat(setting.PremiumLanguages))
+            {
+                if (!setting.SupportedLanguages.Contains(languageCode, StringComparer.OrdinalIgnoreCase))
+                {
+                    setting.SupportedLanguages.Add(languageCode);
+                }
             }
         }
 
@@ -346,11 +362,17 @@ public sealed partial class AdminDataRepository
             return null;
         }
 
+        var normalizedRole = AdminRoleCatalog.NormalizeRole(ReadString(reader, "Role"));
+        if (!AdminRoleCatalog.IsAdminRole(normalizedRole))
+        {
+            return null;
+        }
+
         return new AdminRequestContext(
             ReadString(reader, "Id"),
             ReadString(reader, "Name"),
             ReadString(reader, "Email"),
-            ReadString(reader, "Role"),
+            normalizedRole!,
             ReadString(reader, "Status"),
             ReadNullableString(reader, "ManagedPoiId"));
     }

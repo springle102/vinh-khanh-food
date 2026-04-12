@@ -1162,7 +1162,7 @@ export const PoisPage = () => {
             fullText: foodItemDraft.description,
             seoTitle: foodItemDraft.name,
             seoDescription: foodItemDraft.description || foodItemDraft.name,
-            isPremium: !state.settings.freeLanguages.includes(form.contentLanguageCode),
+            isPremium: false,
           },
           user,
         );
@@ -1235,7 +1235,7 @@ export const PoisPage = () => {
         fullText: form.fullText,
         seoTitle: form.title,
         seoDescription: form.shortText || form.title,
-        isPremium: !state.settings.freeLanguages.includes(form.contentLanguageCode),
+        isPremium: false,
         updatedBy: user.name,
         updatedAt: savedPoi.updatedAt,
       };
@@ -1489,6 +1489,7 @@ export const PoisPage = () => {
 
           <OpenStreetMapPicker
             editable={false}
+            isVisible
             pois={mapPois}
             selectedPoiId={selectedPoiId}
             lat={selectedPoi?.lat ?? DEFAULT_LAT}
@@ -1762,9 +1763,9 @@ export const PoisPage = () => {
                       handleContentLanguageChange(event.target.value as LanguageCode)
                     }
                   >
-                    {Object.entries(languageLabels).map(([code, label]) => (
+                    {state.settings.supportedLanguages.map((code) => (
                       <option key={code} value={code}>
-                        {label}
+                        {languageLabels[code]}
                       </option>
                     ))}
                   </Select>
@@ -2054,6 +2055,7 @@ export const PoisPage = () => {
             <OpenStreetMapPicker
               key={`${poiFormLoadState.mode}:${poiFormLoadState.dataLoaded ? "ready" : "loading"}:${poiFormLoadState.mode === "edit" ? form.id || form.poiId || "new" : "create"}`}
               editable
+              isVisible={isModalOpen && poiFormLoadState.dataLoaded}
               address={form.address}
               lat={parseCoordinate(form.lat, DEFAULT_LAT)}
               lng={parseCoordinate(form.lng, DEFAULT_LNG)}

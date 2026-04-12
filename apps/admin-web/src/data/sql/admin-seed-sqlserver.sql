@@ -15,8 +15,15 @@ GO
 IF OBJECT_ID(N'dbo.RefreshSessions', N'U') IS NOT NULL
     DROP TABLE dbo.RefreshSessions;
 GO
+IF OBJECT_ID(N'dbo.PremiumPurchaseTransactions', N'U') IS NOT NULL
+    DROP TABLE dbo.PremiumPurchaseTransactions;
+GO
+-- Legacy cleanup for removed customer-account/mobile-auth tables from the old public app model.
 IF OBJECT_ID(N'dbo.UserActivityLogs', N'U') IS NOT NULL
     DROP TABLE dbo.UserActivityLogs;
+GO
+IF OBJECT_ID(N'dbo.UserPoiVisits', N'U') IS NOT NULL
+    DROP TABLE dbo.UserPoiVisits;
 GO
 IF OBJECT_ID(N'dbo.AdminAuditLogs', N'U') IS NOT NULL
     DROP TABLE dbo.AdminAuditLogs;
@@ -44,6 +51,9 @@ IF OBJECT_ID(N'dbo.AudioListenLogs', N'U') IS NOT NULL
 GO
 IF OBJECT_ID(N'dbo.ViewLogs', N'U') IS NOT NULL
     DROP TABLE dbo.ViewLogs;
+GO
+IF OBJECT_ID(N'dbo.AppUsageEvents', N'U') IS NOT NULL
+    DROP TABLE dbo.AppUsageEvents;
 GO
 IF OBJECT_ID(N'dbo.Reviews', N'U') IS NOT NULL
     DROP TABLE dbo.Reviews;
@@ -115,25 +125,6 @@ CREATE TABLE dbo.AdminUsers (
 );
 GO
 
-CREATE TABLE dbo.CustomerUsers (
-    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
-    Name NVARCHAR(120) NOT NULL,
-    Email NVARCHAR(200) NOT NULL,
-    Phone NVARCHAR(30) NOT NULL,
-    [Password] NVARCHAR(200) NOT NULL,
-    PreferredLanguage NVARCHAR(20) NOT NULL,
-    IsPremium BIT NOT NULL,
-    CreatedAt DATETIMEOFFSET(7) NOT NULL,
-    LastActiveAt DATETIMEOFFSET(7) NULL,
-    Username NVARCHAR(120) NULL,
-    Country NVARCHAR(20) NOT NULL,
-    CONSTRAINT CK_CustomerUsers_Identity CHECK (
-        NULLIF(LTRIM(RTRIM(Username)), N'') IS NOT NULL OR
-        NULLIF(LTRIM(RTRIM(Email)), N'') IS NOT NULL
-    )
-);
-GO
-
 CREATE TABLE dbo.Pois (
     Id NVARCHAR(50) NOT NULL PRIMARY KEY,
     Slug NVARCHAR(150) NOT NULL,
@@ -154,15 +145,6 @@ CREATE TABLE dbo.Pois (
     UpdatedAt DATETIMEOFFSET(7) NOT NULL,
     CONSTRAINT FK_Pois_Categories FOREIGN KEY (CategoryId) REFERENCES dbo.Categories(Id),
     CONSTRAINT FK_Pois_AdminUsers FOREIGN KEY (OwnerUserId) REFERENCES dbo.AdminUsers(Id)
-);
-GO
-
-CREATE TABLE dbo.CustomerFavoritePois (
-    CustomerUserId NVARCHAR(50) NOT NULL,
-    PoiId NVARCHAR(50) NOT NULL,
-    PRIMARY KEY (CustomerUserId, PoiId),
-    CONSTRAINT FK_CustomerFavoritePois_CustomerUsers FOREIGN KEY (CustomerUserId) REFERENCES dbo.CustomerUsers(Id),
-    CONSTRAINT FK_CustomerFavoritePois_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id)
 );
 GO
 
@@ -303,6 +285,25 @@ CREATE TABLE dbo.AudioListenLogs (
 );
 GO
 
+CREATE TABLE dbo.AppUsageEvents (
+    Id NVARCHAR(60) NOT NULL PRIMARY KEY,
+    EventType NVARCHAR(40) NOT NULL,
+    PoiId NVARCHAR(50) NULL,
+    LanguageCode NVARCHAR(20) NOT NULL,
+    Platform NVARCHAR(20) NOT NULL,
+    SessionId NVARCHAR(80) NOT NULL,
+    Source NVARCHAR(60) NOT NULL,
+    Metadata NVARCHAR(MAX) NOT NULL,
+    DurationInSeconds INT NULL,
+    OccurredAt DATETIMEOFFSET(7) NOT NULL,
+    CONSTRAINT FK_AppUsageEvents_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id)
+);
+GO
+
+CREATE INDEX IX_AppUsageEvents_OccurredAt
+ON dbo.AppUsageEvents (OccurredAt DESC, EventType, PoiId, LanguageCode);
+GO
+
 CREATE TABLE dbo.AuditLogs (
     Id NVARCHAR(50) NOT NULL PRIMARY KEY,
     ActorName NVARCHAR(120) NOT NULL,
@@ -333,23 +334,6 @@ GO
 
 CREATE UNIQUE INDEX UX_AdminAuditLogs_LegacyAuditId
 ON dbo.AdminAuditLogs (LegacyAuditId)
-WHERE LegacyAuditId IS NOT NULL;
-GO
-
-CREATE TABLE dbo.UserActivityLogs (
-    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
-    ActorId NVARCHAR(50) NOT NULL,
-    ActorType NVARCHAR(30) NOT NULL,
-    EventType NVARCHAR(160) NOT NULL,
-    Metadata NVARCHAR(MAX) NOT NULL,
-    SourceApp NVARCHAR(60) NOT NULL,
-    LegacyAuditId NVARCHAR(50) NULL,
-    CreatedAt DATETIMEOFFSET(7) NOT NULL
-);
-GO
-
-CREATE UNIQUE INDEX UX_UserActivityLogs_LegacyAuditId
-ON dbo.UserActivityLogs (LegacyAuditId)
 WHERE LegacyAuditId IS NOT NULL;
 GO
 
@@ -405,18 +389,9 @@ INSERT INTO dbo.AdminUsers (Id, Name, Email, Phone, Role, [Password], [Status], 
 INSERT INTO dbo.AdminUsers (Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId) VALUES (N'user-owner-oc', N'Lê Quốc Bảo', N'quocbao@gmail.com', N'0909 188 003', N'PLACE_OWNER', N'Admin@123', N'active', CAST(N'2025-12-29T02:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-09T16:19:46.2940904+00:00' AS datetimeoffset(7)), N'#d9a845', N'oc-phat');
 INSERT INTO dbo.AdminUsers (Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId) VALUES (N'user-super', N'Ánh Xuân', N'anhxuan@gmail.com', N'0909 188 001', N'SUPER_ADMIN', N'Admin@123', N'active', CAST(N'2025-11-19T02:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-09T16:25:15.4511570+00:00' AS datetimeoffset(7)), N'#f97316', NULL);
 GO
-INSERT INTO dbo.CustomerUsers (Id, Name, Email, Phone, [Password], PreferredLanguage, IsPremium, CreatedAt, LastActiveAt, Username, Country) VALUES (N'customer-1', N'Kyryll Chudomirovich Flins', N'flins@gmail.com', N'0911 000 111', N'Customer@123', N'vi', 0, CAST(N'2026-01-10T03:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-03-19T03:15:00.0000000+00:00' AS datetimeoffset(7)), N'bao.vy', N'VN');
-INSERT INTO dbo.CustomerUsers (Id, Name, Email, Phone, [Password], PreferredLanguage, IsPremium, CreatedAt, LastActiveAt, Username, Country) VALUES (N'customer-2', N'Lucas Martin', N'lucas@example.com', N'+84 901 111 222', N'Customer@456', N'en', 1, CAST(N'2026-01-15T03:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-03-19T05:20:00.0000000+00:00' AS datetimeoffset(7)), N'lucas.martin', N'FR');
-INSERT INTO dbo.CustomerUsers (Id, Name, Email, Phone, [Password], PreferredLanguage, IsPremium, CreatedAt, LastActiveAt, Username, Country) VALUES (N'customer-3', N'Kim Seo Yoon', N'seoyoon@example.com', N'+84 902 222 333', N'Customer@789', N'ko', 1, CAST(N'2026-02-02T03:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-03-17T09:05:00.0000000+00:00' AS datetimeoffset(7)), N'seoyoon', N'KR');
-GO
 INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'ca-phe-che', N'ca-phe-che', N'Chung cư H1, Hoàng Diệu, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam', 10.762195, 106.701499, N'cat-coffee-tea', N'published', 0, N'Quận 4', N'Phường Khánh Hội', N'25.000 - 75.000 VND', 25, 73, N'user-owner-dessert', N'Ánh Xuân', CAST(N'2026-01-16T02:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-06T06:57:06.9121038+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'oc-phat', N'oc-phat', N'Ốc Phát, Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam', 10.761873, 106.702153, N'cat-oc', N'published', 0, N'Quận 4', N'Phường Khánh Hội', N'50.000-110.000', 45, 98, N'user-owner-oc', N'Ánh Xuân', CAST(N'2025-11-19T02:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-09T16:25:22.2941302+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'sushi-ko', N'nha-hang-sushi-ko', N'Nhà Hàng Sushi Ko, 122/37/15 Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam', 10.760772, 106.704798, N'cat-seafood-raw', N'published', 0, N'Quận 4', N'Phường Khánh Hội', N'50.000-150.000', 50, 96, N'user-owner-bbq', N'Ánh Xuân', CAST(N'2025-11-19T03:15:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-09T16:18:37.7903537+00:00' AS datetimeoffset(7)));
-GO
-INSERT INTO dbo.CustomerFavoritePois (CustomerUserId, PoiId) VALUES (N'customer-1', N'oc-phat');
-INSERT INTO dbo.CustomerFavoritePois (CustomerUserId, PoiId) VALUES (N'customer-1', N'sushi-ko');
-INSERT INTO dbo.CustomerFavoritePois (CustomerUserId, PoiId) VALUES (N'customer-2', N'sushi-ko');
-INSERT INTO dbo.CustomerFavoritePois (CustomerUserId, PoiId) VALUES (N'customer-3', N'oc-phat');
 GO
 INSERT INTO dbo.PoiTags (PoiId, TagValue) VALUES (N'ca-phe-che', N'ăn vặt');
 INSERT INTO dbo.PoiTags (PoiId, TagValue) VALUES (N'ca-phe-che', N'chè');
@@ -458,7 +433,7 @@ Hệ điều hành cốt lõi: * Cà phê: Đậm đà, thơm lừng, đủ sứ
 Chè: Đỉnh cao của sự "chữa lành" với topping ngập tràn, nước cốt dừa béo ngậy, ngọt thanh không hề gắt cổ.
 
 Tóm lại là, chiều nay lượn Quận 4, không cần phải suy nghĩ "Ăn gì? Uống gì?". Cứ thẳng tiến đến Cà Phê Chè là có đủ hết nha!', N'Cà phê Chè', N'Cà phê Chè', 0, N'Ánh Xuân', CAST(N'2026-04-06T06:57:07.0336613+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.PoiTranslations (Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt) VALUES (N'trans-c267c49e', N'poi', N'sushi-ko', N'zh-CN', N'Quảng Trường Ẩm thực BBQ Night', N'', N'烧烤之夜是永庆美食街的一大亮点，游客可以在这里通过烤海鲜的香气和热闹的当地氛围，体验西贡充满活力的街头生活。', N'', N'', 1, N'Ánh Xuân', CAST(N'2026-03-21T03:10:22.6481221+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.PoiTranslations (Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt) VALUES (N'trans-c267c49e', N'poi', N'sushi-ko', N'zh-CN', N'Quảng Trường Ẩm thực BBQ Night', N'', N'烧烤之夜是永庆美食街的一大亮点，游客可以在这里通过烤海鲜的香气和热闹的当地氛围，体验西贡充满活力的街头生活。', N'', N'', 0, N'Ánh Xuân', CAST(N'2026-03-21T03:10:22.6481221+00:00' AS datetimeoffset(7)));
 GO
 INSERT INTO dbo.AudioGuides (Id, EntityType, EntityId, LanguageCode, AudioUrl, VoiceType, SourceType, [Status], UpdatedBy, UpdatedAt) VALUES (N'audio-1', N'poi', N'sushi-ko', N'vi', N'', N'standard', N'tts', N'ready', N'Minh Ánh', CAST(N'2026-04-09T16:17:56.3843276+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AudioGuides (Id, EntityType, EntityId, LanguageCode, AudioUrl, VoiceType, SourceType, [Status], UpdatedBy, UpdatedAt) VALUES (N'audio-2', N'poi', N'sushi-ko', N'en', N'https://cdn.example.com/audio/bbq-night-en.mp3', N'standard', N'tts', N'ready', N'Minh Ánh', CAST(N'2026-03-18T07:20:00.0000000+00:00' AS datetimeoffset(7)));
@@ -482,29 +457,55 @@ GO
 INSERT INTO dbo.Reviews (Id, PoiId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]) VALUES (N'review-1', N'oc-phat', N'Thu Trang', 5, N'Chạm vào POI trên bản đồ rồi nghe giới thiệu rất tiện và dễ hiểu.', N'vi', CAST(N'2026-03-18T05:00:00.0000000+00:00' AS datetimeoffset(7)), N'approved');
 INSERT INTO dbo.Reviews (Id, PoiId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]) VALUES (N'review-2', N'sushi-ko', N'Lucas', 4, N'Useful overview before starting the food route.', N'en', CAST(N'2026-03-18T08:00:00.0000000+00:00' AS datetimeoffset(7)), N'pending');
 GO
-INSERT INTO dbo.ViewLogs (Id, PoiId, LanguageCode, DeviceType, ViewedAt) VALUES (N'view-14', N'sushi-ko', N'en', N'ios', CAST(N'2026-03-19T09:40:00.0000000+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.ViewLogs (Id, PoiId, LanguageCode, DeviceType, ViewedAt) VALUES (N'view-12', N'oc-phat', N'en', N'ios', CAST(N'2026-03-18T18:25:00.0000000+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.ViewLogs (Id, PoiId, LanguageCode, DeviceType, ViewedAt) VALUES (N'view-11', N'sushi-ko', N'vi', N'android', CAST(N'2026-03-18T12:45:00.0000000+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.ViewLogs (Id, PoiId, LanguageCode, DeviceType, ViewedAt) VALUES (N'view-9', N'oc-phat', N'ja', N'android', CAST(N'2026-03-17T11:20:00.0000000+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.ViewLogs (Id, PoiId, LanguageCode, DeviceType, ViewedAt) VALUES (N'view-8', N'sushi-ko', N'en', N'ios', CAST(N'2026-03-16T19:40:00.0000000+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.ViewLogs (Id, PoiId, LanguageCode, DeviceType, ViewedAt) VALUES (N'view-6', N'oc-phat', N'vi', N'android', CAST(N'2026-03-15T18:30:00.0000000+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.ViewLogs (Id, PoiId, LanguageCode, DeviceType, ViewedAt) VALUES (N'view-5', N'sushi-ko', N'zh-CN', N'ios', CAST(N'2026-03-15T13:10:00.0000000+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.ViewLogs (Id, PoiId, LanguageCode, DeviceType, ViewedAt) VALUES (N'view-2', N'oc-phat', N'en', N'ios', CAST(N'2026-03-13T12:20:00.0000000+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.ViewLogs (Id, PoiId, LanguageCode, DeviceType, ViewedAt) VALUES (N'view-1', N'sushi-ko', N'vi', N'web', CAST(N'2026-03-13T11:10:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-14', N'poi_view', N'sushi-ko', N'en', N'android', N'session-en-1901', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-19T09:40:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-12', N'poi_view', N'oc-phat', N'en', N'android', N'session-en-1802', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-18T18:25:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-11', N'poi_view', N'sushi-ko', N'vi', N'android', N'session-vi-1801', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-18T12:45:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-09', N'poi_view', N'oc-phat', N'ja', N'android', N'session-ja-1701', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-17T11:20:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-08', N'poi_view', N'sushi-ko', N'en', N'android', N'session-en-1601', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-16T19:40:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-06', N'poi_view', N'oc-phat', N'vi', N'android', N'session-vi-1502', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-15T18:30:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-05', N'poi_view', N'sushi-ko', N'zh-CN', N'android', N'session-zh-1501', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-15T13:10:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-02', N'poi_view', N'oc-phat', N'en', N'android', N'session-en-1301', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-13T12:20:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-01', N'poi_view', N'sushi-ko', N'vi', N'android', N'session-vi-1301', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-13T11:10:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-audio-10', N'audio_play', N'sushi-ko', N'vi', N'android', N'session-vi-1901', N'audio_player', N'{"guideType":"poi"}', 118, CAST(N'2026-03-19T10:15:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-audio-08', N'audio_play', N'oc-phat', N'ja', N'android', N'session-ja-1801', N'audio_player', N'{"guideType":"poi"}', 95, CAST(N'2026-03-18T20:55:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-audio-07', N'audio_play', N'sushi-ko', N'en', N'android', N'session-en-1802', N'audio_player', N'{"guideType":"poi"}', 91, CAST(N'2026-03-18T20:20:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-audio-05', N'audio_play', N'oc-phat', N'vi', N'android', N'session-vi-1602', N'audio_player', N'{"guideType":"poi"}', 102, CAST(N'2026-03-16T18:15:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-audio-04', N'audio_play', N'sushi-ko', N'zh-CN', N'android', N'session-zh-1501', N'audio_player', N'{"guideType":"poi"}', 110, CAST(N'2026-03-15T19:00:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-audio-02', N'audio_play', N'oc-phat', N'en', N'android', N'session-en-1401', N'audio_player', N'{"guideType":"poi"}', 88, CAST(N'2026-03-14T12:10:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-audio-01', N'audio_play', N'sushi-ko', N'vi', N'android', N'session-vi-1301', N'audio_player', N'{"guideType":"poi"}', 96, CAST(N'2026-03-13T11:30:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-qr-01', N'qr_scan', N'sushi-ko', N'vi', N'android', N'session-vi-1301', N'qr_scanner', N'{"entry":"poi-qr"}', NULL, CAST(N'2026-03-13T11:08:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-qr-02', N'qr_scan', N'oc-phat', N'en', N'android', N'session-en-1802', N'qr_scanner', N'{"entry":"poi-qr"}', NULL, CAST(N'2026-03-18T18:21:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-qr-03', N'qr_scan', N'sushi-ko', N'zh-CN', N'android', N'session-zh-1501', N'qr_scanner', N'{"entry":"poi-qr"}', NULL, CAST(N'2026-03-15T13:05:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-qr-04', N'qr_scan', N'oc-phat', N'ja', N'android', N'session-ja-1701', N'qr_scanner', N'{"entry":"poi-qr"}', NULL, CAST(N'2026-03-17T11:18:00.0000000+00:00' AS datetimeoffset(7)));
 GO
-INSERT INTO dbo.AudioListenLogs (Id, PoiId, LanguageCode, ListenedAt, DurationInSeconds) VALUES (N'listen-10', N'sushi-ko', N'vi', CAST(N'2026-03-19T10:15:00.0000000+00:00' AS datetimeoffset(7)), 118);
-INSERT INTO dbo.AudioListenLogs (Id, PoiId, LanguageCode, ListenedAt, DurationInSeconds) VALUES (N'listen-8', N'oc-phat', N'ja', CAST(N'2026-03-18T20:55:00.0000000+00:00' AS datetimeoffset(7)), 95);
-INSERT INTO dbo.AudioListenLogs (Id, PoiId, LanguageCode, ListenedAt, DurationInSeconds) VALUES (N'listen-7', N'sushi-ko', N'en', CAST(N'2026-03-18T20:20:00.0000000+00:00' AS datetimeoffset(7)), 91);
-INSERT INTO dbo.AudioListenLogs (Id, PoiId, LanguageCode, ListenedAt, DurationInSeconds) VALUES (N'listen-5', N'oc-phat', N'vi', CAST(N'2026-03-16T18:15:00.0000000+00:00' AS datetimeoffset(7)), 102);
-INSERT INTO dbo.AudioListenLogs (Id, PoiId, LanguageCode, ListenedAt, DurationInSeconds) VALUES (N'listen-4', N'sushi-ko', N'zh-CN', CAST(N'2026-03-15T19:00:00.0000000+00:00' AS datetimeoffset(7)), 110);
-INSERT INTO dbo.AudioListenLogs (Id, PoiId, LanguageCode, ListenedAt, DurationInSeconds) VALUES (N'listen-2', N'oc-phat', N'en', CAST(N'2026-03-14T12:10:00.0000000+00:00' AS datetimeoffset(7)), 88);
-INSERT INTO dbo.AudioListenLogs (Id, PoiId, LanguageCode, ListenedAt, DurationInSeconds) VALUES (N'listen-1', N'sushi-ko', N'vi', CAST(N'2026-03-13T11:30:00.0000000+00:00' AS datetimeoffset(7)), 96);
+
+INSERT INTO dbo.ViewLogs (Id, PoiId, LanguageCode, DeviceType, ViewedAt)
+SELECT
+    CONCAT(N'view-', RIGHT(event.Id, 12)),
+    event.PoiId,
+    event.LanguageCode,
+    event.Platform,
+    event.OccurredAt
+FROM dbo.AppUsageEvents event
+WHERE event.EventType = N'poi_view'
+  AND event.PoiId IS NOT NULL;
 GO
+
+INSERT INTO dbo.AudioListenLogs (Id, PoiId, LanguageCode, ListenedAt, DurationInSeconds)
+SELECT
+    CONCAT(N'listen-', RIGHT(event.Id, 12)),
+    event.PoiId,
+    event.LanguageCode,
+    event.OccurredAt,
+    COALESCE(event.DurationInSeconds, 0)
+FROM dbo.AppUsageEvents event
+WHERE event.EventType = N'audio_play'
+  AND event.PoiId IS NOT NULL;
+GO
+
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-3afc4b8c', N'Ánh Xuân', N'SUPER_ADMIN', N'Đăng nhập admin', N'superadmin@vinhkhanh.vn', CAST(N'2026-04-06T07:32:14.4401076+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-3e263be7', N'Ánh Xuân', N'SUPER_ADMIN', N'Làm mới phiên đăng nhập', N'superadmin@vinhkhanh.vn', CAST(N'2026-04-06T07:32:10.9270794+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-87f6a364', N'Ánh Xuân', N'SUPER_ADMIN', N'Làm mới phiên đăng nhập', N'superadmin@vinhkhanh.vn', CAST(N'2026-04-06T07:32:10.9127857+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-58e1e2c4', N'Kyryll Chudomirovich Flins', N'CUSTOMER', N'Cập nhật hồ sơ khách hàng', N'customer-1', CAST(N'2026-04-06T07:13:10.1419658+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-c2eef888', N'Nguyễn Bảo Vy', N'CUSTOMER', N'Cập nhật hồ sơ khách hàng', N'customer-1', CAST(N'2026-04-06T07:12:04.9700189+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-26d710ce', N'Ánh Xuân', N'SYSTEM', N'Cập nhật audio guide', N'poi:vi:ca-phe-che', CAST(N'2026-04-06T06:57:07.1456732+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-d9ccb4f4', N'Ánh Xuân', N'SYSTEM', N'Cập nhật nội dung thuyết minh', N'poi:vi:ca-phe-che', CAST(N'2026-04-06T06:57:07.0425063+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-96e912d7', N'Ánh Xuân', N'SUPER_ADMIN', N'Duyệt POI', N'ca-phe-che', CAST(N'2026-04-06T06:57:07.0072985+00:00' AS datetimeoffset(7)));
@@ -577,7 +578,7 @@ INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, Crea
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-edc381f6', N'Ánh Xuân', N'SUPER_ADMIN', N'Đăng nhập admin', N'superadmin@vinhkhanh.vn', CAST(N'2026-03-21T00:48:22.0356057+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-0042017d', N'Ánh Xuân', N'SUPER_ADMIN', N'Đăng nhập admin', N'superadmin@vinhkhanh.vn', CAST(N'2026-03-21T00:03:59.7290246+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-2', N'Minh Ánh', N'PLACE_OWNER', N'Cập nhật audio tiếng Anh cho BBQ Night', N'poi-bbq-night', CAST(N'2026-03-19T03:05:00.0000000+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-1', N'Ánh Xuân', N'SUPER_ADMIN', N'Cập nhật cấu hình ngôn ngữ premium', N'settings', CAST(N'2026-03-19T02:15:00.0000000+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-1', N'Ánh Xuân', N'SUPER_ADMIN', N'Cập nhật cấu hình ngôn ngữ hỗ trợ', N'settings', CAST(N'2026-03-19T02:15:00.0000000+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-3', N'Lê Quốc Bảo', N'PLACE_OWNER', N'Cập nhật mô tả món ăn đặc trưng', N'poi-snail-signature', CAST(N'2026-03-18T07:12:00.0000000+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AuditLogs (Id, ActorName, ActorRole, [Action], TargetValue, CreatedAt) VALUES (N'audit-4', N'Ánh Xuân', N'SUPER_ADMIN', N'Khóa tài khoản chủ quán Hẻm Chè', N'user-owner-dessert', CAST(N'2026-03-16T09:00:00.0000000+00:00' AS datetimeoffset(7)));
 GO
@@ -602,7 +603,7 @@ SELECT
         WHEN legacy.[Action] LIKE N'%ưu đãi%' THEN N'PROMOTION'
         WHEN legacy.[Action] LIKE N'%đánh giá%' THEN N'REVIEW'
         WHEN legacy.[Action] LIKE N'%tài khoản admin%' OR legacy.[Action] LIKE N'%chủ quán%' THEN N'ADMIN_USER'
-        WHEN legacy.[Action] LIKE N'%cài đặt%' OR legacy.[Action] LIKE N'%ngôn ngữ premium%' THEN N'SETTINGS'
+        WHEN legacy.[Action] LIKE N'%cài đặt%' OR legacy.[Action] LIKE N'%ngôn ngữ hỗ trợ%' THEN N'SETTINGS'
         ELSE N'LEGACY'
     END,
     legacy.TargetValue,
@@ -621,27 +622,6 @@ WHERE UPPER(COALESCE(legacy.ActorRole, N'')) IN (N'SUPER_ADMIN', N'PLACE_OWNER',
       FROM dbo.AdminAuditLogs migrated
       WHERE migrated.LegacyAuditId = legacy.Id
   );
-
-INSERT INTO dbo.UserActivityLogs (
-    Id, ActorId, ActorType, EventType, Metadata, SourceApp, LegacyAuditId, CreatedAt
-)
-SELECT
-    legacy.Id,
-    legacy.TargetValue,
-    N'END_USER',
-    legacy.[Action],
-    CONCAT(N'actor=', legacy.ActorName, N'; target=', legacy.TargetValue),
-    N'MOBILE_APP',
-    legacy.Id,
-    legacy.CreatedAt
-FROM dbo.AuditLogs legacy
-WHERE UPPER(COALESCE(legacy.ActorRole, N'')) NOT IN (N'SUPER_ADMIN', N'PLACE_OWNER', N'SYSTEM')
-  AND NOT EXISTS (
-      SELECT 1
-      FROM dbo.UserActivityLogs migrated
-      WHERE migrated.LegacyAuditId = legacy.Id
-  );
-GO
 
 INSERT INTO dbo.AdminAuditLogs ([Id], [ActorId], [ActorName], [ActorRole], [ActorType], [Action], [Module], [TargetId], [TargetSummary], [BeforeSummary], [AfterSummary], [SourceApp], [LegacyAuditId], [CreatedAt]) VALUES (N'audit-105e45d4', N'user-super', N'Ánh Xuân', N'SUPER_ADMIN', N'ADMIN', N'Đăng nhập admin', N'AUTH', N'user-super', N'anhxuan@gmail.com', NULL, NULL, N'ADMIN_WEB', NULL, CAST(N'2026-04-09T16:01:11.5521958+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AdminAuditLogs ([Id], [ActorId], [ActorName], [ActorRole], [ActorType], [Action], [Module], [TargetId], [TargetSummary], [BeforeSummary], [AfterSummary], [SourceApp], [LegacyAuditId], [CreatedAt]) VALUES (N'audit-46f8418f', N'user-super', N'Ánh Xuân', N'SUPER_ADMIN', N'ADMIN', N'Đăng xuất admin', N'AUTH', N'user-super', N'anhxuan@gmail.com', NULL, NULL, N'ADMIN_WEB', NULL, CAST(N'2026-04-09T16:02:40.0587692+00:00' AS datetimeoffset(7)));
@@ -688,11 +668,11 @@ GO
 INSERT INTO dbo.RefreshSessions (AccessToken, RefreshToken, UserId, AccessTokenExpiresAt, ExpiresAt) VALUES (N'vk_access_8a51956446414a53b3b7a46755a65894', N'vk_refresh_c651fd66494841beb09044011ec3d862', N'user-super', CAST(N'2026-04-10T00:25:15.4876735+00:00' AS datetimeoffset(7)), CAST(N'2026-05-09T16:25:15.4876735+00:00' AS datetimeoffset(7)));
 GO
 
-INSERT INTO dbo.SystemSettings (Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd, MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, GuestReviewEnabled, AnalyticsRetentionDays) VALUES (1, N'Hệ thống quản trị thuyết minh Vĩnh Khánh', N'support@vinhkhanh.vn', N'vi', N'en', 10, N'openstreetmap', N'cloudinary', N'elevenlabs', 60, 1, 180);
+INSERT INTO dbo.SystemSettings (Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd, MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, GuestReviewEnabled, AnalyticsRetentionDays) VALUES (1, N'Hệ thống quản trị thuyết minh Vĩnh Khánh', N'support@vinhkhanh.vn', N'vi', N'en', 0, N'openstreetmap', N'cloudinary', N'elevenlabs', 60, 1, 180);
 GO
-INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'free', N'en');
-INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'free', N'vi');
-INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'premium', N'ja');
-INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'premium', N'ko');
-INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'premium', N'zh-CN');
+INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'supported', N'en');
+INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'supported', N'ja');
+INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'supported', N'ko');
+INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'supported', N'vi');
+INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'supported', N'zh-CN');
 GO

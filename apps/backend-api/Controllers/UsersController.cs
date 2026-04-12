@@ -12,16 +12,10 @@ public sealed class UsersController(
     AdminRequestContextResolver adminRequestContextResolver) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<ApiResponse<IReadOnlyList<EndUser>>> GetUsers()
-        => Ok(ApiResponse<IReadOnlyList<EndUser>>.Ok(
-            repository.GetEndUsers(adminRequestContextResolver.RequireAuthenticatedAdmin())));
+    public ActionResult<ApiResponse<string>> GetUsers()
+        => StatusCode(StatusCodes.Status410Gone, ApiResponse<string>.Fail("End-user account APIs have been deprecated."));
 
     [HttpGet("{id}")]
-    public ActionResult<ApiResponse<EndUser>> GetUserById(string id)
-    {
-        var user = repository.GetEndUserById(id, adminRequestContextResolver.RequireAuthenticatedAdmin());
-        return user is null
-            ? NotFound(ApiResponse<EndUser>.Fail("Khong tim thay nguoi dung cuoi."))
-            : Ok(ApiResponse<EndUser>.Ok(user));
-    }
+    public ActionResult<ApiResponse<string>> GetUserById(string id)
+        => StatusCode(StatusCodes.Status410Gone, ApiResponse<string>.Fail("End-user account APIs have been deprecated."));
 }

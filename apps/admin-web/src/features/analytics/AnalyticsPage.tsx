@@ -9,45 +9,47 @@ import {
 } from "recharts";
 import { Card } from "../../components/ui/Card";
 import { useAdminData } from "../../data/store";
-import { formatNumber, languageLabels } from "../../lib/utils";
 import { getPoiTitle } from "../../lib/selectors";
+import { formatNumber, languageLabels } from "../../lib/utils";
 
 export const AnalyticsPage = () => {
   const { state } = useAdminData();
+  const viewEvents = state.usageEvents.filter((item) => item.eventType === "poi_view");
+  const audioEvents = state.usageEvents.filter((item) => item.eventType === "audio_play");
+  const qrEvents = state.usageEvents.filter((item) => item.eventType === "qr_scan");
 
-  const deviceBreakdown = ["web", "android", "ios"].map((deviceType) => ({
-    label: deviceType.toUpperCase(),
-    value: state.viewLogs.filter((item) => item.deviceType === deviceType).length,
+  const deviceBreakdown = ["android", "web", "ios"].map((platform) => ({
+    label: platform.toUpperCase(),
+    value: state.usageEvents.filter((item) => item.platform === platform).length,
   }));
 
   const languageBreakdown = Object.entries(languageLabels).map(([code, label]) => ({
     label,
-    value: state.audioListenLogs.filter((item) => item.languageCode === code).length,
+    value: state.usageEvents.filter((item) => item.languageCode === code).length,
   }));
 
   const poiBreakdown = state.pois
     .map((poi) => ({
       id: poi.id,
       name: getPoiTitle(state, poi.id),
-      value: state.viewLogs.filter((item) => item.poiId === poi.id).length,
+      value: viewEvents.filter((item) => item.poiId === poi.id).length,
     }))
     .sort((left, right) => right.value - left.value)
     .slice(0, 6);
 
   const averageListenDuration = Math.round(
-    state.audioListenLogs.reduce((sum, item) => sum + item.durationInSeconds, 0) /
-    Math.max(state.audioListenLogs.length, 1),
+    audioEvents.reduce((sum, item) => sum + (item.durationInSeconds ?? 0), 0) /
+      Math.max(audioEvents.length, 1),
   );
 
   return (
     <div className="space-y-6">
-
-
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-4">
         {[
-          ["Tổng lượt scan/view", formatNumber(state.viewLogs.length)],
-          ["Tổng lượt nghe audio", formatNumber(state.audioListenLogs.length)],
-          ["Thời lượng nghe trung bình", `${averageListenDuration}s`],
+          ["Tong luot xem POI", formatNumber(viewEvents.length)],
+          ["Tong luot nghe audio", formatNumber(audioEvents.length)],
+          ["Tong luot quet QR", formatNumber(qrEvents.length)],
+          ["Thoi luong nghe TB", `${averageListenDuration}s`],
         ].map(([label, value]) => (
           <Card key={label}>
             <p className="text-sm text-ink-500">{label}</p>
@@ -58,7 +60,7 @@ export const AnalyticsPage = () => {
 
       <section className="grid gap-6 xl:grid-cols-2">
         <Card>
-          <h2 className="section-heading">Thiết bị truy cập</h2>
+          <h2 className="section-heading">Nen tang su dung</h2>
           <div className="mt-6 h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={deviceBreakdown}>
@@ -73,7 +75,7 @@ export const AnalyticsPage = () => {
         </Card>
 
         <Card>
-          <h2 className="section-heading">Ngôn ngữ nghe audio</h2>
+          <h2 className="section-heading">Ngon ngu su dung</h2>
           <div className="mt-6 h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={languageBreakdown} layout="vertical" margin={{ left: 30 }}>
@@ -89,7 +91,7 @@ export const AnalyticsPage = () => {
       </section>
 
       <Card>
-        <h2 className="section-heading">Top POI theo lượt xem</h2>
+        <h2 className="section-heading">Top POI theo luot xem</h2>
         <div className="mt-6 h-80">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={poiBreakdown}>
@@ -100,14 +102,6 @@ export const AnalyticsPage = () => {
               <Bar dataKey="value" fill="#d9a845" radius={[12, 12, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {poiBreakdown.map((item) => (
-            <div key={item.id} className="rounded-2xl bg-sand-50 px-4 py-3">
-              <p className="font-semibold text-ink-900">{item.name}</p>
-              <p className="mt-1 text-sm text-ink-500">{formatNumber(item.value)} lượt xem</p>
-            </div>
-          ))}
         </div>
       </Card>
     </div>

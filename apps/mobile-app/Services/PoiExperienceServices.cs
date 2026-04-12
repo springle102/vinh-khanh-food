@@ -11,6 +11,7 @@ namespace VinhKhanh.MobileApp.Services;
 
 public interface IPoiNarrationService
 {
+    bool IsPlaying { get; }
     Task PlayAsync(PoiExperienceDetail detail, string languageCode, CancellationToken cancellationToken = default);
     Task StopAsync();
 }
@@ -34,6 +35,7 @@ public sealed class PoiNarrationService : IPoiNarrationService
         PropertyNameCaseInsensitive = true
     };
     private readonly IAudioManager _audioManager;
+    private readonly IFoodStreetDataService _dataService;
     private readonly HttpClient _mediaClient;
     private HttpClient? _apiClient;
     private string? _resolvedBaseUrl;
@@ -43,9 +45,12 @@ public sealed class PoiNarrationService : IPoiNarrationService
     private MemoryStream? _audioBuffer;
     private long _playbackId;
 
-    public PoiNarrationService(IAudioManager audioManager)
+    public PoiNarrationService(
+        IAudioManager audioManager,
+        IFoodStreetDataService dataService)
     {
         _audioManager = audioManager;
+        _dataService = dataService;
         _mediaClient = new HttpClient(new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
@@ -56,6 +61,8 @@ public sealed class PoiNarrationService : IPoiNarrationService
         _mediaClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Linux; Android 12; VinhKhanhMobile)");
     }
 
+    public bool IsPlaying => _audioPlayer?.IsPlaying ?? false;
+
     public async Task PlayAsync(PoiExperienceDetail detail, string languageCode, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(detail);
@@ -64,11 +71,9 @@ public sealed class PoiNarrationService : IPoiNarrationService
         var session = await BeginPlaybackSessionAsync(cancellationToken);
         try
         {
-            var currentCustomerId = ReadCurrentCustomerId();
             var resolvedNarration = await TryResolveNarrationAsync(
                 detail.Id,
                 requestedLanguageCode,
-                currentCustomerId,
                 session.Token);
             var effectiveLanguageCode = AppLanguage.NormalizeCode(resolvedNarration?.EffectiveLanguageCode ?? requestedLanguageCode);
             var narrationText = FirstNonEmpty(
@@ -93,14 +98,14 @@ public sealed class PoiNarrationService : IPoiNarrationService
                 : BuildTextToSpeechAudioUrls(
                     narrationText,
                     effectiveLanguageCode,
-                    textToSpeechBaseUrl,
-                    currentCustomerId);
+                    textToSpeechBaseUrl);
 
             if (playbackUrls.Count > 0)
             {
                 var playedAudio = await TryPlayRemoteAudioSequenceAsync(playbackUrls, session.PlaybackId, session.Token);
                 if (playedAudio)
                 {
+                    await _dataService.TrackAudioPlayAsync(detail.Id, effectiveLanguageCode, "remote_audio");
                     return;
                 }
             }
@@ -114,6 +119,7 @@ public sealed class PoiNarrationService : IPoiNarrationService
                 narrationText,
                 resolvedNarration?.TtsLocale,
                 session.Token);
+            await _dataService.TrackAudioPlayAsync(detail.Id, effectiveLanguageCode, "device_tts");
         }
         catch (OperationCanceledException) when (session.Token.IsCancellationRequested)
         {
@@ -274,7 +280,6 @@ public sealed class PoiNarrationService : IPoiNarrationService
     private async Task<PoiNarrationResponseDto?> TryResolveNarrationAsync(
         string poiId,
         string languageCode,
-        string? customerUserId,
         CancellationToken cancellationToken)
     {
         try
@@ -290,11 +295,6 @@ public sealed class PoiNarrationService : IPoiNarrationService
                 ["languageCode"] = languageCode,
                 ["voiceType"] = "standard"
             };
-
-            if (!string.IsNullOrWhiteSpace(customerUserId))
-            {
-                query["customerUserId"] = customerUserId;
-            }
 
             var relativeUrl =
                 $"api/v1/pois/{Uri.EscapeDataString(poiId)}/narration?" +
@@ -450,12 +450,6 @@ public sealed class PoiNarrationService : IPoiNarrationService
         return parsed.AbsolutePath.EndsWith("/api/v1/tts", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string? ReadCurrentCustomerId()
-    {
-        var customerId = Preferences.Default.Get(AppPreferenceKeys.CurrentCustomerId, string.Empty);
-        return string.IsNullOrWhiteSpace(customerId) ? null : customerId.Trim();
-    }
-
     private static async Task SpeakWithDeviceTextToSpeechAsync(
         string narrationText,
         string? preferredLocale,
@@ -501,8 +495,7 @@ public sealed class PoiNarrationService : IPoiNarrationService
     private static IReadOnlyList<string> BuildTextToSpeechAudioUrls(
         string text,
         string languageCode,
-        string? apiBaseUrl,
-        string? customerUserId)
+        string? apiBaseUrl)
     {
         if (string.IsNullOrWhiteSpace(text) ||
             string.IsNullOrWhiteSpace(languageCode) ||
@@ -530,11 +523,6 @@ public sealed class PoiNarrationService : IPoiNarrationService
                     ["idx"] = index.ToString(),
                     ["model_id"] = TextToSpeechProxyModelId
                 };
-
-                if (!string.IsNullOrWhiteSpace(customerUserId))
-                {
-                    query["customerUserId"] = customerUserId;
-                }
 
                 var relativePath =
                     "api/v1/tts?" +

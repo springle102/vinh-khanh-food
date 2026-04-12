@@ -15,6 +15,7 @@ public sealed partial class AdminDataRepository
         return GetUsers(connection, null)
             .Where(user =>
                 string.Equals(user.Status, "active", StringComparison.OrdinalIgnoreCase) &&
+                AdminRoleCatalog.IsAdminRole(user.Role) &&
                 CanAccessPortal(user.Role, normalizedPortal))
             .OrderByDescending(user => AdminRoleCatalog.IsSuperAdmin(user.Role))
             .ThenBy(user => user.Name, StringComparer.OrdinalIgnoreCase)
@@ -59,6 +60,11 @@ public sealed partial class AdminDataRepository
 
     private static bool CanAccessPortal(string role, string? portal)
     {
+        if (!AdminRoleCatalog.IsAdminRole(role))
+        {
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(portal))
         {
             return true;
@@ -91,7 +97,9 @@ public sealed partial class AdminDataRepository
         }
 
         var user = GetUserById(connection, transaction, session.UserId);
-        if (user is null || !string.Equals(user.Status, "active", StringComparison.OrdinalIgnoreCase))
+        if (user is null ||
+            !string.Equals(user.Status, "active", StringComparison.OrdinalIgnoreCase) ||
+            !AdminRoleCatalog.IsAdminRole(user.Role))
         {
             transaction.Rollback();
             return null;
@@ -151,14 +159,18 @@ public sealed partial class AdminDataRepository
             throw new ApiForbiddenException("Bạn không có quyền cập nhật tài khoản quản trị này.");
         }
 
-        var nextRole = actor.IsSuperAdmin ? request.Role : existing?.Role ?? actor.Role;
+        var nextRole = actor.IsSuperAdmin
+            ? AdminRoleCatalog.NormalizeRequiredRole(request.Role)
+            : AdminRoleCatalog.NormalizeKnownRoleOrOriginal(existing?.Role ?? actor.Role);
         var nextStatus = actor.IsSuperAdmin ? request.Status : existing?.Status ?? actor.Status;
         var password = !string.IsNullOrWhiteSpace(request.Password)
             ? request.Password
             : existing?.Password is { Length: > 0 } ? existing.Password : "Admin@123";
-        var managedPoiId = actor.IsSuperAdmin && AdminRoleCatalog.IsPlaceOwner(nextRole)
-            ? request.ManagedPoiId
-            : existing?.ManagedPoiId;
+        var managedPoiId = actor.IsSuperAdmin
+            ? AdminRoleCatalog.IsPlaceOwner(nextRole)
+                ? request.ManagedPoiId
+                : null
+            : existing?.ManagedPoiId ?? actor.ManagedPoiId;
 
         if (isNew)
         {
@@ -260,10 +272,6 @@ public sealed partial class AdminDataRepository
         var poiId = ResolveRequestedPoiId(request.RequestedId, currentPoiId);
         var createdAt = existing?.CreatedAt ?? now;
         var isOwnerActor = actor.IsPlaceOwner;
-        var actorRole = actor.Role;
-        var actorUserId = actor.UserId;
-        var actorUser = GetUserById(connection, transaction, actor.UserId);
-
         if (isOwnerActor)
         {
             if (false)
@@ -595,6 +603,7 @@ public sealed partial class AdminDataRepository
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.Reviews SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.ViewLogs SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.AudioListenLogs SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
+        ExecuteNonQuery(connection, transaction, "UPDATE dbo.AppUsageEvents SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.AdminUsers SET ManagedPoiId = ? WHERE ManagedPoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(
             connection,
@@ -633,7 +642,7 @@ public bool DeletePoi(string id, AdminRequestContext actor)
             return false;
         }
 
-        if (actor.IsPlaceOwner && !string.Equals(poi.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase))
+        if (actor.IsPlaceOwner && !GetOwnerPoiIds(connection, transaction, actor.UserId).Contains(poi.Id))
         {
             throw new ApiNotFoundException("Khong tim thay POI.");
         }

@@ -19,6 +19,16 @@ const DEFAULT_CENTER = {
 const DEFAULT_EDITABLE_ZOOM = 16;
 const DEFAULT_BROWSE_ZOOM = 15;
 const SELECTION_RADIUS_METERS = 180;
+const BASE_TILE_SOURCE: {
+  url: string;
+  maxZoom: number;
+  attribution: string;
+} = {
+  url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  maxZoom: 19,
+  attribution:
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+};
 
 const isValidLatitude = (value: number) => Number.isFinite(value) && value >= -90 && value <= 90;
 const isValidLongitude = (value: number) => Number.isFinite(value) && value >= -180 && value <= 180;
@@ -152,6 +162,7 @@ type OpenStreetMapPickerProps = {
   address?: string;
   lat: number;
   lng: number;
+  isVisible?: boolean;
   onChange?: (lat: number, lng: number) => void;
   onLocationResolved?: (location: GeocodingResult) => void;
   addressSearchVersion?: number;
@@ -165,8 +176,10 @@ type OpenStreetMapPickerProps = {
 
 const MapInstanceBinder = ({
   mapRef,
+  isVisible,
 }: {
   mapRef: MutableRefObject<L.Map | null>;
+  isVisible: boolean;
 }) => {
   const map = useMap();
 
@@ -192,6 +205,17 @@ const MapInstanceBinder = ({
       timeoutIds.push(timeoutId);
     };
 
+    if (!isVisible) {
+      return () => {
+        if (mapRef.current === map) {
+          mapRef.current = null;
+        }
+      };
+    }
+
+    map.whenReady(() => {
+      invalidateSize();
+    });
     invalidateSize();
     [50, 150, 350, 700, 1200].forEach(scheduleInvalidate);
 
@@ -221,7 +245,7 @@ const MapInstanceBinder = ({
         mapRef.current = null;
       }
     };
-  }, [map, mapRef]);
+  }, [isVisible, map, mapRef]);
 
   return null;
 };
@@ -339,6 +363,7 @@ export const OpenStreetMapPicker = ({
   address = "",
   lat,
   lng,
+  isVisible = true,
   onChange,
   onLocationResolved,
   addressSearchVersion = 0,
@@ -634,17 +659,18 @@ export const OpenStreetMapPicker = ({
         {isLoading ? `${statusMessage}` : statusMessage}
       </div>
 
-      <div className="overflow-hidden rounded-3xl border border-sand-200 bg-sand-50">
+      <div className="vinh-khanh-poi-map overflow-hidden rounded-3xl border border-sand-200 bg-sand-50">
         <MapContainer
           center={editable ? position : selectedPosition}
           zoom={editable ? DEFAULT_EDITABLE_ZOOM : DEFAULT_BROWSE_ZOOM}
           scrollWheelZoom
           className="h-[360px] w-full"
         >
-          <MapInstanceBinder mapRef={mapRef} />
+          <MapInstanceBinder mapRef={mapRef} isVisible={isVisible} />
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution={BASE_TILE_SOURCE.attribution}
+            maxZoom={BASE_TILE_SOURCE.maxZoom}
+            url={BASE_TILE_SOURCE.url}
           />
 
           {editable ? (

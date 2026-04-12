@@ -120,7 +120,7 @@ export const ContentPage = () => {
           fullText: foodForm.description,
           seoTitle: foodForm.name,
           seoDescription: foodForm.description || foodForm.name,
-          isPremium: !state.settings.freeLanguages.includes(foodForm.languageCode),
+          isPremium: false,
         },
         user,
       );
@@ -253,9 +253,9 @@ export const ContentPage = () => {
               value={foodForm.languageCode}
               onChange={(event) => handleFoodLanguageChange(event.target.value as LanguageCode)}
             >
-              {Object.entries(languageLabels).map(([code, label]) => (
+              {state.settings.supportedLanguages.map((code) => (
                 <option key={code} value={code}>
-                  {label}
+                  {languageLabels[code]}
                 </option>
               ))}
             </Select>

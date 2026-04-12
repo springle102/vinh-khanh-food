@@ -24,16 +24,13 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAppLanguageService, AppLanguageService>();
         builder.Services.AddSingleton<IFoodStreetDataService, FoodStreetApiDataService>();
         builder.Services.AddSingleton<IPoiNarrationService, PoiNarrationService>();
-        builder.Services.AddSingleton<IPoiTourStoreService, PoiTourStoreService>();
+        builder.Services.AddSingleton<IVirtualLocationService, VirtualLocationService>();
+        builder.Services.AddSingleton<IPoiProximityService, PoiProximityService>();
         builder.Services.AddSingleton<AppBottomBarViewModel>();
 
-        builder.Services.AddTransient<LanguageSelectionViewModel>();
-        builder.Services.AddTransient<LoginViewModel>();
         builder.Services.AddTransient<HomeMapViewModel>();
-        builder.Services.AddTransient<MyTourViewModel>();
         builder.Services.AddTransient<QrScannerViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
-        builder.Services.AddTransient<PremiumCheckoutViewModel>();
 
 #if DEBUG
         builder.Logging.AddDebug();

@@ -108,6 +108,17 @@ public sealed record TextTranslationRequest(
     string? SourceLanguageCode,
     IReadOnlyList<string> Texts);
 
+public sealed record AppUsageEventCreateRequest(
+    string EventType,
+    string? PoiId,
+    string? LanguageCode,
+    string? Platform,
+    string? SessionId,
+    string? Source,
+    string? Metadata,
+    int? DurationInSeconds,
+    DateTimeOffset? OccurredAt);
+
 public sealed record TextTranslationResponse(
     string TargetLanguageCode,
     string? SourceLanguageCode,
@@ -192,6 +203,7 @@ public sealed record SystemSettingUpsertRequest(
     string SupportEmail,
     string DefaultLanguage,
     string FallbackLanguage,
+    List<string> SupportedLanguages,
     List<string> FreeLanguages,
     List<string> PremiumLanguages,
     int PremiumUnlockPriceUsd,
@@ -216,11 +228,11 @@ public sealed record PremiumPurchaseResponse(
 public sealed record DashboardSummaryResponse(
     int TotalViews,
     int TotalListens,
+    int TotalQrScans,
     int PublishedPois,
     int FeaturedPois,
     int MissingReadyAudio,
-    int PendingReviews,
-    int PremiumLanguageCount);
+    int PendingReviews);
 
 public sealed record DataSyncState(
     string Version,
@@ -239,6 +251,7 @@ public sealed record AdminBootstrapResponse(
     IReadOnlyList<Models.TourRoute> Routes,
     IReadOnlyList<Models.Promotion> Promotions,
     IReadOnlyList<Models.Review> Reviews,
+    IReadOnlyList<Models.AppUsageEvent> UsageEvents,
     IReadOnlyList<Models.ViewLog> ViewLogs,
     IReadOnlyList<Models.AudioListenLog> AudioListenLogs,
     IReadOnlyList<Models.AuditLog> AuditLogs,

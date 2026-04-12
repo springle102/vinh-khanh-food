@@ -7,6 +7,7 @@ public sealed partial class AdminDataRepository
 {
     public sealed record CustomerLanguageAccessDecision(
         string LanguageCode,
+        string AppAccessType,
         bool IsAllowed,
         bool RequiresPremium,
         int PremiumPriceUsd,
@@ -75,46 +76,31 @@ public sealed partial class AdminDataRepository
                 setting.TtsProvider);
         }
 
-        if (setting.PremiumUnlockPriceUsd <= 0)
+        if (setting.SupportedLanguages.Count == 0)
+        {
+            setting.SupportedLanguages = [setting.DefaultLanguage, setting.FallbackLanguage];
+        }
+
+        setting.SupportedLanguages = setting.SupportedLanguages
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Select(PremiumAccessCatalog.NormalizeLanguageCode)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (setting.SupportedLanguages.Count == 0)
         {
             if (logWarnings)
             {
                 _logger.LogWarning(
-                    "Premium price was missing or invalid in system settings. Falling back to {FallbackPriceUsd} USD.",
-                    PremiumAccessCatalog.DefaultPremiumPriceUsd);
+                    "Supported languages were missing in system settings. Falling back to default + fallback language.");
             }
 
-            setting.PremiumUnlockPriceUsd = PremiumAccessCatalog.DefaultPremiumPriceUsd;
+            setting.SupportedLanguages = ["vi", "en"];
         }
 
-        if (!HasExactLanguagePackage(setting.FreeLanguages, PremiumAccessCatalog.FreeLanguages))
-        {
-            if (logWarnings)
-            {
-                _logger.LogWarning("Free language package was missing or invalid. Falling back to the default package.");
-            }
-
-            setting.FreeLanguages = [.. PremiumAccessCatalog.FreeLanguages];
-        }
-        else
-        {
-            setting.FreeLanguages = [.. PremiumAccessCatalog.FreeLanguages];
-        }
-
-        if (!HasExactLanguagePackage(setting.PremiumLanguages, PremiumAccessCatalog.PremiumLanguages))
-        {
-            if (logWarnings)
-            {
-                _logger.LogWarning("Premium language package was missing or invalid. Falling back to the default package.");
-            }
-
-            setting.PremiumLanguages = [.. PremiumAccessCatalog.PremiumLanguages];
-        }
-        else
-        {
-            setting.PremiumLanguages = [.. PremiumAccessCatalog.PremiumLanguages];
-        }
-
+        setting.FreeLanguages = [.. setting.SupportedLanguages];
+        setting.PremiumLanguages = [];
+        setting.PremiumUnlockPriceUsd = 0;
         return setting;
     }
 
@@ -127,37 +113,28 @@ public sealed partial class AdminDataRepository
     {
         var settings = settingsOverride ?? GetSettings(connection, transaction);
         var normalizedLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(languageCode);
-        var premiumPriceUsd = settings.PremiumUnlockPriceUsd > 0
-            ? settings.PremiumUnlockPriceUsd
-            : PremiumAccessCatalog.DefaultPremiumPriceUsd;
+        var supportedLanguages = GetSupportedLanguageCodeSet(settings);
 
-        if (!PremiumAccessCatalog.IsSupportedLanguage(normalizedLanguageCode))
+        if (!supportedLanguages.Contains(normalizedLanguageCode))
         {
             return new CustomerLanguageAccessDecision(
                 normalizedLanguageCode,
+                "public-app",
                 false,
                 false,
-                premiumPriceUsd,
+                0,
                 "The selected language is not supported yet.",
                 null);
         }
 
-        var customer = string.IsNullOrWhiteSpace(customerUserId)
-            ? null
-            : GetCustomerUserById(connection, transaction, customerUserId);
-        var isAllowed = PremiumAccessCatalog.CanUseLanguage(customer?.IsPremium == true, normalizedLanguageCode);
-        var requiresPremium = PremiumAccessCatalog.RequiresPremium(normalizedLanguageCode);
-        var message = isAllowed
-            ? string.Empty
-            : $"This language requires Premium. Upgrade to Premium ({premiumPriceUsd} USD) to continue.";
-
         return new CustomerLanguageAccessDecision(
             normalizedLanguageCode,
-            isAllowed,
-            requiresPremium,
-            premiumPriceUsd,
-            message,
-            customer);
+            "public-app",
+            true,
+            false,
+            0,
+            string.Empty,
+            null);
     }
 
     private IReadOnlySet<string> GetAllowedLanguageCodesForCustomer(
@@ -166,14 +143,7 @@ public sealed partial class AdminDataRepository
         string? customerUserId,
         SystemSetting? settingsOverride = null)
     {
-        var decisionSeed = EvaluateCustomerLanguageAccess(
-            connection,
-            transaction,
-            customerUserId,
-            PremiumAccessCatalog.FreeLanguages[0],
-            settingsOverride);
-
-        return PremiumAccessCatalog.GetAllowedLanguages(decisionSeed.Customer?.IsPremium == true)
+        return GetSupportedLanguageCodeSet(settingsOverride ?? GetSettings(connection, transaction))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 

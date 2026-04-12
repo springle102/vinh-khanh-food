@@ -35,18 +35,31 @@ public sealed class AdminRequestContextResolver(
 
     public AdminRequestContext RequireAuthenticatedAdmin() =>
         TryGetCurrentAdmin() ??
-        throw new ApiUnauthorizedException("Phiên đăng nhập admin không hợp lệ hoặc đã hết hạn.");
+        throw new ApiUnauthorizedException("Phien dang nhap admin khong hop le hoac da het han.");
 
-    public AdminRequestContext RequireSuperAdmin()
+    public AdminRequestContext RequireAdminRole(params string[] allowedRoles)
     {
         var admin = RequireAuthenticatedAdmin();
-        if (!admin.IsSuperAdmin)
+        if (allowedRoles is null || allowedRoles.Length == 0)
         {
-            throw new ApiForbiddenException("Tài khoản hiện tại không có quyền quản trị toàn hệ thống.");
+            return admin;
         }
 
-        return admin;
+        if (allowedRoles.Any(role => AdminRoleCatalog.RoleEquals(admin.Role, role)))
+        {
+            return admin;
+        }
+
+        if (allowedRoles.Length == 1 && AdminRoleCatalog.IsSuperAdmin(allowedRoles[0]))
+        {
+            throw new ApiForbiddenException("Tai khoan hien tai khong co quyen quan tri toan he thong.");
+        }
+
+        throw new ApiForbiddenException("Tai khoan hien tai khong co quyen su dung API quan tri nay.");
     }
+
+    public AdminRequestContext RequireSuperAdmin() =>
+        RequireAdminRole(AdminRoleCatalog.SuperAdmin);
 
     private static string? ReadBearerToken(HttpRequest request)
     {

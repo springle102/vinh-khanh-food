@@ -59,7 +59,6 @@ public static class AppRoutes
         return normalizedRoute switch
         {
             HomeMap or "HomePage" or "MapPage" or "PoiListPage" or "PoiDetailPage" => AppBottomBarTab.Poi,
-            MyTour => AppBottomBarTab.MyTour,
             QrScanner => AppBottomBarTab.QrScanner,
             Settings => AppBottomBarTab.Settings,
             _ => AppBottomBarTab.None
@@ -71,7 +70,6 @@ public enum AppBottomBarTab
 {
     None,
     Poi,
-    MyTour,
     QrScanner,
     Settings
 }

@@ -93,7 +93,7 @@ public sealed partial class FoodStreetApiDataService
             Latitude = detail.Latitude,
             Longitude = detail.Longitude,
             IsFeatured = detail.IsFeatured,
-            HeatIntensity = ResolveHeatIntensity(poi, [], []),
+            HeatIntensity = ResolveHeatIntensity(poi, []),
             DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))
         };
     }

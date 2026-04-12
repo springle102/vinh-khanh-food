@@ -37,7 +37,7 @@ public sealed class BootstrapController(
         }
 
         logger.LogDebug(
-            "Bootstrap served for adminUserId={AdminUserId}, role={Role}, customerUserId={CustomerUserId}, languageCode={LanguageCode}, version={Version}",
+            "Bootstrap served for adminUserId={AdminUserId}, role={Role}, deprecatedCustomerUserId={CustomerUserId}, languageCode={LanguageCode}, version={Version}",
             admin?.UserId,
             admin?.Role,
             customerUserId,
@@ -65,11 +65,13 @@ public sealed class BootstrapController(
         => Ok(ApiResponse<IReadOnlyList<PoiCategory>>.Ok(repository.GetCategories()));
 
     [HttpGet("customer-users")]
-    public ActionResult<ApiResponse<IReadOnlyList<CustomerUser>>> GetCustomerUsers()
-    {
-        adminRequestContextResolver.RequireSuperAdmin();
-        return Ok(ApiResponse<IReadOnlyList<CustomerUser>>.Ok(repository.GetCustomerUsers()));
-    }
+    public ActionResult<ApiResponse<string>> GetCustomerUsers()
+        => StatusCode(StatusCodes.Status410Gone, ApiResponse<string>.Fail("Customer account management has been deprecated from the public Android app."));
+
+    [HttpGet("analytics/usage-events")]
+    public ActionResult<ApiResponse<IReadOnlyList<AppUsageEvent>>> GetUsageEvents()
+        => Ok(ApiResponse<IReadOnlyList<AppUsageEvent>>.Ok(
+            repository.GetAppUsageEvents(adminRequestContextResolver.RequireAuthenticatedAdmin())));
 
     [HttpGet("analytics/view-logs")]
     public ActionResult<ApiResponse<IReadOnlyList<ViewLog>>> GetViewLogs()
