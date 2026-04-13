@@ -1583,11 +1583,7 @@ public sealed partial class AdminDataRepository
                 CREATE TABLE dbo.Routes (
                     Id NVARCHAR(50) NOT NULL PRIMARY KEY,
                     Name NVARCHAR(150) NOT NULL,
-                    Theme NVARCHAR(100) NOT NULL,
                     [Description] NVARCHAR(MAX) NOT NULL,
-                    DurationMinutes INT NOT NULL,
-                    CoverImageUrl NVARCHAR(500) NOT NULL,
-                    Difficulty NVARCHAR(30) NOT NULL,
                     IsFeatured BIT NOT NULL,
                     IsActive BIT NOT NULL,
                     IsSystemRoute BIT NOT NULL,
@@ -1599,6 +1595,9 @@ public sealed partial class AdminDataRepository
 
             IF COL_LENGTH(N'dbo.Routes', N'Theme') IS NULL
                 ALTER TABLE dbo.Routes ADD Theme NVARCHAR(100) NULL;
+
+            IF COL_LENGTH(N'dbo.Routes', N'DurationMinutes') IS NULL
+                ALTER TABLE dbo.Routes ADD DurationMinutes INT NULL;
 
             IF COL_LENGTH(N'dbo.Routes', N'CoverImageUrl') IS NULL
                 ALTER TABLE dbo.Routes ADD CoverImageUrl NVARCHAR(500) NULL;
@@ -1623,6 +1622,7 @@ public sealed partial class AdminDataRepository
 
             IF COL_LENGTH(N'dbo.Routes', N'UpdatedAt') IS NULL
                 ALTER TABLE dbo.Routes ADD UpdatedAt DATETIMEOFFSET(7) NULL;
+
             """);
 
         ExecuteNonQuery(
@@ -1766,6 +1766,23 @@ public sealed partial class AdminDataRepository
                 ADD CONSTRAINT FK_Routes_AdminUsers_OwnerUserId
                 FOREIGN KEY (OwnerUserId) REFERENCES dbo.AdminUsers(Id);
             END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF COL_LENGTH(N'dbo.Routes', N'Theme') IS NOT NULL
+                ALTER TABLE dbo.Routes DROP COLUMN Theme;
+
+            IF COL_LENGTH(N'dbo.Routes', N'DurationMinutes') IS NOT NULL
+                ALTER TABLE dbo.Routes DROP COLUMN DurationMinutes;
+
+            IF COL_LENGTH(N'dbo.Routes', N'CoverImageUrl') IS NOT NULL
+                ALTER TABLE dbo.Routes DROP COLUMN CoverImageUrl;
+
+            IF COL_LENGTH(N'dbo.Routes', N'Difficulty') IS NOT NULL
+                ALTER TABLE dbo.Routes DROP COLUMN Difficulty;
             """);
 
         ExecuteNonQuery(

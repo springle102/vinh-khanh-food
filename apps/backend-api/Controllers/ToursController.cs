@@ -9,7 +9,8 @@ namespace VinhKhanh.BackendApi.Controllers;
 [Route("api/v1/tours")]
 public sealed class ToursController(
     AdminDataRepository repository,
-    AdminRequestContextResolver adminRequestContextResolver) : ControllerBase
+    AdminRequestContextResolver adminRequestContextResolver,
+    ResponseUrlNormalizer responseUrlNormalizer) : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<TourRoute>>> GetTours(
@@ -29,7 +30,23 @@ public sealed class ToursController(
             query = query.Where(item => item.IsActive == isActive.Value);
         }
 
-        return Ok(ApiResponse<IReadOnlyList<TourRoute>>.Ok(query.ToList()));
+        return Ok(ApiResponse<IReadOnlyList<TourRoute>>.Ok(
+            query
+                .Select(responseUrlNormalizer.Normalize)
+                .ToList()));
+    }
+
+    [HttpGet("{id}")]
+    public ActionResult<ApiResponse<TourRoute>> GetTourById(string id)
+    {
+        var actor = adminRequestContextResolver.TryGetCurrentAdmin();
+        var route = repository.GetRoutes(actor).FirstOrDefault(item => item.Id == id);
+        if (route is null)
+        {
+            return NotFound(ApiResponse<TourRoute>.Fail("Khong tim thay tour."));
+        }
+
+        return Ok(ApiResponse<TourRoute>.Ok(responseUrlNormalizer.Normalize(route)));
     }
 
     [HttpPost]
@@ -39,11 +56,6 @@ public sealed class ToursController(
         if (string.IsNullOrWhiteSpace(request.Name))
         {
             return BadRequest(ApiResponse<TourRoute>.Fail("Ten tour la bat buoc."));
-        }
-
-        if (request.DurationMinutes <= 0)
-        {
-            return BadRequest(ApiResponse<TourRoute>.Fail("Thoi luong tour phai lon hon 0 phut."));
         }
 
         if (request.StopPoiIds is null || request.StopPoiIds.Count == 0)
@@ -63,7 +75,9 @@ public sealed class ToursController(
             ActorUserId = actor.UserId
         });
 
-        return Ok(ApiResponse<TourRoute>.Ok(saved, "Tao tour thanh cong."));
+        return Ok(ApiResponse<TourRoute>.Ok(
+            responseUrlNormalizer.Normalize(saved),
+            "Tao tour thanh cong."));
     }
 
     [HttpPut("{id}")]
@@ -89,7 +103,9 @@ public sealed class ToursController(
             ActorUserId = actor.UserId
         });
 
-        return Ok(ApiResponse<TourRoute>.Ok(saved, "Cap nhat tour thanh cong."));
+        return Ok(ApiResponse<TourRoute>.Ok(
+            responseUrlNormalizer.Normalize(saved),
+            "Cap nhat tour thanh cong."));
     }
 
     [HttpDelete("{id}")]

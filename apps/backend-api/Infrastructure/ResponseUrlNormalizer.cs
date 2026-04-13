@@ -102,6 +102,8 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
             IsFeatured = route.IsFeatured,
             StopPoiIds = [.. route.StopPoiIds],
             IsActive = route.IsActive,
+            IsSystemRoute = route.IsSystemRoute,
+            OwnerUserId = route.OwnerUserId,
             UpdatedBy = route.UpdatedBy,
             UpdatedAt = route.UpdatedAt
         };

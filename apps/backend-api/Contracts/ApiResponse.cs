@@ -204,14 +204,14 @@ public sealed record FoodItemUpsertRequest(
 
 public sealed record TourRouteUpsertRequest(
     string Name,
-    string Theme,
+    string? Theme,
     string Description,
-    int DurationMinutes,
-    string Difficulty,
-    string CoverImageUrl,
-    bool IsFeatured,
+    int? DurationMinutes,
+    string? Difficulty,
+    string? CoverImageUrl,
+    bool? IsFeatured,
     List<string> StopPoiIds,
-    bool IsActive,
+    bool? IsActive,
     string ActorName,
     string ActorRole,
     string ActorUserId);

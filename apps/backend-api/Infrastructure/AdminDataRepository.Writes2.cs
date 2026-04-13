@@ -375,10 +375,7 @@ public sealed partial class AdminDataRepository
         using var transaction = connection.BeginTransaction();
 
         var name = (request.Name ?? string.Empty).Trim();
-        var theme = string.IsNullOrWhiteSpace(request.Theme) ? "Tổng hợp" : request.Theme.Trim();
         var description = (request.Description ?? string.Empty).Trim();
-        var difficulty = string.IsNullOrWhiteSpace(request.Difficulty) ? "custom" : request.Difficulty.Trim();
-        var coverImageUrl = (request.CoverImageUrl ?? string.Empty).Trim();
         var existing = !string.IsNullOrWhiteSpace(id) ? GetRouteById(connection, transaction, id) : null;
         var isNew = existing is null;
         var routeId = existing?.Id ?? id ?? CreateId("route");
@@ -389,10 +386,12 @@ public sealed partial class AdminDataRepository
         var actorUser = !string.IsNullOrWhiteSpace(actorUserId)
             ? GetUserById(connection, transaction, actorUserId)
             : null;
-        var isFeatured = isOwnerActor ? false : request.IsFeatured;
+        var normalizedRouteStopPoiIds = NormalizeRouteStopPoiIds(request.StopPoiIds);
+        var resolvedDurationMinutes = ResolveRouteDurationMinutes(normalizedRouteStopPoiIds.Count);
+        var resolvedIsFeatured = isOwnerActor ? false : request.IsFeatured ?? existing?.IsFeatured ?? false;
+        var resolvedIsActive = request.IsActive ?? existing?.IsActive ?? true;
         var isSystemRoute = isOwnerActor ? false : existing?.IsSystemRoute ?? true;
         var ownerUserId = isOwnerActor ? actorUserId : existing?.OwnerUserId;
-        var normalizedStopPoiIds = NormalizeList(request.StopPoiIds, distinct: false).ToList();
         var availablePoiIds = GetPois(connection, transaction)
             .Select(item => item.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -402,28 +401,26 @@ public sealed partial class AdminDataRepository
             throw new InvalidOperationException("Tên tour là bắt buộc.");
         }
 
-        if (request.DurationMinutes <= 0)
+        if (resolvedDurationMinutes <= 0)
         {
             throw new InvalidOperationException("Thời lượng tour phải lớn hơn 0 phút.");
         }
 
-        if (normalizedStopPoiIds.Count == 0)
+        if (normalizedRouteStopPoiIds.Count == 0)
         {
             throw new InvalidOperationException("Tour phải có ít nhất một điểm đến.");
         }
 
         _logger.LogInformation(
-            "SaveRoute request received. routeId={RouteId}, name={Name}, theme={Theme}, difficulty={Difficulty}, isFeatured={IsFeatured}, stopCount={StopCount}, actorRole={ActorRole}, isNew={IsNew}",
+            "SaveRoute request received. routeId={RouteId}, name={Name}, isFeatured={IsFeatured}, stopCount={StopCount}, actorRole={ActorRole}, isNew={IsNew}",
             routeId,
             name,
-            theme,
-            difficulty,
-            request.IsFeatured,
-            normalizedStopPoiIds.Count,
+            resolvedIsFeatured,
+            normalizedRouteStopPoiIds.Count,
             actorRole,
             isNew);
 
-        var missingPoiIds = normalizedStopPoiIds
+        var missingPoiIds = normalizedRouteStopPoiIds
             .Where(stopPoiId => !availablePoiIds.Contains(stopPoiId))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -447,7 +444,7 @@ public sealed partial class AdminDataRepository
                 throw new InvalidOperationException("Chủ quán chỉ được cập nhật tour riêng do chính mình tạo.");
             }
 
-            if (normalizedStopPoiIds.Any(stopPoiId => !ownerPoiIds.Contains(stopPoiId)))
+            if (normalizedRouteStopPoiIds.Any(stopPoiId => !ownerPoiIds.Contains(stopPoiId)))
             {
                 throw new InvalidOperationException("Chủ quán chỉ được tạo hoặc cập nhật tour bằng các POI của chính mình.");
             }
@@ -462,20 +459,15 @@ public sealed partial class AdminDataRepository
                 transaction,
                 """
                 INSERT INTO dbo.Routes (
-                    Id, Name, Theme, [Description], DurationMinutes, CoverImageUrl,
-                    Difficulty, IsFeatured, IsActive, IsSystemRoute, OwnerUserId, UpdatedBy, UpdatedAt
+                    Id, Name, [Description], IsFeatured, IsActive, IsSystemRoute, OwnerUserId, UpdatedBy, UpdatedAt
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 routeId,
                 name,
-                theme,
                 description,
-                request.DurationMinutes,
-                coverImageUrl,
-                difficulty,
-                isFeatured,
-                request.IsActive,
+                resolvedIsFeatured,
+                resolvedIsActive,
                 isSystemRoute,
                 string.IsNullOrWhiteSpace(ownerUserId) ? DBNull.Value : ownerUserId,
                 actorName,
@@ -489,11 +481,7 @@ public sealed partial class AdminDataRepository
                 """
                 UPDATE dbo.Routes
                 SET Name = ?,
-                    Theme = ?,
                     [Description] = ?,
-                    DurationMinutes = ?,
-                    CoverImageUrl = ?,
-                    Difficulty = ?,
                     IsFeatured = ?,
                     IsActive = ?,
                     IsSystemRoute = ?,
@@ -503,13 +491,9 @@ public sealed partial class AdminDataRepository
                 WHERE Id = ?;
                 """,
                 name,
-                theme,
                 description,
-                request.DurationMinutes,
-                coverImageUrl,
-                difficulty,
-                isFeatured,
-                request.IsActive,
+                resolvedIsFeatured,
+                resolvedIsActive,
                 isSystemRoute,
                 string.IsNullOrWhiteSpace(ownerUserId) ? DBNull.Value : ownerUserId,
                 actorName,
@@ -517,7 +501,7 @@ public sealed partial class AdminDataRepository
                 routeId);
         }
 
-        ReplaceRouteStops(connection, transaction, routeId, normalizedStopPoiIds);
+        ReplaceRouteStops(connection, transaction, routeId, normalizedRouteStopPoiIds);
 
         AppendAdminAuditLog(
             connection,
@@ -852,6 +836,34 @@ public sealed partial class AdminDataRepository
             order++;
         }
     }
+
+    private static List<string> NormalizeRouteStopPoiIds(IEnumerable<string>? stopPoiIds)
+    {
+        var orderedPoiIds = new List<string>();
+        var seenPoiIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var stopPoiId in stopPoiIds ?? [])
+        {
+            var normalizedPoiId = stopPoiId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedPoiId) || !seenPoiIds.Add(normalizedPoiId))
+            {
+                continue;
+            }
+
+            orderedPoiIds.Add(normalizedPoiId);
+        }
+
+        return orderedPoiIds;
+    }
+
+    private const int DefaultRouteStopDurationMinutes = 15;
+    private const string DefaultRouteDifficulty = "custom";
+
+    private static int ResolveRouteDurationMinutes(int stopCount)
+        => Math.Max(DefaultRouteStopDurationMinutes, stopCount * DefaultRouteStopDurationMinutes);
+
+    private static string BuildRouteTheme(string name)
+        => string.IsNullOrWhiteSpace(name) ? "Tour" : name.Trim();
 
     private void ReplaceSettingLanguages(SqlConnection connection, SqlTransaction transaction, string languageType, IEnumerable<string>? languageCodes)
     {

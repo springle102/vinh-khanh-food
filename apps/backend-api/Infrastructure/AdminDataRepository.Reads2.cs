@@ -8,7 +8,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<TourRoute> GetRoutes(SqlConnection connection, SqlTransaction? transaction)
     {
         const string routesSql = """
-            SELECT Id, Name, Theme, [Description], DurationMinutes, Difficulty, CoverImageUrl, IsFeatured, IsActive, IsSystemRoute, OwnerUserId, UpdatedBy, UpdatedAt
+            SELECT Id, Name, [Description], IsFeatured, IsActive, IsSystemRoute, OwnerUserId, UpdatedBy, UpdatedAt
             FROM dbo.Routes
             ORDER BY IsFeatured DESC, IsActive DESC, UpdatedAt DESC, Name, Id;
             """;
@@ -42,17 +42,21 @@ public sealed partial class AdminDataRepository
             while (routesReader.Read())
             {
                 var routeId = ReadString(routesReader, "Id");
+                var routeName = ReadString(routesReader, "Name");
+                var stopPoiIds = stopMap.TryGetValue(routeId, out var items)
+                    ? new List<string>(items)
+                    : new List<string>();
                 routes.Add(new TourRoute
                 {
                     Id = routeId,
-                    Name = ReadString(routesReader, "Name"),
-                    Theme = ReadString(routesReader, "Theme"),
+                    Name = routeName,
+                    Theme = BuildRouteTheme(routeName),
                     Description = ReadString(routesReader, "Description"),
-                    DurationMinutes = ReadInt(routesReader, "DurationMinutes"),
-                    Difficulty = ReadString(routesReader, "Difficulty"),
-                    CoverImageUrl = ReadString(routesReader, "CoverImageUrl"),
+                    DurationMinutes = ResolveRouteDurationMinutes(stopPoiIds.Count),
+                    Difficulty = DefaultRouteDifficulty,
+                    CoverImageUrl = string.Empty,
                     IsFeatured = ReadBool(routesReader, "IsFeatured"),
-                    StopPoiIds = stopMap.GetValueOrDefault(routeId, []),
+                    StopPoiIds = stopPoiIds,
                     IsActive = ReadBool(routesReader, "IsActive"),
                     IsSystemRoute = ReadBool(routesReader, "IsSystemRoute"),
                     OwnerUserId = ReadNullableString(routesReader, "OwnerUserId"),

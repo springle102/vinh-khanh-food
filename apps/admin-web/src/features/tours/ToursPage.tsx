@@ -3,36 +3,19 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { DataTable, type DataColumn } from "../../components/ui/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { ImageSourceField } from "../../components/ui/ImageSourceField";
 import { Input, Textarea } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import type { Poi, TourRoute } from "../../data/types";
-import { adminApi, getErrorMessage } from "../../lib/api";
+import { getErrorMessage } from "../../lib/api";
 import { preventImplicitFormSubmit } from "../../lib/forms";
 import { canEditFeaturedRoute, canManageRoute } from "../../lib/rbac";
 import { getCategoryName, getPoiById, getPoiTitle } from "../../lib/selectors";
 import { formatDateTime, formatNumber, normalizeSearchText } from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
-
-const suggestedThemes = [
-  "Ăn vặt",
-  "Hải sản",
-  "Buổi tối",
-  "Khách quốc tế",
-  "Gia đình",
-];
-
-const legacyTourThemeLabels: Record<string, string> = {
-  "an vat": "Ăn vặt",
-  "hai san": "Hải sản",
-  "buoi toi": "Buổi tối",
-  "khach quoc te": "Khách quốc tế",
-  "gia dinh": "Gia đình",
-  "tong hop": "Tổng hợp",
-};
+import { TourPoiMap, type TourMapPoi } from "./TourPoiMap";
 
 const legacyTourCopy: Record<string, string> = {
   "Khoi dau 45 phut": "Khởi đầu 45 phút",
@@ -44,118 +27,89 @@ const legacyTourCopy: Record<string, string> = {
   "Minh Anh": "Minh Ánh",
 };
 
-const getTourThemeLabel = (value: string) =>
-  legacyTourThemeLabels[normalizeSearchText(value)] ?? value.trim();
+const feedbackToneClasses = {
+  success: "bg-emerald-50 text-emerald-700",
+  error: "bg-rose-50 text-rose-700",
+} as const;
 
 const getTourCopy = (value: string) => legacyTourCopy[value.trim()] ?? value.trim();
 
-const routeDifficultyLabels: Record<string, string> = {
-  custom: "Tùy chỉnh",
-  easy: "Dễ",
-  foodie: "Ẩm thực",
-};
+const buildPoiSearchText = (poi: Poi, state: Parameters<typeof getPoiTitle>[0]) =>
+  normalizeSearchText(
+    [
+      getPoiTitle(state, poi.id),
+      poi.address,
+      poi.slug,
+      getCategoryName(state, poi.categoryId),
+      poi.tags.join(" "),
+    ].join(" "),
+  );
 
-const getRouteDifficultyLabel = (value: string) =>
-  routeDifficultyLabels[normalizeSearchText(value)] ?? value.trim();
+const buildRouteSearchText = (route: TourRoute, state: Parameters<typeof getPoiTitle>[0]) =>
+  normalizeSearchText(
+    [
+      getTourCopy(route.name),
+      getTourCopy(route.description),
+      route.stopPoiIds.map((poiId) => getPoiTitle(state, poiId)).join(" "),
+    ].join(" "),
+  );
 
 type TourForm = {
   id?: string;
   name: string;
-  theme: string;
   description: string;
-  durationMinutes: string;
-  difficulty: string;
-  coverImageUrl: string;
   stopPoiIds: string[];
-  isFeatured: boolean;
   isActive: boolean;
+  isFeatured: boolean;
 };
 
 const createDefaultTourForm = (): TourForm => ({
   name: "",
-  theme: "",
   description: "",
-  durationMinutes: "",
-  difficulty: "custom",
-  coverImageUrl: "",
   stopPoiIds: [],
-  isFeatured: false,
   isActive: true,
+  isFeatured: false,
 });
 
-const getRouteIssues = (
-  route: Pick<TourRoute, "stopPoiIds">,
-  pois: Poi[],
-  foodCountByPoiId: Map<string, number>,
-) => {
-  let missingPoiCount = 0;
-  let inactiveStopCount = 0;
-  let noMenuCount = 0;
-
-  route.stopPoiIds.forEach((poiId) => {
-    const poi = pois.find((item) => item.id === poiId);
-    if (!poi) {
-      missingPoiCount++;
-      return;
-    }
-
-    if (poi.status !== "published") {
-      inactiveStopCount++;
-    }
-
-    if ((foodCountByPoiId.get(poiId) ?? 0) === 0) {
-      noMenuCount++;
-    }
-  });
-
-  return {
-    missingPoiCount,
-    inactiveStopCount,
-    noMenuCount,
-  };
-};
-
 export const ToursPage = () => {
-  const { state, isBootstrapping, saveRoute } = useAdminData();
+  const { state, isBootstrapping, saveRoute, deleteRoute } = useAdminData();
   const { user } = useAuth();
   const canFeatureRoute = canEditFeaturedRoute(user?.role);
+
   const [keyword, setKeyword] = useState("");
-  const [themeFilter, setThemeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
-  const [modalOpen, setModalOpen] = useState(false);
   const [poiKeyword, setPoiKeyword] = useState("");
+  const [focusedPoiId, setFocusedPoiId] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<TourForm>(createDefaultTourForm);
+  const [feedback, setFeedback] = useState<{
+    tone: keyof typeof feedbackToneClasses;
+    message: string;
+  } | null>(null);
   const [formError, setFormError] = useState("");
-  const [pageError, setPageError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const [isSaving, setSaving] = useState(false);
-  const [busyRouteId, setBusyRouteId] = useState<string | null>(null);
+  const [isDeleting, setDeleting] = useState(false);
+  const [routeBeingDeleted, setRouteBeingDeleted] = useState<TourRoute | null>(null);
 
-  const foodCountByPoiId = useMemo(
-    () =>
-      state.foodItems.reduce((map, item) => {
-        map.set(item.poiId, (map.get(item.poiId) ?? 0) + 1);
-        return map;
-      }, new Map<string, number>()),
-    [state.foodItems],
-  );
-
-  const availableThemes = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          [...suggestedThemes, ...state.routes.map((item) => getTourThemeLabel(item.theme)).filter(Boolean)].sort(
-            (left, right) => left.localeCompare(right),
-          ),
-        ),
-      ),
+  const linkedPoiCount = useMemo(
+    () => new Set(state.routes.flatMap((route) => route.stopPoiIds)).size,
     [state.routes],
   );
+
+  const averageStopCount = useMemo(() => {
+    if (!state.routes.length) {
+      return "0";
+    }
+
+    const totalStops = state.routes.reduce((sum, route) => sum + route.stopPoiIds.length, 0);
+    return (totalStops / state.routes.length).toFixed(1);
+  }, [state.routes]);
 
   const filteredRoutes = useMemo(() => {
     const normalizedKeyword = normalizeSearchText(keyword);
 
     return [...state.routes]
-      .filter((route) => themeFilter === "all" || getTourThemeLabel(route.theme) === themeFilter)
       .filter((route) => {
         if (statusFilter === "all") {
           return true;
@@ -168,46 +122,14 @@ export const ToursPage = () => {
           return true;
         }
 
-        const stopTitles = route.stopPoiIds.map((poiId) => getPoiTitle(state, poiId)).join(" ");
-        const haystack = normalizeSearchText(
-          [
-            getTourCopy(route.name),
-            getTourThemeLabel(route.theme),
-            getTourCopy(route.description),
-            getRouteDifficultyLabel(route.difficulty),
-            stopTitles,
-          ].join(" "),
-        );
-        return haystack.includes(normalizedKeyword);
+        return buildRouteSearchText(route, state).includes(normalizedKeyword);
       })
-      .sort((left, right) => {
-        const featuredCompare = Number(right.isFeatured) - Number(left.isFeatured);
-        if (featuredCompare !== 0) {
-          return featuredCompare;
-        }
+      .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
+  }, [keyword, state, statusFilter]);
 
-        const activeCompare = Number(right.isActive) - Number(left.isActive);
-        if (activeCompare !== 0) {
-          return activeCompare;
-        }
-
-        return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
-      });
-  }, [keyword, state, statusFilter, themeFilter]);
-
-  const routesNeedingReview = useMemo(
-    () =>
-      state.routes.filter((route) => {
-        const issues = getRouteIssues(route, state.pois, foodCountByPoiId);
-        return issues.missingPoiCount > 0 || issues.inactiveStopCount > 0 || issues.noMenuCount > 0;
-      }).length,
-    [foodCountByPoiId, state.pois, state.routes],
-  );
-
-  const linkedPoiCount = useMemo(
-    () => new Set(state.routes.flatMap((route) => route.stopPoiIds)).size,
-    [state.routes],
-  );
+  const editingRoute = form.id
+    ? state.routes.find((route) => route.id === form.id) ?? null
+    : null;
 
   const selectedStops = useMemo(
     () =>
@@ -215,33 +137,42 @@ export const ToursPage = () => {
         order: index + 1,
         poiId,
         poi: getPoiById(state, poiId),
-        foodCount: foodCountByPoiId.get(poiId) ?? 0,
       })),
-    [foodCountByPoiId, form.stopPoiIds, state],
+    [form.stopPoiIds, state],
   );
 
-  const availablePois = useMemo(() => {
+  const selectedMissingCount = useMemo(
+    () => selectedStops.filter((item) => !item.poi).length,
+    [selectedStops],
+  );
+
+  const normalizedPoiKeyword = normalizeSearchText(poiKeyword);
+  const mapPois = useMemo<TourMapPoi[]>(() => {
     const selectedPoiIds = new Set(form.stopPoiIds);
-    const normalizedKeyword = normalizeSearchText(poiKeyword);
 
     return state.pois
-      .filter((poi) => !selectedPoiIds.has(poi.id))
       .filter((poi) => {
-        if (!normalizedKeyword) {
+        if (selectedPoiIds.has(poi.id)) {
           return true;
         }
 
-        const haystack = normalizeSearchText(
-          [getPoiTitle(state, poi.id), poi.address, poi.slug, getCategoryName(state, poi.categoryId)].join(
-            " ",
-          ),
-        );
-        return haystack.includes(normalizedKeyword);
+        if (!normalizedPoiKeyword) {
+          return true;
+        }
+
+        return buildPoiSearchText(poi, state).includes(normalizedPoiKeyword);
       })
-      .sort((left, right) =>
-        getPoiTitle(state, left.id).localeCompare(getPoiTitle(state, right.id)),
-      );
-  }, [form.stopPoiIds, poiKeyword, state]);
+      .sort((left, right) => getPoiTitle(state, left.id).localeCompare(getPoiTitle(state, right.id)))
+      .map((poi) => ({
+        id: poi.id,
+        title: getPoiTitle(state, poi.id),
+        address: poi.address,
+        category: getCategoryName(state, poi.categoryId),
+        status: poi.status,
+        lat: poi.lat,
+        lng: poi.lng,
+      }));
+  }, [form.stopPoiIds, normalizedPoiKeyword, state]);
 
   const openModal = (route?: TourRoute) => {
     if (route && !canManageRoute(user, route)) {
@@ -250,103 +181,47 @@ export const ToursPage = () => {
 
     setFormError("");
     setPoiKeyword("");
+    setFocusedPoiId(route?.stopPoiIds[0] ?? null);
     setForm(
       route
         ? {
             id: route.id,
             name: getTourCopy(route.name),
-            theme: getTourThemeLabel(route.theme),
             description: getTourCopy(route.description),
-            durationMinutes: route.durationMinutes.toString(),
-            difficulty: route.difficulty,
-            coverImageUrl: route.coverImageUrl,
             stopPoiIds: [...route.stopPoiIds],
-            isFeatured: route.isFeatured,
             isActive: route.isActive,
+            isFeatured: route.isFeatured,
           }
         : createDefaultTourForm(),
     );
     setModalOpen(true);
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!user) {
-      return;
-    }
-
-    setSaving(true);
+  const closeModal = () => {
+    setModalOpen(false);
     setFormError("");
-
-    try {
-      await saveRoute(
-        {
-          id: form.id,
-          name: getTourCopy(form.name.trim()),
-          theme: getTourThemeLabel(form.theme.trim()),
-          description: getTourCopy(form.description.trim()),
-          durationMinutes: Number(form.durationMinutes),
-          difficulty: form.difficulty,
-          coverImageUrl: form.coverImageUrl.trim(),
-          stopPoiIds: form.stopPoiIds,
-          isFeatured: form.isFeatured,
-          isActive: form.isActive,
-        },
-        user,
-      );
-
-      setModalOpen(false);
-    } catch (error) {
-      setFormError(getErrorMessage(error));
-    } finally {
-      setSaving(false);
-    }
+    setPoiKeyword("");
+    setFocusedPoiId(null);
   };
 
-  const handleToggleRoute = async (route: TourRoute) => {
-    if (!user || !canManageRoute(user, route)) {
-      return;
-    }
-
-    setBusyRouteId(route.id);
-    setPageError("");
-
-    try {
-      await saveRoute(
-        {
-          id: route.id,
-          name: getTourCopy(route.name),
-          theme: getTourThemeLabel(route.theme),
-          description: getTourCopy(route.description),
-          durationMinutes: route.durationMinutes,
-          difficulty: route.difficulty,
-          coverImageUrl: route.coverImageUrl,
-          stopPoiIds: route.stopPoiIds,
-          isFeatured: route.isFeatured,
-          isActive: !route.isActive,
-        },
-        user,
-      );
-    } catch (error) {
-      setPageError(getErrorMessage(error));
-    } finally {
-      setBusyRouteId(null);
-    }
+  const togglePoiSelection = (poiId: string) => {
+    setForm((current) => {
+      const exists = current.stopPoiIds.includes(poiId);
+      return {
+        ...current,
+        stopPoiIds: exists
+          ? current.stopPoiIds.filter((item) => item !== poiId)
+          : [...current.stopPoiIds, poiId],
+      };
+    });
+    setFocusedPoiId(poiId);
+    setFormError("");
   };
 
-  const addStop = (poiId: string) => {
+  const removeStop = (poiId: string) => {
     setForm((current) => ({
       ...current,
-      stopPoiIds: current.stopPoiIds.includes(poiId)
-        ? current.stopPoiIds
-        : [...current.stopPoiIds, poiId],
-    }));
-  };
-
-  const removeStop = (index: number) => {
-    setForm((current) => ({
-      ...current,
-      stopPoiIds: current.stopPoiIds.filter((_, itemIndex) => itemIndex !== index),
+      stopPoiIds: current.stopPoiIds.filter((item) => item !== poiId),
     }));
   };
 
@@ -369,139 +244,171 @@ export const ToursPage = () => {
     });
   };
 
-  const editingRoute = form.id ? state.routes.find((item) => item.id === form.id) ?? null : null;
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!user) {
+      return;
+    }
+
+    const normalizedName = form.name.trim();
+    if (!normalizedName) {
+      setFormError("Tên tour là bắt buộc.");
+      return;
+    }
+
+    if (form.stopPoiIds.length === 0) {
+      setFormError("Tour phải có ít nhất 1 POI được chọn.");
+      return;
+    }
+
+    setSaving(true);
+    setFormError("");
+
+    try {
+      await saveRoute(
+        {
+          id: form.id,
+          name: normalizedName,
+          description: form.description.trim(),
+          isFeatured: canFeatureRoute ? form.isFeatured : editingRoute?.isFeatured ?? false,
+          stopPoiIds: form.stopPoiIds,
+          isActive: form.isActive,
+        },
+        user,
+      );
+
+      closeModal();
+      setFeedback({
+        tone: "success",
+        message: form.id ? "Cập nhật tour thành công." : "Tạo tour thành công.",
+      });
+    } catch (error) {
+      setFormError(getErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openDeleteModal = (route: TourRoute) => {
+    if (!canManageRoute(user, route)) {
+      return;
+    }
+
+    setDeleteError("");
+    setRouteBeingDeleted(route);
+  };
+
+  const closeDeleteModal = () => {
+    if (isDeleting) {
+      return;
+    }
+
+    setDeleteError("");
+    setRouteBeingDeleted(null);
+  };
+
+  const handleDelete = async () => {
+    if (!routeBeingDeleted) {
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError("");
+
+    try {
+      await deleteRoute(routeBeingDeleted.id);
+      setRouteBeingDeleted(null);
+      setFeedback({
+        tone: "success",
+        message: "Xóa tour thành công.",
+      });
+    } catch (error) {
+      setDeleteError(getErrorMessage(error));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const columns: DataColumn<TourRoute>[] = [
     {
       key: "tour",
-      header: "Tên tour",
+      header: "Tour",
       widthClassName: "min-w-[320px]",
-      render: (item) => (
-        <div className="flex items-center gap-3">
-          {item.coverImageUrl ? (
-            <img
-              src={item.coverImageUrl}
-              alt={getTourCopy(item.name)}
-              className="h-16 w-16 rounded-3xl object-cover"
-            />
-          ) : (
-            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-sand-100 text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-500">
-              Tour
-            </div>
-          )}
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="font-semibold text-ink-900">{getTourCopy(item.name)}</p>
-              <StatusBadge status="draft" label={getTourThemeLabel(item.theme)} />
-              {item.isFeatured ? <StatusBadge status="published" label="Nổi bật" /> : null}
-              <StatusBadge status={item.isSystemRoute ? "active" : "draft"} label={item.isSystemRoute ? "Hệ thống" : "Riêng quán"} />
-            </div>
-            <p className="mt-1 text-sm text-ink-500">{getTourCopy(item.description)}</p>
-            <p className="mt-1 text-xs text-ink-500">ID: {item.id}</p>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "stops",
-      header: "Điểm đến",
-      widthClassName: "min-w-[280px]",
-      render: (item) => {
-        const issues = getRouteIssues(item, state.pois, foodCountByPoiId);
-
-        return (
-          <div className="space-y-2">
-            {item.stopPoiIds.slice(0, 3).map((poiId, index) => {
-              const poi = getPoiById(state, poiId);
-
-              return (
-                <div key={`${item.id}-${poiId}-${index}`} className="flex items-center gap-2 text-sm">
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-sand-100 text-xs font-semibold text-ink-700">
-                    {index + 1}
-                  </span>
-                  <span className="font-medium text-ink-800">
-                    {poi ? getPoiTitle(state, poi.id) : "POI đã bị xóa"}
-                  </span>
-                  {poi ? (
-                    <StatusBadge status={poi.status} />
-                  ) : (
-                    <StatusBadge status="hidden" label="Thiếu" />
-                  )}
-                </div>
-              );
-            })}
-            {item.stopPoiIds.length > 3 ? (
-              <p className="text-xs text-ink-500">+ {item.stopPoiIds.length - 3} điểm đến khác</p>
-            ) : null}
-            {issues.missingPoiCount > 0 || issues.inactiveStopCount > 0 || issues.noMenuCount > 0 ? (
-              <p className="text-xs text-amber-700">
-                Cần soát lại: {issues.missingPoiCount} điểm thiếu, {issues.inactiveStopCount} điểm chưa xuất
-                bản, {issues.noMenuCount} điểm chưa có món ăn.
-              </p>
-            ) : (
-              <p className="text-xs text-emerald-700">Đang bám vào dữ liệu POI hiện tại.</p>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      key: "duration",
-      header: "Thời lượng",
-      widthClassName: "min-w-[120px]",
-      render: (item) => (
+      render: (route) => (
         <div>
-          <p className="font-medium text-ink-800">{formatNumber(item.durationMinutes)} phút</p>
-          <p className="mt-1 text-xs text-ink-500">Độ khó: {getRouteDifficultyLabel(item.difficulty)}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-semibold text-ink-900">{getTourCopy(route.name)}</p>
+            <StatusBadge
+              status={route.isActive ? "active" : "inactive"}
+              label={route.isActive ? "Đang hoạt động" : "Tạm dừng"}
+            />
+            <StatusBadge
+              status={route.isSystemRoute ? "published" : "draft"}
+              label={route.isSystemRoute ? "Hệ thống" : "Riêng quán"}
+            />
+            {route.isFeatured ? <StatusBadge status="published" label="Nổi bật" /> : null}
+          </div>
+          <p className="mt-2 text-sm text-ink-600">{getTourCopy(route.description) || "Chưa có mô tả ngắn."}</p>
+          <p className="mt-2 text-xs text-ink-500">ID: {route.id}</p>
         </div>
       ),
     },
     {
-      key: "status",
-      header: "Trạng thái",
-      widthClassName: "min-w-[180px]",
-      render: (item) => (
+      key: "pois",
+      header: "POI Trong Tour",
+      widthClassName: "min-w-[280px]",
+      render: (route) => (
         <div className="space-y-2">
-          <StatusBadge
-            status={item.isActive ? "active" : "inactive"}
-            label={item.isActive ? "Đang hoạt động" : "Tạm dừng"}
-          />
-          <StatusBadge status={item.isFeatured ? "published" : "draft"} label={item.isFeatured ? "Nổi bật" : "Thường"} />
+          {route.stopPoiIds.slice(0, 4).map((poiId, index) => {
+            const poi = getPoiById(state, poiId);
+            return (
+              <div key={`${route.id}-${poiId}-${index}`} className="flex items-center gap-2 text-sm">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700">
+                  {index + 1}
+                </span>
+                <span className="font-medium text-ink-800">
+                  {poi ? getPoiTitle(state, poi.id) : "POI đã bị xóa"}
+                </span>
+              </div>
+            );
+          })}
+          {route.stopPoiIds.length > 4 ? (
+            <p className="text-xs text-ink-500">+ {route.stopPoiIds.length - 4} POI khác</p>
+          ) : null}
+          <p className="text-xs text-ink-500">{formatNumber(route.stopPoiIds.length)} điểm dừng</p>
         </div>
       ),
     },
     {
       key: "updated",
-      header: "Cập nhật",
-      widthClassName: "min-w-[180px]",
-      render: (item) => (
+      header: "Cập Nhật",
+      widthClassName: "min-w-[190px]",
+      render: (route) => (
         <div>
-          <p className="font-medium text-ink-800">{getTourCopy(item.updatedBy)}</p>
-          <p className="mt-1 text-sm text-ink-500">{formatDateTime(item.updatedAt)}</p>
+          <p className="font-medium text-ink-800">{getTourCopy(route.updatedBy)}</p>
+          <p className="mt-1 text-sm text-ink-500">{formatDateTime(route.updatedAt)}</p>
         </div>
       ),
     },
     {
       key: "actions",
-      header: "Thao tác",
+      header: "Thao Tác",
       widthClassName: "min-w-[210px]",
-      render: (item) => (
+      render: (route) => (
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => openModal(item)} disabled={!canManageRoute(user, item)}>
+          <Button
+            variant="secondary"
+            onClick={() => openModal(route)}
+            disabled={!canManageRoute(user, route)}
+          >
             Chỉnh sửa
           </Button>
           <Button
-            variant="ghost"
-            onClick={() => {
-              void handleToggleRoute(item);
-            }}
-            disabled={busyRouteId === item.id || !canManageRoute(user, item)}
+            variant="danger"
+            onClick={() => openDeleteModal(route)}
+            disabled={!canManageRoute(user, route)}
           >
-            {busyRouteId === item.id
-              ? "Đang cập nhật..."
-              : item.isActive
-                ? "Tắt tour"
-                : "Bật tour"}
+            Xóa
           </Button>
         </div>
       ),
@@ -514,10 +421,10 @@ export const ToursPage = () => {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-4xl">
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">Quản lý tour</p>
-            <h1 className="mt-3 text-3xl font-bold text-ink-900">Quản lý tour theo chủ đề và lộ trình điểm đến</h1>
+            <h1 className="mt-3 text-3xl font-bold text-ink-900">Tạo và quản lý tour trực tiếp từ bản đồ</h1>
             <p className="mt-3 text-sm leading-6 text-ink-600">
-              Tour lưu theo liên kết POI, vì vậy khi quán đổi menu, giờ mở cửa hoặc tạm dừng kinh doanh,
-              bạn chỉ cần cập nhật POI hoặc món ăn rồi quay lại đây để sắp xếp lại điểm dừng khi cần.
+              Chọn POI ngay trên bản đồ để ghép thành tour, theo dõi thứ tự các điểm dừng
+              và cập nhật nhanh danh sách POI bất cứ khi nào cần.
             </p>
           </div>
           <Button onClick={() => openModal()} disabled={isBootstrapping || !state.pois.length}>
@@ -526,48 +433,48 @@ export const ToursPage = () => {
         </div>
       </Card>
 
+      {feedback ? (
+        <div className={`rounded-2xl px-4 py-3 text-sm ${feedbackToneClasses[feedback.tone]}`}>
+          {feedback.message}
+        </div>
+      ) : null}
+
       <section className="grid gap-4 md:grid-cols-4">
-        {[
-          ["Tổng tour", state.routes.length],
-          ["Tour đang hoạt động", state.routes.filter((item) => item.isActive).length],
-          ["POI đang được gán", linkedPoiCount],
-          ["Tour cần soát lại", routesNeedingReview],
-        ].map(([label, value]) => (
-          <Card key={label}>
-            <p className="text-sm text-ink-500">{label}</p>
-            <p className="mt-3 text-3xl font-bold text-ink-900">{formatNumber(Number(value))}</p>
-          </Card>
-        ))}
+        <Card>
+          <p className="text-sm text-ink-500">Tổng tour</p>
+          <p className="mt-3 text-3xl font-bold text-ink-900">{formatNumber(state.routes.length)}</p>
+        </Card>
+        <Card>
+          <p className="text-sm text-ink-500">Tour đang hoạt động</p>
+          <p className="mt-3 text-3xl font-bold text-ink-900">
+            {formatNumber(state.routes.filter((route) => route.isActive).length)}
+          </p>
+        </Card>
+        <Card>
+          <p className="text-sm text-ink-500">POI đã được dùng</p>
+          <p className="mt-3 text-3xl font-bold text-ink-900">{formatNumber(linkedPoiCount)}</p>
+        </Card>
+        <Card>
+          <p className="text-sm text-ink-500">TB điểm dừng / tour</p>
+          <p className="mt-3 text-3xl font-bold text-ink-900">{averageStopCount}</p>
+        </Card>
       </section>
 
       <Card className="space-y-4">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px_220px]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
           <div>
             <label className="field-label">Tìm tour</label>
             <Input
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}
-              placeholder="Tên tour, chủ đề, điểm đến..."
+              placeholder="Tên tour, mô tả ngắn, POI..."
             />
-          </div>
-          <div>
-            <label className="field-label">Chủ đề</label>
-            <Select value={themeFilter} onChange={(event) => setThemeFilter(event.target.value)}>
-              <option value="all">Tất cả chủ đề</option>
-              {availableThemes.map((theme) => (
-                <option key={theme} value={theme}>
-                  {theme}
-                </option>
-              ))}
-            </Select>
           </div>
           <div>
             <label className="field-label">Trạng thái</label>
             <Select
               value={statusFilter}
-              onChange={(event) =>
-                setStatusFilter(event.target.value as "all" | "active" | "inactive")
-              }
+              onChange={(event) => setStatusFilter(event.target.value as "all" | "active" | "inactive")}
             >
               <option value="all">Tất cả</option>
               <option value="active">Đang hoạt động</option>
@@ -575,9 +482,6 @@ export const ToursPage = () => {
             </Select>
           </div>
         </div>
-        {pageError ? (
-          <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{pageError}</div>
-        ) : null}
       </Card>
 
       <Card>
@@ -586,275 +490,211 @@ export const ToursPage = () => {
         ) : (
           <EmptyState
             title="Chưa có tour phù hợp"
-            description="Hãy tạo tour mới hoặc đổi bộ lọc để xem danh sách khác."
+            description="Hãy tạo tour mới hoặc thay đổi bộ lọc để xem danh sách khác."
           />
         )}
       </Card>
 
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={form.id ? "Cập nhật tour" : "Tạo tour mới"}
-        description="Gắn nhiều địa điểm vào một tour, sắp xếp thứ tự điểm đến và bật hoặc tắt tour khi cần."
-        maxWidthClassName="max-w-6xl"
+        onClose={closeModal}
+        title={form.id ? "Chỉnh sửa tour trên bản đồ" : "Tạo tour trên bản đồ"}
+        description="Chạm trực tiếp vào các POI trên bản đồ để thêm hoặc bỏ chọn, sau đó lưu tour với tên và mô tả ngắn."
+        maxWidthClassName="max-w-7xl"
       >
-        <form className="space-y-6" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit} autoComplete="off">
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-            <div className="xl:col-span-2">
-              <label className="field-label">Tên tour</label>
-              <Input
-                value={form.name}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, name: event.target.value }))
-                }
-                required
-              />
-            </div>
-            <div>
-              <label className="field-label">Chủ đề</label>
-              <Input
-                value={form.theme}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, theme: event.target.value }))
-                }
-                required
-              />
-            </div>
-            <div>
-              <label className="field-label">Thời lượng (phút)</label>
-              <Input
-                type="number"
-                min={1}
-                value={form.durationMinutes}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, durationMinutes: event.target.value }))
-                }
-                required
-              />
-            </div>
-            <div>
-              <label className="field-label">Độ khó</label>
-              <Select
-                value={form.difficulty}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, difficulty: event.target.value }))
-                }
-              >
-                <option value="custom">Tùy chỉnh</option>
-                <option value="easy">Dễ</option>
-                <option value="foodie">Ẩm thực</option>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {suggestedThemes.map((theme) => (
-              <Button
-                key={theme}
-                variant={form.theme === theme ? "primary" : "secondary"}
-                onClick={() => setForm((current) => ({ ...current, theme }))}
-              >
-                {theme}
-              </Button>
-            ))}
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
-            <div>
-              <label className="field-label">Mô tả tour</label>
-              <Textarea
-                value={form.description}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, description: event.target.value }))
-                }
-                placeholder="Tóm tắt trải nghiệm, đối tượng phù hợp và cách đi tour."
-              />
-            </div>
-            <div className="flex items-end">
-              <div className="w-full space-y-3">
-                <label className="flex w-full items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
-                  <input
-                    type="checkbox"
-                    checked={form.isActive}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, isActive: event.target.checked }))
-                    }
-                  />
-                  Đang hoạt động
-                </label>
-                <label className="flex w-full items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
-                  <input
-                    type="checkbox"
-                    checked={form.isFeatured}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, isFeatured: event.target.checked }))
-                    }
-                    disabled={!canFeatureRoute}
-                  />
-                  {canFeatureRoute ? "Tour nổi bật" : "Tour nổi bật (chỉ super admin)"}
-                </label>
-              </div>
-            </div>
-          </div>
-
-          {editingRoute ? (
-            <div className="grid gap-4 md:grid-cols-3">
-              <Card className="border border-sand-100 bg-sand-50">
-                <p className="text-sm text-ink-500">Route ID</p>
-                <p className="mt-2 break-all font-semibold text-ink-900">{editingRoute.id}</p>
-              </Card>
-              <Card className="border border-sand-100 bg-sand-50">
-                <p className="text-sm text-ink-500">Cập nhật bởi</p>
-                <p className="mt-2 font-semibold text-ink-900">{getTourCopy(editingRoute.updatedBy)}</p>
-              </Card>
-              <Card className="border border-sand-100 bg-sand-50">
-                <p className="text-sm text-ink-500">Cập nhật lúc</p>
-                <p className="mt-2 font-semibold text-ink-900">{formatDateTime(editingRoute.updatedAt)}</p>
-              </Card>
-            </div>
-          ) : null}
-
-          <ImageSourceField
-            label="Ảnh đại diện tour"
-            value={form.coverImageUrl}
-            onChange={(value) => setForm((current) => ({ ...current, coverImageUrl: value }))}
-            onUpload={async (file) => (await adminApi.uploadFile(file, "images/tours")).url}
-          />
-
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <form
+          className="space-y-6"
+          onSubmit={handleSubmit}
+          onKeyDown={preventImplicitFormSubmit}
+          autoComplete="off"
+        >
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_380px]">
             <Card className="space-y-4 border border-sand-100">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="section-heading">POI có sẵn</h2>
-                  <p className="mt-2 text-sm text-ink-500">Chọn các quán và địa điểm để đưa vào tour.</p>
-                </div>
-                <p className="text-sm text-ink-500">{availablePois.length} POI</p>
-              </div>
-              <Input
-                value={poiKeyword}
-                onChange={(event) => setPoiKeyword(event.target.value)}
-                placeholder="Tìm theo tên, địa chỉ, phân loại..."
-              />
-              <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
-                {availablePois.length ? (
-                  availablePois.map((poi) => (
-                    <div
-                      key={poi.id}
-                      className="rounded-3xl border border-sand-100 bg-white p-4 shadow-sm"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-ink-900">{getPoiTitle(state, poi.id)}</p>
-                          <p className="mt-1 text-sm text-ink-500">{poi.address}</p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <StatusBadge status={poi.status} />
-                            <StatusBadge status="draft" label={getCategoryName(state, poi.categoryId)} />
-                          </div>
-                        </div>
-                        <Button onClick={() => addStop(poi.id)}>Thêm</Button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <EmptyState
-                    title="Không còn POI phù hợp"
-                    description="Thử đổi từ khóa tìm kiếm hoặc bớt các điểm đến đã chọn."
+              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div className="flex-1">
+                  <label className="field-label">Lọc POI trên bản đồ</label>
+                  <Input
+                    value={poiKeyword}
+                    onChange={(event) => setPoiKeyword(event.target.value)}
+                    placeholder="Tên POI, địa chỉ, loại hình..."
                   />
-                )}
+                </div>
+                <div className="rounded-2xl bg-sand-50 px-4 py-3 text-sm font-medium text-ink-600">
+                  {formatNumber(mapPois.length)} POI đang hiển thị
+                </div>
               </div>
+
+              <TourPoiMap
+                pois={mapPois}
+                selectedPoiIds={form.stopPoiIds}
+                focusedPoiId={focusedPoiId}
+                onTogglePoi={togglePoiSelection}
+                isVisible={modalOpen}
+              />
             </Card>
 
-            <Card className="space-y-4 border border-sand-100">
-              <div className="flex items-center justify-between gap-3">
+            <div className="space-y-4">
+              <Card className="space-y-4 border border-sand-100">
                 <div>
-                  <h2 className="section-heading">Lộ trình tour</h2>
+                  <h2 className="section-heading">Thông tin tour</h2>
                   <p className="mt-2 text-sm text-ink-500">
-                    Sắp xếp điểm dừng theo đúng thứ tự di chuyển. Thông tin menu và trạng thái sẽ lấy từ POI hiện tại.
+                    Chỉ có thể lưu khi đã nhập tên tour và chọn ít nhất 1 POI.
                   </p>
                 </div>
-                <p className="text-sm text-ink-500">{selectedStops.length} điểm dừng</p>
-              </div>
-              <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
-                {selectedStops.length ? (
-                  selectedStops.map((item, index) => (
-                    <div
-                      key={`${item.poiId}-${index}`}
-                      className="rounded-3xl border border-sand-100 bg-white p-4 shadow-sm"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary-50 text-sm font-semibold text-primary-700">
-                              {item.order}
-                            </span>
-                            <p className="font-semibold text-ink-900">
-                              {item.poi ? getPoiTitle(state, item.poi.id) : "POI đã bị xóa"}
+
+                <div>
+                  <label className="field-label">Tên tour</label>
+                  <Input
+                    value={form.name}
+                    onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Ví dụ: Tour ốc và hải sản Quận 4"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label">Mô tả ngắn</label>
+                  <Textarea
+                    value={form.description}
+                    onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="Mô tả nhanh trải nghiệm, nhóm khách phù hợp hoặc nhịp đi tour."
+                    className="min-h-[140px]"
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <label className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
+                    <input
+                      type="checkbox"
+                      checked={form.isActive}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, isActive: event.target.checked }))
+                      }
+                    />
+                    Đang hoạt động
+                  </label>
+
+                  {canFeatureRoute ? (
+                    <label className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
+                      <input
+                        type="checkbox"
+                        checked={form.isFeatured}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, isFeatured: event.target.checked }))
+                        }
+                      />
+                      Đánh dấu nổi bật
+                    </label>
+                  ) : null}
+                </div>
+
+                {editingRoute ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Card className="border border-sand-100 bg-sand-50">
+                      <p className="text-sm text-ink-500">Route ID</p>
+                      <p className="mt-2 break-all font-semibold text-ink-900">{editingRoute.id}</p>
+                    </Card>
+                    <Card className="border border-sand-100 bg-sand-50">
+                      <p className="text-sm text-ink-500">Cập nhật gần nhất</p>
+                      <p className="mt-2 font-semibold text-ink-900">{formatDateTime(editingRoute.updatedAt)}</p>
+                    </Card>
+                  </div>
+                ) : null}
+              </Card>
+
+              <Card className="space-y-4 border border-sand-100">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="section-heading">POI đã chọn</h2>
+                    <p className="mt-2 text-sm text-ink-500">
+                      Thứ tự dưới đây cũng chính là thứ tự POI trong tour.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-primary-50 px-3 py-2 text-sm font-semibold text-primary-700">
+                    {formatNumber(selectedStops.length)} POI
+                  </div>
+                </div>
+
+                {selectedMissingCount > 0 ? (
+                  <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    Có {selectedMissingCount} POI không còn tồn tại. Hãy bỏ các POI này trước khi lưu.
+                  </div>
+                ) : null}
+
+                <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                  {selectedStops.length ? (
+                    selectedStops.map((item, index) => (
+                      <div
+                        key={`${item.poiId}-${index}`}
+                        className="rounded-3xl border border-sand-100 bg-white p-4 shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <button
+                              type="button"
+                              className="w-full text-left"
+                              onClick={() => setFocusedPoiId(item.poiId)}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary-50 text-sm font-semibold text-primary-700">
+                                  {item.order}
+                                </span>
+                                <p className="truncate font-semibold text-ink-900">
+                                  {item.poi ? getPoiTitle(state, item.poi.id) : "POI đã bị xóa"}
+                                </p>
+                              </div>
+                            </button>
+
+                            <p className="mt-2 text-sm text-ink-500">
+                              {item.poi?.address ?? "POI này không còn trong hệ thống."}
                             </p>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {item.poi ? (
+                                <>
+                                  <StatusBadge status={item.poi.status} />
+                                  <StatusBadge
+                                    status="draft"
+                                    label={getCategoryName(state, item.poi.categoryId)}
+                                  />
+                                </>
+                              ) : (
+                                <StatusBadge status="hidden" label="Không hợp lệ" />
+                              )}
+                            </div>
                           </div>
-                          <p className="mt-2 text-sm text-ink-500">
-                            {item.poi?.address ?? "Cần thay điểm dừng này bằng một POI còn tồn tại."}
-                          </p>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {item.poi ? (
-                              <>
-                                <StatusBadge status={item.poi.status} />
-                                <StatusBadge status="draft" label={`${item.foodCount} món`} />
-                              </>
-                            ) : (
-                              <StatusBadge status="hidden" label="Thiếu" />
-                            )}
+
+                          <div className="flex flex-col gap-2">
+                            <Button
+                              variant="secondary"
+                              onClick={() => moveStop(index, -1)}
+                              disabled={index === 0}
+                            >
+                              Lên
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={() => moveStop(index, 1)}
+                              disabled={index === selectedStops.length - 1}
+                            >
+                              Xuống
+                            </Button>
+                            <Button variant="ghost" onClick={() => removeStop(item.poiId)}>
+                              Bỏ chọn
+                            </Button>
                           </div>
-                          {item.poi ? (
-                            <p className="mt-3 text-xs text-ink-500">
-                              Cập nhật POI: {formatDateTime(item.poi.updatedAt)}
-                            </p>
-                          ) : null}
-                          {!item.poi ? (
-                            <p className="mt-2 text-xs text-rose-700">
-                              Điểm dừng này không còn hợp lệ. Hãy xóa hoặc thay bằng một POI khác.
-                            </p>
-                          ) : null}
-                          {item.poi && item.poi.status !== "published" ? (
-                            <p className="mt-2 text-xs text-amber-700">
-                              POI này chưa ở trạng thái xuất bản. Cần cân nhắc tắt tour hoặc đổi điểm dừng.
-                            </p>
-                          ) : null}
-                          {item.poi && item.foodCount === 0 ? (
-                            <p className="mt-2 text-xs text-amber-700">
-                              POI này chưa có món ăn. Nếu quán đổi menu, hãy cập nhật bên module Món ăn.
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <Button
-                            variant="secondary"
-                            onClick={() => moveStop(index, -1)}
-                            disabled={index === 0}
-                          >
-                            Lên
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={() => moveStop(index, 1)}
-                            disabled={index === selectedStops.length - 1}
-                          >
-                            Xuống
-                          </Button>
-                          <Button variant="ghost" onClick={() => removeStop(index)}>
-                            Bỏ
-                          </Button>
                         </div>
                       </div>
-                    </div>
-                  ))
-                ) : (
-                  <EmptyState
-                    title="Chưa có điểm đến"
-                    description="Thêm POI ở cột bên trái để tạo lộ trình tour."
-                  />
-                )}
-              </div>
-            </Card>
+                    ))
+                  ) : (
+                    <EmptyState
+                      title="Chưa có POI trong tour"
+                      description="Chạm trực tiếp vào các POI trên bản đồ để bắt đầu ghép tour."
+                    />
+                  )}
+                </div>
+              </Card>
+            </div>
           </div>
 
           {formError ? (
@@ -862,14 +702,53 @@ export const ToursPage = () => {
           ) : null}
 
           <div className="flex justify-end gap-3 border-t border-sand-100 pt-5">
-            <Button variant="ghost" onClick={() => setModalOpen(false)}>
+            <Button variant="ghost" onClick={closeModal}>
               Hủy
             </Button>
-            <Button type="submit" disabled={isSaving || form.stopPoiIds.length === 0}>
-              {isSaving ? "Đang lưu..." : form.id ? "Lưu tour" : "Tạo tour"}
+            <Button
+              type="submit"
+              disabled={isSaving || !form.name.trim() || form.stopPoiIds.length === 0}
+            >
+              {isSaving ? "Đang lưu..." : form.id ? "Cập nhật tour" : "Lưu tour"}
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!routeBeingDeleted}
+        onClose={closeDeleteModal}
+        title="Xác nhận xóa tour"
+        description="Chỉ xóa tour khi bạn thực sự chắc chắn."
+        maxWidthClassName="max-w-xl"
+      >
+        <div className="space-y-5">
+          <p className="text-sm leading-6 text-ink-600">
+            Bạn có chắc chắn muốn xóa tour này không?
+          </p>
+
+          {routeBeingDeleted ? (
+            <div className="rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3">
+              <p className="font-semibold text-ink-900">{getTourCopy(routeBeingDeleted.name)}</p>
+              <p className="mt-1 text-sm text-ink-500">
+                {routeBeingDeleted.stopPoiIds.length} POI trong tour này sẽ bị gỡ liên kết.
+              </p>
+            </div>
+          ) : null}
+
+          {deleteError ? (
+            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{deleteError}</div>
+          ) : null}
+
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" onClick={closeDeleteModal} disabled={isDeleting}>
+              Hủy
+            </Button>
+            <Button variant="danger" onClick={handleDelete} disabled={isDeleting}>
+              {isDeleting ? "Đang xóa..." : "Xóa tour"}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

@@ -547,14 +547,10 @@ export const adminApi = {
   saveRoute: (route: {
     id?: string;
     name: string;
-    theme: string;
     description: string;
-    durationMinutes: number;
-    difficulty: string;
-    coverImageUrl: string;
-    isFeatured: boolean;
     stopPoiIds: string[];
-    isActive: boolean;
+    isFeatured?: boolean;
+    isActive?: boolean;
     actorName: string;
     actorRole: AdminUser["role"];
     actorUserId: string;
@@ -564,6 +560,12 @@ export const adminApi = {
       route.id ? "PUT" : "POST",
       route,
     ),
+  getRouteById: (routeId: string) =>
+    request<TourRoute>(`/api/v1/tours/${routeId}`),
+  deleteRoute: (routeId: string) =>
+    request<string>(`/api/v1/tours/${routeId}`, {
+      method: "DELETE",
+    }),
   saveAudioGuide: (audioGuide: {
     id?: string;
     entityType: AudioGuide["entityType"];

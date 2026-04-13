@@ -102,6 +102,10 @@ type PoiDraft = Omit<Poi, "id" | "createdAt" | "updatedAt" | "updatedBy" | "appr
   seoDescription: string;
 };
 
+type RouteDraft = Pick<TourRoute, "name" | "description" | "stopPoiIds" | "isFeatured" | "isActive"> & {
+  id?: string;
+};
+
 type AdminDataContextValue = {
   state: AdminDataState;
   isBootstrapping: boolean;
@@ -132,9 +136,10 @@ type AdminDataContextValue = {
     actor: AdminUser,
   ) => Promise<Promotion>;
   saveRoute: (
-    route: Omit<TourRoute, "id" | "updatedBy" | "updatedAt" | "isSystemRoute" | "ownerUserId"> & { id?: string },
+    route: RouteDraft,
     actor: AdminUser,
   ) => Promise<void>;
+  deleteRoute: (routeId: string) => Promise<void>;
   saveAudioGuide: (
     audioGuide: Omit<AudioGuide, "id" | "updatedAt" | "updatedBy"> & { id?: string },
     actor: AdminUser,
@@ -359,19 +364,15 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
 
   const saveRoute = useCallback(
     async (
-      route: Omit<TourRoute, "id" | "updatedBy" | "updatedAt" | "isSystemRoute" | "ownerUserId"> & { id?: string },
+      route: RouteDraft,
       actor: AdminUser,
     ) => {
       const routePayload = {
         id: route.id,
         name: route.name,
-        theme: route.theme,
         description: route.description,
-        durationMinutes: route.durationMinutes,
-        difficulty: route.difficulty,
-        coverImageUrl: route.coverImageUrl,
-        isFeatured: route.isFeatured,
         stopPoiIds: route.stopPoiIds,
+        isFeatured: route.isFeatured,
         isActive: route.isActive,
         actorName: actor.name,
         actorRole: actor.role,
@@ -389,6 +390,11 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     },
     [refreshData],
   );
+
+  const deleteRoute = useCallback(async (routeId: string) => {
+    await adminApi.deleteRoute(routeId);
+    await refreshData();
+  }, [refreshData]);
 
   const saveAudioGuide = useCallback(
     async (
@@ -484,6 +490,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       saveUserStatus,
       savePromotion,
       saveRoute,
+      deleteRoute,
       saveAudioGuide,
       saveTranslation,
       saveReviewStatus,
@@ -502,6 +509,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       savePoi,
       savePromotion,
       saveRoute,
+      deleteRoute,
       saveReviewStatus,
       saveSettings,
       saveTranslation,
