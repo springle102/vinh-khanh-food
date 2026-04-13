@@ -17,6 +17,8 @@ npm run dev
 npm run build
 ```
 
+From the repository root, `npm install` now bootstraps `apps/admin-web` automatically, and the root scripts (`npm run dev`, `npm run build`, `npm run lint`) will install admin dependencies on demand if they are missing.
+
 The Vite dev server proxies `/api` and `/storage` to `http://localhost:5080` by default.
 
 If you deploy the frontend separately from the API, set:

@@ -64,4 +64,12 @@ public sealed class AdminUsersController(
         var saved = repository.SaveUser(id, sanitizedRequest, actor);
         return Ok(ApiResponse<AdminUser>.Ok(saved, "Cap nhat tai khoan admin thanh cong."));
     }
+
+    [HttpPatch("{id}/status")]
+    public ActionResult<ApiResponse<AdminUser>> UpdateUserStatus(string id, [FromBody] AdminUserStatusUpdateRequest request)
+    {
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var saved = repository.SaveUserStatus(id, request, actor);
+        return Ok(ApiResponse<AdminUser>.Ok(saved, "Cap nhat trang thai tai khoan thanh cong."));
+    }
 }

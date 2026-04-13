@@ -68,6 +68,8 @@ public sealed partial class AdminDataRepository
             now,
             existing.Id);
 
+        TouchPoiLocalizedAssets(connection, transaction, existing.Id, now);
+
         AppendAdminAuditLog(
             connection,
             transaction,
@@ -141,6 +143,8 @@ public sealed partial class AdminDataRepository
             actor.Name,
             now,
             existing.Id);
+
+        TouchPoiLocalizedAssets(connection, transaction, existing.Id, now);
 
         AppendAdminAuditLog(
             connection,
@@ -242,6 +246,38 @@ public sealed partial class AdminDataRepository
         }
 
         return normalizedReason;
+    }
+
+    private void TouchPoiLocalizedAssets(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string poiId,
+        DateTimeOffset updatedAt)
+    {
+        // Status moderation should not make existing localized content look stale.
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.PoiTranslations
+            SET UpdatedAt = ?
+            WHERE EntityId = ?
+              AND EntityType IN (N'poi', N'place');
+            """,
+            updatedAt,
+            poiId);
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.AudioGuides
+            SET UpdatedAt = ?
+            WHERE EntityId = ?
+              AND EntityType IN (N'poi', N'place');
+            """,
+            updatedAt,
+            poiId);
     }
 
     private static PoiReviewMetadata ResolvePoiReviewMetadataForSave(

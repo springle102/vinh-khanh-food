@@ -97,9 +97,7 @@ public sealed class PoiNarrationService(
             IsEquivalentNarration(exactBody, sourceBody) ||
             ShouldRefreshAutoTranslation(exactTranslation, sourceTranslation));
 
-        var displayTitle = hasExactNarration
-            ? exactTitle ?? poi.Slug
-            : poi.Slug;
+        var displayTitle = exactTitle ?? sourceTitle ?? poi.Slug;
         var displayText = hasExactNarration
             ? exactText
             : string.Empty;
@@ -167,7 +165,9 @@ public sealed class PoiNarrationService(
                     var canUseSourceFallback =
                         string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) ||
                         (!IsSourceLanguage(sourceLanguageCode) && IsUsableTextForLanguage(sourceText, sourceLanguageCode));
-                    displayTitle = canUseSourceFallback ? sourceTitle ?? poi.Slug : poi.Slug;
+                    displayTitle = canUseSourceFallback
+                        ? sourceTitle ?? exactTitle ?? poi.Slug
+                        : exactTitle ?? poi.Slug;
                     displayText = canUseSourceFallback ? sourceText : string.Empty;
                     ttsInputText = displayText;
                     effectiveLanguageCode = canUseSourceFallback
@@ -186,7 +186,9 @@ public sealed class PoiNarrationService(
             var canUseSourceFallback =
                 string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) ||
                 (!IsSourceLanguage(sourceLanguageCode) && IsUsableTextForLanguage(sourceText, sourceLanguageCode));
-            displayTitle = canUseSourceFallback ? sourceTitle ?? poi.Slug : poi.Slug;
+            displayTitle = canUseSourceFallback
+                ? sourceTitle ?? exactTitle ?? poi.Slug
+                : exactTitle ?? poi.Slug;
             displayText = canUseSourceFallback ? sourceText : string.Empty;
             ttsInputText = displayText;
             effectiveLanguageCode = canUseSourceFallback

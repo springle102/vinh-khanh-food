@@ -99,6 +99,8 @@ const buildNarrationPreviewText = (title: string, shortText: string, fullText: s
     : `${normalizedTitle}. ${narrationBody}`;
 };
 
+const isPoiEntityType = (entityType: string) => entityType === "poi" || entityType === "place";
+
 export const MediaPage = () => {
   const { state, isBootstrapping, saveAudioGuide, saveMediaAsset, saveTranslation } = useAdminData();
   const { user } = useAuth();
@@ -164,7 +166,7 @@ export const MediaPage = () => {
 
     const existing = state.translations.find(
       (item) =>
-        item.entityType === "poi" &&
+        isPoiEntityType(item.entityType) &&
         item.entityId === entityId &&
         item.languageCode === languageCode,
     );
@@ -369,7 +371,7 @@ export const MediaPage = () => {
   const audioRecordsWithNarration = state.audioGuides.filter((item) =>
     state.translations.some(
       (translation) =>
-        translation.entityType === "poi" &&
+        isPoiEntityType(translation.entityType) &&
         translation.entityId === item.entityId &&
         translation.languageCode === item.languageCode &&
         Boolean(translation.fullText || translation.shortText),

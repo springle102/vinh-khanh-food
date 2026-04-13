@@ -3,17 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npm --prefix apps/admin-web run dev",
-    "dev:admin": "npm --prefix apps/admin-web run dev",
+    "postinstall": "npm run install:admin",
+    "dev": "node ./scripts/run-admin-script.cjs dev",
+    "dev:admin": "node ./scripts/run-admin-script.cjs dev",
     "dev:all": "node ./scripts/dev-all.cjs",
     "dev:backend": "node ./scripts/run-backend.cjs dev",
     "dev:mobile:android": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-mobile-android.ps1",
     "open:android:devices": "powershell -ExecutionPolicy Bypass -File ./scripts/open-android-device-manager.ps1",
-    "build": "npm --prefix apps/admin-web run build",
-    "build:admin": "npm --prefix apps/admin-web run build",
+    "build": "node ./scripts/run-admin-script.cjs build",
+    "build:admin": "node ./scripts/run-admin-script.cjs build",
     "build:backend": "node ./scripts/run-backend.cjs build",
-    "preview": "npm --prefix apps/admin-web run preview",
-    "lint": "npm --prefix apps/admin-web run lint",
+    "preview": "node ./scripts/run-admin-script.cjs preview",
+    "lint": "node ./scripts/run-admin-script.cjs lint",
     "install:admin": "node -r ./scripts/npm-dns-override.cjs ./scripts/install-admin.cjs"
   }
 }

@@ -496,12 +496,9 @@ export const adminApi = {
     lng: number;
     categoryId: string;
     status: Poi["status"];
-    featured: boolean;
     district: string;
     ward: string;
     priceRange: string;
-    averageVisitDuration: number;
-    popularityScore: number;
     tags: string[];
     ownerUserId: string | null;
     updatedBy: string;
@@ -527,6 +524,8 @@ export const adminApi = {
       account.id ? "PUT" : "POST",
       account,
     ),
+  saveUserStatus: (userId: string, status: AdminUser["status"]) =>
+    jsonRequest<AdminUser>(`/api/v1/admin-users/${userId}/status`, "PATCH", { status }),
   getEndUser: (userId: string) =>
     request<EndUserProfile>(`/api/v1/users/${userId}`),
   savePromotion: (promotion: {

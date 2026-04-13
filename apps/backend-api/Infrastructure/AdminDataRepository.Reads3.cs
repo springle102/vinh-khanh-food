@@ -106,7 +106,7 @@ public sealed partial class AdminDataRepository
         return new Translation
         {
             Id = ReadString(reader, "Id"),
-            EntityType = ReadString(reader, "EntityType"),
+            EntityType = NormalizeStoredEntityType(ReadString(reader, "EntityType")),
             EntityId = ReadString(reader, "EntityId"),
             LanguageCode = ReadString(reader, "LanguageCode"),
             Title = ReadString(reader, "Title"),
@@ -125,7 +125,7 @@ public sealed partial class AdminDataRepository
         return new AudioGuide
         {
             Id = ReadString(reader, "Id"),
-            EntityType = ReadString(reader, "EntityType"),
+            EntityType = NormalizeStoredEntityType(ReadString(reader, "EntityType")),
             EntityId = ReadString(reader, "EntityId"),
             LanguageCode = ReadString(reader, "LanguageCode"),
             AudioUrl = ReadString(reader, "AudioUrl"),
@@ -142,7 +142,7 @@ public sealed partial class AdminDataRepository
         return new MediaAsset
         {
             Id = ReadString(reader, "Id"),
-            EntityType = ReadString(reader, "EntityType"),
+            EntityType = NormalizeStoredEntityType(ReadString(reader, "EntityType")),
             EntityId = ReadString(reader, "EntityId"),
             Type = ReadString(reader, "MediaType"),
             Url = ReadString(reader, "Url"),
@@ -193,5 +193,12 @@ public sealed partial class AdminDataRepository
             Status = ReadString(reader, "Status")
         };
     }
+
+    private static string NormalizeStoredEntityType(string entityType)
+        => string.Equals(entityType.Trim(), "place", StringComparison.OrdinalIgnoreCase)
+            ? "poi"
+            : string.Equals(entityType.Trim(), "food-item", StringComparison.OrdinalIgnoreCase)
+                ? "food_item"
+                : entityType.Trim().ToLowerInvariant();
 
 }

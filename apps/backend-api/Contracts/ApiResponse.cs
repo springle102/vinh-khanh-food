@@ -38,12 +38,9 @@ public sealed record PoiUpsertRequest(
     double Lng,
     string CategoryId,
     string Status,
-    bool Featured,
     string District,
     string Ward,
     string PriceRange,
-    int AverageVisitDuration,
-    int PopularityScore,
     List<string> Tags,
     string? OwnerUserId,
     string UpdatedBy,
@@ -62,6 +59,9 @@ public sealed record AdminUserUpsertRequest(
     string? ManagedPoiId,
     string ActorName,
     string ActorRole);
+
+public sealed record AdminUserStatusUpdateRequest(
+    string Status);
 
 public sealed record PlaceOwnerRegistrationRequest(
     string Name,
@@ -270,7 +270,6 @@ public sealed record DashboardSummaryResponse(
     int TotalListens,
     int TotalQrScans,
     int PublishedPois,
-    int FeaturedPois,
     int MissingReadyAudio,
     int PendingReviews);
 

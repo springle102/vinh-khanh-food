@@ -151,5 +151,7 @@ public sealed class TranslationsController(
     private static string NormalizeEntityType(string value)
         => string.Equals(value.Trim(), "food-item", StringComparison.OrdinalIgnoreCase)
             ? "food_item"
-            : value.Trim().ToLowerInvariant();
+            : string.Equals(value.Trim(), "place", StringComparison.OrdinalIgnoreCase)
+                ? "poi"
+                : value.Trim().ToLowerInvariant();
 }

@@ -119,7 +119,12 @@ type AdminDataContextValue = {
       | "rejectionReason"
       | "registrationSubmittedAt"
       | "registrationReviewedAt"
-    > & { id?: string },
+      > & { id?: string },
+    actor: AdminUser,
+  ) => Promise<void>;
+  saveUserStatus: (
+    userId: string,
+    status: AdminUser["status"],
     actor: AdminUser,
   ) => Promise<void>;
   savePromotion: (
@@ -232,12 +237,9 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
         lng: draft.lng,
         categoryId: draft.categoryId,
         status: draft.status,
-        featured: draft.featured,
         district: draft.district,
         ward: draft.ward,
         priceRange: draft.priceRange,
-        averageVisitDuration: draft.averageVisitDuration,
-        popularityScore: draft.popularityScore,
         tags: draft.tags,
         ownerUserId: draft.ownerUserId,
         updatedBy: actor.name,
@@ -318,6 +320,18 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
         actorRole: actor.role,
       });
 
+      await refreshData();
+    },
+    [refreshData],
+  );
+
+  const saveUserStatus = useCallback(
+    async (
+      userId: string,
+      status: AdminUser["status"],
+      _actor: AdminUser,
+    ) => {
+      await adminApi.saveUserStatus(userId, status);
       await refreshData();
     },
     [refreshData],
@@ -467,6 +481,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       refreshData,
       savePoi,
       saveUser,
+      saveUserStatus,
       savePromotion,
       saveRoute,
       saveAudioGuide,
@@ -491,6 +506,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       saveSettings,
       saveTranslation,
       saveUser,
+      saveUserStatus,
       state,
     ],
   );

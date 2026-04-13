@@ -387,7 +387,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         audioGuideId: audioSource.audioGuideId,
         status: "loading",
         kind: "tts",
-        message: `${reason} Dang dung giong doc cua trinh duyet.`,
+        message: `${reason} Đang dùng giọng đọc của trình duyệt.`,
         isLoadingPOI: false,
         isGeneratingTTS: false,
         isPlayingAudio: false,
@@ -433,7 +433,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           audioGuideId: audioSource.audioGuideId,
           status: "playing",
           kind: "tts",
-          message: `Dang phat thuyet minh bang giong doc cua trinh duyet (${languageLabels[audioSource.effectiveLanguageCode]}).`,
+          message: `Đang phát thuyết minh bằng giọng đọc của trình duyệt (${languageLabels[audioSource.effectiveLanguageCode]}).`,
           isLoadingPOI: false,
           isGeneratingTTS: false,
           isPlayingAudio: true,
@@ -449,7 +449,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         resetPlaybackRefs();
         setPlaybackState({
           ...DEFAULT_PLAYBACK_STATE,
-          message: "Da phat xong bai thuyet minh.",
+          message: "Đã phát xong bài thuyết minh.",
         });
       };
 
@@ -466,7 +466,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           audioGuideId: audioSource.audioGuideId,
           status: "error",
           kind: "tts",
-          message: "Khong the phat thuyet minh bang ElevenLabs hoac giong doc cua trinh duyet.",
+          message: "Không thể phát thuyết minh bằng ElevenLabs hoặc giọng đọc của trình duyệt.",
           isLoadingPOI: false,
           isGeneratingTTS: false,
           isPlayingAudio: false,
@@ -638,11 +638,11 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
             return;
           }
 
-          const handledByBrowserSpeech = await playBrowserSpeechFallback(
-            audioSource,
-            requestId,
-            "ElevenLabs TTS khong phat duoc.",
-          );
+        const handledByBrowserSpeech = await playBrowserSpeechFallback(
+          audioSource,
+          requestId,
+          "ElevenLabs TTS không phát được.",
+        );
           if (handledByBrowserSpeech || requestId !== requestIdRef.current) {
             return;
           }
@@ -680,8 +680,8 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           audioSource,
           requestId,
           error instanceof DOMException && error.name === "NotAllowedError"
-            ? "Trinh duyet chan audio ElevenLabs."
-            : "ElevenLabs TTS khong phat duoc.",
+            ? "Trình duyệt chặn audio ElevenLabs."
+            : "ElevenLabs TTS không phát được.",
         );
         if (handledByBrowserSpeech || requestId !== requestIdRef.current) {
           return;
@@ -750,7 +750,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           setPlaybackState((current) => ({
             ...current,
             status: "paused",
-            message: "Da tam dung bai thuyet minh.",
+            message: "Đã tạm dừng bài thuyết minh.",
             isPlayingAudio: false,
           }));
           return true;
@@ -761,7 +761,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           setPlaybackState((current) => ({
             ...current,
             status: "playing",
-            message: "Dang tiep tuc phat thuyet minh bang giong doc cua trinh duyet.",
+            message: "Đang tiếp tục phát thuyết minh bằng giọng đọc của trình duyệt.",
             isPlayingAudio: true,
           }));
           return true;

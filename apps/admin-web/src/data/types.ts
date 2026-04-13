@@ -98,14 +98,11 @@ export interface Poi {
   lng: number;
   categoryId: string;
   status: ContentStatus;
-  featured: boolean;
   isActive: boolean;
   lockedBySuperAdmin: boolean;
   district: string;
   ward: string;
   priceRange: string;
-  averageVisitDuration: number;
-  popularityScore: number;
   tags: string[];
   ownerUserId: string | null;
   updatedBy: string;

@@ -355,36 +355,10 @@ public sealed partial class AdminDataRepository
         IReadOnlyList<Poi> pois,
         IReadOnlyList<TourRoute> routes)
     {
-        if (translations.Count == 0)
-        {
-            return translations;
-        }
-
-        var poiUpdatedAtById = pois
-            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
-            .ToDictionary(item => item.Id, item => item.UpdatedAt, StringComparer.OrdinalIgnoreCase);
-        var routeUpdatedAtById = routes
-            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
-            .ToDictionary(item => item.Id, item => item.UpdatedAt, StringComparer.OrdinalIgnoreCase);
-
-        return translations
-            .Where(translation =>
-            {
-                if (string.Equals(translation.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                    poiUpdatedAtById.TryGetValue(translation.EntityId, out var poiUpdatedAt))
-                {
-                    return translation.UpdatedAt >= poiUpdatedAt;
-                }
-
-                if (string.Equals(translation.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
-                    routeUpdatedAtById.TryGetValue(translation.EntityId, out var routeUpdatedAt))
-                {
-                    return translation.UpdatedAt >= routeUpdatedAt;
-                }
-
-                return true;
-            })
-            .ToList();
+        // Translation titles/descriptions are the source of truth for localized POI/route content.
+        // Filtering them by the entity UpdatedAt causes moderation/status-only updates to erase titles
+        // from the UI and incorrectly fall back to slugs.
+        return translations;
     }
 
     private static IReadOnlyList<AudioGuide> CollapseAudioGuides(IReadOnlyList<AudioGuide> audioGuides)
@@ -471,7 +445,6 @@ public sealed partial class AdminDataRepository
             usageEvents.Count(item => string.Equals(item.EventType, "audio_play", StringComparison.OrdinalIgnoreCase)),
             usageEvents.Count(item => string.Equals(item.EventType, "qr_scan", StringComparison.OrdinalIgnoreCase)),
             pois.Count(item => string.Equals(item.Status, "published", StringComparison.OrdinalIgnoreCase)),
-            pois.Count(item => item.Featured),
             audioGuides.Count(item => !string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase)),
             reviews.Count(item => string.Equals(item.Status, "pending", StringComparison.OrdinalIgnoreCase)));
     }
@@ -528,6 +501,8 @@ public sealed partial class AdminDataRepository
             using var verifiedConnection = OpenConnection();
             EnsureRuntimeCompatibilitySchema(verifiedConnection);
             NormalizePersistedPoiAddresses(verifiedConnection);
+            NormalizeLegacyEntityTypes(verifiedConnection);
+            RepairModeratedPoiLocalizedAssetTimestamps(verifiedConnection);
 
             if (!_allowSchemaUpdates)
             {
@@ -538,7 +513,6 @@ public sealed partial class AdminDataRepository
 
             RemoveLegacyPoiDefaultLanguageColumn(verifiedConnection);
             EnsureRefreshSessionsTable(verifiedConnection);
-            NormalizeLegacyEntityTypes(verifiedConnection);
         }
         catch (SqlException exception)
         {
@@ -653,6 +627,59 @@ public sealed partial class AdminDataRepository
 
             IF COL_LENGTH(N'dbo.Pois', N'RejectedAt') IS NULL
                 ALTER TABLE dbo.Pois ADD RejectedAt DATETIMEOFFSET(7) NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            DECLARE @averageVisitDurationConstraint sysname;
+            DECLARE @popularityScoreConstraint sysname;
+            DECLARE @dropColumnSql nvarchar(max);
+
+            IF COL_LENGTH(N'dbo.Pois', N'AverageVisitDurationMinutes') IS NOT NULL
+            BEGIN
+                SELECT @averageVisitDurationConstraint = defaultConstraint.name
+                FROM sys.default_constraints defaultConstraint
+                INNER JOIN sys.columns columnInfo
+                    ON columnInfo.object_id = defaultConstraint.parent_object_id
+                   AND columnInfo.column_id = defaultConstraint.parent_column_id
+                WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.Pois')
+                  AND columnInfo.name = N'AverageVisitDurationMinutes';
+
+                IF @averageVisitDurationConstraint IS NOT NULL
+                BEGIN
+                    SET @dropColumnSql = N'ALTER TABLE dbo.Pois DROP CONSTRAINT '
+                        + QUOTENAME(@averageVisitDurationConstraint)
+                        + N';';
+                    EXEC sp_executesql @dropColumnSql;
+                END;
+
+                ALTER TABLE dbo.Pois DROP COLUMN AverageVisitDurationMinutes;
+                SET @averageVisitDurationConstraint = NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.Pois', N'PopularityScore') IS NOT NULL
+            BEGIN
+                SELECT @popularityScoreConstraint = defaultConstraint.name
+                FROM sys.default_constraints defaultConstraint
+                INNER JOIN sys.columns columnInfo
+                    ON columnInfo.object_id = defaultConstraint.parent_object_id
+                   AND columnInfo.column_id = defaultConstraint.parent_column_id
+                WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.Pois')
+                  AND columnInfo.name = N'PopularityScore';
+
+                IF @popularityScoreConstraint IS NOT NULL
+                BEGIN
+                    SET @dropColumnSql = N'ALTER TABLE dbo.Pois DROP CONSTRAINT '
+                        + QUOTENAME(@popularityScoreConstraint)
+                        + N';';
+                    EXEC sp_executesql @dropColumnSql;
+                END;
+
+                ALTER TABLE dbo.Pois DROP COLUMN PopularityScore;
+                SET @popularityScoreConstraint = NULL;
+            END;
             """);
 
         ExecuteNonQuery(
@@ -2319,6 +2346,69 @@ public sealed partial class AdminDataRepository
                 migratedAudioGuides,
                 deletedDuplicateAudioGuides,
                 migratedMediaAssets);
+        }
+    }
+
+    private void RepairModeratedPoiLocalizedAssetTimestamps(SqlConnection connection)
+    {
+        var repairedTranslations = ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.PoiTranslations', N'U') IS NOT NULL
+               AND OBJECT_ID(N'dbo.Pois', N'U') IS NOT NULL
+            BEGIN
+                UPDATE translation
+                SET UpdatedAt = poi.UpdatedAt
+                FROM dbo.PoiTranslations translation
+                INNER JOIN dbo.Pois poi
+                    ON poi.Id = translation.EntityId
+                WHERE translation.EntityType IN (N'poi', N'place')
+                  AND (
+                        translation.UpdatedAt IS NULL OR
+                        translation.UpdatedAt < poi.UpdatedAt
+                  )
+                  AND (
+                        (
+                            LOWER(COALESCE(LTRIM(RTRIM(poi.[Status])), N'')) IN (N'published', N'draft')
+                            AND poi.ApprovedAt IS NOT NULL
+                        ) OR LOWER(COALESCE(LTRIM(RTRIM(poi.[Status])), N'')) = N'rejected'
+                  );
+            END;
+            """);
+
+        var repairedAudioGuides = ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.AudioGuides', N'U') IS NOT NULL
+               AND OBJECT_ID(N'dbo.Pois', N'U') IS NOT NULL
+            BEGIN
+                UPDATE audioGuide
+                SET UpdatedAt = poi.UpdatedAt
+                FROM dbo.AudioGuides audioGuide
+                INNER JOIN dbo.Pois poi
+                    ON poi.Id = audioGuide.EntityId
+                WHERE audioGuide.EntityType IN (N'poi', N'place')
+                  AND (
+                        audioGuide.UpdatedAt IS NULL OR
+                        audioGuide.UpdatedAt < poi.UpdatedAt
+                  )
+                  AND (
+                        (
+                            LOWER(COALESCE(LTRIM(RTRIM(poi.[Status])), N'')) IN (N'published', N'draft')
+                            AND poi.ApprovedAt IS NOT NULL
+                        ) OR LOWER(COALESCE(LTRIM(RTRIM(poi.[Status])), N'')) = N'rejected'
+                  );
+            END;
+            """);
+
+        if (repairedTranslations > 0 || repairedAudioGuides > 0)
+        {
+            _logger.LogInformation(
+                "Repaired moderated POI localized asset timestamps. translationsUpdated={TranslationsUpdated}, audioUpdated={AudioUpdated}",
+                repairedTranslations,
+                repairedAudioGuides);
         }
     }
 }

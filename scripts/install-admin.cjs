@@ -3,11 +3,26 @@ const path = require("node:path");
 
 const npmCache = path.join(process.cwd(), ".npm-cache");
 const dnsOverride = path.join(process.cwd(), "scripts", "npm-dns-override.cjs");
-const npmCli = process.env.npm_execpath;
+
+function resolveNpmInvocation() {
+  if (process.env.npm_execpath) {
+    return {
+      command: process.execPath,
+      argsPrefix: [process.env.npm_execpath],
+    };
+  }
+
+  return {
+    command: process.platform === "win32" ? "npm.cmd" : "npm",
+    argsPrefix: [],
+  };
+}
+
+const npm = resolveNpmInvocation();
 
 const result = spawnSync(
-  process.execPath,
-  [npmCli, "--prefix", "apps/admin-web", "ci"],
+  npm.command,
+  [...npm.argsPrefix, "--prefix", "apps/admin-web", "ci"],
   {
     stdio: "inherit",
     env: {

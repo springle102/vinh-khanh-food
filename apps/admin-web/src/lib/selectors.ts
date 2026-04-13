@@ -3,6 +3,9 @@ import { normalizeSearchText } from "./utils";
 
 type TranslationFallbackSettings = Pick<AdminDataState["settings"], "defaultLanguage" | "fallbackLanguage">;
 
+const isPoiEntityType = (entityType: string) =>
+  entityType === "poi" || entityType === "place";
+
 const addLanguageCandidate = (languages: LanguageCode[], language?: LanguageCode | null) => {
   if (language && !languages.includes(language)) {
     languages.push(language);
@@ -44,7 +47,9 @@ export const getEntityTranslation = (
   preferredLanguage?: LanguageCode,
 ) => {
   const translations = state.translations.filter(
-    (item) => item.entityType === entityType && item.entityId === entityId,
+    (item) =>
+      item.entityId === entityId &&
+      (entityType === "poi" ? isPoiEntityType(item.entityType) : item.entityType === entityType),
   );
 
   return getEntityTranslationFromList(translations, state, preferredLanguage);

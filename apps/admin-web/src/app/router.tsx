@@ -7,7 +7,6 @@ import { LoginPage } from "../features/auth/LoginPage";
 import { PlaceOwnerRegistrationPage } from "../features/auth/PlaceOwnerRegistrationPage";
 import { AuthLoadingScreen, RequireAuth } from "../features/auth/RequireAuth";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
-import { OwnerRegistrationsPage } from "../features/owner-registrations/OwnerRegistrationsPage";
 import { PoisPage } from "../features/pois/PoisPage";
 import { PromotionsPage } from "../features/promotions/PromotionsPage";
 import { ReviewsPage } from "../features/reviews/ReviewsPage";
@@ -112,7 +111,7 @@ export const router = createBrowserRouter([
           { path: "content", element: <Navigate to="/admin/pois" replace /> },
           { path: "media", element: <Navigate to="/admin/pois" replace /> },
           { path: "users", element: <UsersPage /> },
-          { path: "owner-registrations", element: <OwnerRegistrationsPage /> },
+          { path: "owner-registrations", element: <Navigate to="/admin/users" replace /> },
           { path: "promotions", element: <PromotionsPage /> },
           { path: "reviews", element: <ReviewsPage /> },
           { path: "analytics", element: <Navigate to="/admin/dashboard" replace /> },

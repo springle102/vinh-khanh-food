@@ -46,10 +46,10 @@ export const AnalyticsPage = () => {
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-4">
         {[
-          ["Tong luot xem POI", formatNumber(viewEvents.length)],
-          ["Tong luot nghe audio", formatNumber(audioEvents.length)],
-          ["Tong luot quet QR", formatNumber(qrEvents.length)],
-          ["Thoi luong nghe TB", `${averageListenDuration}s`],
+          ["Tổng lượt xem POI", formatNumber(viewEvents.length)],
+          ["Tổng lượt nghe audio", formatNumber(audioEvents.length)],
+          ["Tổng lượt quét QR", formatNumber(qrEvents.length)],
+          ["Thời lượng nghe TB", `${averageListenDuration}s`],
         ].map(([label, value]) => (
           <Card key={label}>
             <p className="text-sm text-ink-500">{label}</p>
@@ -60,7 +60,7 @@ export const AnalyticsPage = () => {
 
       <section className="grid gap-6 xl:grid-cols-2">
         <Card>
-          <h2 className="section-heading">Nen tang su dung</h2>
+          <h2 className="section-heading">Nền tảng sử dụng</h2>
           <div className="mt-6 h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={deviceBreakdown}>
@@ -75,7 +75,7 @@ export const AnalyticsPage = () => {
         </Card>
 
         <Card>
-          <h2 className="section-heading">Ngon ngu su dung</h2>
+          <h2 className="section-heading">Ngôn ngữ sử dụng</h2>
           <div className="mt-6 h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={languageBreakdown} layout="vertical" margin={{ left: 30 }}>
@@ -91,7 +91,7 @@ export const AnalyticsPage = () => {
       </section>
 
       <Card>
-        <h2 className="section-heading">Top POI theo luot xem</h2>
+        <h2 className="section-heading">Top POI theo lượt xem</h2>
         <div className="mt-6 h-80">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={poiBreakdown}>

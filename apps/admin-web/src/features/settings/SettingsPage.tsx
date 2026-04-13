@@ -47,7 +47,7 @@ export const SettingsPage = () => {
 
     if (form.supportedLanguages.length === 0) {
       setFeedbackTone("error");
-      setFeedback("Can chon it nhat mot ngon ngu ho tro.");
+      setFeedback("Cần chọn ít nhất một ngôn ngữ hỗ trợ.");
       return;
     }
 
@@ -63,7 +63,7 @@ export const SettingsPage = () => {
         user,
       );
       setFeedbackTone("success");
-      setFeedback("Da luu cau hinh ngon ngu va thong so he thong.");
+      setFeedback("Đã lưu cấu hình ngôn ngữ và thông số hệ thống.");
     } catch (error) {
       setFeedbackTone("error");
       setFeedback(getErrorMessage(error));
@@ -79,7 +79,7 @@ export const SettingsPage = () => {
     try {
       await refreshData();
       setFeedbackTone("success");
-      setFeedback("Da nap cau hinh moi nhat tu backend.");
+      setFeedback("Đã nạp cấu hình mới nhất từ backend.");
     } catch (error) {
       setFeedbackTone("error");
       setFeedback(getErrorMessage(error));
@@ -92,21 +92,21 @@ export const SettingsPage = () => {
     <div className="space-y-6">
       <Card>
         <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">System settings</p>
-        <h1 className="mt-3 text-3xl font-bold text-ink-900">Ngon ngu cong khai va thong so van hanh</h1>
+        <h1 className="mt-3 text-3xl font-bold text-ink-900">Ngôn ngữ công khai và thông số vận hành</h1>
       </Card>
 
       {!canManageSettings ? (
         <Card className="border border-amber-100 bg-amber-50">
-          <p className="font-semibold text-amber-800">Tai khoan nay chi co quyen xem.</p>
+          <p className="font-semibold text-amber-800">Tài khoản này chỉ có quyền xem.</p>
           <p className="mt-2 text-sm text-amber-700">
-            Dang nhap bang Super Admin de cap nhat cau hinh ngon ngu va runtime.
+            Đăng nhập bằng Super Admin để cập nhật cấu hình ngôn ngữ và runtime.
           </p>
         </Card>
       ) : null}
 
       {isBootstrapping ? (
         <Card>
-          <p className="text-sm text-ink-500">Dang tai cau hinh tu backend...</p>
+          <p className="text-sm text-ink-500">Đang tải cấu hình từ backend...</p>
         </Card>
       ) : null}
 
@@ -173,9 +173,9 @@ export const SettingsPage = () => {
           </Card>
 
           <Card>
-            <h2 className="section-heading">Ngon ngu cong khai</h2>
+            <h2 className="section-heading">Ngôn ngữ công khai</h2>
             <p className="mt-4 text-sm text-ink-500">
-              App Android cong khai chi dung tap ngon ngu ho tro nay. Khong con khoa premium theo tai khoan.
+              App Android công khai chỉ dùng tập ngôn ngữ hỗ trợ này. Không còn khóa premium theo tài khoản.
             </p>
             <div className="mt-5 grid gap-3">
               {allLanguages.map((language) => (

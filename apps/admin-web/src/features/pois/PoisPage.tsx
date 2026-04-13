@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { DataTable, type DataColumn } from "../../components/ui/DataTable";
@@ -43,13 +43,10 @@ type PoiFormState = {
   lng: string;
   categoryId: string;
   status: Poi["status"];
-  featured: boolean;
   contentLanguageCode: LanguageCode;
   district: string;
   ward: string;
   priceRange: string;
-  averageVisitDuration: string;
-  popularityScore: string;
   tags: string;
   ownerUserId: string;
   shortText: string;
@@ -84,13 +81,10 @@ const createDefaultForm = (status: Poi["status"] = "draft"): PoiFormState => ({
   lng: "",
   categoryId: "",
   status,
-  featured: false,
   contentLanguageCode: "vi",
   district: "",
   ward: "",
   priceRange: "",
-  averageVisitDuration: "",
-  popularityScore: "",
   tags: "",
   ownerUserId: "",
   shortText: "",
@@ -117,13 +111,15 @@ const createPoiFoodItemForm = (
   spicyLevel: "mild",
 });
 
+const isPoiEntityType = (entityType: string) => entityType === "poi" || entityType === "place";
+
 const findPoiRepresentativeImage = (mediaAssets: MediaAsset[], poiId?: string) => {
   if (!poiId) {
     return null;
   }
 
   return mediaAssets.reduce<MediaAsset | null>((latestAsset, item) => {
-    if (item.entityType !== "poi" || item.entityId !== poiId || item.type !== "image") {
+    if (!isPoiEntityType(item.entityType) || item.entityId !== poiId || item.type !== "image") {
       return latestAsset;
     }
 
@@ -206,14 +202,14 @@ const findPoiAudioGuide = (
 ) =>
   audioGuides.find(
     (item) =>
-      item.entityType === "poi" &&
+      isPoiEntityType(item.entityType) &&
       item.entityId === poiId &&
       item.languageCode === languageCode &&
       (!voiceType || item.voiceType === voiceType),
   ) ??
   audioGuides.find(
     (item) =>
-      item.entityType === "poi" &&
+      isPoiEntityType(item.entityType) &&
       item.entityId === poiId &&
       item.languageCode === languageCode,
   ) ??
@@ -226,7 +222,7 @@ const findPoiTranslationForLanguage = (
 ) =>
   translations.find(
     (item) =>
-      item.entityType === "poi" &&
+      isPoiEntityType(item.entityType) &&
       item.entityId === poi.id &&
       item.languageCode === languageCode,
   ) ?? null;
@@ -239,7 +235,7 @@ const findPoiTranslationWithFallback = (
 ) => {
   return getEntityTranslationFromList(
     translations.filter(
-      (item) => item.entityType === "poi" && item.entityId === poi.id,
+      (item) => isPoiEntityType(item.entityType) && item.entityId === poi.id,
     ),
     { settings },
     preferredLanguage,
@@ -314,13 +310,10 @@ const buildPoiEditorContentSnapshot = (
     lat: form.lat.trim(),
     lng: form.lng.trim(),
     categoryId: form.categoryId.trim(),
-    featured: form.featured,
     contentLanguageCode: form.contentLanguageCode,
     district: form.district.trim(),
     ward: form.ward.trim(),
     priceRange: form.priceRange.trim(),
-    averageVisitDuration: form.averageVisitDuration.trim(),
-    popularityScore: form.popularityScore.trim(),
     ownerUserId: form.ownerUserId.trim(),
     tags: form.tags
       .split(",")
@@ -522,7 +515,7 @@ export const PoisPage = () => {
       selectedPoi && selectedPoiDetail?.poi.id === selectedPoi.id
         ? selectedPoiDetail.translations
         : state.translations.filter(
-            (item) => item.entityType === "poi" && item.entityId === selectedPoi?.id,
+            (item) => isPoiEntityType(item.entityType) && item.entityId === selectedPoi?.id,
           ),
     [selectedPoi, selectedPoiDetail, state.translations],
   );
@@ -538,10 +531,15 @@ export const PoisPage = () => {
         : null,
     [selectedNarrationLanguage, selectedPoi, selectedPoiTranslations, state.settings],
   );
+  const selectedExactTitle =
+    selectedNarrationTranslation?.languageCode === selectedNarrationLanguage
+      ? selectedNarrationTranslation.title
+      : "";
+  const selectedNarrationDisplayTitle = selectedNarration?.displayTitle?.trim() || "";
   const selectedDisplayTitle =
-    selectedNarration?.displayTitle ??
-    selectedNarrationTranslation?.title ??
-    selectedPoi?.slug ??
+    selectedExactTitle ||
+    selectedNarrationDisplayTitle ||
+    selectedPoi?.slug ||
     "";
   const selectedDisplayText =
     selectedNarration?.displayText ||
@@ -568,7 +566,7 @@ export const PoisPage = () => {
         selectedPoiDetail?.poi.id === poi.id
           ? selectedPoiDetail.translations
           : state.translations.filter(
-              (item) => item.entityType === "poi" && item.entityId === poi.id,
+              (item) => isPoiEntityType(item.entityType) && item.entityId === poi.id,
             );
 
       return findPoiTranslationWithFallback(
@@ -589,7 +587,6 @@ export const PoisPage = () => {
         address: poi.address,
         category: getCategoryName(state, poi.categoryId),
         status: poi.status,
-        featured: poi.featured,
         lat: poi.lat,
         lng: poi.lng,
       })),
@@ -860,13 +857,10 @@ export const PoisPage = () => {
           loadedPoi.approvedAt,
           loadedPoi.isActive,
         ),
-        featured: isOwner ? false : loadedPoi.featured,
         contentLanguageCode: editableLanguageCode,
         district: loadedPoi.district,
         ward: loadedPoi.ward,
         priceRange: loadedPoi.priceRange,
-        averageVisitDuration: loadedPoi.averageVisitDuration.toString(),
-        popularityScore: loadedPoi.popularityScore.toString(),
         tags: loadedPoi.tags.join(", "),
         ownerUserId: isOwner ? user?.id ?? "" : loadedPoi.ownerUserId ?? "",
         shortText: translationFields.shortText,
@@ -966,7 +960,7 @@ export const PoisPage = () => {
           current.id && selectedPoiDetail?.poi.id === current.id
             ? selectedPoiDetail.translations
             : state.translations.filter(
-                (item) => item.entityType === "poi" && item.entityId === current.id,
+                (item) => isPoiEntityType(item.entityType) && item.entityId === current.id,
               );
         const translationFields = buildPoiTranslationFields(
           currentPoi,
@@ -977,7 +971,7 @@ export const PoisPage = () => {
           current.id && selectedPoiDetail?.poi.id === current.id
             ? selectedPoiDetail.audioGuides
             : state.audioGuides.filter(
-                (item) => item.entityType === "poi" && item.entityId === current.id,
+                (item) => isPoiEntityType(item.entityType) && item.entityId === current.id,
               );
         const audioGuide = currentPoi
           ? findPoiAudioGuide(audioGuides, currentPoi.id, languageCode)
@@ -1400,12 +1394,9 @@ export const PoisPage = () => {
           lng,
           categoryId: normalizedCategoryId,
           status: isOwner ? "pending" : getSubmissionStatus(user.role, form.status),
-          featured: isOwner ? false : form.featured,
           district: form.district,
           ward: form.ward,
           priceRange: form.priceRange,
-          averageVisitDuration: Number(form.averageVisitDuration),
-          popularityScore: Number(form.popularityScore),
           tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
           ownerUserId: (isOwner ? user.id : form.ownerUserId) || null,
           translationLanguageCode: form.contentLanguageCode,
@@ -1571,7 +1562,7 @@ export const PoisPage = () => {
         ) ??
         findPoiTranslationForLanguage(
           state.translations.filter(
-            (item) => item.entityType === "poi" && item.entityId === savedPoi.id,
+            (item) => isPoiEntityType(item.entityType) && item.entityId === savedPoi.id,
           ),
           savedPoi,
           form.contentLanguageCode,
@@ -1755,7 +1746,6 @@ export const PoisPage = () => {
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-semibold text-ink-900">{translation?.title ?? poi.slug}</p>
               <StatusBadge status={statusBadge.status} label={statusBadge.label} />
-              {poi.featured ? <StatusBadge status="active" label="Featured" /> : null}
             </div>
             <p className="mt-2 text-sm text-ink-500">{translation?.shortText || poi.address}</p>
             {poi.rejectionReason ? (
@@ -2199,14 +2189,12 @@ export const PoisPage = () => {
                   />
                 </div>
                 <div>
-                  <label className="field-label">ID quán</label>
+                  <label className="field-label">ID POI</label>
                   <Input
                     value={form.poiId}
-                    disabled={isPoiModalViewOnly}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, poiId: event.target.value }))
-                    }
-                    placeholder="Tự tạo nếu để trống"
+                    disabled={isPoiModalViewOnly || Boolean(form.id)}
+                    onChange={(event) => setForm((current) => ({ ...current, poiId: event.target.value }))}
+                    placeholder="Ví dụ: poi-oc-phat"
                   />
                 </div>
                 <div>
@@ -2218,19 +2206,18 @@ export const PoisPage = () => {
                       setHasSlugBeenManuallyEdited(true);
                       setForm((current) => ({ ...current, slug: event.target.value }));
                     }}
-                    required
+                    placeholder="Ví dụ: nha-hang-oc-loan"
                   />
                 </div>
               </div>
 
-              <div className="grid gap-5 md:grid-cols-4">
+              <div className="grid gap-5 md:grid-cols-3">
                 <div>
                   <label className="field-label">Phân loại</label>
                   <Select
                     value={form.categoryId}
                     disabled={isPoiModalViewOnly}
                     onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))}
-                    required
                   >
                     <option value="">Chọn phân loại</option>
                     {state.categories.map((category) => (
@@ -2244,79 +2231,45 @@ export const PoisPage = () => {
                   <label className="field-label">Trạng thái</label>
                   <Select
                     value={form.status}
-                    onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as Poi["status"] }))}
                     disabled={poiStatusFieldDisabled}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, status: event.target.value as Poi["status"] }))
+                    }
                   >
-                    {isOwner ? (
-                      editingApprovedLifecyclePoi ? (
-                        <>
-                          <option value="published">{poiActivityLabels.active}</option>
-                          <option value="draft">{poiActivityLabels.inactive}</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="pending">Chờ duyệt</option>
-                          {form.status === "rejected" ? <option value="rejected">Từ chối</option> : null}
-                        </>
-                      )
-                    ) : isPoiModalViewOnly ? (
-                      canSuperAdminToggleEditingPoi ? (
-                        <>
-                          <option value="published">{poiActivityLabels.active}</option>
-                          <option value="draft">{poiActivityLabels.inactive}</option>
-                        </>
-                      ) : (
-                        <option value={form.status}>{contentStatusLabels[form.status]}</option>
-                      )
-                    ) : (
-                      <>
-                        <option value="draft">Draft</option>
-                        <option value="pending">Chờ duyệt</option>
-                        <option value="published">Đã duyệt</option>
-                        {form.status === "rejected" ? <option value="rejected">Từ chối</option> : null}
-                        <option value="archived">Lưu trữ</option>
-                      </>
-                    )}
+                    {(
+                      editingApprovedLifecyclePoi
+                        ? [
+                            { value: "published", label: poiActivityLabels.active },
+                            { value: "draft", label: poiActivityLabels.inactive },
+                          ]
+                        : isOwner
+                          ? [
+                              ...(form.status === "rejected"
+                                ? [{ value: "rejected" as const, label: contentStatusLabels.rejected }]
+                                : []),
+                              { value: "pending" as const, label: contentStatusLabels.pending },
+                            ]
+                          : [
+                              { value: "draft" as const, label: contentStatusLabels.draft },
+                              { value: "pending" as const, label: contentStatusLabels.pending },
+                              { value: "published" as const, label: contentStatusLabels.published },
+                              { value: "rejected" as const, label: contentStatusLabels.rejected },
+                              { value: "archived" as const, label: contentStatusLabels.archived },
+                              { value: "deleted" as const, label: contentStatusLabels.deleted },
+                            ]
+                    ).map((statusOption) => (
+                      <option key={statusOption.value} value={statusOption.value}>
+                        {statusOption.label}
+                      </option>
+                    ))}
                   </Select>
-                  {isOwner ? (
-                    editingPoi?.lockedBySuperAdmin ? (
-                      <p className="mt-2 text-xs text-rose-600">
-                        POI này đang bị Super Admin ngừng hoạt động nên chủ quán không thể tự bật lại hoặc chỉnh sửa.
-                      </p>
-                    ) : editingApprovedLifecyclePoi ? (
-                      <p className="mt-2 text-xs text-ink-500">
-                        POI đã được duyệt. Bạn có thể bật hoặc tắt hoạt động tại đây. Nếu chỉnh sửa nội dung rồi lưu, POI sẽ quay về chờ duyệt.
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-xs text-ink-500">
-                        Chủ quán gửi POI lên để super admin duyệt trước khi xuất bản.
-                      </p>
-                    )
-                  ) : isPoiModalViewOnly ? (
-                    <p className="mt-2 text-xs text-ink-500">
-                      Super Admin chỉ có thể thay đổi trạng thái hoạt động của POI đã được duyệt. Mọi nội dung khác là chỉ xem.
-                    </p>
-                  ) : null}
                 </div>
-                <div>
-                  <label className="field-label">Khoảng giá</label>
-                  <Input
-                    value={form.priceRange}
-                    disabled={isPoiModalViewOnly}
-                    onChange={(event) => setForm((current) => ({ ...current, priceRange: event.target.value }))}
-                  />
-                </div>
-              </div>
-
-              <div>
                 <div>
                   <label className="field-label">Ngôn ngữ nội dung đang sửa</label>
                   <Select
                     value={form.contentLanguageCode}
                     disabled={isPoiModalViewOnly}
-                    onChange={(event) =>
-                      handleContentLanguageChange(event.target.value as LanguageCode)
-                    }
+                    onChange={(event) => handleContentLanguageChange(event.target.value as LanguageCode)}
                   >
                     {state.settings.supportedLanguages.map((code) => (
                       <option key={code} value={code}>
@@ -2342,36 +2295,37 @@ export const PoisPage = () => {
               <div className="grid gap-5 md:grid-cols-4">
                 <div>
                   <label className="field-label">Lat</label>
-                  <Input value={form.lat} disabled={isPoiModalViewOnly} onChange={(event) => setForm((current) => ({ ...current, lat: event.target.value }))} required />
+                  <Input
+                    value={form.lat}
+                    disabled={isPoiModalViewOnly}
+                    onChange={(event) => setForm((current) => ({ ...current, lat: event.target.value }))}
+                    required
+                  />
                 </div>
                 <div>
                   <label className="field-label">Lng</label>
-                  <Input value={form.lng} disabled={isPoiModalViewOnly} onChange={(event) => setForm((current) => ({ ...current, lng: event.target.value }))} required />
+                  <Input
+                    value={form.lng}
+                    disabled={isPoiModalViewOnly}
+                    onChange={(event) => setForm((current) => ({ ...current, lng: event.target.value }))}
+                    required
+                  />
                 </div>
                 <div>
                   <label className="field-label">Quận</label>
-                  <Input value={form.district} disabled={isPoiModalViewOnly} onChange={(event) => setForm((current) => ({ ...current, district: event.target.value }))} />
+                  <Input
+                    value={form.district}
+                    disabled={isPoiModalViewOnly}
+                    onChange={(event) => setForm((current) => ({ ...current, district: event.target.value }))}
+                  />
                 </div>
                 <div>
                   <label className="field-label">Phường</label>
-                  <Input value={form.ward} disabled={isPoiModalViewOnly} onChange={(event) => setForm((current) => ({ ...current, ward: event.target.value }))} />
-                </div>
-              </div>
-
-              <div className="grid gap-5 md:grid-cols-3">
-                <div>
-                  <label className="field-label">Thời lượng</label>
-                  <Input type="number" disabled={isPoiModalViewOnly} value={form.averageVisitDuration} onChange={(event) => setForm((current) => ({ ...current, averageVisitDuration: event.target.value }))} />
-                </div>
-                <div>
-                  <label className="field-label">Độ phổ biến</label>
-                  <Input type="number" disabled={isPoiModalViewOnly} value={form.popularityScore} onChange={(event) => setForm((current) => ({ ...current, popularityScore: event.target.value }))} />
-                </div>
-                <div className="flex items-end">
-                  <label className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
-                    <input type="checkbox" checked={form.featured} onChange={(event) => setForm((current) => ({ ...current, featured: event.target.checked }))} disabled={isOwner || isPoiModalViewOnly} />
-                    {isOwner ? "Featured (chỉ super admin)" : "Featured"}
-                  </label>
+                  <Input
+                    value={form.ward}
+                    disabled={isPoiModalViewOnly}
+                    onChange={(event) => setForm((current) => ({ ...current, ward: event.target.value }))}
+                  />
                 </div>
               </div>
 
@@ -2778,10 +2732,4 @@ export const PoisPage = () => {
     </div>
   );
 };
-
-
-
-
-
-
 

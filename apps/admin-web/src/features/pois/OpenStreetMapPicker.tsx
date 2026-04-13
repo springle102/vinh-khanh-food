@@ -81,14 +81,14 @@ const createEditableMarkerIcon = () =>
 
 const poiMarkerIconCache = new Map<string, L.DivIcon>();
 
-const createPoiMarkerIcon = (selected: boolean, featured: boolean) => {
-  const cacheKey = `${selected ? "selected" : "default"}-${featured ? "featured" : "regular"}`;
+const createPoiMarkerIcon = (selected: boolean) => {
+  const cacheKey = selected ? "selected" : "default";
   const cached = poiMarkerIconCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
-  const color = selected ? "#0f766e" : featured ? "#f97316" : "#1f2937";
+  const color = selected ? "#0f766e" : "#1f2937";
   const halo = selected ? "rgba(15, 118, 110, 0.18)" : "rgba(31, 41, 55, 0.12)";
 
   const nextIcon = L.divIcon({
@@ -153,7 +153,6 @@ export type PoiMapItem = {
   address: string;
   category: string;
   status: string;
-  featured: boolean;
   lat: number;
   lng: number;
 };
@@ -733,7 +732,7 @@ export const OpenStreetMapPicker = ({
                 <Marker
                   key={poi.id}
                   position={[poi.lat, poi.lng]}
-                  icon={createPoiMarkerIcon(poi.id === selectedPoiId, poi.featured)}
+                  icon={createPoiMarkerIcon(poi.id === selectedPoiId)}
                   eventHandlers={{
                     click: () => {
                       onPoiSelectRef.current?.(poi.id);

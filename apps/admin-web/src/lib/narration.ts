@@ -35,6 +35,7 @@ const voiceKeywords: Record<RegionVoice, string[]> = {
 };
 
 const normalize = (value: string) => value.trim().toLowerCase();
+const isPoiEntityType = (entityType: string) => entityType === "poi" || entityType === "place";
 
 export const hasValidAudioUrl = (value: string | null | undefined) => Boolean(value?.trim());
 
@@ -124,7 +125,7 @@ export const findPoiAudioGuide = (
 ) => {
   const matchingGuides = audioGuides.filter(
     (item) =>
-      item.entityType === "poi" &&
+      isPoiEntityType(item.entityType) &&
       item.entityId === poiId &&
       item.languageCode === languageCode,
   );
@@ -246,7 +247,7 @@ const fetchTtsPlaybackUrl = async (
   if (!contentType.includes("audio")) {
     return {
       audioUrl: null,
-      error: "Backend khong tra ve audio TTS hop le.",
+      error: "Backend không trả về audio TTS hợp lệ.",
     };
   }
 

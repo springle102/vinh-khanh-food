@@ -169,6 +169,12 @@ cd D:\vinh-khanh-food
 Cài dependency cho admin web:
 
 ```powershell
+npm.cmd install
+```
+
+Hoáº·c náº¿u chá»‰ muá»‘n bootstrap riÃªng admin web:
+
+```powershell
 npm.cmd run install:admin
 ```
 

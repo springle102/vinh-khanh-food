@@ -496,10 +496,15 @@ public sealed partial class AdminDataRepository
         const string sql = """
             SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
             FROM dbo.PoiTranslations
-            WHERE EntityType = ? AND EntityId = ? AND LanguageCode = ?;
+            WHERE EntityId = ? AND LanguageCode = ?
+              AND (
+                    EntityType = ? OR
+                    (? = N'poi' AND EntityType = N'place')
+              )
+            ORDER BY CASE WHEN EntityType = ? THEN 0 ELSE 1 END, UpdatedAt DESC, Id DESC;
             """;
 
-        using var command = CreateCommand(connection, transaction, sql, entityType, entityId, languageCode);
+        using var command = CreateCommand(connection, transaction, sql, entityId, languageCode, entityType, entityType, entityType);
         using var reader = command.ExecuteReader();
         return reader.Read() ? MapTranslation(reader) : null;
     }
@@ -527,10 +532,15 @@ public sealed partial class AdminDataRepository
         const string sql = """
             SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, AudioUrl, VoiceType, SourceType, [Status], UpdatedBy, UpdatedAt
             FROM dbo.AudioGuides
-            WHERE EntityType = ? AND EntityId = ? AND LanguageCode = ?;
+            WHERE EntityId = ? AND LanguageCode = ?
+              AND (
+                    EntityType = ? OR
+                    (? = N'poi' AND EntityType = N'place')
+              )
+            ORDER BY CASE WHEN EntityType = ? THEN 0 ELSE 1 END, UpdatedAt DESC, Id DESC;
             """;
 
-        using var command = CreateCommand(connection, transaction, sql, entityType, entityId, languageCode);
+        using var command = CreateCommand(connection, transaction, sql, entityId, languageCode, entityType, entityType, entityType);
         using var reader = command.ExecuteReader();
         return reader.Read() ? MapAudioGuide(reader) : null;
     }

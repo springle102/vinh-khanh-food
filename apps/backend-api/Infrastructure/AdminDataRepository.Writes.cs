@@ -161,7 +161,39 @@ public sealed partial class AdminDataRepository
         var nextRole = actor.IsSuperAdmin
             ? AdminRoleCatalog.NormalizeRequiredRole(request.Role)
             : AdminRoleCatalog.NormalizeKnownRoleOrOriginal(existing?.Role ?? actor.Role);
-        var nextStatus = actor.IsSuperAdmin ? request.Status : existing?.Status ?? actor.Status;
+        if (actor.IsSuperAdmin && AdminRoleCatalog.IsSuperAdmin(nextRole) && !AdminRoleCatalog.IsSuperAdmin(existing?.Role))
+        {
+            throw new ApiForbiddenException("He thong chi ho tro duy nhat 1 super admin.");
+        }
+
+        if (AdminRoleCatalog.IsSuperAdmin(existing?.Role) && !AdminRoleCatalog.IsSuperAdmin(nextRole))
+        {
+            throw new ApiForbiddenException("He thong phai duy tri dung 1 super admin. Khong the doi vai tro tai khoan nay.");
+        }
+
+        if (actor.IsSuperAdmin && AdminRoleCatalog.IsPlaceOwner(nextRole))
+        {
+            if (isNew)
+            {
+                throw new ApiForbiddenException("Super admin khong the tao truc tiep tai khoan chu quan. Hay su dung luong dang ky chu quan.");
+            }
+
+            if (!AdminRoleCatalog.IsPlaceOwner(existing?.Role))
+            {
+                throw new ApiForbiddenException("Khong the chuyen doi tai khoan nay thanh chu quan tai man hinh quan ly admin.");
+            }
+
+            if (!isSelfUpdate)
+            {
+                throw new ApiForbiddenException("Super admin khong duoc chinh sua ho so chu quan tai man hinh nay. Chi duoc duyet, tu choi va cap nhat trang thai hoat dong.");
+            }
+        }
+
+        var nextStatus = AdminRoleCatalog.IsSuperAdmin(nextRole)
+            ? existing?.Status ?? actor.Status
+            : actor.IsSuperAdmin
+                ? NormalizeAdminUserStatus(request.Status)
+                : existing?.Status ?? actor.Status;
         var password = !string.IsNullOrWhiteSpace(request.Password)
             ? request.Password
             : existing?.Password is { Length: > 0 } ? existing.Password : "Admin@123";
@@ -277,6 +309,61 @@ public sealed partial class AdminDataRepository
         return saved;
     }
 
+    public AdminUser SaveUserStatus(string id, AdminUserStatusUpdateRequest request, AdminRequestContext actor)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!actor.IsSuperAdmin)
+        {
+            throw new ApiForbiddenException("Chi super admin moi duoc cap nhat trang thai hoat dong cua chu quan.");
+        }
+
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var existing = GetUserById(connection, transaction, id);
+        EnsurePlaceOwnerRegistrationExists(existing);
+
+        if (!AdminApprovalCatalog.IsApproved(existing!.ApprovalStatus))
+        {
+            throw new InvalidOperationException("Tai khoan chu quan nay chua duoc duyet. Hay xu ly ho so o muc dang ky chu quan.");
+        }
+
+        var currentStatus = NormalizeAdminUserStatus(existing.Status);
+        var nextStatus = NormalizeAdminUserStatus(request.Status);
+
+        if (!string.Equals(currentStatus, nextStatus, StringComparison.Ordinal))
+        {
+            ExecuteNonQuery(
+                connection,
+                transaction,
+                """
+                UPDATE dbo.AdminUsers
+                SET [Status] = ?
+                WHERE Id = ?;
+                """,
+                nextStatus,
+                existing.Id);
+
+            AppendAdminAuditLog(
+                connection,
+                transaction,
+                actor,
+                nextStatus == "active" ? "Mo khoa tai khoan chu quan" : "Khoa tai khoan chu quan",
+                "ADMIN_USER",
+                existing.Id,
+                existing.Email,
+                $"status={currentStatus}",
+                $"status={nextStatus}");
+        }
+
+        var saved = GetUserById(connection, transaction, existing.Id)
+            ?? throw new InvalidOperationException("Khong the doc lai tai khoan chu quan sau khi cap nhat trang thai.");
+
+        transaction.Commit();
+        return saved;
+    }
+
     public Poi SavePoi(string? id, PoiUpsertRequest request, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
@@ -307,7 +394,7 @@ public sealed partial class AdminDataRepository
         }
 
         var nextStatus = NormalizePoiStatus(request.Status, isOwnerActor);
-        var nextFeatured = isOwnerActor ? false : request.Featured;
+        var currentFeatured = existing?.Featured ?? false;
         var nextPublicationMetadata = ResolvePoiPublicationMetadataForSave(existing, nextStatus, isOwnerActor);
         var nextOwnerUserId = isOwnerActor ? actor.UserId : request.OwnerUserId;
         var nextReviewMetadata = ResolvePoiReviewMetadataForSave(existing, nextStatus, isOwnerActor);
@@ -327,11 +414,10 @@ public sealed partial class AdminDataRepository
         {
             EnsurePoiIdAvailable(connection, transaction, poiId);
             _logger.LogDebug(
-                "Executing POI insert. poiId={PoiId}, ownerUserId={OwnerUserId}, status={Status}, featured={Featured}",
+                "Executing POI insert. poiId={PoiId}, ownerUserId={OwnerUserId}, status={Status}",
                 poiId,
                 nextOwnerUserId,
-                nextStatus,
-                nextFeatured);
+                nextStatus);
             InsertPoiRecord(
                 connection,
                 transaction,
@@ -339,7 +425,7 @@ public sealed partial class AdminDataRepository
                 request,
                 actor.Name,
                 nextStatus,
-                nextFeatured,
+                false,
                 nextPublicationMetadata.IsActive,
                 nextPublicationMetadata.LockedBySuperAdmin,
                 nextOwnerUserId,
@@ -360,7 +446,7 @@ public sealed partial class AdminDataRepository
                 request,
                 actor.Name,
                 nextStatus,
-                nextFeatured,
+                currentFeatured,
                 nextPublicationMetadata.IsActive,
                 nextPublicationMetadata.LockedBySuperAdmin,
                 nextOwnerUserId,
@@ -372,11 +458,10 @@ public sealed partial class AdminDataRepository
         else
         {
             _logger.LogDebug(
-                "Executing POI update. poiId={PoiId}, ownerUserId={OwnerUserId}, status={Status}, featured={Featured}, updatedBy={UpdatedBy}",
+                "Executing POI update. poiId={PoiId}, ownerUserId={OwnerUserId}, status={Status}, updatedBy={UpdatedBy}",
                 poiId,
                 nextOwnerUserId,
                 nextStatus,
-                nextFeatured,
                 actor.Name);
             UpdatePoiRecord(
                 connection,
@@ -385,7 +470,7 @@ public sealed partial class AdminDataRepository
                 request,
                 actor.Name,
                 nextStatus,
-                nextFeatured,
+                currentFeatured,
                 nextPublicationMetadata.IsActive,
                 nextPublicationMetadata.LockedBySuperAdmin,
                 nextOwnerUserId,
@@ -464,6 +549,16 @@ public sealed partial class AdminDataRepository
             "archived" => "archived",
             "deleted" => "deleted",
             _ => "draft",
+        };
+    }
+
+    private static string NormalizeAdminUserStatus(string? requestedStatus)
+    {
+        return requestedStatus?.Trim().ToLowerInvariant() switch
+        {
+            "active" => "active",
+            "locked" => "locked",
+            _ => throw new InvalidOperationException("Trang thai tai khoan khong hop le.")
         };
     }
 
@@ -580,10 +675,10 @@ public sealed partial class AdminDataRepository
             """
             INSERT INTO dbo.Pois (
                 Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, IsActive, LockedBySuperAdmin,
-                District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId,
+                District, Ward, PriceRange, OwnerUserId,
                 ApprovedAt, RejectionReason, RejectedAt, UpdatedBy, CreatedAt, UpdatedAt
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             poiId,
             request.Slug,
@@ -598,8 +693,6 @@ public sealed partial class AdminDataRepository
             request.District,
             request.Ward,
             request.PriceRange,
-            request.AverageVisitDuration,
-            request.PopularityScore,
             ownerUserId,
             approvedAt,
             rejectionReason,
@@ -642,8 +735,6 @@ public sealed partial class AdminDataRepository
                 District = ?,
                 Ward = ?,
                 PriceRange = ?,
-                AverageVisitDurationMinutes = ?,
-                PopularityScore = ?,
                 OwnerUserId = ?,
                 ApprovedAt = ?,
                 RejectionReason = ?,
@@ -664,8 +755,6 @@ public sealed partial class AdminDataRepository
             request.District,
             request.Ward,
             request.PriceRange,
-            request.AverageVisitDuration,
-            request.PopularityScore,
             ownerUserId,
             approvedAt,
             rejectionReason,
@@ -693,12 +782,11 @@ public sealed partial class AdminDataRepository
         DateTimeOffset updatedAt)
     {
         _logger.LogDebug(
-            "Executing POI rename. oldPoiId={OldPoiId}, newPoiId={NewPoiId}, ownerUserId={OwnerUserId}, status={Status}, featured={Featured}, updatedBy={UpdatedBy}",
+            "Executing POI rename. oldPoiId={OldPoiId}, newPoiId={NewPoiId}, ownerUserId={OwnerUserId}, status={Status}, updatedBy={UpdatedBy}",
             existing.Id,
             nextPoiId,
             ownerUserId,
             status,
-            featured,
             updatedBy);
 
         InsertPoiRecord(

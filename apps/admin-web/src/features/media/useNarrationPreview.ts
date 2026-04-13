@@ -232,8 +232,8 @@ export const useNarrationPreview = (state: AdminDataState) => {
         status: "playing",
         kind: "tts",
         message: fallbackMessage
-          ? `Dang phat bang giong doc cua trinh duyet. ${fallbackMessage}`
-          : "Dang phat bang giong doc cua trinh duyet.",
+          ? `Đang phát bằng giọng đọc của trình duyệt. ${fallbackMessage}`
+          : "Đang phát bằng giọng đọc của trình duyệt.",
       });
 
       const voices = await loadBrowserSpeechVoices();
@@ -262,7 +262,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
         browserSpeechCancelRef.current = null;
         setPreviewState({
           ...DEFAULT_PREVIEW_STATE,
-          message: "Da phat xong ban xem thu TTS.",
+          message: "Đã phát xong bản xem thử TTS.",
         });
       };
 
@@ -276,7 +276,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
           audioGuideId,
           status: "error",
           kind: "tts",
-          message: "Khong the phat TTS bang ElevenLabs hoac giong doc cua trinh duyet.",
+          message: "Không thể phát TTS bằng ElevenLabs hoặc giọng đọc của trình duyệt.",
         });
       };
 

@@ -17,7 +17,6 @@ public sealed class PoisController(
     public ActionResult<ApiResponse<IReadOnlyList<Poi>>> GetPois(
         [FromQuery] string? status,
         [FromQuery] string? categoryId,
-        [FromQuery] bool? featured,
         [FromQuery] string? search)
     {
         var actor = adminRequestContextResolver.TryGetCurrentAdmin();
@@ -31,11 +30,6 @@ public sealed class PoisController(
         if (!string.IsNullOrWhiteSpace(categoryId))
         {
             query = query.Where(item => item.CategoryId == categoryId);
-        }
-
-        if (featured.HasValue)
-        {
-            query = query.Where(item => item.Featured == featured.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(search))

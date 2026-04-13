@@ -94,22 +94,22 @@ export const DashboardPage = () => {
 
   const summaryCards = [
     {
-      label: "Tong luot xem POI",
+      label: "Tổng lượt xem POI",
       value: formatNumber(totalViews),
       icon: "content" as const,
     },
     {
-      label: "Luot nghe audio",
+      label: "Lượt nghe audio",
       value: formatNumber(totalListens),
       icon: "audio" as const,
     },
     {
-      label: "Luot quet QR",
+      label: "Lượt quét QR",
       value: formatNumber(totalQrScans),
       icon: "chart" as const,
     },
     {
-      label: "Nghe audio trung binh",
+      label: "Nghe audio trung bình",
       value: `${formatNumber(averageListenDuration)}s`,
       icon: "audio" as const,
     },
@@ -155,7 +155,7 @@ export const DashboardPage = () => {
 
         <Card>
           <div className="mb-6">
-            <h2 className="section-heading">Ngon ngu su dung nhieu nhat</h2>
+            <h2 className="section-heading">Ngôn ngữ sử dụng nhiều nhất</h2>
           </div>
           <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-1">
             <div className="mx-auto h-56 w-full max-w-[220px]">
@@ -194,7 +194,7 @@ export const DashboardPage = () => {
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <Card>
           <div className="mb-6">
-            <h2 className="section-heading">Top POI theo tuong tac</h2>
+            <h2 className="section-heading">Top POI theo tương tác</h2>
           </div>
           <div className="space-y-4">
             {topPois.map((poi, index) => (
@@ -211,7 +211,7 @@ export const DashboardPage = () => {
                     <StatusBadge status={poi.status} />
                   </div>
                   <p className="mt-1 text-sm text-ink-500">{poi.category}</p>
-                  <p className="mt-2 text-xs text-ink-400">Cap nhat {formatDateTime(poi.updatedAt)}</p>
+                  <p className="mt-2 text-xs text-ink-400">Cập nhật {formatDateTime(poi.updatedAt)}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-3 rounded-2xl bg-sand-50 p-3 text-center">
                   <div>
@@ -234,7 +234,7 @@ export const DashboardPage = () => {
 
         <Card>
           <div className="mb-6">
-            <h2 className="section-heading">POI da xuat ban moi nhat</h2>
+            <h2 className="section-heading">POI đã xuất bản mới nhất</h2>
           </div>
           <div className="space-y-4">
             {latestPublished.map((poi) => (
@@ -259,7 +259,7 @@ export const DashboardPage = () => {
       <section className="grid gap-6 xl:grid-cols-2">
         <Card>
           <div className="mb-6">
-            <h2 className="section-heading">Nen tang su dung</h2>
+            <h2 className="section-heading">Nền tảng sử dụng</h2>
           </div>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -276,11 +276,11 @@ export const DashboardPage = () => {
 
         <Card>
           <div className="mb-6">
-            <h2 className="section-heading">POI da xuat ban</h2>
+            <h2 className="section-heading">POI đã xuất bản</h2>
           </div>
           <div className="flex h-72 items-center justify-center">
             <div className="text-center">
-              <p className="text-sm text-ink-500">Tong so POI dang hien thi tren app</p>
+              <p className="text-sm text-ink-500">Tổng số POI đang hiển thị trên app</p>
               <p className="mt-4 text-5xl font-bold text-ink-900">{formatNumber(totalPublishedPois)}</p>
             </div>
           </div>
@@ -289,7 +289,7 @@ export const DashboardPage = () => {
 
       <Card>
         <div className="mb-6">
-          <h2 className="section-heading">Top POI theo luot xem</h2>
+          <h2 className="section-heading">Top POI theo lượt xem</h2>
         </div>
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
@@ -306,7 +306,7 @@ export const DashboardPage = () => {
           {topViewedPois.map((item) => (
             <div key={item.id} className="rounded-2xl bg-sand-50 px-4 py-3">
               <p className="font-semibold text-ink-900">{item.name}</p>
-              <p className="mt-1 text-sm text-ink-500">{formatNumber(item.value)} luot xem</p>
+              <p className="mt-1 text-sm text-ink-500">{formatNumber(item.value)} lượt xem</p>
             </div>
           ))}
         </div>

@@ -2,25 +2,24 @@ import type { AppShellNavItem } from "../components/layout/AppShell";
 import type { AdminUser, Role, TourRoute } from "../data/types";
 
 const SUPER_ADMIN_NAV: AppShellNavItem[] = [
-  { to: "/admin/dashboard", label: "Tong quan", icon: "dashboard" },
+  { to: "/admin/dashboard", label: "Tổng quan", icon: "dashboard" },
   { to: "/admin/pois", label: "POI", icon: "map" },
-  { to: "/admin/tours", label: "Tuyen tham quan", icon: "route" },
-  { to: "/admin/users", label: "Chu quan", icon: "users" },
-  { to: "/admin/owner-registrations", label: "Don dang ky", icon: "content" },
-  { to: "/admin/promotions", label: "Uu dai", icon: "gift" },
-  { to: "/admin/reviews", label: "Danh gia", icon: "star" },
-  { to: "/admin/activity", label: "Nhat ky", icon: "activity" },
-  { to: "/admin/settings", label: "Cai dat", icon: "settings" },
+  { to: "/admin/tours", label: "Tuyến tham quan", icon: "route" },
+  { to: "/admin/users", label: "Chủ quán", icon: "users" },
+  { to: "/admin/promotions", label: "Ưu đãi", icon: "gift" },
+  { to: "/admin/reviews", label: "Đánh giá", icon: "star" },
+  { to: "/admin/activity", label: "Nhật ký", icon: "activity" },
+  { to: "/admin/settings", label: "Cài đặt", icon: "settings" },
 ];
 
 const PLACE_OWNER_NAV: AppShellNavItem[] = [
-  { to: "/restaurant/dashboard", label: "Tong quan", icon: "dashboard" },
+  { to: "/restaurant/dashboard", label: "Tổng quan", icon: "dashboard" },
   { to: "/restaurant/pois", label: "POI", icon: "map" },
-  { to: "/restaurant/tours", label: "Tuyen tham quan", icon: "route" },
-  { to: "/restaurant/promotions", label: "Uu dai", icon: "gift" },
-  { to: "/restaurant/reviews", label: "Danh gia", icon: "star" },
-  { to: "/restaurant/activity", label: "Nhat ky", icon: "activity" },
-  { to: "/restaurant/profile", label: "Ho so", icon: "users" },
+  { to: "/restaurant/tours", label: "Tuyến tham quan", icon: "route" },
+  { to: "/restaurant/promotions", label: "Ưu đãi", icon: "gift" },
+  { to: "/restaurant/reviews", label: "Đánh giá", icon: "star" },
+  { to: "/restaurant/activity", label: "Nhật ký", icon: "activity" },
+  { to: "/restaurant/profile", label: "Hồ sơ", icon: "users" },
 ];
 
 const ROLE_PATH_PREFIXES: Record<Role, string[]> = {

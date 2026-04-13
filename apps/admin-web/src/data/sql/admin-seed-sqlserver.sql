@@ -1,4 +1,4 @@
-IF DB_ID(N'VinhKhanhFoodAdmin') IS NULL
+﻿IF DB_ID(N'VinhKhanhFoodAdmin') IS NULL
 BEGIN
     EXEC(N'CREATE DATABASE [VinhKhanhFoodAdmin]');
 END;
@@ -137,8 +137,6 @@ CREATE TABLE dbo.Pois (
     District NVARCHAR(100) NOT NULL,
     Ward NVARCHAR(100) NOT NULL,
     PriceRange NVARCHAR(100) NOT NULL,
-    AverageVisitDurationMinutes INT NOT NULL,
-    PopularityScore INT NOT NULL,
     OwnerUserId NVARCHAR(50) NULL,
     UpdatedBy NVARCHAR(120) NOT NULL,
     CreatedAt DATETIMEOFFSET(7) NOT NULL,
@@ -389,9 +387,9 @@ INSERT INTO dbo.AdminUsers (Id, Name, Email, Phone, Role, [Password], [Status], 
 INSERT INTO dbo.AdminUsers (Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId) VALUES (N'user-owner-oc', N'Lê Quốc Bảo', N'quocbao@gmail.com', N'0909 188 003', N'PLACE_OWNER', N'Admin@123', N'active', CAST(N'2025-12-29T02:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-09T16:19:46.2940904+00:00' AS datetimeoffset(7)), N'#d9a845', N'oc-phat');
 INSERT INTO dbo.AdminUsers (Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor, ManagedPoiId) VALUES (N'user-super', N'Ánh Xuân', N'anhxuan@gmail.com', N'0909 188 001', N'SUPER_ADMIN', N'Admin@123', N'active', CAST(N'2025-11-19T02:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-09T16:25:15.4511570+00:00' AS datetimeoffset(7)), N'#f97316', NULL);
 GO
-INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'ca-phe-che', N'ca-phe-che', N'Chung cư H1, Hoàng Diệu, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam', 10.762195, 106.701499, N'cat-coffee-tea', N'published', 0, N'Quận 4', N'Phường Khánh Hội', N'25.000 - 75.000 VND', 25, 73, N'user-owner-dessert', N'Ánh Xuân', CAST(N'2026-01-16T02:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-06T06:57:06.9121038+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'oc-phat', N'oc-phat', N'Ốc Phát, Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam', 10.761873, 106.702153, N'cat-oc', N'published', 0, N'Quận 4', N'Phường Khánh Hội', N'50.000-110.000', 45, 98, N'user-owner-oc', N'Ánh Xuân', CAST(N'2025-11-19T02:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-09T16:25:22.2941302+00:00' AS datetimeoffset(7)));
-INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, District, Ward, PriceRange, AverageVisitDurationMinutes, PopularityScore, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'sushi-ko', N'nha-hang-sushi-ko', N'Nhà Hàng Sushi Ko, 122/37/15 Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam', 10.760772, 106.704798, N'cat-seafood-raw', N'published', 0, N'Quận 4', N'Phường Khánh Hội', N'50.000-150.000', 50, 96, N'user-owner-bbq', N'Ánh Xuân', CAST(N'2025-11-19T03:15:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-09T16:18:37.7903537+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, District, Ward, PriceRange, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'ca-phe-che', N'ca-phe-che', N'Chung cư H1, Hoàng Diệu, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam', 10.762195, 106.701499, N'cat-coffee-tea', N'published', 0, N'Quận 4', N'Phường Khánh Hội', N'25.000 - 75.000 VND', N'user-owner-dessert', N'Ánh Xuân', CAST(N'2026-01-16T02:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-06T06:57:06.9121038+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, District, Ward, PriceRange, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'oc-phat', N'oc-phat', N'Ốc Phát, Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam', 10.761873, 106.702153, N'cat-oc', N'published', 0, N'Quận 4', N'Phường Khánh Hội', N'50.000-110.000', N'user-owner-oc', N'Ánh Xuân', CAST(N'2025-11-19T02:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-09T16:25:22.2941302+00:00' AS datetimeoffset(7)));
+INSERT INTO dbo.Pois (Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, District, Ward, PriceRange, OwnerUserId, UpdatedBy, CreatedAt, UpdatedAt) VALUES (N'sushi-ko', N'nha-hang-sushi-ko', N'Nhà Hàng Sushi Ko, 122/37/15 Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam', 10.760772, 106.704798, N'cat-seafood-raw', N'published', 0, N'Quận 4', N'Phường Khánh Hội', N'50.000-150.000', N'user-owner-bbq', N'Ánh Xuân', CAST(N'2025-11-19T03:15:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-04-09T16:18:37.7903537+00:00' AS datetimeoffset(7)));
 GO
 INSERT INTO dbo.PoiTags (PoiId, TagValue) VALUES (N'ca-phe-che', N'ăn vặt');
 INSERT INTO dbo.PoiTags (PoiId, TagValue) VALUES (N'ca-phe-che', N'chè');
@@ -676,3 +674,4 @@ INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) V
 INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'supported', N'vi');
 INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'supported', N'zh-CN');
 GO
+
