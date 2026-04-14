@@ -169,6 +169,24 @@ public sealed partial class AdminDataRepository
         return ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
     }
 
+    public bool IsRouteTranslation(string id)
+    {
+        using var connection = OpenConnection();
+        return IsRouteEntityType(GetTranslationById(connection, null, id)?.EntityType);
+    }
+
+    public bool IsRouteAudioGuide(string id)
+    {
+        using var connection = OpenConnection();
+        return IsRouteEntityType(GetAudioGuideById(connection, null, id)?.EntityType);
+    }
+
+    public bool IsRouteMediaAsset(string id)
+    {
+        using var connection = OpenConnection();
+        return IsRouteEntityType(GetMediaAssetById(connection, null, id)?.EntityType);
+    }
+
     public IReadOnlyList<Promotion> GetPromotions(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
@@ -1874,16 +1892,11 @@ public sealed partial class AdminDataRepository
             return routes;
         }
 
-        var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actor.UserId);
-        return routes
-            .Where(route =>
-                string.Equals(route.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase) ||
-                (!route.IsSystemRoute &&
-                 string.IsNullOrWhiteSpace(route.OwnerUserId) &&
-                 route.StopPoiIds.Count > 0 &&
-                 route.StopPoiIds.All(ownerPoiIds.Contains)))
-            .ToList();
+        return [];
     }
+
+    private static bool IsRouteEntityType(string? entityType) =>
+        string.Equals(entityType?.Trim(), "route", StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<TourRoute> ApplyPublicRouteScope(
         IReadOnlyList<TourRoute> routes,

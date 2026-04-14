@@ -26,6 +26,7 @@ const resolvedBackendUrls =
   process.env.VK_BACKEND_URLS ??
   process.env.ASPNETCORE_URLS ??
   defaultBackendUrls;
+const backendPorts = parseBackendPorts(resolvedBackendUrls);
 const baseEnv = {
   ...process.env,
   DOTNET_CLI_HOME: dotnetHome,
@@ -33,6 +34,28 @@ const baseEnv = {
   APPDATA: appData,
   NUGET_PACKAGES: nugetPackages,
 };
+
+function parseBackendPorts(urls) {
+  return [...new Set(
+    String(urls)
+      .split(/[;,]/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((value) => {
+        try {
+          const parsed = new URL(value);
+          if (parsed.port) {
+            return Number.parseInt(parsed.port, 10);
+          }
+
+          return parsed.protocol === "https:" ? 443 : 80;
+        } catch {
+          return null;
+        }
+      })
+      .filter((value) => Number.isInteger(value) && value > 0)
+  )];
+}
 
 function isProcessAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) {
@@ -63,6 +86,141 @@ function stopTree(pid) {
     process.kill(pid, "SIGTERM");
   } catch {
     // Process already exited.
+  }
+}
+
+function getListeningProcessIds(port) {
+  if (!Number.isInteger(port) || port <= 0) {
+    return [];
+  }
+
+  if (process.platform === "win32") {
+    const result = spawnSync("netstat", ["-ano", "-p", "tcp"], {
+      encoding: "utf8",
+    });
+
+    if (result.status !== 0 || typeof result.stdout !== "string") {
+      return [];
+    }
+
+    const matchingPids = new Set();
+    const expectedPortSuffix = `:${port}`;
+
+    for (const line of result.stdout.split(/\r?\n/)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 5) {
+        continue;
+      }
+
+      const protocol = parts[0].toUpperCase();
+      const localAddress = parts[1];
+      const state = parts[3].toUpperCase();
+      const pid = Number.parseInt(parts[4], 10);
+
+      if (protocol !== "TCP" || state !== "LISTENING" || !localAddress.endsWith(expectedPortSuffix)) {
+        continue;
+      }
+
+      if (Number.isInteger(pid) && pid > 0) {
+        matchingPids.add(pid);
+      }
+    }
+
+    return [...matchingPids];
+  }
+
+  const result = spawnSync("lsof", ["-ti", `TCP:${port}`, "-sTCP:LISTEN"], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0 || typeof result.stdout !== "string") {
+    return [];
+  }
+
+  return [...new Set(
+    result.stdout
+      .split(/\r?\n/)
+      .map((value) => Number.parseInt(value.trim(), 10))
+      .filter((value) => Number.isInteger(value) && value > 0)
+  )];
+}
+
+function getProcessName(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return null;
+  }
+
+  if (process.platform === "win32") {
+    const result = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+      encoding: "utf8",
+    });
+
+    if (result.status !== 0 || typeof result.stdout !== "string") {
+      return null;
+    }
+
+    const firstLine = result.stdout
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .find(Boolean);
+
+    if (!firstLine || firstLine.startsWith("INFO:")) {
+      return null;
+    }
+
+    return firstLine.replace(/^"|"$/g, "").split('","')[0] ?? null;
+  }
+
+  const result = spawnSync("ps", ["-p", String(pid), "-o", "comm="], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0 || typeof result.stdout !== "string") {
+    return null;
+  }
+
+  const name = result.stdout.trim();
+  return name || null;
+}
+
+function formatProcessLabel(pid) {
+  const processName = getProcessName(pid);
+  return processName ? `PID ${pid} (${processName})` : `PID ${pid}`;
+}
+
+function isSafeBackendProcessName(name) {
+  if (!name) {
+    return false;
+  }
+
+  const normalizedName = name.toLowerCase();
+  return normalizedName === "dotnet.exe" ||
+    normalizedName === "dotnet" ||
+    normalizedName === "vinhkhanh.backendapi.exe";
+}
+
+function cleanupOccupiedBackendPorts() {
+  for (const port of backendPorts) {
+    const listeners = getListeningProcessIds(port).filter((pid) => pid !== process.pid);
+
+    for (const pid of listeners) {
+      const processName = getProcessName(pid);
+      if (!isSafeBackendProcessName(processName)) {
+        throw new Error(
+          `[backend] Port ${port} is already in use by ${formatProcessLabel(pid)}. ` +
+          `Stop that process or change VK_BACKEND_URLS before starting the backend.`
+        );
+      }
+
+      console.log(`[backend] Releasing port ${port} from ${formatProcessLabel(pid)}...`);
+      stopTree(pid);
+    }
+
+    const remainingListeners = getListeningProcessIds(port).filter((pid) => pid !== process.pid);
+    if (remainingListeners.length > 0) {
+      throw new Error(
+        `[backend] Port ${port} is still in use by ${remainingListeners.map(formatProcessLabel).join(", ")} ` +
+        `after cleanup. Please stop the conflicting process and try again.`
+      );
+    }
   }
 }
 
@@ -107,7 +265,13 @@ function cleanupTrackedBackendProcess() {
 }
 
 if (command !== "build") {
-  cleanupTrackedBackendProcess();
+  try {
+    cleanupTrackedBackendProcess();
+    cleanupOccupiedBackendPorts();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
 
 const args =

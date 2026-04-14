@@ -19,6 +19,7 @@ public sealed class MediaAssetsController(
         [FromQuery] string? type)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourMediaAccess(actor, entityType: entityType);
         IEnumerable<MediaAsset> query = repository.GetMediaAssets(actor);
 
         if (!string.IsNullOrWhiteSpace(entityType))
@@ -47,6 +48,7 @@ public sealed class MediaAssetsController(
     public ActionResult<ApiResponse<MediaAsset>> CreateMediaAsset([FromBody] MediaAssetUpsertRequest request)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourMediaAccess(actor, entityType: request.EntityType);
         if (string.IsNullOrWhiteSpace(request.EntityId) || string.IsNullOrWhiteSpace(request.Url))
         {
             return BadRequest(ApiResponse<MediaAsset>.Fail("EntityId va url la bat buoc."));
@@ -65,6 +67,7 @@ public sealed class MediaAssetsController(
     public ActionResult<ApiResponse<MediaAsset>> UpdateMediaAsset(string id, [FromBody] MediaAssetUpsertRequest request)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourMediaAccess(actor, entityType: request.EntityType, mediaAssetId: id);
         var existing = repository.GetMediaAssets(actor).FirstOrDefault(item => item.Id == id);
         if (existing is null || !CanManageEntity(actor, request.EntityType, request.EntityId))
         {
@@ -79,6 +82,7 @@ public sealed class MediaAssetsController(
     public ActionResult<ApiResponse<string>> DeleteMediaAsset(string id)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourMediaAccess(actor, mediaAssetId: id);
         var existing = repository.GetMediaAssets(actor).FirstOrDefault(item => item.Id == id);
         if (existing is null)
         {
@@ -116,4 +120,24 @@ public sealed class MediaAssetsController(
             : string.Equals(value.Trim(), "place", StringComparison.OrdinalIgnoreCase)
                 ? "poi"
                 : value.Trim().ToLowerInvariant();
+
+    private void EnsureTourMediaAccess(
+        AdminRequestContext actor,
+        string? entityType = null,
+        string? mediaAssetId = null)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return;
+        }
+
+        if (IsRouteEntityType(entityType) ||
+            (!string.IsNullOrWhiteSpace(mediaAssetId) && repository.IsRouteMediaAsset(mediaAssetId)))
+        {
+            throw new ApiForbiddenException("Chi Super Admin moi duoc quan ly media cua tour.");
+        }
+    }
+
+    private static bool IsRouteEntityType(string? entityType) =>
+        string.Equals(entityType?.Trim(), "route", StringComparison.OrdinalIgnoreCase);
 }

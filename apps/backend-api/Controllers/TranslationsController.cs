@@ -20,6 +20,7 @@ public sealed class TranslationsController(
         [FromQuery] string? languageCode)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourTranslationAccess(actor, entityType: entityType);
         IEnumerable<Translation> query = repository.GetTranslations(actor);
 
         if (!string.IsNullOrWhiteSpace(entityType))
@@ -44,6 +45,7 @@ public sealed class TranslationsController(
     public ActionResult<ApiResponse<Translation>> CreateTranslation([FromBody] TranslationUpsertRequest request)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourTranslationAccess(actor, entityType: request.EntityType);
 
         logger.LogInformation(
             "CreateTranslation request received. entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, title={Title}, shortTextLength={ShortTextLength}, fullTextLength={FullTextLength}",
@@ -72,6 +74,7 @@ public sealed class TranslationsController(
     public ActionResult<ApiResponse<Translation>> UpdateTranslation(string id, [FromBody] TranslationUpsertRequest request)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourTranslationAccess(actor, entityType: request.EntityType, translationId: id);
 
         logger.LogInformation(
             "UpdateTranslation request received. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, title={Title}, shortTextLength={ShortTextLength}, fullTextLength={FullTextLength}",
@@ -97,6 +100,7 @@ public sealed class TranslationsController(
     public ActionResult<ApiResponse<string>> DeleteTranslation(string id)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourTranslationAccess(actor, translationId: id);
         var existing = repository.GetTranslations(actor).FirstOrDefault(item => item.Id == id);
         if (existing is null)
         {
@@ -154,4 +158,24 @@ public sealed class TranslationsController(
             : string.Equals(value.Trim(), "place", StringComparison.OrdinalIgnoreCase)
                 ? "poi"
                 : value.Trim().ToLowerInvariant();
+
+    private void EnsureTourTranslationAccess(
+        AdminRequestContext actor,
+        string? entityType = null,
+        string? translationId = null)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return;
+        }
+
+        if (IsRouteEntityType(entityType) ||
+            (!string.IsNullOrWhiteSpace(translationId) && repository.IsRouteTranslation(translationId)))
+        {
+            throw new ApiForbiddenException("Chi Super Admin moi duoc quan ly noi dung cua tour.");
+        }
+    }
+
+    private static bool IsRouteEntityType(string? entityType) =>
+        string.Equals(entityType?.Trim(), "route", StringComparison.OrdinalIgnoreCase);
 }

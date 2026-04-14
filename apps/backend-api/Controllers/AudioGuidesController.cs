@@ -19,6 +19,7 @@ public sealed class AudioGuidesController(
         [FromQuery] string? status)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourAudioAccess(actor, entityType: entityType);
         IEnumerable<AudioGuide> query = repository.GetAudioGuides(actor);
 
         if (!string.IsNullOrWhiteSpace(entityType))
@@ -48,6 +49,7 @@ public sealed class AudioGuidesController(
     public ActionResult<ApiResponse<AudioGuide>> CreateAudioGuide([FromBody] AudioGuideUpsertRequest request)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourAudioAccess(actor, entityType: request.EntityType);
         if (string.IsNullOrWhiteSpace(request.EntityId) || string.IsNullOrWhiteSpace(request.LanguageCode))
         {
             return BadRequest(ApiResponse<AudioGuide>.Fail("EntityId va languageCode la bat buoc."));
@@ -66,6 +68,7 @@ public sealed class AudioGuidesController(
     public ActionResult<ApiResponse<AudioGuide>> UpdateAudioGuide(string id, [FromBody] AudioGuideUpsertRequest request)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourAudioAccess(actor, entityType: request.EntityType, audioGuideId: id);
         var existing = repository.GetAudioGuides(actor).FirstOrDefault(item => item.Id == id);
         if (existing is null || !CanManageEntity(actor, request.EntityType, request.EntityId))
         {
@@ -80,6 +83,7 @@ public sealed class AudioGuidesController(
     public ActionResult<ApiResponse<string>> DeleteAudioGuide(string id)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        EnsureTourAudioAccess(actor, audioGuideId: id);
         var existing = repository.GetAudioGuides(actor).FirstOrDefault(item => item.Id == id);
         if (existing is null)
         {
@@ -116,4 +120,24 @@ public sealed class AudioGuidesController(
             : string.Equals(value.Trim(), "place", StringComparison.OrdinalIgnoreCase)
                 ? "poi"
                 : value.Trim().ToLowerInvariant();
+
+    private void EnsureTourAudioAccess(
+        AdminRequestContext actor,
+        string? entityType = null,
+        string? audioGuideId = null)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return;
+        }
+
+        if (IsRouteEntityType(entityType) ||
+            (!string.IsNullOrWhiteSpace(audioGuideId) && repository.IsRouteAudioGuide(audioGuideId)))
+        {
+            throw new ApiForbiddenException("Chi Super Admin moi duoc quan ly audio guide cua tour.");
+        }
+    }
+
+    private static bool IsRouteEntityType(string? entityType) =>
+        string.Equals(entityType?.Trim(), "route", StringComparison.OrdinalIgnoreCase);
 }

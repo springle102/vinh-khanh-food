@@ -8,6 +8,7 @@
     ".NETCoreApp,Version=v10.0": {
       "VinhKhanh.BackendApi/1.0.0": {
         "dependencies": {
+          "Microsoft.AspNetCore.SpaProxy": "10.0.5",
           "Microsoft.Data.SqlClient": "6.1.1",
           "Microsoft.IdentityModel.JsonWebTokens": "8.0.1",
           "Microsoft.IdentityModel.Protocols": "8.0.1",
@@ -41,6 +42,14 @@
           "lib/net8.0/Azure.Identity.dll": {
             "assemblyVersion": "1.14.2.0",
             "fileVersion": "1.1400.225.36004"
+          }
+        }
+      },
+      "Microsoft.AspNetCore.SpaProxy/10.0.5": {
+        "runtime": {
+          "lib/net10.0/Microsoft.AspNetCore.SpaProxy.dll": {
+            "assemblyVersion": "10.0.5.0",
+            "fileVersion": "10.0.526.15411"
           }
         }
       },
@@ -363,6 +372,13 @@
       "sha512": "sha512-YhNMwOTwT+I2wIcJKSdP0ADyB2aK+JaYWZxO8LSRDm5w77LFr0ykR9xmt2ZV5T1gaI7xU6iNFIh/yW1dAlpddQ==",
       "path": "azure.identity/1.14.2",
       "hashPath": "azure.identity.1.14.2.nupkg.sha512"
+    },
+    "Microsoft.AspNetCore.SpaProxy/10.0.5": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-q9mjn2xgPb6mnNJwcyoGhFvnNH10KL8ok6t7C02QoxUSf1utzzbd9LnCfk2dQy7z22+pyYRBz1Ip2xfT1PW2TQ==",
+      "path": "microsoft.aspnetcore.spaproxy/10.0.5",
+      "hashPath": "microsoft.aspnetcore.spaproxy.10.0.5.nupkg.sha512"
     },
     "Microsoft.Bcl.AsyncInterfaces/8.0.0": {
       "type": "package",

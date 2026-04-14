@@ -29,7 +29,7 @@ const ROLE_PATH_PREFIXES: Record<Role, string[]> = {
 
 export const navigationItemsByRole: Record<Role, AppShellNavItem[]> = {
   SUPER_ADMIN: SUPER_ADMIN_NAV,
-  PLACE_OWNER: PLACE_OWNER_NAV,
+  PLACE_OWNER: PLACE_OWNER_NAV.filter((item) => item.to !== "/restaurant/tours"),
 };
 
 export const canManageOwnerAccounts = (role: Role | undefined) => role === "SUPER_ADMIN";

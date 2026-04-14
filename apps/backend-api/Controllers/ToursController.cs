@@ -17,7 +17,7 @@ public sealed class ToursController(
         [FromQuery] string? theme,
         [FromQuery] bool? isActive)
     {
-        var actor = adminRequestContextResolver.TryGetCurrentAdmin();
+        var actor = RequireTourSuperAdmin();
         IEnumerable<TourRoute> query = repository.GetRoutes(actor);
 
         if (!string.IsNullOrWhiteSpace(theme))
@@ -39,7 +39,7 @@ public sealed class ToursController(
     [HttpGet("{id}")]
     public ActionResult<ApiResponse<TourRoute>> GetTourById(string id)
     {
-        var actor = adminRequestContextResolver.TryGetCurrentAdmin();
+        var actor = RequireTourSuperAdmin();
         var route = repository.GetRoutes(actor).FirstOrDefault(item => item.Id == id);
         if (route is null)
         {
@@ -52,7 +52,7 @@ public sealed class ToursController(
     [HttpPost]
     public ActionResult<ApiResponse<TourRoute>> CreateTour([FromBody] TourRouteUpsertRequest request)
     {
-        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var actor = RequireTourSuperAdmin();
         if (string.IsNullOrWhiteSpace(request.Name))
         {
             return BadRequest(ApiResponse<TourRoute>.Fail("Ten tour la bat buoc."));
@@ -61,11 +61,6 @@ public sealed class ToursController(
         if (request.StopPoiIds is null || request.StopPoiIds.Count == 0)
         {
             return BadRequest(ApiResponse<TourRoute>.Fail("Tour phai co it nhat mot diem den."));
-        }
-
-        if (actor.IsPlaceOwner && request.StopPoiIds.Any(stopPoiId => !repository.GetPois(actor).Any(item => item.Id == stopPoiId)))
-        {
-            return NotFound(ApiResponse<TourRoute>.Fail("Chu quan chi duoc tao tour bang cac POI cua quan minh."));
         }
 
         var saved = repository.SaveRoute(null, request with
@@ -83,15 +78,9 @@ public sealed class ToursController(
     [HttpPut("{id}")]
     public ActionResult<ApiResponse<TourRoute>> UpdateTour(string id, [FromBody] TourRouteUpsertRequest request)
     {
-        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var actor = RequireTourSuperAdmin();
         var existing = repository.GetRoutes(actor).FirstOrDefault(item => item.Id == id);
         if (existing is null)
-        {
-            return NotFound(ApiResponse<TourRoute>.Fail("Khong tim thay tour."));
-        }
-
-        if (actor.IsPlaceOwner &&
-            (!string.Equals(existing.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase) || existing.IsSystemRoute))
         {
             return NotFound(ApiResponse<TourRoute>.Fail("Khong tim thay tour."));
         }
@@ -111,15 +100,9 @@ public sealed class ToursController(
     [HttpDelete("{id}")]
     public ActionResult<ApiResponse<string>> DeleteTour(string id)
     {
-        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var actor = RequireTourSuperAdmin();
         var existing = repository.GetRoutes(actor).FirstOrDefault(item => item.Id == id);
         if (existing is null)
-        {
-            return NotFound(ApiResponse<string>.Fail("Khong tim thay tour."));
-        }
-
-        if (actor.IsPlaceOwner &&
-            (!string.Equals(existing.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase) || existing.IsSystemRoute))
         {
             return NotFound(ApiResponse<string>.Fail("Khong tim thay tour."));
         }
@@ -129,4 +112,7 @@ public sealed class ToursController(
             ? Ok(ApiResponse<string>.Ok(id, "Xoa tour thanh cong."))
             : NotFound(ApiResponse<string>.Fail("Khong tim thay tour."));
     }
+
+    private AdminRequestContext RequireTourSuperAdmin() =>
+        adminRequestContextResolver.RequireSuperAdmin();
 }

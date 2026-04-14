@@ -131,7 +131,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="dashboard" replace /> },
           { path: "dashboard", element: <DashboardPage /> },
           { path: "pois", element: <PoisPage /> },
-          { path: "tours", element: <ToursPage /> },
+          { path: "tours", element: <Navigate to="/restaurant/dashboard" replace /> },
           { path: "content", element: <Navigate to="/restaurant/pois" replace /> },
           { path: "media", element: <Navigate to="/restaurant/pois" replace /> },
           { path: "users", element: <Navigate to="/restaurant/profile" replace /> },
