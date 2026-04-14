@@ -98,9 +98,6 @@ public sealed partial class AdminDataRepository
             setting.SupportedLanguages = ["vi", "en"];
         }
 
-        setting.FreeLanguages = [.. setting.SupportedLanguages];
-        setting.PremiumLanguages = [];
-        setting.PremiumUnlockPriceUsd = 0;
         return setting;
     }
 

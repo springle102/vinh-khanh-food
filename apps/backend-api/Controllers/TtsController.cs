@@ -7,8 +7,6 @@ namespace VinhKhanh.BackendApi.Controllers;
 [ApiController]
 [Route("api/v1/tts")]
 public sealed class TtsController(
-    AdminDataRepository repository,
-    AdminRequestContextResolver adminRequestContextResolver,
     ITextToSpeechService textToSpeechService,
     ILogger<TtsController> logger) : ControllerBase
 {

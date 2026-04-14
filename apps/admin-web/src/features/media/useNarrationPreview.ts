@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AdminDataState, AudioGuide, RegionVoice } from "../../data/types";
+import type { AdminDataState, AudioGuide } from "../../data/types";
 import {
   buildTtsAudioUrls,
   canUseBrowserSpeechSynthesis,
@@ -24,7 +24,7 @@ type PreviewState = {
 
 type AudioPreviewCandidate = Pick<
   AudioGuide,
-  "id" | "entityId" | "languageCode" | "audioUrl" | "sourceType" | "voiceType"
+  "id" | "entityId" | "languageCode" | "audioUrl" | "sourceType"
 > & {
   previewText?: string;
 };
@@ -211,14 +211,12 @@ export const useNarrationPreview = (state: AdminDataState) => {
       audioGuideId,
       text,
       languageCode,
-      voiceType,
       requestId,
       fallbackMessage,
     }: {
       audioGuideId: string;
       text: string;
       languageCode: AudioGuide["languageCode"];
-      voiceType: RegionVoice;
       requestId: number;
       fallbackMessage?: string | null;
     }) => {
@@ -246,7 +244,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
 
       const utterance = new SpeechSynthesisUtterance(narrationText);
       utterance.lang = languageLocales[languageCode];
-      utterance.voice = selectSpeechVoice(voices, languageCode, voiceType);
+      utterance.voice = selectSpeechVoice(voices, languageCode);
 
       let cancelled = false;
       browserSpeechCancelRef.current = () => {
@@ -292,14 +290,12 @@ export const useNarrationPreview = (state: AdminDataState) => {
       audioGuideId,
       text,
       languageCode,
-      voiceType,
       fallbackMessage,
       requestId,
     }: {
       audioGuideId: string;
       text: string;
       languageCode: AudioGuide["languageCode"];
-      voiceType: RegionVoice;
       fallbackMessage?: string | null;
       requestId: number;
     }) => {
@@ -319,7 +315,6 @@ export const useNarrationPreview = (state: AdminDataState) => {
           audioGuideId,
           text,
           languageCode,
-          voiceType,
           fallbackMessage,
           requestId,
         });
@@ -368,10 +363,8 @@ export const useNarrationPreview = (state: AdminDataState) => {
       if (!narrationText && poi) {
         try {
           const resolved = await resolvePoiNarration({
-            state,
             poi,
             language: guide.languageCode,
-            voice: guide.voiceType,
             signal: controller.signal,
           });
 
@@ -409,7 +402,6 @@ export const useNarrationPreview = (state: AdminDataState) => {
             audioGuideId: guide.id,
             text: narrationText,
             languageCode: effectiveLanguage,
-            voiceType: guide.voiceType,
             fallbackMessage,
             requestId,
           });

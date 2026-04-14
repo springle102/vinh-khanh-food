@@ -458,21 +458,8 @@ public sealed partial class AdminDataRepository
             languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(code));
         }
 
-        foreach (var code in settings.FreeLanguages)
-        {
-            languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(code));
-        }
-
-        foreach (var code in settings.PremiumLanguages)
-        {
-            languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(code));
-        }
-
-        if (languageCodes.Count == 0)
-        {
-            languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.DefaultLanguage));
-            languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.FallbackLanguage));
-        }
+        languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.DefaultLanguage));
+        languageCodes.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.FallbackLanguage));
 
         return languageCodes
             .Where(code => !string.IsNullOrWhiteSpace(code))

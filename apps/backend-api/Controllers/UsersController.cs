@@ -1,15 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using VinhKhanh.BackendApi.Contracts;
-using VinhKhanh.BackendApi.Infrastructure;
-using VinhKhanh.BackendApi.Models;
 
 namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/users")]
-public sealed class UsersController(
-    AdminDataRepository repository,
-    AdminRequestContextResolver adminRequestContextResolver) : ControllerBase
+public sealed class UsersController : ControllerBase
 {
     [HttpGet]
     public ActionResult<ApiResponse<string>> GetUsers()

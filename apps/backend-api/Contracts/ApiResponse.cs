@@ -182,7 +182,6 @@ public sealed record AudioGuideUpsertRequest(
     string EntityId,
     string LanguageCode,
     string AudioUrl,
-    string VoiceType,
     string SourceType,
     string Status,
     string UpdatedBy);
@@ -312,7 +311,6 @@ public sealed record PoiNarrationResponse(
     string RequestedLanguageCode,
     string? SourceLanguageCode,
     string EffectiveLanguageCode,
-    string SelectedVoice,
     string DisplayTitle,
     string DisplayText,
     string TtsInputText,

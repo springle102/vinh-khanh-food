@@ -1483,7 +1483,6 @@ public sealed partial class FoodStreetApiDataService
         public string EntityId { get; set; } = string.Empty;
         public string LanguageCode { get; set; } = string.Empty;
         public string AudioUrl { get; set; } = string.Empty;
-        public string VoiceType { get; set; } = string.Empty;
         public string SourceType { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public DateTimeOffset UpdatedAt { get; set; }

@@ -1064,6 +1064,7 @@ public bool DeletePoi(string id, AdminRequestContext actor)
         var normalizedSourceType = string.Equals(request.SourceType?.Trim(), "uploaded", StringComparison.OrdinalIgnoreCase)
             ? "uploaded"
             : "tts";
+        const string normalizedVoiceType = "standard";
         var normalizedAudioUrl = normalizedSourceType == "uploaded"
             ? (request.AudioUrl ?? string.Empty).Trim()
             : string.Empty;
@@ -1108,7 +1109,7 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                 request.EntityId,
                 request.LanguageCode,
                 normalizedAudioUrl,
-                request.VoiceType,
+                normalizedVoiceType,
                 normalizedSourceType,
                 request.Status,
                 actor.Name,
@@ -1143,7 +1144,7 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                 request.EntityId,
                 request.LanguageCode,
                 normalizedAudioUrl,
-                request.VoiceType,
+                normalizedVoiceType,
                 normalizedSourceType,
                 request.Status,
                 actor.Name,

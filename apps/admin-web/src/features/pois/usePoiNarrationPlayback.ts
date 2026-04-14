@@ -4,8 +4,6 @@ import type {
   AudioGuide,
   LanguageCode,
   Poi,
-  PoiDetail,
-  RegionVoice,
 } from "../../data/types";
 import {
   buildTtsAudioUrls,
@@ -43,7 +41,7 @@ export type PoiNarrationPlaybackState = {
 
 type AudioPreviewCandidate = Pick<
   AudioGuide,
-  "id" | "entityId" | "languageCode" | "audioUrl" | "sourceType" | "voiceType"
+  "id" | "entityId" | "languageCode" | "audioUrl" | "sourceType"
 > & {
   previewText?: string;
 };
@@ -55,7 +53,6 @@ type PoiAudioSourceBase = {
   audioGuideId: string | null;
   requestedLanguageCode: LanguageCode;
   effectiveLanguageCode: LanguageCode;
-  voiceType: RegionVoice;
   ttsLocale: string;
   translationStatus: NarrationResolutionStatus;
   fallbackMessage: string | null;
@@ -74,8 +71,6 @@ type PoiAudioSource = PoiAudioSourceBase & {
 type PlayPoiNarrationOptions = {
   poi: Poi;
   language: LanguageCode;
-  voice: RegionVoice;
-  detail?: PoiDetail | null;
 };
 
 const DEFAULT_PLAYBACK_STATE: PoiNarrationPlaybackState = {
@@ -113,7 +108,6 @@ const createAudioSourceFromResolvedNarration = (
       fallbackText: narration.ttsInputText || undefined,
       requestedLanguageCode: narration.requestedLanguageCode,
       effectiveLanguageCode: narration.effectiveLanguageCode,
-      voiceType: narration.selectedVoice,
       ttsLocale: narration.ttsLocale,
       translationStatus: narration.translationStatus,
       fallbackMessage: narration.fallbackMessage,
@@ -137,7 +131,6 @@ const createAudioSourceFromResolvedNarration = (
     fallbackText: narration.ttsInputText,
     requestedLanguageCode: narration.requestedLanguageCode,
     effectiveLanguageCode: narration.effectiveLanguageCode,
-    voiceType: narration.selectedVoice,
     ttsLocale: narration.ttsLocale,
     translationStatus: narration.translationStatus,
     fallbackMessage: narration.fallbackMessage,
@@ -163,7 +156,6 @@ const createTtsAudioSource = (audioSource: PoiAudioSource): PoiAudioSource => ({
   usesTtsFallback: true,
   requestedLanguageCode: audioSource.requestedLanguageCode,
   effectiveLanguageCode: audioSource.effectiveLanguageCode,
-  voiceType: audioSource.voiceType,
   ttsLocale: audioSource.ttsLocale,
   translationStatus: audioSource.translationStatus,
   fallbackMessage: audioSource.fallbackMessage,
@@ -312,34 +304,25 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
     async (
       poi: Poi,
       language: LanguageCode,
-      voice: RegionVoice,
-      detail?: PoiDetail | null,
       signal?: AbortSignal,
     ) =>
       resolvePoiNarration({
-        state,
         poi,
         language,
-        voice,
-        detail,
         signal,
       }),
-    [state],
+    [],
   );
 
   const getPOIAudio = useCallback(
     async (
       poi: Poi,
       language: LanguageCode,
-      voice: RegionVoice,
-      detail?: PoiDetail | null,
       signal?: AbortSignal,
     ) => {
       const narration = await resolvePoiNarrationForSelection(
         poi,
         language,
-        voice,
-        detail,
         signal,
       );
       const hasPlayableAudioGuide =
@@ -357,7 +340,6 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         logNarrationDebug("audio-cache-hit", {
           poiId: poi.id,
           languageSelected: language,
-          selectedVoice: voice,
           cacheKey: narration.audioCacheKey,
         });
         return cached;
@@ -403,11 +385,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
 
       const utterance = new SpeechSynthesisUtterance(narrationText);
       utterance.lang = languageLocales[audioSource.effectiveLanguageCode];
-      utterance.voice = selectSpeechVoice(
-        voices,
-        audioSource.effectiveLanguageCode,
-        audioSource.voiceType,
-      );
+      utterance.voice = selectSpeechVoice(voices, audioSource.effectiveLanguageCode);
       utterance.rate = 1;
       utterance.pitch = 1;
 
@@ -774,8 +752,8 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
   );
 
   const playPoiNarration = useCallback(
-    async ({ poi, language, voice, detail }: PlayPoiNarrationOptions) => {
-      const playbackKey = buildUiPlaybackKey(poi.id, language, voice);
+    async ({ poi, language }: PlayPoiNarrationOptions) => {
+      const playbackKey = buildUiPlaybackKey(poi.id, language);
       const handledByToggle = await toggleCurrentAudio(playbackKey);
       if (handledByToggle) {
         return;
@@ -808,8 +786,6 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         const audioSource = await getPOIAudio(
           poi,
           language,
-          voice,
-          detail,
           controller.signal,
         );
         if (requestId !== requestIdRef.current) {
@@ -977,8 +953,6 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
               ...(await resolvePoiNarrationForSelection(
                 poi,
                 guide.languageCode,
-                guide.voiceType,
-                undefined,
                 controller.signal,
               )),
               displayText: guide.previewText,
@@ -990,8 +964,6 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           : await resolvePoiNarrationForSelection(
               poi,
               guide.languageCode,
-              guide.voiceType,
-              undefined,
               controller.signal,
             );
         if (!narration.ttsInputText.trim() && !hasValidAudioUrl(guide.audioUrl)) {
@@ -999,7 +971,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         }
 
         const audioGuide =
-          findPoiAudioGuide(state.audioGuides, guide.entityId, guide.languageCode, guide.voiceType) ??
+          findPoiAudioGuide(state.audioGuides, guide.entityId, guide.languageCode) ??
           (hasValidAudioUrl(guide.audioUrl)
             ? ({
                 id: guide.id,
@@ -1011,7 +983,6 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
                 status: "ready",
                 updatedAt: new Date().toISOString(),
                 updatedBy: "preview",
-                voiceType: guide.voiceType,
               } satisfies AudioGuide)
             : null);
 

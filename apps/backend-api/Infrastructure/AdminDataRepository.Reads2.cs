@@ -259,8 +259,6 @@ public sealed partial class AdminDataRepository
                     SupportEmail = ReadString(settingReader, "SupportEmail"),
                     DefaultLanguage = ReadString(settingReader, "DefaultLanguage"),
                     FallbackLanguage = ReadString(settingReader, "FallbackLanguage"),
-                    PremiumUnlockPriceUsd = ReadNullableInt(settingReader, "PremiumUnlockPriceUsd")
-                        ?? PremiumAccessCatalog.DefaultPremiumPriceUsd,
                     MapProvider = ReadString(settingReader, "MapProvider"),
                     StorageProvider = ReadString(settingReader, "StorageProvider"),
                     TtsProvider = ReadString(settingReader, "TtsProvider"),
@@ -276,29 +274,8 @@ public sealed partial class AdminDataRepository
         {
             while (languagesReader.Read())
             {
-                var type = ReadString(languagesReader, "LanguageType");
                 var languageCode = PremiumAccessCatalog.NormalizeLanguageCode(ReadString(languagesReader, "LanguageCode"));
 
-                if (string.Equals(type, "free", StringComparison.OrdinalIgnoreCase))
-                {
-                    setting.FreeLanguages.Add(languageCode);
-                }
-                else if (string.Equals(type, "premium", StringComparison.OrdinalIgnoreCase))
-                {
-                    setting.PremiumLanguages.Add(languageCode);
-                }
-
-                if (!setting.SupportedLanguages.Contains(languageCode, StringComparer.OrdinalIgnoreCase))
-                {
-                    setting.SupportedLanguages.Add(languageCode);
-                }
-            }
-        }
-
-        if (setting.SupportedLanguages.Count == 0)
-        {
-            foreach (var languageCode in setting.FreeLanguages.Concat(setting.PremiumLanguages))
-            {
                 if (!setting.SupportedLanguages.Contains(languageCode, StringComparer.OrdinalIgnoreCase))
                 {
                     setting.SupportedLanguages.Add(languageCode);

@@ -125,7 +125,6 @@ public sealed class PoisController(
     public async Task<ActionResult<ApiResponse<PoiNarrationResponse>>> GetPoiNarration(
         string id,
         [FromQuery] string? languageCode,
-        [FromQuery] string? voiceType,
         [FromQuery] string? customerUserId,
         CancellationToken cancellationToken)
     {
@@ -138,7 +137,6 @@ public sealed class PoisController(
         var narration = await poiNarrationService.ResolveAsync(
             id,
             languageCode,
-            voiceType,
             actor,
             cancellationToken);
         return narration is null

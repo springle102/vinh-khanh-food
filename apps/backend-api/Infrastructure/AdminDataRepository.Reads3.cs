@@ -114,7 +114,6 @@ public sealed partial class AdminDataRepository
             FullText = ReadString(reader, "FullText"),
             SeoTitle = ReadString(reader, "SeoTitle"),
             SeoDescription = ReadString(reader, "SeoDescription"),
-            IsPremium = ReadBool(reader, "IsPremium"),
             UpdatedBy = ReadString(reader, "UpdatedBy"),
             UpdatedAt = ReadDateTimeOffset(reader, "UpdatedAt")
         };

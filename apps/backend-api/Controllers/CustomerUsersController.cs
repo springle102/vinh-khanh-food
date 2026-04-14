@@ -1,15 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using VinhKhanh.BackendApi.Contracts;
-using VinhKhanh.BackendApi.Infrastructure;
-using VinhKhanh.BackendApi.Models;
 
 namespace VinhKhanh.BackendApi.Controllers;
 
 [ApiController]
 [Route("api/v1/customer-users")]
-public sealed class CustomerUsersController(
-    AdminDataRepository repository,
-    PremiumPurchaseService premiumPurchaseService) : ControllerBase
+public sealed class CustomerUsersController : ControllerBase
 {
     [HttpPost]
     public ActionResult<ApiResponse<string>> Register([FromBody] CustomerRegistrationRequest request)

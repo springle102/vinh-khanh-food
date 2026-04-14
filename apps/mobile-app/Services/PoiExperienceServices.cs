@@ -292,8 +292,7 @@ public sealed class PoiNarrationService : IPoiNarrationService
 
             var query = new Dictionary<string, string>
             {
-                ["languageCode"] = languageCode,
-                ["voiceType"] = "standard"
+                ["languageCode"] = languageCode
             };
 
             var relativeUrl =
@@ -603,7 +602,6 @@ public sealed class PoiNarrationService : IPoiNarrationService
     {
         public string Id { get; set; } = string.Empty;
         public string AudioUrl { get; set; } = string.Empty;
-        public string VoiceType { get; set; } = "standard";
         public string SourceType { get; set; } = "uploaded";
         public string Status { get; set; } = "ready";
     }

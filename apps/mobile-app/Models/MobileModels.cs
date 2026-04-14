@@ -182,7 +182,6 @@ public sealed class PoiNarrationModel
     public string FullDescription { get; set; } = string.Empty;
     public string NarrationText { get; set; } = string.Empty;
     public string? AudioUrl { get; set; }
-    public string VoiceType { get; set; } = "standard";
     public bool UsesGeneratedTtsFallback { get; set; }
 }
 
@@ -253,5 +252,4 @@ public sealed class LocationChangedMessage
     public double Latitude { get; set; }
     public double Longitude { get; set; }
 }
-
 

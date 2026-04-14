@@ -11,7 +11,6 @@ import type {
   PoiDetail,
   PlaceOwnerRegistrationRecord,
   Promotion,
-  RegionVoice,
   ResolvedPoiNarration,
   Review,
   SystemSetting,
@@ -475,12 +474,10 @@ export const adminApi = {
   getPoiNarration: (
     poiId: string,
     languageCode: LanguageCode,
-    voiceType: RegionVoice,
     signal?: AbortSignal,
   ) => {
     const query = new URLSearchParams({
       languageCode,
-      voiceType,
     });
 
     return request<ResolvedPoiNarration>(`/api/v1/pois/${poiId}/narration?${query.toString()}`, {
@@ -572,7 +569,6 @@ export const adminApi = {
     entityId: string;
     languageCode: AudioGuide["languageCode"];
     audioUrl: string;
-    voiceType: AudioGuide["voiceType"];
     sourceType: AudioGuide["sourceType"];
     status: AudioGuide["status"];
     updatedBy: string;

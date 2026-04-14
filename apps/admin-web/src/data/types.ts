@@ -1,5 +1,4 @@
 export type LanguageCode = "vi" | "en" | "zh-CN" | "ko" | "ja";
-export type RegionVoice = "north" | "central" | "south" | "standard";
 export type Role = "SUPER_ADMIN" | "PLACE_OWNER";
 export type AuditActorRole = Role | "SYSTEM";
 export type UserStatus = "active" | "locked";
@@ -145,7 +144,6 @@ export interface AudioGuide {
   entityId: string;
   languageCode: LanguageCode;
   audioUrl: string;
-  voiceType: RegionVoice;
   sourceType: AudioSourceType;
   status: AudioStatus;
   updatedBy: string;
@@ -173,7 +171,6 @@ export interface ResolvedPoiNarration {
   requestedLanguageCode: LanguageCode;
   sourceLanguageCode: LanguageCode | null;
   effectiveLanguageCode: LanguageCode;
-  selectedVoice: RegionVoice;
   displayTitle: string;
   displayText: string;
   ttsInputText: string;

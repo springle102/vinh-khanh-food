@@ -9,14 +9,6 @@ public sealed class PoiNarrationService(
     IHttpContextAccessor httpContextAccessor,
     ILogger<PoiNarrationService> logger)
 {
-    private static readonly HashSet<string> SupportedVoices =
-    [
-        "standard",
-        "north",
-        "central",
-        "south"
-    ];
-
     private static readonly Dictionary<string, string> LanguageLocales = new(StringComparer.OrdinalIgnoreCase)
     {
         ["vi"] = "vi-VN",
@@ -40,7 +32,6 @@ public sealed class PoiNarrationService(
     public async Task<PoiNarrationResponse?> ResolveAsync(
         string poiId,
         string requestedLanguageCode,
-        string? requestedVoiceType,
         AdminRequestContext? actor,
         CancellationToken cancellationToken)
     {
@@ -56,7 +47,6 @@ public sealed class PoiNarrationService(
             requestedLanguageCode,
             settings.DefaultLanguage,
             settings.FallbackLanguage);
-        var normalizedVoiceType = NormalizeVoiceType(requestedVoiceType);
         var translations = repository.GetTranslations()
             .Where(item =>
                 string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
@@ -206,12 +196,12 @@ public sealed class PoiNarrationService(
         AudioGuide? audioGuide = null;
         if (!string.Equals(translationStatus, autoTranslatedStatus, StringComparison.Ordinal))
         {
-            audioGuide = FindPoiAudioGuide(audioGuides, effectiveLanguageCode, normalizedVoiceType);
+            audioGuide = FindPoiAudioGuide(audioGuides, effectiveLanguageCode);
         }
 
         audioGuide = NormalizeAudioGuideForResponse(audioGuide);
 
-        var uiPlaybackKey = BuildUiPlaybackKey(poi.Id, normalizedRequestedLanguage, normalizedVoiceType);
+        var uiPlaybackKey = BuildUiPlaybackKey(poi.Id, normalizedRequestedLanguage);
         var audioCacheKey = BuildAudioCacheKey(
             uiPlaybackKey,
             translationStatus,
@@ -231,7 +221,6 @@ public sealed class PoiNarrationService(
             normalizedRequestedLanguage,
             sourceLanguageCode,
             effectiveLanguageCode,
-            normalizedVoiceType,
             displayTitle,
             displayText,
             ttsInputText,
@@ -245,14 +234,13 @@ public sealed class PoiNarrationService(
             GetLocale(effectiveLanguageCode));
 
         logger.LogDebug(
-            "Resolved POI narration. PoiId={PoiId}; languageSelected={LanguageSelected}; sourceLanguage={SourceLanguage}; sourceText={SourceText}; translatedText={TranslatedText}; ttsInputText={TtsInputText}; selectedVoice={SelectedVoice}; cacheKey={CacheKey}; status={Status}; fallbackMessage={FallbackMessage}",
+            "Resolved POI narration. PoiId={PoiId}; languageSelected={LanguageSelected}; sourceLanguage={SourceLanguage}; sourceText={SourceText}; translatedText={TranslatedText}; ttsInputText={TtsInputText}; cacheKey={CacheKey}; status={Status}; fallbackMessage={FallbackMessage}",
             poi.Id,
             normalizedRequestedLanguage,
             sourceLanguageCode,
             resolved.SourceText,
             resolved.TranslatedText,
             resolved.TtsInputText,
-            normalizedVoiceType,
             resolved.AudioCacheKey,
             resolved.TranslationStatus,
             resolved.FallbackMessage);
@@ -330,19 +318,15 @@ public sealed class PoiNarrationService(
 
     private static AudioGuide? FindPoiAudioGuide(
         IEnumerable<AudioGuide> audioGuides,
-        string languageCode,
-        string voiceType)
+        string languageCode)
     {
         var matchingGuides = audioGuides
             .Where(item => string.Equals(item.LanguageCode, languageCode, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         return
-            matchingGuides.FirstOrDefault(item => IsPlayableAudioGuide(item) && string.Equals(item.VoiceType, voiceType, StringComparison.OrdinalIgnoreCase)) ??
             matchingGuides.FirstOrDefault(IsPlayableAudioGuide) ??
-            matchingGuides.FirstOrDefault(item => HasUsablePreparedAudio(item) && string.Equals(item.VoiceType, voiceType, StringComparison.OrdinalIgnoreCase)) ??
             matchingGuides.FirstOrDefault(HasUsablePreparedAudio) ??
-            matchingGuides.FirstOrDefault(item => string.Equals(item.VoiceType, voiceType, StringComparison.OrdinalIgnoreCase)) ??
             matchingGuides.FirstOrDefault();
     }
 
@@ -428,8 +412,8 @@ public sealed class PoiNarrationService(
             : normalizedTitle ?? string.Empty;
     }
 
-    private static string BuildUiPlaybackKey(string poiId, string languageCode, string voiceType) =>
-        $"{poiId}:{languageCode}:{voiceType}";
+    private static string BuildUiPlaybackKey(string poiId, string languageCode) =>
+        $"{poiId}:{languageCode}";
 
     private static string BuildAudioCacheKey(
         string uiPlaybackKey,
@@ -459,14 +443,6 @@ public sealed class PoiNarrationService(
         }
 
         return hash.ToString("x8");
-    }
-
-    private static string NormalizeVoiceType(string? value)
-    {
-        var normalized = value?.Trim().ToLowerInvariant();
-        return normalized is not null && SupportedVoices.Contains(normalized)
-            ? normalized
-            : "standard";
     }
 
     private static string NormalizeLanguageCode(string? primary, params string?[] fallbacks)

@@ -21,7 +21,6 @@ type AudioForm = {
   entityId: string;
   languageCode: AudioGuide["languageCode"];
   audioUrl: string;
-  voiceType: AudioGuide["voiceType"];
   sourceType: AudioGuide["sourceType"];
   status: AudioGuide["status"];
 };
@@ -49,7 +48,6 @@ const defaultAudioForm: AudioForm = {
   entityId: "",
   languageCode: "vi",
   audioUrl: "",
-  voiceType: "standard",
   sourceType: "tts",
   status: "ready",
 };
@@ -209,7 +207,6 @@ export const MediaPage = () => {
           entityId: item.entityId,
           languageCode: item.languageCode,
           audioUrl: item.audioUrl,
-          voiceType: item.voiceType,
           sourceType: item.sourceType,
           status: item.status,
         }
@@ -300,7 +297,6 @@ export const MediaPage = () => {
           entityId: audioForm.entityId,
           languageCode: audioForm.languageCode,
           audioUrl: audioForm.audioUrl,
-          voiceType: audioForm.voiceType,
           sourceType: audioForm.sourceType,
           status: audioForm.status,
         },
@@ -389,7 +385,6 @@ export const MediaPage = () => {
     entityId: audioForm.entityId,
     languageCode: audioForm.languageCode,
     audioUrl: audioForm.audioUrl,
-    voiceType: audioForm.voiceType,
     sourceType: audioForm.sourceType,
     status: audioForm.status,
     updatedBy: user?.name ?? "Preview",
@@ -447,7 +442,7 @@ export const MediaPage = () => {
       },
     },
     {
-      key: "voice",
+      key: "source",
       header: "Nguồn phát",
       widthClassName: "min-w-[280px]",
       render: (item) => (
@@ -455,7 +450,6 @@ export const MediaPage = () => {
           <p className="font-medium text-ink-800">
             {item.sourceType === "tts" ? "Text-to-speech" : "Upload audio"}
           </p>
-          <p className="mt-1 text-xs text-ink-500">Giọng đọc: {item.voiceType}</p>
           <p className="mt-1 truncate text-xs text-ink-500">
             {item.audioUrl || "Chưa có file audio"}
           </p>
@@ -705,23 +699,6 @@ export const MediaPage = () => {
                   >
                     <option value="uploaded">Uploaded</option>
                     <option value="tts">Text-to-speech</option>
-                  </Select>
-                </div>
-                <div>
-                  <label className="field-label">Giọng đọc</label>
-                  <Select
-                    value={audioForm.voiceType}
-                    onChange={(event) =>
-                      setAudioForm((current) => ({
-                        ...current,
-                        voiceType: event.target.value as AudioGuide["voiceType"],
-                      }))
-                    }
-                  >
-                    <option value="standard">Standard</option>
-                    <option value="north">North</option>
-                    <option value="central">Central</option>
-                    <option value="south">South</option>
                   </Select>
                 </div>
               </div>

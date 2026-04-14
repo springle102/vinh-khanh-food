@@ -267,7 +267,6 @@ public sealed class BootstrapLocalizationService(
                 FullText = FullText,
                 SeoTitle = LocalizationContentPolicy.CleanForLanguage(_existing?.SeoTitle, targetLanguageCode) ?? string.Empty,
                 SeoDescription = LocalizationContentPolicy.CleanForLanguage(_existing?.SeoDescription, targetLanguageCode) ?? string.Empty,
-                IsPremium = false,
                 UpdatedBy = string.IsNullOrWhiteSpace(_existing?.UpdatedBy) ? "auto-translation" : _existing.UpdatedBy,
                 UpdatedAt = _existing?.UpdatedAt ?? DateTimeOffset.UtcNow
             };

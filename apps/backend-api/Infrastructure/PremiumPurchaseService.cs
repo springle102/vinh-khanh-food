@@ -15,10 +15,7 @@ public sealed class PremiumPurchaseService(
             ?? throw new InvalidOperationException("Khong tim thay khach hang de kich hoat Premium.");
 
         var normalizedRequest = ValidateAndNormalizeRequest(request);
-        var settings = repository.GetSettings();
-        var premiumPriceUsd = settings.PremiumUnlockPriceUsd > 0
-            ? settings.PremiumUnlockPriceUsd
-            : PremiumAccessCatalog.DefaultPremiumPriceUsd;
+        var premiumPriceUsd = PremiumAccessCatalog.DefaultPremiumPriceUsd;
 
         if (normalizedRequest.ExpectedPriceUsd.HasValue &&
             normalizedRequest.ExpectedPriceUsd.Value > 0 &&
