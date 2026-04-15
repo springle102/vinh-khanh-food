@@ -21,6 +21,7 @@ public static class AppRoutes
 {
     public const string Login = "LoginPage";
     public const string HomeMap = "HomeMapPage";
+    public const string DiscoverTours = "DiscoverToursPage";
     public const string MyTour = "MyTourPage";
     public const string QrScanner = "QrScannerPage";
     public const string LanguageSelection = "LanguageSelectionPage";
@@ -58,7 +59,7 @@ public static class AppRoutes
         var normalizedRoute = NormalizeShellRoute(route);
         return normalizedRoute switch
         {
-            HomeMap or "HomePage" or "MapPage" or "PoiListPage" or "PoiDetailPage" => AppBottomBarTab.Poi,
+            HomeMap or DiscoverTours or "HomePage" or "MapPage" or "PoiListPage" or "PoiDetailPage" => AppBottomBarTab.Poi,
             QrScanner => AppBottomBarTab.QrScanner,
             Settings => AppBottomBarTab.Settings,
             _ => AppBottomBarTab.None

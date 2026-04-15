@@ -26,9 +26,12 @@ public static class MauiProgram
         builder.Services.AddSingleton<IPoiNarrationService, PoiNarrationService>();
         builder.Services.AddSingleton<IVirtualLocationService, VirtualLocationService>();
         builder.Services.AddSingleton<IPoiProximityService, PoiProximityService>();
+        builder.Services.AddSingleton<ITourStateService, TourStateService>();
         builder.Services.AddSingleton<AppBottomBarViewModel>();
 
         builder.Services.AddTransient<HomeMapViewModel>();
+        builder.Services.AddTransient<DiscoverToursViewModel>();
+        builder.Services.AddTransient<MyTourViewModel>();
         builder.Services.AddTransient<QrScannerViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
 

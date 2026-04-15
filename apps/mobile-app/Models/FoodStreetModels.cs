@@ -140,6 +140,7 @@ public sealed class TourStop
 
 public sealed class TourCheckpoint
 {
+    public string PoiId { get; set; } = string.Empty;
     public int Order { get; set; }
     public string Title { get; set; } = string.Empty;
     public string DistanceText { get; set; } = string.Empty;
@@ -148,14 +149,94 @@ public sealed class TourCheckpoint
 
 public sealed class TourPlan
 {
+    public string Id { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Theme { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string CoverImageUrl { get; set; } = string.Empty;
+    public string DurationText { get; set; } = string.Empty;
     public double ProgressValue { get; set; }
     public string ProgressText { get; set; } = string.Empty;
     public string SummaryText { get; set; } = string.Empty;
     public IReadOnlyList<TourStop> Stops { get; set; } = Array.Empty<TourStop>();
     public IReadOnlyList<TourCheckpoint> Checkpoints { get; set; } = Array.Empty<TourCheckpoint>();
+}
+
+public sealed class TourCatalogItem : ObservableObject
+{
+    private bool _isPreviewing;
+    private bool _isActiveSession;
+    private string _statusText = string.Empty;
+
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Theme { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string CoverImageUrl { get; set; } = string.Empty;
+    public string DurationText { get; set; } = string.Empty;
+    public string StopCountText { get; set; } = string.Empty;
+    public IReadOnlyList<string> StopPoiIds { get; set; } = Array.Empty<string>();
+
+    public bool IsPreviewing
+    {
+        get => _isPreviewing;
+        set => SetProperty(ref _isPreviewing, value);
+    }
+
+    public bool IsActiveSession
+    {
+        get => _isActiveSession;
+        set => SetProperty(ref _isActiveSession, value);
+    }
+
+    public string StatusText
+    {
+        get => _statusText;
+        set
+        {
+            if (SetProperty(ref _statusText, value))
+            {
+                OnPropertyChanged(nameof(HasStatusText));
+            }
+        }
+    }
+
+    public bool HasStatusText => !string.IsNullOrWhiteSpace(StatusText);
+}
+
+public enum TourExperienceMode
+{
+    Free,
+    Preview,
+    Active
+}
+
+public sealed class TourSessionState
+{
+    public string TourId { get; set; } = string.Empty;
+    public List<string> CompletedPoiIds { get; set; } = [];
+    public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class TourMapOverlayState
+{
+    public string Id { get; set; } = string.Empty;
+    public string Mode { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public List<string> StopPoiIds { get; set; } = [];
+    public Dictionary<string, int> StopOrderByPoiId { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<TourMapCheckpoint> Checkpoints { get; set; } = [];
+}
+
+public sealed class TourMapCheckpoint
+{
+    public string PoiId { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public int Order { get; set; }
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public bool IsCompleted { get; set; }
 }
 
 public sealed class UserProfileCard

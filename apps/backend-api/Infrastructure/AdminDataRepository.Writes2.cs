@@ -73,6 +73,73 @@ public sealed partial class AdminDataRepository
         return null;
     }
 
+    private string? ResolvePoiIdForContentEntity(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string? entityType,
+        string? entityId)
+        => ResolvePoiForContentEntity(connection, transaction, entityType, entityId)?.Id;
+
+    private void TouchPoiUpdatedAt(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string? poiId,
+        DateTimeOffset updatedAt)
+    {
+        if (string.IsNullOrWhiteSpace(poiId))
+        {
+            return;
+        }
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.Pois
+            SET UpdatedAt = ?
+            WHERE Id = ?;
+            """,
+            updatedAt,
+            poiId);
+    }
+
+    private void TouchPoiUpdatedAt(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        DateTimeOffset updatedAt,
+        params string?[] poiIds)
+    {
+        var touchedPoiIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var poiId in poiIds)
+        {
+            var normalizedPoiId = poiId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedPoiId) ||
+                !touchedPoiIds.Add(normalizedPoiId))
+            {
+                continue;
+            }
+
+            TouchPoiUpdatedAt(connection, transaction, normalizedPoiId, updatedAt);
+        }
+    }
+
+    private void TouchRelatedPoisForContentEntityChange(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string? previousEntityType,
+        string? previousEntityId,
+        string? nextEntityType,
+        string? nextEntityId,
+        DateTimeOffset updatedAt)
+    {
+        TouchPoiUpdatedAt(
+            connection,
+            transaction,
+            updatedAt,
+            ResolvePoiIdForContentEntity(connection, transaction, previousEntityType, previousEntityId),
+            ResolvePoiIdForContentEntity(connection, transaction, nextEntityType, nextEntityId));
+    }
+
     private static string NormalizePoiContentEntityType(string? entityType)
     {
         var normalizedEntityType = entityType?.Trim() ?? string.Empty;
@@ -175,10 +242,11 @@ public sealed partial class AdminDataRepository
         using var transaction = connection.BeginTransaction();
         EnsureActorCanManagePoiContentEntity(connection, transaction, actor, request.EntityType, request.EntityId, "chỉnh sửa media của POI");
 
+        var now = DateTimeOffset.UtcNow;
         var existing = !string.IsNullOrWhiteSpace(id) ? GetMediaAssetById(connection, transaction, id) : null;
         var isNew = existing is null;
         var mediaId = existing?.Id ?? id ?? CreateId("media");
-        var createdAt = existing?.CreatedAt ?? DateTimeOffset.UtcNow;
+        var createdAt = existing?.CreatedAt ?? now;
 
         _logger.LogInformation(
             "SaveMediaAsset request received. mediaId={MediaId}, entityType={EntityType}, entityId={EntityId}, mediaType={MediaType}, isNew={IsNew}",
@@ -227,6 +295,15 @@ public sealed partial class AdminDataRepository
                 mediaId);
         }
 
+        TouchRelatedPoisForContentEntityChange(
+            connection,
+            transaction,
+            existing?.EntityType,
+            existing?.EntityId,
+            request.EntityType,
+            request.EntityId,
+            now);
+
         AppendAdminAuditLog(
             connection,
             transaction,
@@ -256,11 +333,21 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        var now = DateTimeOffset.UtcNow;
         var existing = GetMediaAssetById(connection, transaction, id);
         EnsureActorCanManagePoiContentEntity(connection, transaction, actor, existing?.EntityType, existing?.EntityId, "xóa media của POI");
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.MediaAssets WHERE Id = ?;", id) > 0;
         if (deleted)
         {
+            TouchRelatedPoisForContentEntityChange(
+                connection,
+                transaction,
+                existing?.EntityType,
+                existing?.EntityId,
+                null,
+                null,
+                now);
+
             AppendAdminAuditLog(
                 connection,
                 transaction,
@@ -280,6 +367,7 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        var now = DateTimeOffset.UtcNow;
         var existing = !string.IsNullOrWhiteSpace(id) ? GetFoodItemById(connection, transaction, id) : null;
         var targetPoi = GetPoiById(connection, transaction, request.PoiId)
             ?? (existing is null ? null : GetPoiById(connection, transaction, existing.PoiId));
@@ -328,6 +416,8 @@ public sealed partial class AdminDataRepository
                 foodId);
         }
 
+        TouchPoiUpdatedAt(connection, transaction, now, existing?.PoiId, request.PoiId);
+
         AppendAdminAuditLog(
             connection,
             transaction,
@@ -349,12 +439,15 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        var now = DateTimeOffset.UtcNow;
         var existing = GetFoodItemById(connection, transaction, id);
         var targetPoi = existing is null ? null : GetPoiById(connection, transaction, existing.PoiId);
         EnsureActorCanManagePoiContent(connection, transaction, actor, targetPoi, "xóa món ăn của POI");
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.FoodItems WHERE Id = ?;", id) > 0;
         if (deleted)
         {
+            TouchPoiUpdatedAt(connection, transaction, existing?.PoiId, now);
+
             AppendAdminAuditLog(
                 connection,
                 transaction,
@@ -558,6 +651,7 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        var now = DateTimeOffset.UtcNow;
         var existing = !string.IsNullOrWhiteSpace(id) ? GetPromotionById(connection, transaction, id) : null;
         var isNew = existing is null;
         var promotionId = existing?.Id ?? id ?? CreateId("promo");
@@ -603,6 +697,8 @@ public sealed partial class AdminDataRepository
                 promotionId);
         }
 
+        TouchPoiUpdatedAt(connection, transaction, now, existing?.PoiId, request.PoiId);
+
         AppendAdminAuditLog(
             connection,
             transaction,
@@ -624,6 +720,7 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        var now = DateTimeOffset.UtcNow;
         var existing = GetPromotionById(connection, transaction, id);
         var deleted = ExecuteNonQuery(
             connection,
@@ -633,6 +730,8 @@ public sealed partial class AdminDataRepository
             id) > 0;
         if (deleted)
         {
+            TouchPoiUpdatedAt(connection, transaction, existing?.PoiId, now);
+
             AppendAdminAuditLog(
                 connection,
                 transaction,

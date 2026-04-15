@@ -54,6 +54,67 @@
 
                     <Border
                         Grid.Row="1"
+                        Grid.ColumnSpan="2"
+                        BackgroundColor="#FFF4E8"
+                        IsVisible="{Binding HasVisibleTour}"
+                        Padding="12,10"
+                        Stroke="#F1D2AE"
+                        StrokeShape="RoundRectangle 18">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                            <Border
+                                WidthRequest="28"
+                                HeightRequest="28"
+                                BackgroundColor="#F59E0B"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 14"
+                                VerticalOptions="Center">
+                                <Label
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="12"
+                                    HorizontalTextAlignment="Center"
+                                    Text="T"
+                                    TextColor="White"
+                                    VerticalTextAlignment="Center" />
+                            </Border>
+
+                            <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                <Label
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="13"
+                                    LineBreakMode="TailTruncation"
+                                    Text="{Binding TourBannerText}"
+                                    TextColor="{StaticResource BrandTextPrimary}" />
+                                <Label
+                                    FontSize="11"
+                                    LineBreakMode="TailTruncation"
+                                    Text="{Binding TourBannerMetaText}"
+                                    TextColor="{StaticResource BrandTextSecondary}" />
+                            </VerticalStackLayout>
+
+                            <Border
+                                Grid.Column="2"
+                                WidthRequest="28"
+                                HeightRequest="28"
+                                BackgroundColor="#FFFFFF"
+                                Stroke="#F1D2AE"
+                                StrokeShape="RoundRectangle 14"
+                                VerticalOptions="Center">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ExitTourModeCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="12"
+                                    HorizontalTextAlignment="Center"
+                                    Text="X"
+                                    TextColor="#A85D10"
+                                    VerticalTextAlignment="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <Border
+                        Grid.Row="2"
                         Grid.Column="0"
                         HorizontalOptions="Start"
                         Style="{StaticResource MapChipStyle}">
@@ -73,7 +134,7 @@
                     </Border>
 
                     <Border
-                        Grid.Row="1"
+                        Grid.Row="2"
                         Grid.Column="1"
                         HorizontalOptions="End"
                         MinimumWidthRequest="74"
@@ -93,7 +154,7 @@
                     <VerticalStackLayout
                         Grid.Row="2"
                         Grid.Column="1"
-                        Margin="0,0,0,12"
+                        Margin="0,56,0,12"
                         HorizontalOptions="End"
                         Spacing="12"
                         VerticalOptions="End">
@@ -128,28 +189,263 @@
                         Margin="0,0,0,12"
                         HorizontalOptions="End"
                         IsVisible="{Binding IsFloatingPoiActionVisible}"
-                        MinimumWidthRequest="132"
+                        MinimumWidthRequest="196"
                         Style="{StaticResource MapPrimaryFloatingActionStyle}">
-                        <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="8" HeightRequest="54">
-                            <Label
-                                FontSize="17"
-                                HorizontalTextAlignment="Center"
-                                Text="⌕"
-                                TextColor="White"
-                                VerticalTextAlignment="Center" />
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" HeightRequest="54">
+                            <Grid WidthRequest="22" HeightRequest="22" VerticalOptions="Center">
+                                <Path
+                                    Data="M 4 17 C 6 15, 7 12, 10 10 C 12 8, 14 9, 18 5"
+                                    Stroke="White"
+                                    StrokeLineCap="Round"
+                                    StrokeLineJoin="Round"
+                                    StrokeThickness="1.8" />
+                                <Border
+                                    WidthRequest="6"
+                                    HeightRequest="6"
+                                    BackgroundColor="White"
+                                    HorizontalOptions="Start"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 3"
+                                    TranslationX="1"
+                                    TranslationY="12"
+                                    VerticalOptions="Start" />
+                                <Border
+                                    WidthRequest="6"
+                                    HeightRequest="6"
+                                    BackgroundColor="White"
+                                    HorizontalOptions="Start"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 3"
+                                    TranslationX="8"
+                                    TranslationY="8"
+                                    VerticalOptions="Start" />
+                                <Border
+                                    WidthRequest="6"
+                                    HeightRequest="6"
+                                    BackgroundColor="White"
+                                    HorizontalOptions="Start"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 3"
+                                    TranslationX="16"
+                                    TranslationY="2"
+                                    VerticalOptions="Start" />
+                            </Grid>
                             <Label
                                 Grid.Column="1"
                                 FontFamily="OpenSansSemibold"
                                 FontSize="15"
-                                Text="{Binding PoiActionText}"
+                                LineBreakMode="NoWrap"
+                                Text="{Binding TourEntryActionText}"
                                 TextColor="White"
                                 VerticalTextAlignment="Center" />
                         </Grid>
                         <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnNextPoiTapped" />
+                            <TapGestureRecognizer Command="{Binding OpenDiscoverToursCommand}" />
                         </Border.GestureRecognizers>
                     </Border>
                 </Grid>
+            </Grid>
+
+            <Grid
+                x:Name="TourPanelOverlay"
+                IsVisible="False"
+                Margin="16,0,16,20"
+                VerticalOptions="End">
+                <Border
+                    x:Name="TourPanelCard"
+                    BackgroundColor="#F2FFFDFC"
+                    Opacity="0"
+                    Padding="0"
+                    Stroke="#D8EADFD3"
+                    StrokeShape="RoundRectangle 26"
+                    TranslationY="28"
+                    VerticalOptions="End">
+                    <Border.Shadow>
+                        <Shadow Brush="#24111722" Offset="0,8" Radius="22" Opacity="0.16" />
+                    </Border.Shadow>
+
+                    <Grid RowDefinitions="Auto,Auto">
+                        <Grid
+                            x:Name="TourPanelHeader"
+                            Padding="14,10,14,14"
+                            RowDefinitions="Auto,Auto"
+                            RowSpacing="10">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnTourPanelHeaderTapped" />
+                                <PanGestureRecognizer PanUpdated="OnTourPanelPanUpdated" />
+                            </Grid.GestureRecognizers>
+
+                            <Border
+                                x:Name="TourPanelGrabber"
+                                BackgroundColor="#E2D7CB"
+                                HeightRequest="5"
+                                HorizontalOptions="Center"
+                                Opacity="0.9"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 3"
+                                WidthRequest="48" />
+
+                            <Grid
+                                Grid.Row="1"
+                                ColumnDefinitions="Auto,*,Auto"
+                                ColumnSpacing="12">
+                                <Border
+                                    WidthRequest="38"
+                                    HeightRequest="38"
+                                    BackgroundColor="#FFF3E8"
+                                    Stroke="#F1D2AE"
+                                    StrokeShape="RoundRectangle 19"
+                                    VerticalOptions="Center">
+                                    <Label
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="12"
+                                        HorizontalTextAlignment="Center"
+                                        Text="{Binding TourPanelModeText}"
+                                        TextColor="#A85D10"
+                                        VerticalTextAlignment="Center" />
+                                </Border>
+
+                                <VerticalStackLayout Grid.Column="1" Spacing="3" VerticalOptions="Center">
+                                    <Label
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="17"
+                                        LineBreakMode="TailTruncation"
+                                        Text="{Binding TourPanelTitleText}"
+                                        TextColor="{StaticResource BrandTextPrimary}" />
+                                    <Label
+                                        FontSize="12"
+                                        LineBreakMode="TailTruncation"
+                                        MaxLines="1"
+                                        Text="{Binding TourBannerMetaText}"
+                                        TextColor="{StaticResource BrandTextSecondary}" />
+                                </VerticalStackLayout>
+
+                                <Button
+                                    x:Name="TourPanelPrimaryButton"
+                                    Grid.Column="2"
+                                    BackgroundColor="{StaticResource BrandPrimary}"
+                                    Command="{Binding StartTourCommand}"
+                                    CornerRadius="18"
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="12"
+                                    MinimumHeightRequest="44"
+                                    MinimumWidthRequest="96"
+                                    Padding="18,10"
+                                    Text="{Binding TourPanelPrimaryActionText}"
+                                    TextColor="White"
+                                    VerticalOptions="Center" />
+                            </Grid>
+                        </Grid>
+
+                        <Grid
+                            x:Name="TourPanelExpandedContent"
+                            Grid.Row="1"
+                            IsVisible="False"
+                            Opacity="0"
+                            Padding="14,0,14,14"
+                            RowDefinitions="Auto,Auto,Auto"
+                            RowSpacing="10"
+                            TranslationY="10">
+                            <Grid
+                                Grid.Row="0"
+                                ColumnDefinitions="*,Auto"
+                                ColumnSpacing="10">
+                                <Label
+                                    FontSize="13"
+                                    LineBreakMode="TailTruncation"
+                                    MaxLines="2"
+                                    Text="{Binding TourPanelDescriptionText}"
+                                    TextColor="{StaticResource BrandTextSecondary}"
+                                    VerticalOptions="Center" />
+
+                                <Border
+                                    Grid.Column="1"
+                                    BackgroundColor="#FFF5EA"
+                                    IsVisible="{Binding HasActiveSavedTour}"
+                                    Padding="10,6"
+                                    Stroke="#F1D2AE"
+                                    StrokeShape="RoundRectangle 14"
+                                    VerticalOptions="Start">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding OpenMyTourCommand}" />
+                                    </Border.GestureRecognizers>
+                                    <Label
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="11"
+                                        Text="{Binding OpenMyTourActionText}"
+                                        TextColor="#A85D10" />
+                                </Border>
+                            </Grid>
+
+                            <Grid
+                                Grid.Row="1"
+                                ColumnDefinitions="*,*"
+                                ColumnSpacing="10">
+                                <Button
+                                    Grid.Column="0"
+                                    BackgroundColor="#FAF6F0"
+                                    BorderColor="#E6DCCE"
+                                    BorderWidth="1"
+                                    Command="{Binding ShowAllPlacesCommand}"
+                                    CornerRadius="16"
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="12"
+                                    MinimumHeightRequest="44"
+                                    Padding="14,10"
+                                    Text="{Binding ViewAllPlacesText}"
+                                    TextColor="{StaticResource BrandTextPrimary}" />
+
+                                <Button
+                                    Grid.Column="1"
+                                    BackgroundColor="#FAF6F0"
+                                    BorderColor="#E6DCCE"
+                                    BorderWidth="1"
+                                    Command="{Binding ChangeTourCommand}"
+                                    CornerRadius="16"
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="12"
+                                    MinimumHeightRequest="44"
+                                    Padding="14,10"
+                                    Text="{Binding ChangeTourText}"
+                                    TextColor="{StaticResource BrandTextPrimary}" />
+                            </Grid>
+
+                            <Grid
+                                Grid.Row="2"
+                                ColumnDefinitions="*,*"
+                                ColumnSpacing="10"
+                                IsVisible="{Binding IsTourActiveMode}">
+                                <Button
+                                    Grid.Column="0"
+                                    BackgroundColor="#FFF6EE"
+                                    BorderColor="#F1D2AE"
+                                    BorderWidth="1"
+                                    Command="{Binding PauseTourCommand}"
+                                    CornerRadius="16"
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="12"
+                                    MinimumHeightRequest="44"
+                                    Padding="14,10"
+                                    Text="{Binding PauseTourActionText}"
+                                    TextColor="#A85D10" />
+
+                                <Button
+                                    Grid.Column="1"
+                                    BackgroundColor="#FFF6EE"
+                                    BorderColor="#F1D2AE"
+                                    BorderWidth="1"
+                                    Command="{Binding ExitTourModeCommand}"
+                                    CornerRadius="16"
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="12"
+                                    MinimumHeightRequest="44"
+                                    Padding="14,10"
+                                    Text="{Binding ExitTourActionText}"
+                                    TextColor="#A85D10" />
+                            </Grid>
+                        </Grid>
+                    </Grid>
+                </Border>
             </Grid>
 
             <controls:POIDetailBottomSheet

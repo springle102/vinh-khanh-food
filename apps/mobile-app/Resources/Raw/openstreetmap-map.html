@@ -34,8 +34,8 @@
 
     .poi-marker {
       position: relative;
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
     }
 
     .poi-marker__halo {
@@ -44,6 +44,43 @@
       border-radius: 9999px;
       transform: scale(1.7);
       transition: transform 120ms ease, opacity 120ms ease;
+    }
+
+    .poi-marker__dot {
+      position: absolute;
+      inset: 0;
+      border-radius: 9999px;
+      border: 3px solid #ffffff;
+      box-shadow: 0 10px 18px rgba(15, 23, 42, 0.20);
+      transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+    }
+
+    .poi-marker__order {
+      position: absolute;
+      right: -7px;
+      top: -8px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 3px;
+      border-radius: 9999px;
+      background: #fff7ed;
+      border: 1px solid rgba(217, 119, 6, 0.35);
+      color: #9a3412;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .poi-marker.muted .poi-marker__dot,
+    .poi-marker.muted .poi-marker__halo {
+      opacity: 0.54;
+    }
+
+    .poi-marker.in-tour .poi-marker__dot {
+      box-shadow: 0 12px 20px rgba(217, 119, 6, 0.22);
     }
 
     @keyframes selected-marker-pulse {
@@ -95,15 +132,6 @@
         transform: scale(0.84);
         opacity: 0.8;
       }
-    }
-
-    .poi-marker__dot {
-      position: absolute;
-      inset: 0;
-      border-radius: 9999px;
-      border: 3px solid #ffffff;
-      box-shadow: 0 10px 18px rgba(15, 23, 42, 0.20);
-      transition: transform 120ms ease, box-shadow 120ms ease;
     }
 
     .poi-marker.selected .poi-marker__halo {
@@ -165,6 +193,15 @@
       background: radial-gradient(circle, rgba(244, 88, 34, 0.60) 0%, rgba(255, 177, 56, 0.34) 30%, rgba(255, 200, 76, 0.16) 54%, rgba(255, 200, 76, 0) 74%);
       filter: blur(1.6px);
       pointer-events: none;
+    }
+
+    .tour-checkpoint-label {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      color: #9a3412;
+      font-size: 10px;
+      font-weight: 700;
     }
 
     .leaflet-popup-content-wrapper {
@@ -247,24 +284,65 @@
     let selectedPoiId = state.selectedPoiId ?? null;
     let activePoiId = state.activePoiId ?? null;
     let virtualUserState = state.virtualUser ?? null;
+    let currentTour = state.currentTour ?? null;
+    let viewportInsets = {
+      browseTop: 180,
+      browseBottom: 168,
+      tourTop: 230,
+      tourBottom: 210
+    };
     let userMarker = null;
+    let tourRouteLayer = null;
+    const tourCheckpointLayers = [];
 
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap contributors"
     }).addTo(map);
 
-    const createPoiIcon = (poi, selected, active) => {
-      const color = active ? "#ea580c" : selected ? "#0f766e" : poi.isFeatured ? "#f97316" : "#1f2937";
-      const halo = active ? "rgba(234, 88, 12, 0.24)" : selected ? "rgba(15, 118, 110, 0.18)" : "rgba(31, 41, 55, 0.12)";
-      const classes = ["poi-marker"];
-      if (selected) {
-        classes.push("selected");
+    const hasVisibleTour = () =>
+      Boolean(currentTour && Array.isArray(currentTour.stopPoiIds) && currentTour.stopPoiIds.length);
+
+    const getTourPoiSet = () => new Set((currentTour?.stopPoiIds ?? []).map((item) => String(item)));
+
+    const getTourStopOrder = (poiId) => {
+      if (!currentTour || !currentTour.stopOrderByPoiId) {
+        return null;
       }
 
-      if (active) {
+      return currentTour.stopOrderByPoiId[poiId] ?? null;
+    };
+
+    const createPoiIcon = (poi, selected, active) => {
+      const isTourVisible = hasVisibleTour();
+      const inTour = isTourVisible && getTourPoiSet().has(poi.id);
+      const order = inTour ? getTourStopOrder(poi.id) : null;
+      const classes = ["poi-marker"];
+
+      let color = poi.isFeatured ? "#f97316" : "#1f2937";
+      let halo = "rgba(31, 41, 55, 0.12)";
+
+      if (selected) {
+        color = "#0f766e";
+        halo = "rgba(15, 118, 110, 0.18)";
+        classes.push("selected");
+      } else if (active) {
+        color = "#ea580c";
+        halo = "rgba(234, 88, 12, 0.24)";
         classes.push("active");
+      } else if (inTour) {
+        color = currentTour.mode === "active" ? "#c2410c" : "#f59e0b";
+        halo = currentTour.mode === "active" ? "rgba(194, 65, 12, 0.18)" : "rgba(245, 158, 11, 0.18)";
+        classes.push("in-tour");
+      } else if (isTourVisible) {
+        color = "#94a3b8";
+        halo = "rgba(148, 163, 184, 0.12)";
+        classes.push("muted");
       }
+
+      const orderBadge = order == null
+        ? ""
+        : `<span class="poi-marker__order">${order}</span>`;
 
       return L.divIcon({
         className: "",
@@ -272,9 +350,10 @@
           <div class="${classes.join(" ")}">
             <span class="poi-marker__halo" style="background:${halo};"></span>
             <span class="poi-marker__dot" style="background:${color};"></span>
+            ${orderBadge}
           </div>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11]
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
       });
     };
 
@@ -336,7 +415,64 @@
       </div>`;
     };
 
+    const clearTourLayers = () => {
+      if (tourRouteLayer) {
+        map.removeLayer(tourRouteLayer);
+        tourRouteLayer = null;
+      }
+
+      while (tourCheckpointLayers.length) {
+        map.removeLayer(tourCheckpointLayers.pop());
+      }
+    };
+
+    const refreshTourLayers = () => {
+      clearTourLayers();
+      if (!hasVisibleTour()) {
+        return;
+      }
+
+      const checkpoints = (currentTour.checkpoints || [])
+        .filter((item) => item.latitude != null && item.longitude != null);
+
+      if (checkpoints.length >= 2) {
+        tourRouteLayer = L.polyline(
+          checkpoints.map((item) => [item.latitude, item.longitude]),
+          {
+            color: currentTour.mode === "active" ? "#c2410c" : "#f59e0b",
+            weight: 5,
+            opacity: 0.84,
+            dashArray: currentTour.mode === "preview" ? "12 8" : null,
+            lineCap: "round",
+            lineJoin: "round"
+          }
+        ).addTo(map);
+      }
+
+      checkpoints.forEach((checkpoint) => {
+        const layer = L.circleMarker([checkpoint.latitude, checkpoint.longitude], {
+          radius: checkpoint.isCompleted ? 7 : 6,
+          weight: 2,
+          color: checkpoint.isCompleted ? "#c2410c" : "#f59e0b",
+          fillColor: checkpoint.isCompleted ? "#fdba74" : "#fff7ed",
+          fillOpacity: 0.95,
+          opacity: 0.92
+        }).addTo(map);
+
+        layer.bindTooltip(String(checkpoint.order), {
+          permanent: true,
+          direction: "center",
+          className: "tour-checkpoint-label"
+        });
+
+        tourCheckpointLayers.push(layer);
+      });
+    };
+
     const refreshPoiMarkers = (openPopupForSelection) => {
+      const tourPoiSet = getTourPoiSet();
+      const isTourVisible = hasVisibleTour();
+
       state.pois.forEach((poi) => {
         const marker = poiMarkers.get(poi.id);
         if (!marker) {
@@ -345,7 +481,17 @@
 
         const isSelected = poi.id === selectedPoiId;
         const isActive = poi.id === activePoiId;
+        const isInTour = tourPoiSet.has(poi.id);
+        const isMuted = isTourVisible && !isSelected && !isActive && !isInTour;
+
         marker.setIcon(createPoiIcon(poi, isSelected, isActive));
+        marker.setOpacity(isMuted ? 0.58 : 1);
+        marker.setZIndexOffset(
+          isActive ? 1200 :
+          isSelected ? 1000 :
+          isInTour ? 420 :
+          0
+        );
 
         if (isSelected) {
           if (openPopupForSelection) {
@@ -368,6 +514,33 @@
       activePoiId = poiId;
       refreshPoiMarkers(false);
     };
+
+    const setTourState = (nextTourState) => {
+      currentTour = nextTourState || null;
+      refreshTourLayers();
+      refreshPoiMarkers(false);
+    };
+
+    const setViewportInsets = (nextInsets) => {
+      viewportInsets = {
+        ...viewportInsets,
+        ...(nextInsets || {})
+      };
+    };
+
+    const getBrowseFitOptions = () => ({
+      paddingTopLeft: [22, Math.max(96, viewportInsets.browseTop || 180)],
+      paddingBottomRight: [22, Math.max(96, viewportInsets.browseBottom || 168)],
+      maxZoom: 16,
+      animate: false
+    });
+
+    const getTourFitOptions = () => ({
+      paddingTopLeft: [24, Math.max(120, viewportInsets.tourTop || 230)],
+      paddingBottomRight: [24, Math.max(132, viewportInsets.tourBottom || 210)],
+      maxZoom: 16,
+      animate: false
+    });
 
     const notifyPoiSelected = (poiId, openPopup) => {
       if (!poiId || !poiMarkers.has(poiId)) {
@@ -463,12 +636,32 @@
 
       const bounds = L.latLngBounds(state.pois.map((poi) => [poi.latitude, poi.longitude]));
       if (bounds.isValid()) {
-        map.fitBounds(bounds.pad(0.12), {
-          paddingTopLeft: [22, 92],
-          paddingBottomRight: [22, 150],
-          maxZoom: 16,
+        map.fitBounds(bounds.pad(0.12), getBrowseFitOptions());
+      }
+    };
+
+    const fitToTour = () => {
+      if (!hasVisibleTour()) {
+        return;
+      }
+
+      const checkpoints = (currentTour.checkpoints || [])
+        .filter((item) => item.latitude != null && item.longitude != null);
+
+      if (!checkpoints.length) {
+        return;
+      }
+
+      if (checkpoints.length === 1) {
+        map.flyTo([checkpoints[0].latitude, checkpoints[0].longitude], 16, {
           animate: false
         });
+        return;
+      }
+
+      const bounds = L.latLngBounds(checkpoints.map((item) => [item.latitude, item.longitude]));
+      if (bounds.isValid()) {
+        map.fitBounds(bounds.pad(0.16), getTourFitOptions());
       }
     };
 
@@ -478,7 +671,12 @@
 
     fitMap();
     upsertVirtualUserMarker(virtualUserState);
+    refreshTourLayers();
     refreshPoiMarkers(Boolean(selectedPoiId));
+
+    if (hasVisibleTour()) {
+      fitToTour();
+    }
 
     window.vkFoodMap = {
       selectPoi: (poiId) => {
@@ -506,6 +704,15 @@
             element.style.display = isVisible ? "block" : "none";
           }
         });
+      },
+      setTourState: (nextTourState) => {
+        setTourState(nextTourState);
+      },
+      setViewportInsets: (nextInsets) => {
+        setViewportInsets(nextInsets);
+      },
+      fitToTour: () => {
+        fitToTour();
       },
       flyToCoordinate: (latitude, longitude, zoom, animate) => {
         if (latitude == null || longitude == null) {

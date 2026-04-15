@@ -8,7 +8,7 @@ using VinhKhanh.MobileApp.Services;
 
 namespace VinhKhanh.MobileApp.ViewModels;
 
-public sealed class HomeMapViewModel : LocalizedViewModelBase
+public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 {
     private const double VirtualPoiActivationRadiusMeters = 10d;
     private const double DefaultVirtualLocationLatitudeOffset = 0.00015d;
@@ -31,6 +31,7 @@ public sealed class HomeMapViewModel : LocalizedViewModelBase
     private volatile bool _isNarrationContextActive = true;
     private int _mapDataVersion;
     private int _virtualLocationVersion;
+    private int _syncRefreshInProgress;
     private long _detailRequestVersion;
     private long _virtualLocationRequestVersion;
 
@@ -39,13 +40,16 @@ public sealed class HomeMapViewModel : LocalizedViewModelBase
         IAppLanguageService languageService,
         IPoiNarrationService poiNarrationService,
         IVirtualLocationService virtualLocationService,
-        IPoiProximityService poiProximityService)
+        IPoiProximityService poiProximityService,
+        ITourStateService tourStateService)
         : base(languageService)
     {
         _dataService = dataService;
         _poiNarrationService = poiNarrationService;
         _virtualLocationService = virtualLocationService;
         _poiProximityService = poiProximityService;
+        _tourStateService = tourStateService;
+        InitializeTourCommands();
     }
 
     public ObservableCollection<PoiLocation> Pois { get; } = [];
@@ -103,6 +107,7 @@ public sealed class HomeMapViewModel : LocalizedViewModelBase
             {
                 OnPropertyChanged(nameof(HasVisibleBottomSheet));
                 OnPropertyChanged(nameof(IsFloatingPoiActionVisible));
+                OnPropertyChanged(nameof(IsTourPanelVisible));
             }
         }
     }
@@ -162,12 +167,13 @@ public sealed class HomeMapViewModel : LocalizedViewModelBase
     public bool HasSelectedPoiPromotions => SelectedPoiPromotions.Count > 0;
     public bool ShowSelectedPoiFoodItemsEmptyState => HasSelectedPoiDetail && !IsPoiDetailLoading && !HasSelectedPoiFoodItems;
     public bool ShowSelectedPoiPromotionsEmptyState => HasSelectedPoiDetail && !IsPoiDetailLoading && !HasSelectedPoiPromotions;
-    public bool IsFloatingPoiActionVisible => !HasVisibleBottomSheet;
+    public bool IsFloatingPoiActionVisible => !HasVisibleBottomSheet && !HasVisibleTour;
 
     public string SearchPlaceholderText => LanguageService.GetText("home_search_placeholder");
     public string PoiChipText => LanguageService.GetText("home_poi_chip");
     public string LayerButtonText => LanguageService.GetText("home_layer");
     public string PoiActionText => LanguageService.GetText("bottom_poi");
+    public string TourEntryActionText => LanguageService.GetText("tour_map_entry_action");
     public string ListenActionText => LanguageService.GetText("poi_detail_listen");
     public string DirectionsActionText => LanguageService.GetText("poi_detail_directions");
     public string DetailLoadingText => LanguageService.GetText("poi_detail_loading");
@@ -329,11 +335,38 @@ public sealed class HomeMapViewModel : LocalizedViewModelBase
 
     public async Task LoadAsync(bool autoPlayNarrationForSelection)
     {
+        await _dataService.RefreshDataIfChangedAsync();
+        await ReloadCurrentStateAsync(autoPlayNarrationForSelection);
+    }
+
+    public async Task RefreshIfNeededAsync()
+    {
+        if (Interlocked.Exchange(ref _syncRefreshInProgress, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            if (await _dataService.RefreshDataIfChangedAsync())
+            {
+                await ReloadCurrentStateAsync(autoPlayNarrationForSelection: false);
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _syncRefreshInProgress, 0);
+        }
+    }
+
+    private async Task ReloadCurrentStateAsync(bool autoPlayNarrationForSelection)
+    {
         var currentPoiId = SelectedPoi?.Id;
 
         Pois.ReplaceRange(await _dataService.GetPoisAsync());
         ApplySearch();
         HeatPoints.ReplaceRange(await _dataService.GetHeatPointsAsync());
+        await ReloadTourExperienceAsync();
 
         EnsureVirtualLocationInitialized();
 
@@ -436,6 +469,7 @@ public sealed class HomeMapViewModel : LocalizedViewModelBase
             }
 
             SelectedPoiDetail = detail;
+            await MarkActiveTourPoiVisitedAsync(poi.Id);
 
             try
             {
@@ -549,13 +583,14 @@ public sealed class HomeMapViewModel : LocalizedViewModelBase
 
     private async Task SelectNextPoiAsync()
     {
-        if (Pois.Count == 0)
+        var poiSequence = GetVisibleTourPoiSequence();
+        if (poiSequence.Count == 0)
         {
             return;
         }
 
-        var currentIndex = SelectedPoi is null ? -1 : Pois.IndexOf(SelectedPoi);
-        var nextPoi = Pois[(currentIndex + 1 + Pois.Count) % Pois.Count];
+        var currentIndex = SelectedPoi is null ? -1 : poiSequence.IndexOf(SelectedPoi);
+        var nextPoi = poiSequence[(currentIndex + 1 + poiSequence.Count) % poiSequence.Count];
         await SelectPoiAsync(nextPoi, autoPlayNarration: true);
     }
 

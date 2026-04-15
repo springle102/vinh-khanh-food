@@ -8,14 +8,18 @@ namespace VinhKhanh.MobileApp.ViewModels;
 public sealed class MyTourViewModel : LocalizedViewModelBase
 {
     private readonly IFoodStreetDataService _dataService;
+    private readonly ITourStateService _tourStateService;
     private TourPlan? _tour;
 
     public MyTourViewModel(
         IFoodStreetDataService dataService,
-        IAppLanguageService languageService)
+        IAppLanguageService languageService,
+        ITourStateService tourStateService)
         : base(languageService)
     {
         _dataService = dataService;
+        _tourStateService = tourStateService;
+        OpenMapCommand = new(OpenMapAsync);
     }
 
     public ObservableCollection<TourStop> Stops { get; } = [];
@@ -36,19 +40,34 @@ public sealed class MyTourViewModel : LocalizedViewModelBase
     }
 
     public string HeaderTitleText => LanguageService.GetText("tour_title");
-    public string CreateTourText => LanguageService.GetText("tour_create");
+    public string CreateTourText => LanguageService.GetText("tour_action_resume_on_map");
     public string CheckpointTitleText => LanguageService.GetText("tour_checkpoints");
 
     public double ProgressValue => Tour?.ProgressValue ?? 0;
     public string ProgressText => Tour?.ProgressText ?? "0 / 0";
     public string SummaryText => Tour?.SummaryText ?? string.Empty;
+    public AsyncCommand OpenMapCommand { get; }
 
     public async Task LoadAsync()
     {
-        Tour = await _dataService.GetTourPlanAsync();
+        await _dataService.RefreshDataIfChangedAsync();
+        var activeSession = await _tourStateService.GetActiveTourAsync();
+        Tour = activeSession is not null && !string.IsNullOrWhiteSpace(activeSession.TourId)
+            ? await _dataService.GetTourPlanAsync(activeSession.TourId, activeSession.CompletedPoiIds)
+            : await _dataService.GetTourPlanAsync();
         Stops.ReplaceRange(Tour.Stops);
         Checkpoints.ReplaceRange(Tour.Checkpoints);
         RefreshLocalizedBindings();
+    }
+
+    private async Task OpenMapAsync()
+    {
+        if (Shell.Current is null)
+        {
+            return;
+        }
+
+        await Shell.Current.GoToAsync($"{AppRoutes.Root(AppRoutes.HomeMap)}?resumeActiveTour=true");
     }
 
     protected override async Task ReloadLocalizedStateAsync()

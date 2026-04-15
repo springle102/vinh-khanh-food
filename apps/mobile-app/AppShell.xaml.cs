@@ -1,5 +1,6 @@
 using Microsoft.Maui.ApplicationModel;
 using VinhKhanh.MobileApp.Helpers;
+using VinhKhanh.MobileApp.Pages;
 using VinhKhanh.MobileApp.Services;
 using VinhKhanh.MobileApp.ViewModels;
 
@@ -14,6 +15,8 @@ public partial class AppShell : Shell
     public AppShell(string startupRoute)
     {
         InitializeComponent();
+        Routing.RegisterRoute(AppRoutes.DiscoverTours, typeof(DiscoverToursPage));
+        Routing.RegisterRoute(AppRoutes.MyTour, typeof(MyTourPage));
         _startupRoute = startupRoute;
         _bottomBarViewModel = ServiceHelper.GetService<AppBottomBarViewModel>();
         _languageService = ServiceHelper.GetService<IAppLanguageService>();

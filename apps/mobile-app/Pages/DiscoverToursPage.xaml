@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="VinhKhanh.MobileApp.Pages.DiscoverToursPage"
+    x:Name="PageRoot"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:VinhKhanh.MobileApp.Controls"
+    xmlns:viewModels="clr-namespace:VinhKhanh.MobileApp.ViewModels"
+    x:DataType="viewModels:DiscoverToursViewModel"
+    Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="*,Auto">
+        <ScrollView>
+            <VerticalStackLayout Padding="20,18,20,126" Spacing="18">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                    <Border
+                        BackgroundColor="White"
+                        HeightRequest="48"
+                        Padding="0"
+                        Stroke="#EADFD3"
+                        StrokeShape="RoundRectangle 18"
+                        WidthRequest="48">
+                        <Border.Shadow>
+                            <Shadow Brush="{StaticResource BrandShadow}" Offset="0,4" Radius="12" Opacity="0.08" />
+                        </Border.Shadow>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding BackCommand}" />
+                        </Border.GestureRecognizers>
+                        <Label
+                            FontFamily="OpenSansSemibold"
+                            FontSize="18"
+                            HorizontalTextAlignment="Center"
+                            Text="←"
+                            TextColor="{StaticResource BrandTextPrimary}"
+                            VerticalTextAlignment="Center" />
+                    </Border>
+
+                    <VerticalStackLayout Grid.Column="1" Spacing="4">
+                        <Label
+                            FontFamily="OpenSansSemibold"
+                            FontSize="26"
+                            Text="{Binding HeaderTitleText}"
+                            TextColor="{StaticResource BrandTextPrimary}" />
+                        <Label
+                            FontSize="13"
+                            LineBreakMode="WordWrap"
+                            Text="{Binding HeaderSubtitleText}"
+                            TextColor="{StaticResource BrandTextSecondary}" />
+                    </VerticalStackLayout>
+
+                    <Border
+                        Grid.Column="2"
+                        BackgroundColor="#FFF4E8"
+                        IsVisible="{Binding HasActiveTour}"
+                        Padding="12,8"
+                        Stroke="#F1D2AE"
+                        StrokeShape="RoundRectangle 14"
+                        VerticalOptions="Start">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding OpenMyTourCommand}" />
+                        </Border.GestureRecognizers>
+                        <Label
+                            FontFamily="OpenSansSemibold"
+                            FontSize="11"
+                            Text="{Binding OpenMyTourText}"
+                            TextColor="#A85D10" />
+                    </Border>
+                </Grid>
+
+                <ActivityIndicator
+                    Color="{StaticResource BrandPrimary}"
+                    IsRunning="{Binding IsBusy}"
+                    IsVisible="{Binding IsBusy}"
+                    HorizontalOptions="Center" />
+
+                <Border
+                    IsVisible="{Binding HasActiveTour}"
+                    Style="{StaticResource CardBorderStyle}">
+                    <VerticalStackLayout Spacing="12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label
+                                FontFamily="OpenSansSemibold"
+                                FontSize="18"
+                                Text="{Binding ActiveSectionTitleText}" />
+                            <Label
+                                FontSize="13"
+                                Text="{Binding ActiveSectionSubtitleText}"
+                                TextColor="{StaticResource BrandTextSecondary}" />
+                        </VerticalStackLayout>
+
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <VerticalStackLayout Spacing="4">
+                                <Label
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="17"
+                                    LineBreakMode="TailTruncation"
+                                    Text="{Binding ActiveTourName}" />
+                                <Label
+                                    FontSize="13"
+                                    Text="{Binding ActiveTourMetaText}"
+                                    TextColor="{StaticResource BrandTextSecondary}" />
+                            </VerticalStackLayout>
+
+                            <Border
+                                Grid.Column="1"
+                                BackgroundColor="#FFF4E8"
+                                Padding="10,6"
+                                Stroke="#F1D2AE"
+                                StrokeShape="RoundRectangle 12"
+                                VerticalOptions="Center">
+                                <Label
+                                    FontFamily="OpenSansSemibold"
+                                    FontSize="10"
+                                    Text="{Binding SavedProgressText}"
+                                    TextColor="#A85D10" />
+                            </Border>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <Button
+                                Grid.Column="0"
+                                Command="{Binding ResumeActiveTourCommand}"
+                                Text="{Binding ResumeOnMapText}" />
+                            <Button
+                                Grid.Column="1"
+                                Command="{Binding OpenMyTourCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Text="{Binding OpenMyTourText}" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Label
+                    FontFamily="OpenSansSemibold"
+                    FontSize="18"
+                    IsVisible="{Binding HasTours}"
+                    Text="{Binding SectionTitleText}" />
+
+                <Border
+                    IsVisible="{Binding ShowEmptyState}"
+                    Style="{StaticResource CardBorderStyle}">
+                    <VerticalStackLayout Spacing="6">
+                        <Label
+                            FontFamily="OpenSansSemibold"
+                            FontSize="18"
+                            Text="{Binding EmptyTitleText}" />
+                        <Label
+                            FontSize="13"
+                            Text="{Binding EmptySubtitleText}"
+                            TextColor="{StaticResource BrandTextSecondary}" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <VerticalStackLayout
+                    BindableLayout.ItemsSource="{Binding Tours}"
+                    IsVisible="{Binding HasTours}"
+                    Spacing="14">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="viewModels:TourDiscoverCardViewModel">
+                            <Border Style="{StaticResource CardBorderStyle}">
+                                <VerticalStackLayout Spacing="14">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                        <VerticalStackLayout Spacing="4">
+                                            <Label
+                                                FontFamily="OpenSansSemibold"
+                                                FontSize="11"
+                                                IsVisible="{Binding HasTheme}"
+                                                Text="{Binding Theme}"
+                                                TextColor="{StaticResource BrandPrimary}" />
+                                            <Label
+                                                FontFamily="OpenSansSemibold"
+                                                FontSize="20"
+                                                LineBreakMode="TailTruncation"
+                                                Text="{Binding Name}" />
+                                        </VerticalStackLayout>
+
+                                        <Border
+                                            Grid.Column="1"
+                                            BackgroundColor="{Binding StatusBackgroundColor}"
+                                            IsVisible="{Binding HasStatusText}"
+                                            Padding="10,6"
+                                            StrokeThickness="0"
+                                            StrokeShape="RoundRectangle 12"
+                                            VerticalOptions="Start">
+                                            <Label
+                                                FontFamily="OpenSansSemibold"
+                                                FontSize="10"
+                                                Text="{Binding StatusText}"
+                                                TextColor="{Binding StatusTextColor}" />
+                                        </Border>
+                                    </Grid>
+
+                                    <VerticalStackLayout Spacing="6">
+                                        <Label
+                                            FontSize="14"
+                                            LineBreakMode="WordWrap"
+                                            MaxLines="3"
+                                            Text="{Binding Description}" />
+                                        <Label
+                                            FontSize="12"
+                                            IsVisible="{Binding HasSupportingText}"
+                                            LineBreakMode="WordWrap"
+                                            MaxLines="2"
+                                            Text="{Binding SupportingText}"
+                                            TextColor="{StaticResource BrandTextSecondary}" />
+                                    </VerticalStackLayout>
+
+                                    <HorizontalStackLayout Spacing="8">
+                                        <Border
+                                            BackgroundColor="#FBF5ED"
+                                            Padding="10,6"
+                                            Stroke="#EEE2D6"
+                                            StrokeShape="RoundRectangle 12">
+                                            <Label
+                                                FontFamily="OpenSansSemibold"
+                                                FontSize="11"
+                                                Text="{Binding DurationText}"
+                                                TextColor="#7A5130" />
+                                        </Border>
+
+                                        <Border
+                                            BackgroundColor="#FBF5ED"
+                                            Padding="10,6"
+                                            Stroke="#EEE2D6"
+                                            StrokeShape="RoundRectangle 12">
+                                            <Label
+                                                FontFamily="OpenSansSemibold"
+                                                FontSize="11"
+                                                Text="{Binding StopCountText}"
+                                                TextColor="#7A5130" />
+                                        </Border>
+
+                                        <Border
+                                            BackgroundColor="#FFF4E8"
+                                            IsVisible="{Binding HasProgressText}"
+                                            Padding="10,6"
+                                            Stroke="#F1D2AE"
+                                            StrokeShape="RoundRectangle 12">
+                                            <Label
+                                                FontFamily="OpenSansSemibold"
+                                                FontSize="11"
+                                                Text="{Binding ProgressText}"
+                                                TextColor="#A85D10" />
+                                        </Border>
+                                    </HorizontalStackLayout>
+
+                                    <Border
+                                        BackgroundColor="#FBF6EF"
+                                        IsVisible="{Binding HasHighlightStops}"
+                                        Padding="12,10"
+                                        Stroke="#EFE2D5"
+                                        StrokeShape="RoundRectangle 16">
+                                        <VerticalStackLayout Spacing="4">
+                                            <Label
+                                                FontFamily="OpenSansSemibold"
+                                                FontSize="12"
+                                                Text="{Binding BindingContext.HighlightsTitleText, Source={x:Reference PageRoot}}"
+                                                TextColor="{StaticResource BrandTextPrimary}" />
+                                            <Label
+                                                FontSize="12"
+                                                LineBreakMode="WordWrap"
+                                                Text="{Binding HighlightStopsText}"
+                                                TextColor="{StaticResource BrandTextSecondary}" />
+                                        </VerticalStackLayout>
+                                    </Border>
+
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                                        <Button
+                                            Grid.Column="0"
+                                            Command="{Binding BindingContext.SecondaryActionCommand, Source={x:Reference PageRoot}}"
+                                            CommandParameter="{Binding .}"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Text="{Binding SecondaryActionText}" />
+                                        <Button
+                                            Grid.Column="1"
+                                            Command="{Binding BindingContext.PrimaryActionCommand, Source={x:Reference PageRoot}}"
+                                            CommandParameter="{Binding .}"
+                                            Text="{Binding PrimaryActionText}" />
+                                    </Grid>
+                                </VerticalStackLayout>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <controls:AppBottomBar Grid.Row="1" />
+    </Grid>
+</ContentPage>

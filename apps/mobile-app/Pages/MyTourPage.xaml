@@ -23,7 +23,7 @@
             <ScrollView>
                 <VerticalStackLayout Padding="24,26,24,130" Spacing="16">
                     <Label HorizontalTextAlignment="Center" Text="{Binding HeaderTitleText}" FontFamily="OpenSansSemibold" FontSize="24" />
-                    <Button Margin="0,6,0,10" HorizontalOptions="Fill" Text="{Binding CreateTourText}" />
+                    <Button Margin="0,6,0,10" HorizontalOptions="Fill" Command="{Binding OpenMapCommand}" Text="{Binding CreateTourText}" />
 
                     <Border Margin="0,-4,0,0" Style="{StaticResource CardBorderStyle}">
                         <VerticalStackLayout BindableLayout.ItemsSource="{Binding Stops}" Spacing="10">

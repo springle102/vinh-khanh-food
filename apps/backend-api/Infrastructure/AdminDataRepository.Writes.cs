@@ -1005,6 +1005,15 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                 translationId);
         }
 
+        TouchRelatedPoisForContentEntityChange(
+            connection,
+            transaction,
+            existing?.EntityType,
+            existing?.EntityId,
+            normalizedEntityType,
+            request.EntityId,
+            now);
+
         AppendAdminAuditLog(
             connection,
             transaction,
@@ -1034,11 +1043,21 @@ public bool DeletePoi(string id, AdminRequestContext actor)
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        var now = DateTimeOffset.UtcNow;
         var existing = GetTranslationById(connection, transaction, id);
         EnsureActorCanManagePoiContentEntity(connection, transaction, actor, existing?.EntityType, existing?.EntityId, "xóa nội dung POI");
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTranslations WHERE Id = ?;", id) > 0;
         if (deleted)
         {
+            TouchRelatedPoisForContentEntityChange(
+                connection,
+                transaction,
+                existing?.EntityType,
+                existing?.EntityId,
+                null,
+                null,
+                now);
+
             AppendAdminAuditLog(
                 connection,
                 transaction,
@@ -1152,6 +1171,15 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                 audioId);
         }
 
+        TouchRelatedPoisForContentEntityChange(
+            connection,
+            transaction,
+            existing?.EntityType,
+            existing?.EntityId,
+            normalizedEntityType,
+            request.EntityId,
+            now);
+
         AppendAdminAuditLog(
             connection,
             transaction,
@@ -1181,11 +1209,21 @@ public bool DeletePoi(string id, AdminRequestContext actor)
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
+        var now = DateTimeOffset.UtcNow;
         var existing = GetAudioGuideById(connection, transaction, id);
         EnsureActorCanManagePoiContentEntity(connection, transaction, actor, existing?.EntityType, existing?.EntityId, "xóa audio của POI");
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.AudioGuides WHERE Id = ?;", id) > 0;
         if (deleted)
         {
+            TouchRelatedPoisForContentEntityChange(
+                connection,
+                transaction,
+                existing?.EntityType,
+                existing?.EntityId,
+                null,
+                null,
+                now);
+
             AppendAdminAuditLog(
                 connection,
                 transaction,

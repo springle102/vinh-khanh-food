@@ -16,7 +16,8 @@ public interface IFoodStreetDataService
     Task<IReadOnlyList<PoiLocation>> GetPoisAsync();
     Task<IReadOnlyList<MapHeatPoint>> GetHeatPointsAsync();
     Task<PoiExperienceDetail?> GetPoiDetailAsync(string poiId);
-    Task<TourPlan> GetTourPlanAsync();
+    Task<IReadOnlyList<TourCatalogItem>> GetPublishedToursAsync();
+    Task<TourPlan> GetTourPlanAsync(string? tourId = null, IReadOnlyCollection<string>? completedPoiIds = null);
     Task<UserProfileCard> GetUserProfileAsync();
     Task<UserProfileCard?> LoginCustomerAsync(string identifier, string password);
     Task<UserProfileCard?> SelectUserProfileAsync(string identifier);
@@ -29,6 +30,7 @@ public interface IFoodStreetDataService
     Task TrackPoiViewAsync(string poiId, string? languageCode = null, string source = "poi_detail");
     Task TrackAudioPlayAsync(string poiId, string? languageCode = null, string source = "audio_player", int? durationInSeconds = null);
     Task TrackQrScanAsync(string poiId, string? qrCode = null, string? languageCode = null);
+    Task<bool> RefreshDataIfChangedAsync();
     string GetBackdropImageUrl();
 }
 
@@ -226,10 +228,25 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         return null;
     }
 
-    public async Task<TourPlan> GetTourPlanAsync()
+    public async Task<IReadOnlyList<TourCatalogItem>> GetPublishedToursAsync()
     {
         var snapshot = await GetBootstrapSnapshotAsync();
-        var routePlan = TryBuildTourPlanFromSnapshot(snapshot);
+        if (snapshot is null || snapshot.Routes.Count == 0)
+        {
+            return [];
+        }
+
+        var poiLookup = snapshot.Pois.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
+        return snapshot.Routes
+            .OrderByDescending(item => item.UpdatedAt)
+            .Select(route => CreateTourCatalogItem(route, poiLookup))
+            .ToList();
+    }
+
+    public async Task<TourPlan> GetTourPlanAsync(string? tourId = null, IReadOnlyCollection<string>? completedPoiIds = null)
+    {
+        var snapshot = await GetBootstrapSnapshotAsync();
+        var routePlan = TryBuildTourPlanFromSnapshot(snapshot, tourId, completedPoiIds);
         if (routePlan is not null)
         {
             return routePlan;
@@ -241,9 +258,12 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private TourPlan CreateEmptyTourPlan()
         => new()
         {
+            Id = string.Empty,
             Title = GetTourThemeText(),
             Theme = GetTourThemeText(),
             Description = GetTourDescriptionText(),
+            CoverImageUrl = DefaultBackdropImageUrl,
+            DurationText = string.Empty,
             ProgressValue = 0,
             ProgressText = FormatTourProgressText(0, 0),
             SummaryText = SelectLocalizedText(CreateLocalizedMap(
@@ -321,6 +341,20 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         return TrackUsageEventAsync("qr_scan", poiId, languageCode, "qr_scanner", metadata, durationInSeconds: null);
     }
 
+    public async Task<bool> RefreshDataIfChangedAsync()
+    {
+        var previousVersion = _syncState?.Version;
+        var previousSnapshot = _bootstrapSnapshot;
+        var snapshot = await GetBootstrapSnapshotAsync(forceSyncCheck: true);
+        if (snapshot is null)
+        {
+            return false;
+        }
+
+        return !ReferenceEquals(previousSnapshot, snapshot) ||
+               !string.Equals(previousVersion, _syncState?.Version, StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task TrackUsageEventAsync(
         string eventType,
         string? poiId,
@@ -383,7 +417,7 @@ public sealed partial class FoodStreetApiDataService
         (-0.00008, -0.00007)
     ];
 
-    private async Task<BootstrapSnapshot?> GetBootstrapSnapshotAsync()
+    private async Task<BootstrapSnapshot?> GetBootstrapSnapshotAsync(bool forceSyncCheck = false)
     {
         await _bootstrapLock.WaitAsync();
         try
@@ -401,7 +435,7 @@ public sealed partial class FoodStreetApiDataService
                 return await RefreshBootstrapSnapshotAsync(client, null, "initial");
             }
 
-            if (!ShouldCheckSyncState())
+            if (!ShouldCheckSyncState(forceSyncCheck))
             {
                 return _bootstrapSnapshot;
             }
@@ -436,8 +470,8 @@ public sealed partial class FoodStreetApiDataService
         }
     }
 
-    private bool ShouldCheckSyncState()
-        => _bootstrapSnapshot is null || DateTimeOffset.UtcNow - _lastSyncCheckAt >= SyncCheckInterval;
+    private bool ShouldCheckSyncState(bool forceSyncCheck)
+        => forceSyncCheck || _bootstrapSnapshot is null || DateTimeOffset.UtcNow - _lastSyncCheckAt >= SyncCheckInterval;
 
     private async Task<DataSyncStateDto?> FetchSyncStateAsync(HttpClient client)
     {
@@ -752,7 +786,10 @@ public sealed partial class FoodStreetApiDataService
             BuildRouteSnapshots(bootstrap.Routes, accessibleTranslations, publishedPoiIds));
     }
 
-    private TourPlan? TryBuildTourPlanFromSnapshot(BootstrapSnapshot? snapshot)
+    private TourPlan? TryBuildTourPlanFromSnapshot(
+        BootstrapSnapshot? snapshot,
+        string? tourId = null,
+        IReadOnlyCollection<string>? completedPoiIds = null)
     {
         if (snapshot is null || snapshot.Routes.Count == 0)
         {
@@ -761,6 +798,9 @@ public sealed partial class FoodStreetApiDataService
 
         var poiLookup = snapshot.Pois.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
         var route = snapshot.Routes
+            .Where(item =>
+                string.IsNullOrWhiteSpace(tourId) ||
+                string.Equals(item.Id, tourId, StringComparison.OrdinalIgnoreCase))
             .Where(item => item.StopPoiIds.Count > 0)
             .OrderByDescending(item => item.UpdatedAt)
             .FirstOrDefault();
@@ -777,6 +817,11 @@ public sealed partial class FoodStreetApiDataService
             return null;
         }
 
+        var completedPoiIdSet = completedPoiIds?
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         var stops = stopPoiIds
             .Select((poiId, index) => CreateTourStop(poiLookup, poiId, index + 1))
             .ToList();
@@ -786,20 +831,55 @@ public sealed partial class FoodStreetApiDataService
                 var distanceText = poiLookup.TryGetValue(poiId, out var poi)
                     ? poi.DistanceText
                     : FormatVisitDuration(15);
-                return CreateCheckpoint(poiLookup, poiId, index + 1, distanceText, false);
+                return CreateCheckpoint(
+                    poiLookup,
+                    poiId,
+                    index + 1,
+                    distanceText,
+                    completedPoiIdSet.Contains(poiId));
             })
             .ToList();
+        var completedCount = checkpoints.Count(item => item.IsCompleted);
+        var coverImageUrl = stopPoiIds
+            .Select(poiId => poiLookup.TryGetValue(poiId, out var poi) ? poi.ThumbnailUrl : string.Empty)
+            .FirstOrDefault(item => !string.IsNullOrWhiteSpace(item))
+            ?? snapshot.BackdropImageUrl;
 
         return new TourPlan
         {
+            Id = route.Id,
             Title = FirstNonEmpty(route.Name, route.Theme, GetTourThemeText()),
             Theme = FirstNonEmpty(route.Theme, route.Name, GetTourThemeText()),
             Description = FirstNonEmpty(route.Description, GetTourDescriptionText()),
-            ProgressValue = 0,
-            ProgressText = FormatTourProgressText(0, checkpoints.Count),
+            CoverImageUrl = coverImageUrl,
+            DurationText = FormatVisitDuration(route.DurationMinutes),
+            ProgressValue = checkpoints.Count == 0 ? 0 : (double)completedCount / checkpoints.Count,
+            ProgressText = FormatTourProgressText(completedCount, checkpoints.Count),
             SummaryText = BuildRouteSummaryText(route, checkpoints.Count),
             Stops = stops,
             Checkpoints = checkpoints
+        };
+    }
+
+    private TourCatalogItem CreateTourCatalogItem(
+        RouteSnapshot route,
+        IReadOnlyDictionary<string, PoiLocation> poiLookup)
+    {
+        var coverImageUrl = route.StopPoiIds
+            .Select(poiId => poiLookup.TryGetValue(poiId, out var poi) ? poi.ThumbnailUrl : string.Empty)
+            .FirstOrDefault(item => !string.IsNullOrWhiteSpace(item))
+            ?? DefaultBackdropImageUrl;
+
+        return new TourCatalogItem
+        {
+            Id = route.Id,
+            Name = FirstNonEmpty(route.Name, route.Theme, GetTourThemeText()),
+            Theme = FirstNonEmpty(route.Theme, route.Name, GetTourThemeText()),
+            Description = BuildRouteSummaryText(route, route.StopPoiIds.Count),
+            CoverImageUrl = coverImageUrl,
+            DurationText = FormatVisitDuration(route.DurationMinutes),
+            StopCountText = FormatTourStopCountText(route.StopPoiIds.Count),
+            StopPoiIds = route.StopPoiIds
         };
     }
 
@@ -937,6 +1017,7 @@ public sealed partial class FoodStreetApiDataService
                     FirstNonEmpty(
                         GetTranslationText(translation, value => value.FullText, value => value.ShortText),
                         GetSourceTextForCurrentLanguage(route.Description)),
+                    route.DurationMinutes,
                     route.UpdatedAt,
                     stopPoiIds);
             })
@@ -1022,6 +1103,15 @@ public sealed partial class FoodStreetApiDataService
             $"このルートには現在、アプリ上で公開されている立ち寄り先が {stopCount} か所あります。",
             $"Cet itinéraire comprend actuellement {stopCount} étapes publiées dans l'application."));
     }
+
+    private string FormatTourStopCountText(int stopCount)
+        => SelectLocalizedText(CreateLocalizedMap(
+            $"{stopCount} Ä‘iá»ƒm dá»«ng",
+            $"{stopCount} stops",
+            $"{stopCount} ä¸ªç«™ç‚¹",
+            $"{stopCount}ê³³ ì •ì°¨",
+            $"{stopCount}ã‹æ‰€ã®ç«‹ã¡å¯„ã‚Š",
+            $"{stopCount} Ã©tapes"));
 
     private static IReadOnlyList<MapHeatPoint> BuildHeatPoints(
         IReadOnlyList<PoiDto> pois,
@@ -1109,6 +1199,7 @@ public sealed partial class FoodStreetApiDataService
 
         return new TourCheckpoint
         {
+            PoiId = poiId,
             Order = order,
             Title = localizedTitle,
             DistanceText = LocalizeDistanceText(distanceText),
@@ -1345,6 +1436,7 @@ public sealed partial class FoodStreetApiDataService
         string Name,
         string Theme,
         string Description,
+        int DurationMinutes,
         DateTimeOffset UpdatedAt,
         IReadOnlyList<string> StopPoiIds);
 
