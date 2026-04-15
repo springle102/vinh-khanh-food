@@ -168,18 +168,6 @@ public sealed class AppUsageEvent
     public DateTimeOffset OccurredAt { get; set; }
 }
 
-public sealed class Review
-{
-    public string Id { get; set; } = string.Empty;
-    public string PoiId { get; set; } = string.Empty;
-    public string UserName { get; set; } = string.Empty;
-    public int Rating { get; set; }
-    public string Comment { get; set; } = string.Empty;
-    public string LanguageCode { get; set; } = "vi";
-    public DateTimeOffset CreatedAt { get; set; }
-    public string Status { get; set; } = "pending";
-}
-
 public sealed class TourRoute
 {
     public string Id { get; set; } = string.Empty;
@@ -280,6 +268,5 @@ public sealed class SystemSetting
     public string StorageProvider { get; set; } = "cloudinary";
     public string TtsProvider { get; set; } = "elevenlabs";
     public int GeofenceRadiusMeters { get; set; }
-    public bool GuestReviewEnabled { get; set; }
     public int AnalyticsRetentionDays { get; set; }
 }

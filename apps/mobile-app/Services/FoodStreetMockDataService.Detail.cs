@@ -11,7 +11,6 @@ public sealed partial class FoodStreetApiDataService
         string category,
         IReadOnlyList<TranslationDto>? translations,
         IReadOnlyList<AudioGuideDto>? audioGuides,
-        IReadOnlyList<ReviewDto>? reviews,
         IReadOnlyList<FoodItemDto>? foodItems,
         IReadOnlyDictionary<string, IReadOnlyList<TranslationDto>> foodItemTranslationsById,
         IReadOnlyList<PromotionDto>? promotions,
@@ -62,14 +61,6 @@ public sealed partial class FoodStreetApiDataService
 
         detail.Images = BuildImageGallery(poi.Id, poiImages, foodImages).ToList();
 
-        var reviewList = reviews?
-            .Where(item => item.Rating > 0)
-            .ToList() ?? [];
-        detail.ReviewCount = reviewList.Count;
-        detail.Rating = reviewList.Count > 0
-            ? Math.Round(reviewList.Average(item => item.Rating), 1)
-            : 0;
-
         return detail;
     }
 
@@ -114,20 +105,6 @@ public sealed partial class FoodStreetApiDataService
             Latitude = poi.Latitude,
             Longitude = poi.Longitude,
             IsFeatured = poi.IsFeatured,
-            Rating = poi.Id switch
-            {
-                "poi-snail-signature" => 4.8,
-                "poi-bbq-night" => 4.7,
-                "poi-sweet-lane" => 4.5,
-                _ => 4.4
-            },
-            ReviewCount = poi.Id switch
-            {
-                "poi-snail-signature" => 248,
-                "poi-bbq-night" => 196,
-                "poi-sweet-lane" => 102,
-                _ => 64
-            },
             Images =
             [
                 poi.ThumbnailUrl,

@@ -52,7 +52,6 @@ public sealed partial class AdminDataRepository
                 (SELECT COUNT(*) FROM dbo.FoodItems) AS FoodItemCount,
                 (SELECT COUNT(*) FROM dbo.Routes) AS RouteCount,
                 (SELECT COUNT(*) FROM dbo.Promotions) AS PromotionCount,
-                (SELECT COUNT(*) FROM dbo.Reviews) AS ReviewCount,
                 (SELECT COUNT(*) FROM dbo.AppUsageEvents) AS AppUsageEventCount,
                 {auditLogCountSql}
                 {userActivityCountSql}
@@ -61,7 +60,6 @@ public sealed partial class AdminDataRepository
                 (SELECT MAX(UpdatedAt) FROM dbo.AudioGuides) AS LatestAudioGuideAt,
                 (SELECT MAX(CreatedAt) FROM dbo.MediaAssets) AS LatestMediaAssetAt,
                 (SELECT MAX(UpdatedAt) FROM dbo.Routes) AS LatestRouteAt,
-                (SELECT MAX(CreatedAt) FROM dbo.Reviews) AS LatestReviewAt,
                 (SELECT MAX(OccurredAt) FROM dbo.AppUsageEvents) AS LatestAppUsageEventAt,
                 {latestAuditSql}
                 {latestUserActivitySql};
@@ -81,7 +79,6 @@ public sealed partial class AdminDataRepository
         var latestAudioGuideAt = ReadNullableDateTimeOffset(reader, "LatestAudioGuideAt");
         var latestMediaAssetAt = ReadNullableDateTimeOffset(reader, "LatestMediaAssetAt");
         var latestRouteAt = ReadNullableDateTimeOffset(reader, "LatestRouteAt");
-        var latestReviewAt = ReadNullableDateTimeOffset(reader, "LatestReviewAt");
         var latestAppUsageEventAt = ReadNullableDateTimeOffset(reader, "LatestAppUsageEventAt");
         var latestAuditAt = ReadNullableDateTimeOffset(reader, "LatestAuditAt");
         var latestUserActivityAt = ReadNullableDateTimeOffset(reader, "LatestUserActivityAt");
@@ -94,7 +91,6 @@ public sealed partial class AdminDataRepository
                 latestAudioGuideAt,
                 latestMediaAssetAt,
                 latestRouteAt,
-                latestReviewAt,
                 latestAppUsageEventAt,
                 latestAuditAt,
                 latestUserActivityAt,
@@ -115,7 +111,6 @@ public sealed partial class AdminDataRepository
             $"foodItems={ReadInt(reader, "FoodItemCount")}",
             $"routes={ReadInt(reader, "RouteCount")}",
             $"promotions={ReadInt(reader, "PromotionCount")}",
-            $"reviews={ReadInt(reader, "ReviewCount")}",
             $"usageEvents={ReadInt(reader, "AppUsageEventCount")}",
             $"auditLogs={ReadInt(reader, "AuditLogCount")}",
             $"userActivityLogs={ReadInt(reader, "UserActivityLogCount")}",
@@ -124,7 +119,6 @@ public sealed partial class AdminDataRepository
             $"latestAudioGuide={FormatVersionPart(latestAudioGuideAt)}",
             $"latestMediaAsset={FormatVersionPart(latestMediaAssetAt)}",
             $"latestRoute={FormatVersionPart(latestRouteAt)}",
-            $"latestReview={FormatVersionPart(latestReviewAt)}",
             $"latestUsage={FormatVersionPart(latestAppUsageEventAt)}",
             $"latestAudit={FormatVersionPart(latestAuditAt)}",
             $"latestUserActivity={FormatVersionPart(latestUserActivityAt)}",

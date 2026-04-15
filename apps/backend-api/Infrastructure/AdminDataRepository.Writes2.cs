@@ -653,6 +653,9 @@ public sealed partial class AdminDataRepository
 
         var now = DateTimeOffset.UtcNow;
         var existing = !string.IsNullOrWhiteSpace(id) ? GetPromotionById(connection, transaction, id) : null;
+        var targetPoi = GetPoiById(connection, transaction, request.PoiId)
+            ?? (existing is null ? null : GetPoiById(connection, transaction, existing.PoiId));
+        EnsureActorCanManagePoiContent(connection, transaction, actor, targetPoi, "chinh sua uu dai cua POI");
         var isNew = existing is null;
         var promotionId = existing?.Id ?? id ?? CreateId("promo");
 
@@ -748,65 +751,6 @@ public sealed partial class AdminDataRepository
         return deleted;
     }
 
-    public Review CreateReview(ReviewCreateRequest request)
-    {
-        using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
-
-        var review = new Review
-        {
-            Id = CreateId("review"),
-            PoiId = request.PoiId,
-            UserName = string.IsNullOrWhiteSpace(request.UserName) ? "Guest" : request.UserName,
-            Rating = request.Rating,
-            Comment = request.Comment,
-            LanguageCode = string.IsNullOrWhiteSpace(request.LanguageCode) ? "vi" : request.LanguageCode,
-            CreatedAt = DateTimeOffset.UtcNow,
-            Status = "pending"
-        };
-
-        ExecuteNonQuery(
-            connection,
-            transaction,
-            """
-            INSERT INTO dbo.Reviews (Id, PoiId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status])
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-            """,
-            review.Id,
-            review.PoiId,
-            review.UserName,
-            review.Rating,
-            review.Comment,
-            review.LanguageCode,
-            review.CreatedAt,
-            review.Status);
-
-        AppendAuditLog(connection, transaction, review.UserName, "CUSTOMER", "Tạo đánh giá", review.PoiId);
-
-        transaction.Commit();
-        return review;
-    }
-
-    public Review? UpdateReviewStatus(string id, ReviewStatusRequest request, AdminRequestContext actor)
-    {
-        using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
-
-        var existing = GetReviewById(connection, transaction, id);
-        if (existing is null)
-        {
-            transaction.Rollback();
-            return null;
-        }
-
-        ExecuteNonQuery(connection, transaction, "UPDATE dbo.Reviews SET [Status] = ? WHERE Id = ?;", request.Status, id);
-        AppendAdminAuditLog(connection, transaction, actor, "Cap nhat trang thai danh gia", "REVIEW", id, request.Status);
-
-        var saved = GetReviewById(connection, transaction, id);
-        transaction.Commit();
-        return saved;
-    }
-
     public SystemSetting SaveSettings(SystemSettingUpsertRequest request, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
@@ -856,7 +800,6 @@ public sealed partial class AdminDataRepository
                     StorageProvider = ?,
                     TtsProvider = ?,
                     GeofenceRadiusMeters = ?,
-                    GuestReviewEnabled = ?,
                     AnalyticsRetentionDays = ?
                 WHERE Id = 1;
                 """,
@@ -869,7 +812,6 @@ public sealed partial class AdminDataRepository
                 normalizedRequest.StorageProvider,
                 normalizedRequest.TtsProvider,
                 normalizedRequest.GeofenceRadiusMeters,
-                normalizedRequest.GuestReviewEnabled,
                 normalizedRequest.AnalyticsRetentionDays);
         }
         else
@@ -880,9 +822,9 @@ public sealed partial class AdminDataRepository
                 """
                 INSERT INTO dbo.SystemSettings (
                     Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd,
-                    MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, GuestReviewEnabled, AnalyticsRetentionDays
+                    MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, AnalyticsRetentionDays
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 normalizedRequest.AppName,
                 normalizedRequest.SupportEmail,
@@ -893,7 +835,6 @@ public sealed partial class AdminDataRepository
                 normalizedRequest.StorageProvider,
                 normalizedRequest.TtsProvider,
                 normalizedRequest.GeofenceRadiusMeters,
-                normalizedRequest.GuestReviewEnabled,
                 normalizedRequest.AnalyticsRetentionDays);
         }
 
@@ -1328,12 +1269,6 @@ public sealed partial class AdminDataRepository
             normalizedAction.Contains("khuyến mãi", StringComparison.OrdinalIgnoreCase))
         {
             return "PROMOTION";
-        }
-
-        if (normalizedAction.Contains("đánh giá", StringComparison.OrdinalIgnoreCase) ||
-            normalizedAction.Contains("review", StringComparison.OrdinalIgnoreCase))
-        {
-            return "REVIEW";
         }
 
         if (normalizedAction.Contains("cài đặt", StringComparison.OrdinalIgnoreCase))

@@ -33,7 +33,7 @@ public sealed class PromotionsController(
     [HttpPost]
     public ActionResult<ApiResponse<Promotion>> CreatePromotion([FromBody] PromotionUpsertRequest request)
     {
-        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var actor = adminRequestContextResolver.RequirePlaceOwner();
         if (string.IsNullOrWhiteSpace(request.PoiId) || string.IsNullOrWhiteSpace(request.Title))
         {
             return BadRequest(ApiResponse<Promotion>.Fail("PoiId va tieu de uu dai la bat buoc."));
@@ -51,7 +51,7 @@ public sealed class PromotionsController(
     [HttpPut("{id}")]
     public ActionResult<ApiResponse<Promotion>> UpdatePromotion(string id, [FromBody] PromotionUpsertRequest request)
     {
-        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var actor = adminRequestContextResolver.RequirePlaceOwner();
         var existing = repository.GetPromotions(actor).FirstOrDefault(item => item.Id == id);
         if (existing is null || !repository.GetPois(actor).Any(item => item.Id == request.PoiId))
         {
@@ -65,7 +65,7 @@ public sealed class PromotionsController(
     [HttpDelete("{id}")]
     public ActionResult<ApiResponse<string>> DeletePromotion(string id)
     {
-        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var actor = adminRequestContextResolver.RequirePlaceOwner();
         var existing = repository.GetPromotions(actor).FirstOrDefault(item => item.Id == id);
         if (existing is null)
         {

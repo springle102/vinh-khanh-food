@@ -61,6 +61,9 @@ public sealed class AdminRequestContextResolver(
     public AdminRequestContext RequireSuperAdmin() =>
         RequireAdminRole(AdminRoleCatalog.SuperAdmin);
 
+    public AdminRequestContext RequirePlaceOwner() =>
+        RequireAdminRole(AdminRoleCatalog.PlaceOwner);
+
     private static string? ReadBearerToken(HttpRequest request)
     {
         var authorizationHeader = request.Headers.Authorization.ToString();

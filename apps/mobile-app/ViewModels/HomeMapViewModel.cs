@@ -151,8 +151,6 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     public bool HasDetailContent => SelectedPoi is not null || SelectedPoiDetail is not null || IsPoiDetailLoading;
     public bool HasSelectedPoiDetail => SelectedPoiDetail is not null;
     public bool IsFeaturedPoi => SelectedPoiDetail?.IsFeatured ?? SelectedPoi?.IsFeatured ?? false;
-    public bool HasRatingSummary => (SelectedPoiDetail?.ReviewCount ?? 0) > 0 && (SelectedPoiDetail?.Rating ?? 0) > 0;
-    public bool HasReviewSummary => (SelectedPoiDetail?.ReviewCount ?? 0) > 0;
     public bool HasSelectedPoiPriceRange => !string.IsNullOrWhiteSpace(SelectedPoiPriceRange);
     public bool HasSelectedPoiOpeningHours => !string.IsNullOrWhiteSpace(SelectedPoiOpeningHours);
     public bool HasSelectedPoiTags => SelectedPoiTags.Count > 0;
@@ -236,16 +234,6 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         => FirstNonEmpty(SelectedPoiDetail?.OpeningHours);
 
     public string SelectedPoiImageUrl => DetailImages.FirstOrDefault() ?? _dataService.GetBackdropImageUrl();
-
-    public string SelectedPoiRatingText
-        => !HasRatingSummary
-            ? string.Empty
-            : SelectedPoiDetail!.Rating.ToString("0.0", CultureInfo.InvariantCulture);
-
-    public string SelectedPoiReviewText
-        => !HasReviewSummary
-            ? string.Empty
-            : $"{SelectedPoiDetail!.ReviewCount} {LanguageService.GetText("poi_detail_reviews")}";
 
     public IReadOnlyList<string> DetailImages
     {
@@ -753,8 +741,6 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             PriceRange = poi.PriceRange,
             Latitude = poi.Latitude,
             Longitude = poi.Longitude,
-            Rating = 0,
-            ReviewCount = 0,
             IsFeatured = poi.IsFeatured,
             Images =
             [

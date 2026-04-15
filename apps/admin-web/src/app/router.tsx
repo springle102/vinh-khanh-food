@@ -9,7 +9,6 @@ import { AuthLoadingScreen, RequireAuth } from "../features/auth/RequireAuth";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { PoisPage } from "../features/pois/PoisPage";
 import { PromotionsPage } from "../features/promotions/PromotionsPage";
-import { ReviewsPage } from "../features/reviews/ReviewsPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { ToursPage } from "../features/tours/ToursPage";
 import { UsersPage } from "../features/users/UsersPage";
@@ -112,8 +111,6 @@ export const router = createBrowserRouter([
           { path: "media", element: <Navigate to="/admin/pois" replace /> },
           { path: "users", element: <UsersPage /> },
           { path: "owner-registrations", element: <Navigate to="/admin/users" replace /> },
-          { path: "promotions", element: <PromotionsPage /> },
-          { path: "reviews", element: <ReviewsPage /> },
           { path: "analytics", element: <Navigate to="/admin/dashboard" replace /> },
           { path: "activity", element: <ActivityPage /> },
           { path: "settings", element: <SettingsPage /> },
@@ -136,7 +133,6 @@ export const router = createBrowserRouter([
           { path: "media", element: <Navigate to="/restaurant/pois" replace /> },
           { path: "users", element: <Navigate to="/restaurant/profile" replace /> },
           { path: "promotions", element: <PromotionsPage /> },
-          { path: "reviews", element: <ReviewsPage /> },
           { path: "analytics", element: <Navigate to="/restaurant/dashboard" replace /> },
           { path: "activity", element: <ActivityPage /> },
           { path: "profile", element: <UsersPage /> },

@@ -731,13 +731,6 @@ public sealed partial class FoodStreetApiDataService
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
 
-        var reviewsByPoiId = bootstrap.Reviews
-            .Where(item =>
-                string.Equals(item.Status, "approved", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(item.Status, "published", StringComparison.OrdinalIgnoreCase))
-            .GroupBy(item => item.PoiId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
-
         var orderedPois = bootstrap.Pois
             .Where(item => IsPublishedContent(item.Status) && IsValidCoordinate(item.Lat) && IsValidCoordinate(item.Lng))
             .OrderByDescending(item => item.Featured)
@@ -752,7 +745,6 @@ public sealed partial class FoodStreetApiDataService
         {
             translationsByPoiId.TryGetValue(poi.Id, out var poiTranslations);
             audioGuidesByPoiId.TryGetValue(poi.Id, out var poiAudioGuides);
-            reviewsByPoiId.TryGetValue(poi.Id, out var poiReviews);
             foodItemsByPoiId.TryGetValue(poi.Id, out var poiFoodItems);
             promotionsByPoiId.TryGetValue(poi.Id, out var poiPromotions);
 
@@ -761,7 +753,6 @@ public sealed partial class FoodStreetApiDataService
                 GetCategoryName(categoriesById, poi.CategoryId),
                 poiTranslations,
                 poiAudioGuides,
-                poiReviews,
                 poiFoodItems,
                 translationsByFoodItemId,
                 poiPromotions,
@@ -1459,7 +1450,6 @@ public sealed partial class FoodStreetApiDataService
         public List<FoodItemDto> FoodItems { get; set; } = [];
         public List<RouteDto> Routes { get; set; } = [];
         public List<PromotionDto> Promotions { get; set; } = [];
-        public List<ReviewDto> Reviews { get; set; } = [];
         public List<AppUsageEventDto> UsageEvents { get; set; } = [];
         public List<ViewLogDto> ViewLogs { get; set; } = [];
         public List<AudioListenLogDto> AudioListenLogs { get; set; } = [];
@@ -1578,16 +1568,6 @@ public sealed partial class FoodStreetApiDataService
         public string SourceType { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public DateTimeOffset UpdatedAt { get; set; }
-    }
-
-    private sealed class ReviewDto
-    {
-        public string PoiId { get; set; } = string.Empty;
-        public int Rating { get; set; }
-        public string Comment { get; set; } = string.Empty;
-        public string LanguageCode { get; set; } = string.Empty;
-        public string Status { get; set; } = string.Empty;
-        public DateTimeOffset CreatedAt { get; set; }
     }
 
     private sealed class AppUsageEventDto

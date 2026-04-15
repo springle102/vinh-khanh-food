@@ -49,19 +49,6 @@ public sealed partial class AdminDataRepository
         return reader.Read() ? MapPromotion(reader) : null;
     }
 
-    private Review? GetReviewById(SqlConnection connection, SqlTransaction? transaction, string id)
-    {
-        const string sql = """
-            SELECT TOP 1 Id, PoiId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]
-            FROM dbo.Reviews
-            WHERE Id = ?;
-            """;
-
-        using var command = CreateCommand(connection, transaction, sql, id);
-        using var reader = command.ExecuteReader();
-        return reader.Read() ? MapReview(reader) : null;
-    }
-
     private static AdminUser MapAdminUser(SqlDataReader reader)
     {
         return new AdminUser
@@ -174,21 +161,6 @@ public sealed partial class AdminDataRepository
             Description = ReadString(reader, "Description"),
             StartAt = ReadDateTimeOffset(reader, "StartAt"),
             EndAt = ReadDateTimeOffset(reader, "EndAt"),
-            Status = ReadString(reader, "Status")
-        };
-    }
-
-    private static Review MapReview(SqlDataReader reader)
-    {
-        return new Review
-        {
-            Id = ReadString(reader, "Id"),
-            PoiId = ReadString(reader, "PoiId"),
-            UserName = ReadString(reader, "UserName"),
-            Rating = ReadInt(reader, "Rating"),
-            Comment = ReadString(reader, "CommentText"),
-            LanguageCode = ReadString(reader, "LanguageCode"),
-            CreatedAt = ReadDateTimeOffset(reader, "CreatedAt"),
             Status = ReadString(reader, "Status")
         };
     }

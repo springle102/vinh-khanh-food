@@ -12,7 +12,6 @@ import type {
   PlaceOwnerRegistrationRecord,
   Promotion,
   ResolvedPoiNarration,
-  Review,
   SystemSetting,
   TourRoute,
   Translation,
@@ -610,14 +609,6 @@ export const adminApi = {
       payload,
       { signal },
     ),
-  saveReviewStatus: (
-    reviewId: string,
-    payload: {
-      status: Review["status"];
-      actorName: string;
-      actorRole: AdminUser["role"];
-    },
-  ) => jsonRequest<Review>(`/api/v1/reviews/${reviewId}/status`, "PATCH", payload),
   saveSettings: (
     settings: SystemSetting & {
       actorName: string;

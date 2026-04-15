@@ -9,7 +9,6 @@ export type AudioSourceType = "uploaded" | "tts";
 export type AudioStatus = "ready" | "processing" | "missing";
 export type MediaType = "image" | "video";
 export type PromotionStatus = "upcoming" | "active" | "expired" | "hidden" | "deleted";
-export type ReviewStatus = "pending" | "approved" | "hidden";
 export type DeviceType = "ios" | "android" | "web";
 export type TtsProvider = "elevenlabs";
 export type UsageEventType = "poi_view" | "audio_play" | "qr_scan";
@@ -221,17 +220,6 @@ export interface Promotion {
   status: PromotionStatus;
 }
 
-export interface Review {
-  id: string;
-  poiId: string;
-  userName: string;
-  rating: number;
-  comment: string;
-  languageCode: LanguageCode;
-  createdAt: string;
-  status: ReviewStatus;
-}
-
 export interface ViewLog {
   id: string;
   poiId: string;
@@ -294,7 +282,6 @@ export interface SystemSetting {
   storageProvider: "cloudinary" | "s3";
   ttsProvider: TtsProvider;
   geofenceRadiusMeters: number;
-  guestReviewEnabled: boolean;
   analyticsRetentionDays: number;
 }
 
@@ -316,7 +303,6 @@ export interface AdminDataState {
   mediaAssets: MediaAsset[];
   routes: TourRoute[];
   promotions: Promotion[];
-  reviews: Review[];
   usageEvents: AppUsageEvent[];
   /** @deprecated Replaced by usageEvents. */
   viewLogs: ViewLog[];

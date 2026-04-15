@@ -282,17 +282,6 @@ export const SettingsPage = () => {
                   disabled={!canManageSettings}
                 />
               </div>
-              <label className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm text-ink-700">
-                <input
-                  type="checkbox"
-                  checked={form.guestReviewEnabled}
-                  disabled={!canManageSettings}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, guestReviewEnabled: event.target.checked }))
-                  }
-                />
-                Allow anonymous guest reviews
-              </label>
             </div>
           </Card>
         </section>

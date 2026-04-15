@@ -17,7 +17,6 @@ import type {
   MediaAsset,
   Poi,
   Promotion,
-  Review,
   SystemSetting,
   TourRoute,
   Translation,
@@ -49,7 +48,6 @@ const EMPTY_ADMIN_STATE: AdminDataState = {
   mediaAssets: [],
   routes: [],
   promotions: [],
-  reviews: [],
   usageEvents: [],
   viewLogs: [],
   audioListenLogs: [],
@@ -64,7 +62,6 @@ const EMPTY_ADMIN_STATE: AdminDataState = {
     storageProvider: "cloudinary",
     ttsProvider: "elevenlabs",
     geofenceRadiusMeters: 0,
-    guestReviewEnabled: false,
     analyticsRetentionDays: 0,
   },
 };
@@ -83,7 +80,6 @@ const toState = (payload: Partial<AdminDataState>): AdminDataState => ({
   mediaAssets: payload.mediaAssets ?? [],
   routes: payload.routes ?? [],
   promotions: payload.promotions ?? [],
-  reviews: payload.reviews ?? [],
   usageEvents: payload.usageEvents ?? [],
   viewLogs: [],
   audioListenLogs: [],
@@ -148,11 +144,6 @@ type AdminDataContextValue = {
     translation: Omit<Translation, "id" | "updatedAt" | "updatedBy"> & { id?: string },
     actor: AdminUser,
   ) => Promise<Translation>;
-  saveReviewStatus: (
-    reviewId: string,
-    status: Review["status"],
-    actor: AdminUser,
-  ) => Promise<void>;
   saveSettings: (settings: SystemSetting, actor: AdminUser) => Promise<void>;
   saveMediaAsset: (
     asset: Omit<MediaAsset, "id" | "createdAt"> & { id?: string },
@@ -427,19 +418,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     [refreshData],
   );
 
-  const saveReviewStatus = useCallback(
-    async (reviewId: string, status: Review["status"], actor: AdminUser) => {
-      await adminApi.saveReviewStatus(reviewId, {
-        status,
-        actorName: actor.name,
-        actorRole: actor.role,
-      });
-
-      await refreshData();
-    },
-    [refreshData],
-  );
-
   const saveSettings = useCallback(
     async (settingsDraft: SystemSetting, actor: AdminUser) => {
       await adminApi.saveSettings({
@@ -493,7 +471,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       deleteRoute,
       saveAudioGuide,
       saveTranslation,
-      saveReviewStatus,
       saveSettings,
       saveMediaAsset,
       saveFoodItem,
@@ -510,7 +487,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       savePromotion,
       saveRoute,
       deleteRoute,
-      saveReviewStatus,
       saveSettings,
       saveTranslation,
       saveUser,

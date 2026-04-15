@@ -146,32 +146,11 @@
 
                                 <HorizontalStackLayout Spacing="10">
                                     <Border
-                                        BackgroundColor="#FFF2E3"
-                                        IsVisible="{Binding HasRatingSummary}"
-                                        Padding="10,6"
-                                        Stroke="#F1D2AE"
-                                        StrokeShape="RoundRectangle 14">
-                                        <HorizontalStackLayout Spacing="6">
-                                            <Label FontFamily="OpenSansSemibold" FontSize="12" Text="*" TextColor="#D97706" />
-                                            <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding SelectedPoiRatingText}" TextColor="#8A4B0D" />
-                                        </HorizontalStackLayout>
-                                    </Border>
-
-                                    <Border
                                         BackgroundColor="#F7F4F0"
                                         Padding="10,6"
                                         Stroke="#E8DFD4"
                                         StrokeShape="RoundRectangle 14">
                                         <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding SelectedPoiCategory}" TextColor="{StaticResource BrandTextPrimary}" />
-                                    </Border>
-
-                                    <Border
-                                        BackgroundColor="#F7F4F0"
-                                        IsVisible="{Binding HasReviewSummary}"
-                                        Padding="10,6"
-                                        Stroke="#E8DFD4"
-                                        StrokeShape="RoundRectangle 14">
-                                        <Label FontSize="12" Text="{Binding SelectedPoiReviewText}" TextColor="{StaticResource BrandTextSecondary}" />
                                     </Border>
                                 </HorizontalStackLayout>
                             </VerticalStackLayout>

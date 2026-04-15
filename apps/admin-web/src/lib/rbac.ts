@@ -6,8 +6,6 @@ const SUPER_ADMIN_NAV: AppShellNavItem[] = [
   { to: "/admin/pois", label: "POI", icon: "map" },
   { to: "/admin/tours", label: "Tuyến tham quan", icon: "route" },
   { to: "/admin/users", label: "Chủ quán", icon: "users" },
-  { to: "/admin/promotions", label: "Ưu đãi", icon: "gift" },
-  { to: "/admin/reviews", label: "Đánh giá", icon: "star" },
   { to: "/admin/activity", label: "Nhật ký", icon: "activity" },
   { to: "/admin/settings", label: "Cài đặt", icon: "settings" },
 ];
@@ -17,7 +15,6 @@ const PLACE_OWNER_NAV: AppShellNavItem[] = [
   { to: "/restaurant/pois", label: "POI", icon: "map" },
   { to: "/restaurant/tours", label: "Tuyến tham quan", icon: "route" },
   { to: "/restaurant/promotions", label: "Ưu đãi", icon: "gift" },
-  { to: "/restaurant/reviews", label: "Đánh giá", icon: "star" },
   { to: "/restaurant/activity", label: "Nhật ký", icon: "activity" },
   { to: "/restaurant/profile", label: "Hồ sơ", icon: "users" },
 ];
@@ -35,8 +32,6 @@ export const navigationItemsByRole: Record<Role, AppShellNavItem[]> = {
 export const canManageOwnerAccounts = (role: Role | undefined) => role === "SUPER_ADMIN";
 
 export const canManageSystemSettings = (role: Role | undefined) => role === "SUPER_ADMIN";
-
-export const canModerateReviews = (role: Role | undefined) => role === "SUPER_ADMIN";
 
 export const canManageRoute = (user: AdminUser | null, route: TourRoute) =>
   !!user &&

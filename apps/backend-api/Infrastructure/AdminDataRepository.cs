@@ -193,12 +193,6 @@ public sealed partial class AdminDataRepository
         return ApplyPromotionScope(connection, null, GetPromotions(connection, null), actor);
     }
 
-    public IReadOnlyList<Review> GetReviews(AdminRequestContext? actor = null)
-    {
-        using var connection = OpenConnection();
-        return ApplyReviewScope(connection, null, GetReviews(connection, null), actor);
-    }
-
     public IReadOnlyList<ViewLog> GetViewLogs(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
@@ -266,7 +260,6 @@ public sealed partial class AdminDataRepository
         var foodItems = GetFoodItems(connection, null);
         var routes = GetRoutes(connection, null);
         var promotions = GetPromotions(connection, null);
-        var reviews = GetReviews(connection, null);
         var usageEvents = GetAppUsageEvents(connection, null);
         var viewLogs = GetViewLogs(connection, null);
         var audioListenLogs = GetAudioListenLogs(connection, null);
@@ -282,7 +275,6 @@ public sealed partial class AdminDataRepository
             foodItems = ApplyFoodItemScope(connection, null, foodItems, admin, pois);
             routes = ApplyRouteScope(connection, null, routes, admin);
             promotions = ApplyPromotionScope(connection, null, promotions, admin);
-            reviews = ApplyReviewScope(connection, null, reviews, admin);
             usageEvents = ApplyUsageEventScope(usageEvents, admin, pois);
             viewLogs = ApplyViewLogScope(connection, null, viewLogs, admin, pois);
             audioListenLogs = ApplyAudioListenLogScope(connection, null, audioListenLogs, admin, pois);
@@ -300,7 +292,6 @@ public sealed partial class AdminDataRepository
             foodItems = foodItems.Where(item => pois.Any(poi => poi.Id == item.PoiId)).ToList();
             routes = ApplyPublicRouteScope(routes, pois);
             promotions = ApplyPublicPromotionScope(promotions, pois);
-            reviews = ApplyPublicReviewScope(reviews, pois);
             usageEvents = usageEvents
                 .Where(item => string.IsNullOrWhiteSpace(item.PoiId) || pois.Any(poi => poi.Id == item.PoiId))
                 .ToList();
@@ -330,7 +321,6 @@ public sealed partial class AdminDataRepository
             foodItems,
             routes,
             promotions,
-            reviews,
             usageEvents,
             viewLogs,
             audioListenLogs,
@@ -447,7 +437,6 @@ public sealed partial class AdminDataRepository
     {
         using var connection = OpenConnection();
         var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
-        var reviews = ApplyReviewScope(connection, null, GetReviews(connection, null), actor);
         var audioGuides = ApplyAudioGuideScope(
             connection,
             null,
@@ -463,8 +452,7 @@ public sealed partial class AdminDataRepository
             usageEvents.Count(item => string.Equals(item.EventType, "audio_play", StringComparison.OrdinalIgnoreCase)),
             usageEvents.Count(item => string.Equals(item.EventType, "qr_scan", StringComparison.OrdinalIgnoreCase)),
             pois.Count(item => string.Equals(item.Status, "published", StringComparison.OrdinalIgnoreCase)),
-            audioGuides.Count(item => !string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase)),
-            reviews.Count(item => string.Equals(item.Status, "pending", StringComparison.OrdinalIgnoreCase)));
+            audioGuides.Count(item => !string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase)));
     }
 
     private static IReadOnlyCollection<string> GetSupportedLanguageCodeSet(SystemSetting settings)
@@ -540,9 +528,35 @@ public sealed partial class AdminDataRepository
         EnsurePoiRuntimeSchema(connection);
         EnsureRefreshSessionsTable(connection);
         EnsureSeparatedAuditLogSchema(connection);
+        RemoveLegacyReviewData(connection);
         EnsureSystemSettingsSchema(connection);
         EnsureAppUsageEventSchema(connection);
         EnsureTourManagementSchema(connection);
+    }
+
+    private void RemoveLegacyReviewData(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.AdminAuditLogs', N'U') IS NOT NULL
+            BEGIN
+                DELETE FROM dbo.AdminAuditLogs
+                WHERE [Module] = N'REVIEW';
+            END;
+
+            IF OBJECT_ID(N'dbo.AuditLogs', N'U') IS NOT NULL
+            BEGIN
+                DELETE FROM dbo.AuditLogs
+                WHERE [Action] LIKE N'%đánh giá%';
+            END;
+
+            IF OBJECT_ID(N'dbo.Reviews', N'U') IS NOT NULL
+            BEGIN
+                DROP TABLE dbo.Reviews;
+            END;
+            """);
     }
 
     private void EnsureAdminUsersRuntimeSchema(SqlConnection connection)
@@ -1048,7 +1062,6 @@ public sealed partial class AdminDataRepository
                         WHEN legacy.[Action] LIKE N'%thuyết minh%' THEN N'TRANSLATION'
                         WHEN legacy.[Action] LIKE N'%tour%' THEN N'TOUR'
                         WHEN legacy.[Action] LIKE N'%ưu đãi%' THEN N'PROMOTION'
-                        WHEN legacy.[Action] LIKE N'%đánh giá%' THEN N'REVIEW'
                         WHEN legacy.[Action] LIKE N'%tài khoản admin%' OR legacy.[Action] LIKE N'%chủ quán%' THEN N'ADMIN_USER'
                         WHEN legacy.[Action] LIKE N'%cài đặt%' OR legacy.[Action] LIKE N'%ngôn ngữ premium%' THEN N'SETTINGS'
                         ELSE N'LEGACY'
@@ -1112,7 +1125,6 @@ public sealed partial class AdminDataRepository
                     StorageProvider NVARCHAR(50) NOT NULL,
                     TtsProvider NVARCHAR(50) NOT NULL,
                     GeofenceRadiusMeters INT NOT NULL,
-                    GuestReviewEnabled BIT NOT NULL,
                     AnalyticsRetentionDays INT NOT NULL
                 );
             END;
@@ -1122,9 +1134,6 @@ public sealed partial class AdminDataRepository
 
             IF COL_LENGTH(N'dbo.SystemSettings', N'TtsProvider') IS NULL
                 ALTER TABLE dbo.SystemSettings ADD TtsProvider NVARCHAR(50) NULL;
-
-            IF COL_LENGTH(N'dbo.SystemSettings', N'GuestReviewEnabled') IS NULL
-                ALTER TABLE dbo.SystemSettings ADD GuestReviewEnabled BIT NULL;
 
             IF COL_LENGTH(N'dbo.SystemSettings', N'AnalyticsRetentionDays') IS NULL
                 ALTER TABLE dbo.SystemSettings ADD AnalyticsRetentionDays INT NULL;
@@ -1140,13 +1149,31 @@ public sealed partial class AdminDataRepository
                     ELSE PremiumUnlockPriceUsd
                 END,
                 TtsProvider = COALESCE(NULLIF(LTRIM(RTRIM(TtsProvider)), N''), N'elevenlabs'),
-                GuestReviewEnabled = COALESCE(GuestReviewEnabled, CAST(1 AS bit)),
                 AnalyticsRetentionDays = COALESCE(AnalyticsRetentionDays, 180)
             WHERE PremiumUnlockPriceUsd IS NULL
                OR PremiumUnlockPriceUsd <= 0
                OR NULLIF(LTRIM(RTRIM(TtsProvider)), N'') IS NULL
-               OR GuestReviewEnabled IS NULL
                OR AnalyticsRetentionDays IS NULL;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'GuestReviewEnabled') IS NOT NULL
+            BEGIN
+                DECLARE @guestReviewConstraint sysname;
+
+                SELECT TOP 1 @guestReviewConstraint = defaultConstraint.name
+                FROM sys.default_constraints defaultConstraint
+                INNER JOIN sys.columns columnInfo
+                    ON columnInfo.object_id = defaultConstraint.parent_object_id
+                   AND columnInfo.column_id = defaultConstraint.parent_column_id
+                WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.SystemSettings')
+                  AND columnInfo.name = N'GuestReviewEnabled';
+
+                IF @guestReviewConstraint IS NOT NULL
+                BEGIN
+                    EXEC(N'ALTER TABLE dbo.SystemSettings DROP CONSTRAINT [' + @guestReviewConstraint + N']');
+                END;
+
+                ALTER TABLE dbo.SystemSettings DROP COLUMN GuestReviewEnabled;
+            END;
 
             IF EXISTS (
                 SELECT 1
@@ -1168,17 +1195,6 @@ public sealed partial class AdminDataRepository
             )
             BEGIN
                 ALTER TABLE dbo.SystemSettings ALTER COLUMN PremiumUnlockPriceUsd INT NOT NULL;
-            END;
-
-            IF EXISTS (
-                SELECT 1
-                FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
-                    AND name = N'GuestReviewEnabled'
-                    AND is_nullable = 1
-            )
-            BEGIN
-                ALTER TABLE dbo.SystemSettings ALTER COLUMN GuestReviewEnabled BIT NOT NULL;
             END;
 
             IF EXISTS (
@@ -1924,7 +1940,7 @@ public sealed partial class AdminDataRepository
 
         if (actor.IsSuperAdmin)
         {
-            return promotions;
+            return [];
         }
 
         var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actor.UserId);
@@ -1942,38 +1958,6 @@ public sealed partial class AdminDataRepository
                 !string.Equals(promotion.Status, "expired", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(promotion.Status, "deleted", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(promotion.Status, "hidden", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-    }
-
-    private IReadOnlyList<Review> ApplyReviewScope(
-        SqlConnection connection,
-        SqlTransaction? transaction,
-        IReadOnlyList<Review> reviews,
-        AdminRequestContext? actor)
-    {
-        if (actor is null)
-        {
-            return ApplyPublicReviewScope(reviews, ApplyPublicPoiScope(GetPois(connection, transaction)));
-        }
-
-        if (actor.IsSuperAdmin)
-        {
-            return reviews;
-        }
-
-        var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actor.UserId);
-        return reviews.Where(review => ownerPoiIds.Contains(review.PoiId)).ToList();
-    }
-
-    private static IReadOnlyList<Review> ApplyPublicReviewScope(
-        IReadOnlyList<Review> reviews,
-        IReadOnlyList<Poi> visiblePois)
-    {
-        var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return reviews
-            .Where(review =>
-                visiblePoiIds.Contains(review.PoiId) &&
-                string.Equals(review.Status, "approved", StringComparison.OrdinalIgnoreCase))
             .ToList();
     }
 
@@ -2221,9 +2205,6 @@ public sealed partial class AdminDataRepository
         var ownerPromotionIds = ApplyPromotionScope(connection, transaction, GetPromotions(connection, transaction), actor)
             .Select(promotion => promotion.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var ownerReviewIds = ApplyReviewScope(connection, transaction, GetReviews(connection, transaction), actor)
-            .Select(review => review.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return auditLogs
             .Where(log =>
@@ -2242,9 +2223,7 @@ public sealed partial class AdminDataRepository
                 (string.Equals(log.Module, "TOUR", StringComparison.OrdinalIgnoreCase) &&
                  ownerRouteIds.Contains(log.TargetId)) ||
                 (string.Equals(log.Module, "PROMOTION", StringComparison.OrdinalIgnoreCase) &&
-                 ownerPromotionIds.Contains(log.TargetId)) ||
-                (string.Equals(log.Module, "REVIEW", StringComparison.OrdinalIgnoreCase) &&
-                 ownerReviewIds.Contains(log.TargetId)))
+                 ownerPromotionIds.Contains(log.TargetId)))
             .ToList();
     }
 

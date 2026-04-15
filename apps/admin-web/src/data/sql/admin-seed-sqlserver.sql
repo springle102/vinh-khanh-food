@@ -254,20 +254,6 @@ CREATE TABLE dbo.Promotions (
 );
 GO
 
-CREATE TABLE dbo.Reviews (
-    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
-    PoiId NVARCHAR(50) NOT NULL,
-    UserName NVARCHAR(120) NOT NULL,
-    Rating INT NOT NULL,
-    CommentText NVARCHAR(MAX) NOT NULL,
-    LanguageCode NVARCHAR(20) NOT NULL,
-    CreatedAt DATETIMEOFFSET(7) NOT NULL,
-    [Status] NVARCHAR(30) NOT NULL,
-    CONSTRAINT FK_Reviews_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id),
-    CONSTRAINT CK_Reviews_Rating CHECK (Rating BETWEEN 1 AND 5)
-);
-GO
-
 CREATE TABLE dbo.ViewLogs (
     Id NVARCHAR(50) NOT NULL PRIMARY KEY,
     PoiId NVARCHAR(50) NOT NULL,
@@ -365,7 +351,6 @@ CREATE TABLE dbo.SystemSettings (
     StorageProvider NVARCHAR(50) NOT NULL,
     TtsProvider NVARCHAR(50) NOT NULL,
     GeofenceRadiusMeters INT NOT NULL,
-    GuestReviewEnabled BIT NOT NULL,
     AnalyticsRetentionDays INT NOT NULL
 );
 GO
@@ -467,9 +452,6 @@ INSERT INTO dbo.RouteStops (RouteId, StopOrder, PoiId) VALUES (N'route-976b4e97'
 GO
 INSERT INTO dbo.Promotions (Id, PoiId, Title, [Description], StartAt, EndAt, [Status]) VALUES (N'promo-1', N'sushi-ko', N'Combo BBQ nhóm 4 người', N'Tặng nước uống cho khách check-in POI trong khung giờ 18h-20h.', CAST(N'2026-03-18T11:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-03-25T14:00:00.0000000+00:00' AS datetimeoffset(7)), N'active');
 INSERT INTO dbo.Promotions (Id, PoiId, Title, [Description], StartAt, EndAt, [Status]) VALUES (N'promo-2', N'oc-phat', N'Giảm 10% cho khách nghe audio guide', N'Áp dụng khi khách hoàn tất bài thuyết minh tiếng Việt hoặc tiếng Anh.', CAST(N'2026-03-20T10:00:00.0000000+00:00' AS datetimeoffset(7)), CAST(N'2026-03-28T14:00:00.0000000+00:00' AS datetimeoffset(7)), N'upcoming');
-GO
-INSERT INTO dbo.Reviews (Id, PoiId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]) VALUES (N'review-1', N'oc-phat', N'Thu Trang', 5, N'Chạm vào POI trên bản đồ rồi nghe giới thiệu rất tiện và dễ hiểu.', N'vi', CAST(N'2026-03-18T05:00:00.0000000+00:00' AS datetimeoffset(7)), N'approved');
-INSERT INTO dbo.Reviews (Id, PoiId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]) VALUES (N'review-2', N'sushi-ko', N'Lucas', 4, N'Useful overview before starting the food route.', N'en', CAST(N'2026-03-18T08:00:00.0000000+00:00' AS datetimeoffset(7)), N'pending');
 GO
 INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-14', N'poi_view', N'sushi-ko', N'en', N'android', N'session-en-1901', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-19T09:40:00.0000000+00:00' AS datetimeoffset(7)));
 INSERT INTO dbo.AppUsageEvents (Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt) VALUES (N'usage-poi-12', N'poi_view', N'oc-phat', N'en', N'android', N'session-en-1802', N'poi_detail', N'{"entry":"map-pin"}', NULL, CAST(N'2026-03-18T18:25:00.0000000+00:00' AS datetimeoffset(7)));
@@ -682,7 +664,7 @@ GO
 INSERT INTO dbo.RefreshSessions (AccessToken, RefreshToken, UserId, AccessTokenExpiresAt, ExpiresAt) VALUES (N'vk_access_8a51956446414a53b3b7a46755a65894', N'vk_refresh_c651fd66494841beb09044011ec3d862', N'user-super', CAST(N'2026-04-10T00:25:15.4876735+00:00' AS datetimeoffset(7)), CAST(N'2026-05-09T16:25:15.4876735+00:00' AS datetimeoffset(7)));
 GO
 
-INSERT INTO dbo.SystemSettings (Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd, MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, GuestReviewEnabled, AnalyticsRetentionDays) VALUES (1, N'Hệ thống quản trị thuyết minh Vĩnh Khánh', N'support@vinhkhanh.vn', N'vi', N'en', 0, N'openstreetmap', N'cloudinary', N'elevenlabs', 60, 1, 180);
+INSERT INTO dbo.SystemSettings (Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd, MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, AnalyticsRetentionDays) VALUES (1, N'Hệ thống quản trị thuyết minh Vĩnh Khánh', N'support@vinhkhanh.vn', N'vi', N'en', 0, N'openstreetmap', N'cloudinary', N'elevenlabs', 60, 180);
 GO
 INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'supported', N'en');
 INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES (1, N'supported', N'ja');

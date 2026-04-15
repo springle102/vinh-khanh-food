@@ -89,26 +89,6 @@ public sealed partial class AdminDataRepository
         return items;
     }
 
-    private IReadOnlyList<Review> GetReviews(SqlConnection connection, SqlTransaction? transaction)
-    {
-        const string sql = """
-            SELECT Id, PoiId, UserName, Rating, CommentText, LanguageCode, CreatedAt, [Status]
-            FROM dbo.Reviews
-            ORDER BY CreatedAt DESC, Id DESC;
-            """;
-
-        using var command = CreateCommand(connection, transaction, sql);
-        using var reader = command.ExecuteReader();
-
-        var items = new List<Review>();
-        while (reader.Read())
-        {
-            items.Add(MapReview(reader));
-        }
-
-        return items;
-    }
-
     private IReadOnlyList<ViewLog> GetViewLogs(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
@@ -236,7 +216,7 @@ public sealed partial class AdminDataRepository
     {
         const string settingSql = """
             SELECT Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd, MapProvider,
-                   StorageProvider, TtsProvider, GeofenceRadiusMeters, GuestReviewEnabled, AnalyticsRetentionDays
+                   StorageProvider, TtsProvider, GeofenceRadiusMeters, AnalyticsRetentionDays
             FROM dbo.SystemSettings
             WHERE Id = 1;
             """;
@@ -263,7 +243,6 @@ public sealed partial class AdminDataRepository
                     StorageProvider = ReadString(settingReader, "StorageProvider"),
                     TtsProvider = ReadString(settingReader, "TtsProvider"),
                     GeofenceRadiusMeters = ReadInt(settingReader, "GeofenceRadiusMeters"),
-                    GuestReviewEnabled = ReadBool(settingReader, "GuestReviewEnabled"),
                     AnalyticsRetentionDays = ReadInt(settingReader, "AnalyticsRetentionDays")
                 };
             }

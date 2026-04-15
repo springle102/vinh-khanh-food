@@ -225,18 +225,6 @@ public sealed record PromotionUpsertRequest(
     string ActorName,
     string ActorRole);
 
-public sealed record ReviewCreateRequest(
-    string PoiId,
-    string UserName,
-    int Rating,
-    string Comment,
-    string LanguageCode);
-
-public sealed record ReviewStatusRequest(
-    string Status,
-    string ActorName,
-    string ActorRole);
-
 public sealed record SystemSettingUpsertRequest(
     string AppName,
     string SupportEmail,
@@ -250,7 +238,6 @@ public sealed record SystemSettingUpsertRequest(
     string StorageProvider,
     string TtsProvider,
     int GeofenceRadiusMeters,
-    bool GuestReviewEnabled,
     int AnalyticsRetentionDays,
     string ActorName,
     string ActorRole);
@@ -269,8 +256,7 @@ public sealed record DashboardSummaryResponse(
     int TotalListens,
     int TotalQrScans,
     int PublishedPois,
-    int MissingReadyAudio,
-    int PendingReviews);
+    int MissingReadyAudio);
 
 public sealed record DataSyncState(
     string Version,
@@ -288,7 +274,6 @@ public sealed record AdminBootstrapResponse(
     IReadOnlyList<Models.FoodItem> FoodItems,
     IReadOnlyList<Models.TourRoute> Routes,
     IReadOnlyList<Models.Promotion> Promotions,
-    IReadOnlyList<Models.Review> Reviews,
     IReadOnlyList<Models.AppUsageEvent> UsageEvents,
     IReadOnlyList<Models.ViewLog> ViewLogs,
     IReadOnlyList<Models.AudioListenLog> AudioListenLogs,

@@ -1,0 +1,187 @@
+is_global = true
+build_property.EnableAotAnalyzer = 
+build_property.EnableSingleFileAnalyzer = true
+build_property.EnableTrimAnalyzer = false
+build_property.IncludeAllContentForSelfExtract = 
+build_property.VerifyReferenceTrimCompatibility = 
+build_property.VerifyReferenceAotCompatibility = 
+build_property.MauiXamlNoWarn = 
+build_property.EnableMauiXamlDiagnostics = true
+build_property.MauiXamlLineInfo = 
+build_property.Configuration = Debug
+build_property.TargetFramework = net10.0-android
+build_property.TargetFrameworkIdentifier = .NETCoreApp
+build_property.TargetFrameworkVersion = v10.0
+build_property.TargetPlatformMinVersion = 
+build_property.UsingMicrosoftNETSdkWeb = 
+build_property.ProjectTypeGuids = 
+build_property.InvariantGlobalization = false
+build_property.PlatformNeutralAssembly = 
+build_property.EnforceExtendedAnalyzerRules = 
+build_property._SupportedPlatformList = Linux,macOS,Windows
+build_property.RootNamespace = VinhKhanh.MobileApp
+build_property.ProjectDir = C:\vinh-khanh-food\apps\mobile-app\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.EffectiveAnalysisLevelStyle = 10.0
+build_property.EnableCodeStyleSeverity = 
+
+[C:/vinh-khanh-food/apps/mobile-app/App.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.App.xaml
+build_metadata.AdditionalFiles.TargetPath = App.xaml
+build_metadata.AdditionalFiles.RelativePath = App.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/AppShell.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.AppShell.xaml
+build_metadata.AdditionalFiles.TargetPath = AppShell.xaml
+build_metadata.AdditionalFiles.RelativePath = AppShell.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Controls/AppBottomBar.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Controls.AppBottomBar.xaml
+build_metadata.AdditionalFiles.TargetPath = Controls\AppBottomBar.xaml
+build_metadata.AdditionalFiles.RelativePath = Controls\AppBottomBar.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Controls/POIDetailBottomSheet.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Controls.POIDetailBottomSheet.xaml
+build_metadata.AdditionalFiles.TargetPath = Controls\POIDetailBottomSheet.xaml
+build_metadata.AdditionalFiles.RelativePath = Controls\POIDetailBottomSheet.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Pages/DiscoverToursPage.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Pages.DiscoverToursPage.xaml
+build_metadata.AdditionalFiles.TargetPath = Pages\DiscoverToursPage.xaml
+build_metadata.AdditionalFiles.RelativePath = Pages\DiscoverToursPage.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Pages/HomeMapPage.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Pages.HomeMapPage.xaml
+build_metadata.AdditionalFiles.TargetPath = Pages\HomeMapPage.xaml
+build_metadata.AdditionalFiles.RelativePath = Pages\HomeMapPage.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Pages/LanguageSelectionPage.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Pages.LanguageSelectionPage.xaml
+build_metadata.AdditionalFiles.TargetPath = Pages\LanguageSelectionPage.xaml
+build_metadata.AdditionalFiles.RelativePath = Pages\LanguageSelectionPage.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Pages/LoginPage.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Pages.LoginPage.xaml
+build_metadata.AdditionalFiles.TargetPath = Pages\LoginPage.xaml
+build_metadata.AdditionalFiles.RelativePath = Pages\LoginPage.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Pages/MyTourPage.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Pages.MyTourPage.xaml
+build_metadata.AdditionalFiles.TargetPath = Pages\MyTourPage.xaml
+build_metadata.AdditionalFiles.RelativePath = Pages\MyTourPage.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Pages/PremiumCheckoutPage.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Pages.PremiumCheckoutPage.xaml
+build_metadata.AdditionalFiles.TargetPath = Pages\PremiumCheckoutPage.xaml
+build_metadata.AdditionalFiles.RelativePath = Pages\PremiumCheckoutPage.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Pages/QrScannerPage.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Pages.QrScannerPage.xaml
+build_metadata.AdditionalFiles.TargetPath = Pages\QrScannerPage.xaml
+build_metadata.AdditionalFiles.RelativePath = Pages\QrScannerPage.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Pages/SettingsPage.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Pages.SettingsPage.xaml
+build_metadata.AdditionalFiles.TargetPath = Pages\SettingsPage.xaml
+build_metadata.AdditionalFiles.RelativePath = Pages\SettingsPage.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Resources/Styles/Colors.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Resources.Styles.Colors.xaml
+build_metadata.AdditionalFiles.TargetPath = Resources\Styles\Colors.xaml
+build_metadata.AdditionalFiles.RelativePath = Resources\Styles\Colors.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Resources/Styles/Styles.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Resources.Styles.Styles.xaml
+build_metadata.AdditionalFiles.TargetPath = Resources\Styles\Styles.xaml
+build_metadata.AdditionalFiles.RelativePath = Resources\Styles\Styles.xaml
+build_metadata.AdditionalFiles.Inflator = SourceGen
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/obj/Debug/net10.0-android/assets/leaflet.css]
+build_metadata.AdditionalFiles.GenKind = Css
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.obj.Debug.net10._0_android.assets.leaflet.css
+build_metadata.AdditionalFiles.TargetPath = obj\Debug\net10.0-android\assets\leaflet.css
+build_metadata.AdditionalFiles.RelativePath = obj\Debug\net10.0-android\assets\leaflet.css
+build_metadata.AdditionalFiles.Inflator = 
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 
+
+[C:/vinh-khanh-food/apps/mobile-app/Resources/Raw/leaflet.css]
+build_metadata.AdditionalFiles.GenKind = Css
+build_metadata.AdditionalFiles.ManifestResourceName = VinhKhanh.MobileApp.Resources.Raw.leaflet.css
+build_metadata.AdditionalFiles.TargetPath = Resources\Raw\leaflet.css
+build_metadata.AdditionalFiles.RelativePath = Resources\Raw\leaflet.css
+build_metadata.AdditionalFiles.Inflator = 
+build_metadata.AdditionalFiles.NoWarn = 
+build_metadata.AdditionalFiles.EnableDiagnostics = 
+build_metadata.AdditionalFiles.LineInfo = 

@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "dgSpecHash": "pLovc5WLDc4=",
+  "success": true,
+  "projectFilePath": "C:\\vinh-khanh-food\\apps\\backend-api\\VinhKhanh.BackendApi.csproj",
+  "expectedPackageFiles": [
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\azure.core\\1.47.1\\azure.core.1.47.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\azure.identity\\1.14.2\\azure.identity.1.14.2.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.aspnetcore.spaproxy\\10.0.5\\microsoft.aspnetcore.spaproxy.10.0.5.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\8.0.0\\microsoft.bcl.asyncinterfaces.8.0.0.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.bcl.cryptography\\9.0.4\\microsoft.bcl.cryptography.9.0.4.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.data.sqlclient\\6.1.1\\microsoft.data.sqlclient.6.1.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.data.sqlclient.sni.runtime\\6.0.2\\microsoft.data.sqlclient.sni.runtime.6.0.2.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.extensions.apidescription.server\\6.0.5\\microsoft.extensions.apidescription.server.6.0.5.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.identity.client\\4.73.1\\microsoft.identity.client.4.73.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.identity.client.extensions.msal\\4.73.1\\microsoft.identity.client.extensions.msal.4.73.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.identitymodel.abstractions\\8.0.1\\microsoft.identitymodel.abstractions.8.0.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.identitymodel.jsonwebtokens\\8.0.1\\microsoft.identitymodel.jsonwebtokens.8.0.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.identitymodel.logging\\8.0.1\\microsoft.identitymodel.logging.8.0.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.identitymodel.protocols\\8.0.1\\microsoft.identitymodel.protocols.8.0.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.identitymodel.protocols.openidconnect\\7.7.1\\microsoft.identitymodel.protocols.openidconnect.7.7.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.identitymodel.tokens\\8.0.1\\microsoft.identitymodel.tokens.8.0.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.openapi\\1.6.23\\microsoft.openapi.1.6.23.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\microsoft.sqlserver.server\\1.0.0\\microsoft.sqlserver.server.1.0.0.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\swashbuckle.aspnetcore\\8.1.1\\swashbuckle.aspnetcore.8.1.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\swashbuckle.aspnetcore.swagger\\8.1.1\\swashbuckle.aspnetcore.swagger.8.1.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\swashbuckle.aspnetcore.swaggergen\\8.1.1\\swashbuckle.aspnetcore.swaggergen.8.1.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\swashbuckle.aspnetcore.swaggerui\\8.1.1\\swashbuckle.aspnetcore.swaggerui.8.1.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\system.clientmodel\\1.5.1\\system.clientmodel.1.5.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\system.configuration.configurationmanager\\9.0.4\\system.configuration.configurationmanager.9.0.4.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\system.identitymodel.tokens.jwt\\8.0.1\\system.identitymodel.tokens.jwt.8.0.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\system.memory.data\\8.0.1\\system.memory.data.8.0.1.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\system.security.cryptography.pkcs\\9.0.4\\system.security.cryptography.pkcs.9.0.4.nupkg.sha512",
+    "C:\\vinh-khanh-food\\.dotnet-home\\.nuget\\packages\\system.security.cryptography.protecteddata\\9.0.4\\system.security.cryptography.protecteddata.9.0.4.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1900",
+      "level": "Warning",
+      "message": "Error occurred while getting package vulnerability data: Access to the path 'C:\\Users\\Admin\\AppData\\Local\\NuGet\\v3-cache\\670c1461c29885f9aa22c281d8b7da90845b38e4$ps_api.nuget.org_v3_index.json' is denied.",
+      "projectPath": "C:\\vinh-khanh-food\\apps\\backend-api\\VinhKhanh.BackendApi.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\vinh-khanh-food\\apps\\backend-api\\VinhKhanh.BackendApi.csproj",
+      "targetGraphs": []
+    }
+  ]
+}

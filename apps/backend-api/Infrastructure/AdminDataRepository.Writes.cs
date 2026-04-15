@@ -821,7 +821,6 @@ public sealed partial class AdminDataRepository
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.FoodItems SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.RouteStops SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.Promotions SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
-        ExecuteNonQuery(connection, transaction, "UPDATE dbo.Reviews SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.ViewLogs SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.AudioListenLogs SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.AppUsageEvents SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);

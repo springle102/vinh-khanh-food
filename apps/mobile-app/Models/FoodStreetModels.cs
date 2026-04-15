@@ -61,8 +61,6 @@ public sealed class PoiExperienceDetail
     public string OpeningHours { get; set; } = string.Empty;
     public double Latitude { get; set; }
     public double Longitude { get; set; }
-    public double Rating { get; set; }
-    public int ReviewCount { get; set; }
     public bool IsFeatured { get; set; }
     public List<string> Tags { get; set; } = [];
     public List<PoiFoodItemDetail> FoodItems { get; set; } = [];
