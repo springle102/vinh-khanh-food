@@ -113,43 +113,29 @@
                         </Grid>
                     </Border>
 
-                    <Border
+                    <VerticalStackLayout
                         Grid.Row="2"
                         Grid.Column="0"
                         HorizontalOptions="Start"
-                        Style="{StaticResource MapChipStyle}">
-                        <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="8" HeightRequest="44">
-                            <Border
-                                WidthRequest="8"
-                                HeightRequest="8"
-                                BackgroundColor="{StaticResource BrandPrimary}"
-                                StrokeThickness="0"
-                                StrokeShape="RoundRectangle 4"
-                                VerticalOptions="Center" />
-                            <Label
-                                Grid.Column="1"
-                                Style="{StaticResource MapOverlayCaptionStyle}"
-                                Text="{Binding PoiChipText}" />
-                        </Grid>
-                    </Border>
-
-                    <Border
-                        Grid.Row="2"
-                        Grid.Column="1"
-                        HorizontalOptions="End"
-                        MinimumWidthRequest="74"
-                        Style="{StaticResource MapChipStyle}">
-                        <Grid HeightRequest="44">
-                            <Label
-                                HorizontalTextAlignment="Center"
-                                Style="{StaticResource MapOverlayCaptionStyle}"
-                                Text="{Binding LayerButtonText}"
-                                VerticalTextAlignment="Center" />
-                        </Grid>
-                        <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnToggleHeatmapTapped" />
-                        </Border.GestureRecognizers>
-                    </Border>
+                        Spacing="10">
+                        <Border
+                            HorizontalOptions="Start"
+                            Style="{StaticResource MapChipStyle}">
+                            <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="8" HeightRequest="44">
+                                <Border
+                                    WidthRequest="8"
+                                    HeightRequest="8"
+                                    BackgroundColor="{StaticResource BrandPrimary}"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 4"
+                                    VerticalOptions="Center" />
+                                <Label
+                                    Grid.Column="1"
+                                    Style="{StaticResource MapOverlayCaptionStyle}"
+                                    Text="{Binding PoiChipText}" />
+                            </Grid>
+                        </Border>
+                    </VerticalStackLayout>
 
                     <VerticalStackLayout
                         Grid.Row="2"

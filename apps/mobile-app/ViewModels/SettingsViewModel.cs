@@ -8,22 +8,43 @@ namespace VinhKhanh.MobileApp.ViewModels;
 public sealed class SettingsViewModel : LocalizedViewModelBase
 {
     private readonly IFoodStreetDataService _dataService;
+    private readonly IAutoNarrationService _autoNarrationService;
     private readonly AsyncCommand<LanguageOption> _selectLanguageCommand;
+    private bool _isAutoNarrationEnabled;
+    private bool _isRestoringSettingsState;
 
     public SettingsViewModel(
         IFoodStreetDataService dataService,
-        IAppLanguageService languageService)
+        IAppLanguageService languageService,
+        IAutoNarrationService autoNarrationService)
         : base(languageService)
     {
         _dataService = dataService;
+        _autoNarrationService = autoNarrationService;
         _selectLanguageCommand = new(SelectLanguageAsync);
     }
 
     public ObservableCollection<LanguageOption> Languages { get; } = [];
     public ObservableCollection<SettingsMenuItem> MenuItems { get; } = [];
 
+    public bool IsAutoNarrationEnabled
+    {
+        get => _isAutoNarrationEnabled;
+        set
+        {
+            if (!SetProperty(ref _isAutoNarrationEnabled, value) || _isRestoringSettingsState)
+            {
+                return;
+            }
+
+            _ = _autoNarrationService.SetEnabledAsync(value);
+        }
+    }
+
     public string HeaderTitleText => LanguageService.GetText("settings_title");
     public string LanguageTitleText => LanguageService.GetText("settings_language_title");
+    public string AutoNarrationTitleText => LanguageService.GetText("settings_auto_narration_title");
+    public string AutoNarrationDescriptionText => LanguageService.GetText("settings_auto_narration_description");
     public string PublicModeTitleText => LanguageService.GetText("brand_title");
     public string PublicModeDescriptionText => AppLanguage.NormalizeCode(LanguageService.CurrentLanguage) switch
     {
@@ -56,6 +77,10 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
 
     private async Task RefreshLocalizedStateAsync()
     {
+        _isRestoringSettingsState = true;
+        IsAutoNarrationEnabled = _autoNarrationService.IsEnabled;
+        _isRestoringSettingsState = false;
+
         await _dataService.EnsureAllowedLanguageSelectionAsync();
         Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
         MenuItems.ReplaceRange(await _dataService.GetSettingsMenuAsync());

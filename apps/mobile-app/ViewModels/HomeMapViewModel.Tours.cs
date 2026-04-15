@@ -282,6 +282,7 @@ public sealed partial class HomeMapViewModel
         ActiveTour = activeTour;
         PreviewTour = null;
         IsActiveTourVisible = true;
+        await BuildTourRouteAsync(activeTour, startSimulation: true);
     }
 
     private Task ShowAllPlacesAsync()
@@ -296,19 +297,30 @@ public sealed partial class HomeMapViewModel
         await OpenDiscoverToursAsync();
     }
 
-    private Task PauseTourAsync()
+    private async Task PauseTourAsync()
     {
+        if (ActiveTour is not null && IsCurrentRouteContext(SimulationContextKind.Tour, ActiveTour.Id))
+        {
+            await PauseSimulationAsync();
+        }
+
         PreviewTour = null;
         IsActiveTourVisible = false;
-        return Task.CompletedTask;
     }
 
     private async Task ExitTourModeAsync()
     {
         var shouldClearSavedTour = IsTourActiveMode && ActiveTour is not null;
+        var activeTourId = ActiveTour?.Id;
 
         PreviewTour = null;
         IsActiveTourVisible = false;
+
+        if (!string.IsNullOrWhiteSpace(activeTourId) &&
+            IsCurrentRouteContext(SimulationContextKind.Tour, activeTourId))
+        {
+            await ClearActiveRouteAsync(stopAudio: true);
+        }
 
         if (!shouldClearSavedTour)
         {
@@ -359,9 +371,39 @@ public sealed partial class HomeMapViewModel
         var refreshedActiveTour = await LoadTourPlanOrNullAsync(activeSession.TourId, activeSession.CompletedPoiIds);
         if (refreshedActiveTour is not null)
         {
+            if (IsTourCompleted(refreshedActiveTour))
+            {
+                await CompleteActiveTourAsync(refreshedActiveTour.Id, stopAudio: false);
+                return;
+            }
+
             ActiveTour = refreshedActiveTour;
         }
     }
+
+    private async Task CompleteActiveTourAsync(string? tourId, bool stopAudio)
+    {
+        if (string.IsNullOrWhiteSpace(tourId))
+        {
+            return;
+        }
+
+        PreviewTour = null;
+        IsActiveTourVisible = false;
+
+        if (IsCurrentRouteContext(SimulationContextKind.Tour, tourId))
+        {
+            await ClearActiveRouteAsync(stopAudio);
+        }
+
+        await _tourStateService.ClearActiveTourAsync();
+        ActiveTour = null;
+    }
+
+    private static bool IsTourCompleted(TourPlan? tour)
+        => tour is not null &&
+           tour.Checkpoints.Count > 0 &&
+           tour.Checkpoints.All(item => item.IsCompleted);
 
     private List<PoiLocation> GetVisibleTourPoiSequence()
     {
@@ -446,6 +488,7 @@ public sealed partial class HomeMapViewModel
         OnPropertyChanged(nameof(TourPanelModeText));
         OnPropertyChanged(nameof(TourPanelPrimaryActionText));
         OnPropertyChanged(nameof(IsFloatingPoiActionVisible));
+        RefreshSimulationBindings();
     }
 
     private void SynchronizeTourCatalogStates()

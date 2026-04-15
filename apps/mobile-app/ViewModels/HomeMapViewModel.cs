@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Microsoft.Maui.ApplicationModel;
-using Microsoft.Maui.Devices.Sensors;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 using VinhKhanh.MobileApp.Services;
@@ -10,52 +9,50 @@ namespace VinhKhanh.MobileApp.ViewModels;
 
 public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 {
-    private const double VirtualPoiActivationRadiusMeters = 10d;
-    private const double DefaultVirtualLocationLatitudeOffset = 0.00015d;
-
     private readonly IFoodStreetDataService _dataService;
     private readonly IPoiNarrationService _poiNarrationService;
-    private readonly IVirtualLocationService _virtualLocationService;
-    private readonly IPoiProximityService _poiProximityService;
+    private readonly IAutoNarrationService _autoNarrationService;
+    private readonly SemaphoreSlim _locationUpdateLock = new(1, 1);
 
     private string _searchText = string.Empty;
     private PoiLocation? _selectedPoi;
     private PoiExperienceDetail? _selectedPoiDetail;
-    private PoiProximitySnapshot? _virtualLocationSnapshot;
-    private bool _isHeatmapVisible = true;
+    private PoiProximitySnapshot? _userLocationSnapshot;
     private bool _isBottomSheetVisible;
     private bool _isPoiDetailLoading;
+    private bool _isLocationTrackingActive;
     private string? _currentActivePoiId;
     private string? _lastTriggeredPoiId;
     private bool _isAutoNarrationPlaying;
     private volatile bool _isNarrationContextActive = true;
     private int _mapDataVersion;
-    private int _virtualLocationVersion;
+    private int _userLocationVersion;
     private int _syncRefreshInProgress;
     private long _detailRequestVersion;
-    private long _virtualLocationRequestVersion;
 
     public HomeMapViewModel(
         IFoodStreetDataService dataService,
         IAppLanguageService languageService,
         IPoiNarrationService poiNarrationService,
-        IVirtualLocationService virtualLocationService,
-        IPoiProximityService poiProximityService,
+        IRouteService routeService,
+        IRoutePoiFilterService routePoiFilterService,
+        ISimulationService simulationService,
+        IAutoNarrationService autoNarrationService,
         ITourStateService tourStateService)
         : base(languageService)
     {
         _dataService = dataService;
         _poiNarrationService = poiNarrationService;
-        _virtualLocationService = virtualLocationService;
-        _poiProximityService = poiProximityService;
+        _routeService = routeService;
+        _routePoiFilterService = routePoiFilterService;
+        _simulationService = simulationService;
+        _autoNarrationService = autoNarrationService;
         _tourStateService = tourStateService;
         InitializeTourCommands();
     }
 
     public ObservableCollection<PoiLocation> Pois { get; } = [];
     public ObservableCollection<PoiLocation> SearchResults { get; } = [];
-    public ObservableCollection<MapHeatPoint> HeatPoints { get; } = [];
-
     public string SearchText
     {
         get => _searchText;
@@ -76,6 +73,8 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             if (SetProperty(ref _selectedPoi, value))
             {
                 RefreshSelectedPoiBindings();
+                OnPropertyChanged(nameof(CanSimulateNearSelectedPoi));
+                RefreshSimulationBindings();
             }
         }
     }
@@ -90,12 +89,6 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
                 RefreshDetailBindings();
             }
         }
-    }
-
-    public bool IsHeatmapVisible
-    {
-        get => _isHeatmapVisible;
-        set => SetProperty(ref _isHeatmapVisible, value);
     }
 
     public bool IsBottomSheetVisible
@@ -130,10 +123,10 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         private set => SetProperty(ref _mapDataVersion, value);
     }
 
-    public int VirtualLocationVersion
+    public int UserLocationVersion
     {
-        get => _virtualLocationVersion;
-        private set => SetProperty(ref _virtualLocationVersion, value);
+        get => _userLocationVersion;
+        private set => SetProperty(ref _userLocationVersion, value);
     }
 
     public string? CurrentActivePoiId
@@ -168,10 +161,22 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     public bool ShowSelectedPoiFoodItemsEmptyState => HasSelectedPoiDetail && !IsPoiDetailLoading && !HasSelectedPoiFoodItems;
     public bool ShowSelectedPoiPromotionsEmptyState => HasSelectedPoiDetail && !IsPoiDetailLoading && !HasSelectedPoiPromotions;
     public bool IsFloatingPoiActionVisible => !HasVisibleBottomSheet && !HasVisibleTour;
+    public bool CanSimulateNearSelectedPoi => SelectedPoi is not null;
+    public bool IsAutoNarrationEnabled => _autoNarrationService.IsEnabled;
+    public bool IsAutoNarrationDevToolsVisible
+    {
+        get
+        {
+#if DEBUG
+            return true;
+#else
+            return false;
+#endif
+        }
+    }
 
     public string SearchPlaceholderText => LanguageService.GetText("home_search_placeholder");
     public string PoiChipText => LanguageService.GetText("home_poi_chip");
-    public string LayerButtonText => LanguageService.GetText("home_layer");
     public string PoiActionText => LanguageService.GetText("bottom_poi");
     public string TourEntryActionText => LanguageService.GetText("tour_map_entry_action");
     public string ListenActionText => LanguageService.GetText("poi_detail_listen");
@@ -187,6 +192,9 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     public string TagsLabelText => LanguageService.GetText("poi_detail_tags");
     public string NoFoodItemsText => LanguageService.GetText("poi_detail_no_food_items");
     public string NoPromotionsText => LanguageService.GetText("poi_detail_no_promotions");
+    public string AutoNarrationDevTitleText => LanguageService.GetText("auto_narration_dev_title");
+    public string AutoNarrationDevDescriptionText => LanguageService.GetText("auto_narration_dev_description");
+    public string SimulateNearSelectedPoiText => LanguageService.GetText("auto_narration_dev_action");
 
     public string SelectedPoiTitle
         => FirstNonEmpty(
@@ -269,50 +277,55 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     public IReadOnlyList<PoiPromotionDetail> SelectedPoiPromotions
         => SelectedPoiDetail?.Promotions ?? [];
 
-    public MapVirtualUserState GetMapVirtualUserState()
+    public MapUserLocationState GetMapUserLocationState()
     {
-        if (_virtualLocationSnapshot is null)
+        if (_userLocationSnapshot is null)
         {
-            return new MapVirtualUserState();
+            return new MapUserLocationState();
         }
 
-        var activePoiTitle = _virtualLocationSnapshot.ActivePoi?.Title;
-        var nearestPoiTitle = _virtualLocationSnapshot.NearestPoi?.Title;
-        return new MapVirtualUserState
+        var activePoiTitle = _userLocationSnapshot.ActivePoi?.Title;
+        var nearestPoiTitle = _userLocationSnapshot.NearestPoi?.Title;
+        return new MapUserLocationState
         {
-            Latitude = _virtualLocationSnapshot.Location.Latitude,
-            Longitude = _virtualLocationSnapshot.Location.Longitude,
+            Latitude = _userLocationSnapshot.Location.Latitude,
+            Longitude = _userLocationSnapshot.Location.Longitude,
             ActivePoiId = CurrentActivePoiId,
-            PopupTitle = LanguageService.GetText("virtual_location_title"),
-            CoordinatesLabel = LanguageService.GetText("virtual_location_coordinates_label"),
+            PopupTitle = LanguageService.GetText("user_location_title"),
+            CoordinatesLabel = LanguageService.GetText("user_location_coordinates_label"),
             CoordinatesText = FormatCoordinates(
-                _virtualLocationSnapshot.Location.Latitude,
-                _virtualLocationSnapshot.Location.Longitude),
-            StatusLabel = LanguageService.GetText("virtual_location_status_label"),
+                _userLocationSnapshot.Location.Latitude,
+                _userLocationSnapshot.Location.Longitude),
+            StatusLabel = LanguageService.GetText("user_location_status_label"),
             StatusText = string.IsNullOrWhiteSpace(activePoiTitle)
-                ? LanguageService.GetText("virtual_location_status_idle")
+                ? LanguageService.GetText("user_location_status_idle")
                 : string.Format(
                     LanguageService.CurrentCulture,
-                    LanguageService.GetText("virtual_location_status_near_poi"),
+                    LanguageService.GetText("user_location_status_near_poi"),
                     activePoiTitle),
-            NearestPoiLabel = LanguageService.GetText("virtual_location_nearest_poi_label"),
+            NearestPoiLabel = LanguageService.GetText("user_location_nearest_poi_label"),
             NearestPoiText = FirstNonEmpty(
                 nearestPoiTitle,
-                LanguageService.GetText("virtual_location_no_nearest_poi")),
-            NearestDistanceLabel = LanguageService.GetText("virtual_location_nearest_distance_label"),
-            NearestDistanceText = _virtualLocationSnapshot.NearestPoiDistanceMeters is double distanceMeters
+                LanguageService.GetText("user_location_no_nearest_poi")),
+            NearestDistanceLabel = LanguageService.GetText("user_location_nearest_distance_label"),
+            NearestDistanceText = _userLocationSnapshot.NearestPoiDistanceMeters is double distanceMeters
                 ? FormatDistanceMeters(distanceMeters)
-                : LanguageService.GetText("virtual_location_distance_unknown")
+                : LanguageService.GetText("user_location_distance_unknown"),
+            SourceLabel = LanguageService.GetText("user_location_source_label"),
+            SourceText = LanguageService.GetText(
+                _simulationMode == SimulationMode.Auto && _simulationRunState == SimulationRunState.Running
+                    ? "user_location_source_auto"
+                    : "user_location_source_manual")
         };
     }
 
     public AsyncCommand<PoiLocation> SelectPoiCommand => new(poi => SelectPoiAsync(poi, autoPlayNarration: true));
     public AsyncCommand<string> LoadPoiDetailCommand => new(poiId => LoadPoiDetailByIdAsync(poiId, autoPlayNarration: true));
     public AsyncCommand SelectNextPoiCommand => new(SelectNextPoiAsync);
-    public AsyncCommand ToggleHeatmapCommand => new(ToggleHeatmapAsync);
+    public AsyncCommand SimulateNearSelectedPoiCommand => new(SimulateNearSelectedPoiAsync);
     public AsyncCommand CloseBottomSheetCommand => new(CloseBottomSheetAsync);
     public AsyncCommand PlayNarrationCommand => new(PlayNarrationAsync);
-    public AsyncCommand OpenDirectionsCommand => new(OpenDirectionsAsync);
+    public AsyncCommand OpenDirectionsCommand => new(BuildRouteAsync);
 
     public void ActivateNarrationContext()
         => _isNarrationContextActive = true;
@@ -365,10 +378,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
         Pois.ReplaceRange(await _dataService.GetPoisAsync());
         ApplySearch();
-        HeatPoints.ReplaceRange(await _dataService.GetHeatPointsAsync());
         await ReloadTourExperienceAsync();
-
-        EnsureVirtualLocationInitialized();
 
         SelectedPoi = currentPoiId is null
             ? null
@@ -385,7 +395,35 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             RefreshLocalizedTexts();
         }
 
-        await SyncVirtualLocationAsync(allowAutoNarration: false);
+        await EnsureSimulationInitializedAsync();
+        await RefreshCurrentLocationAsync();
+    }
+
+    public async Task StartLocationTrackingAsync()
+    {
+        if (_isLocationTrackingActive)
+        {
+            await RefreshCurrentLocationAsync();
+            return;
+        }
+
+        _simulationService.LocationChanged += OnUserLocationChanged;
+        _simulationService.StateChanged += OnSimulationStateChanged;
+        _isLocationTrackingActive = true;
+        await EnsureSimulationInitializedAsync();
+        await RefreshCurrentLocationAsync();
+    }
+
+    public async Task StopLocationTrackingAsync()
+    {
+        if (_isLocationTrackingActive)
+        {
+            _simulationService.LocationChanged -= OnUserLocationChanged;
+            _simulationService.StateChanged -= OnSimulationStateChanged;
+            _isLocationTrackingActive = false;
+        }
+
+        await _simulationService.PauseAsync();
     }
 
     public async Task SelectPoiByIdAsync(string poiId)
@@ -406,11 +444,8 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         await LoadPoiDetailByIdAsync(poiId, autoPlayNarration);
     }
 
-    public async Task SetVirtualLocationAsync(double latitude, double longitude)
-    {
-        _virtualLocationService.SetLocation(latitude, longitude);
-        await SyncVirtualLocationAsync(allowAutoNarration: true);
-    }
+    public Task SetMockLocationAsync(double latitude, double longitude)
+        => _simulationService.SetCurrentLocationAsync(latitude, longitude);
 
     private async Task SelectPoiAsync(PoiLocation? poi, bool autoPlayNarration = true)
     {
@@ -495,90 +530,87 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         }
     }
 
-    private void EnsureVirtualLocationInitialized()
+    private async Task RefreshCurrentLocationAsync()
     {
-        if (_virtualLocationService.HasLocation || Pois.Count == 0)
+        var currentLocation = _simulationService.CurrentLocation;
+        if (currentLocation is null)
         {
-            return;
-        }
-
-        var anchorPoi = SelectedPoi
-            ?? Pois.FirstOrDefault(item => item.IsFeatured)
-            ?? Pois[0];
-
-        // Seed the demo marker close to a POI, but still outside the 10 m trigger radius.
-        _virtualLocationService.Initialize(
-            anchorPoi.Latitude + DefaultVirtualLocationLatitudeOffset,
-            anchorPoi.Longitude);
-    }
-
-    private async Task SyncVirtualLocationAsync(bool allowAutoNarration)
-    {
-        var currentLocation = _virtualLocationService.CurrentLocation;
-        if (currentLocation is null || Pois.Count == 0)
-        {
-            _virtualLocationSnapshot = null;
+            _userLocationSnapshot = null;
             CurrentActivePoiId = null;
-            VirtualLocationVersion++;
+            UserLocationVersion++;
             return;
         }
 
-        var snapshot = _poiProximityService.Evaluate(
-            currentLocation,
-            Pois,
-            VirtualPoiActivationRadiusMeters);
-        var previousActivePoiId = CurrentActivePoiId;
-        var nextActivePoiId = snapshot.ActivePoi?.Id;
-        var hasEnteredDifferentPoi =
-            !string.IsNullOrWhiteSpace(nextActivePoiId) &&
-            !string.Equals(previousActivePoiId, nextActivePoiId, StringComparison.OrdinalIgnoreCase);
-
-        _virtualLocationSnapshot = snapshot;
-        CurrentActivePoiId = nextActivePoiId;
-        VirtualLocationVersion++;
-
-        if (!allowAutoNarration || !hasEnteredDifferentPoi || snapshot.ActivePoi is null)
-        {
-            return;
-        }
-
-        var locationRequestVersion = Interlocked.Increment(ref _virtualLocationRequestVersion);
-        await HandleEnteredActivePoiAsync(snapshot.ActivePoi, locationRequestVersion);
+        await ApplyLocationUpdateAsync(currentLocation, isMockLocation: true);
     }
 
-    private async Task HandleEnteredActivePoiAsync(PoiLocation poi, long locationRequestVersion)
+    private void OnUserLocationChanged(object? sender, UserLocationChangedEventArgs e)
+        => MainThread.BeginInvokeOnMainThread(() => _ = ApplyLocationUpdateAsync(e.Location, e.IsMock));
+
+    private async Task ApplyLocationUpdateAsync(UserLocationPoint location, bool isMockLocation)
     {
+        await _locationUpdateLock.WaitAsync();
         try
         {
-            await LoadPoiDetailCoreAsync(
-                poi,
-                showBottomSheet: true,
-                autoPlayNarration: false,
-                usageSource: "virtual_location");
-            if (locationRequestVersion != _virtualLocationRequestVersion ||
-                !_isNarrationContextActive ||
-                SelectedPoiDetail is null ||
-                !string.Equals(CurrentActivePoiId, poi.Id, StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(SelectedPoiDetail.Id, poi.Id, StringComparison.OrdinalIgnoreCase))
+            if (Pois.Count == 0)
+            {
+                _userLocationSnapshot = new PoiProximitySnapshot
+                {
+                    Location = location
+                };
+                CurrentActivePoiId = null;
+                UserLocationVersion++;
+                return;
+            }
+
+            var narrationResult = await _autoNarrationService.ProcessLocationAsync(location, Pois, isMockLocation);
+            ApplyUserLocationSnapshot(narrationResult.Snapshot, isMockLocation);
+
+            if (!narrationResult.PlaybackStarted ||
+                narrationResult.TriggeredPoi is null ||
+                narrationResult.TriggeredDetail is null)
             {
                 return;
             }
 
-            LastTriggeredPoiId = poi.Id;
-            IsAutoNarrationPlaying = true;
-            await _poiNarrationService.PlayAsync(SelectedPoiDetail, LanguageService.CurrentLanguage);
-        }
-        catch
-        {
-            // Best effort auto narration only. The user can replay from the detail sheet.
+            LastTriggeredPoiId = narrationResult.TriggeredPoi.Id;
+            await PresentAutoNarratedPoiAsync(
+                narrationResult.TriggeredPoi,
+                narrationResult.TriggeredDetail,
+                ResolveAutoNarrationUsageSource());
         }
         finally
         {
-            if (locationRequestVersion == _virtualLocationRequestVersion)
-            {
-                IsAutoNarrationPlaying = false;
-            }
+            _locationUpdateLock.Release();
         }
+    }
+
+    private void ApplyUserLocationSnapshot(PoiProximitySnapshot snapshot, bool isMockLocation)
+    {
+        _userLocationSnapshot = snapshot;
+        CurrentActivePoiId = snapshot.ActivePoi?.Id;
+        UserLocationVersion++;
+    }
+
+    private async Task PresentAutoNarratedPoiAsync(PoiLocation poi, PoiExperienceDetail detail, string usageSource)
+    {
+        SelectedPoi = poi;
+        SelectedPoiDetail = detail;
+        IsPoiDetailLoading = false;
+        IsBottomSheetVisible = true;
+
+        await MarkActiveTourPoiVisitedAsync(poi.Id);
+
+        try
+        {
+            await _dataService.TrackPoiViewAsync(poi.Id, LanguageService.CurrentLanguage, usageSource);
+        }
+        catch
+        {
+            // Analytics must never block POI detail rendering.
+        }
+
+        RefreshLocalizedTexts();
     }
 
     private async Task SelectNextPoiAsync()
@@ -594,10 +626,29 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         await SelectPoiAsync(nextPoi, autoPlayNarration: true);
     }
 
-    private Task ToggleHeatmapAsync()
+    private async Task SimulateNearSelectedPoiAsync()
     {
-        IsHeatmapVisible = !IsHeatmapVisible;
-        return Task.CompletedTask;
+        if (SelectedPoi is null)
+        {
+            return;
+        }
+
+        var narrationResult = await _autoNarrationService.TriggerPoiAsync(SelectedPoi);
+        await _simulationService.SetCurrentLocationAsync(SelectedPoi.Latitude, SelectedPoi.Longitude);
+
+        if (!narrationResult.PlaybackStarted ||
+            narrationResult.TriggeredPoi is null ||
+            narrationResult.TriggeredDetail is null)
+        {
+            return;
+        }
+
+        ApplyUserLocationSnapshot(narrationResult.Snapshot, isMockLocation: true);
+        LastTriggeredPoiId = narrationResult.TriggeredPoi.Id;
+        await PresentAutoNarratedPoiAsync(
+            narrationResult.TriggeredPoi,
+            narrationResult.TriggeredDetail,
+            usageSource: "mock_location_test");
     }
 
     private async Task CloseBottomSheetAsync()
@@ -616,6 +667,20 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         }
 
         await _poiNarrationService.PlayAsync(SelectedPoiDetail, LanguageService.CurrentLanguage);
+    }
+
+    private string ResolveAutoNarrationUsageSource()
+    {
+        if (_activeRoutePlan?.ContextKind == SimulationContextKind.Tour)
+        {
+            return _simulationMode == SimulationMode.Auto
+                ? "tour_route_simulation_auto"
+                : "tour_route_simulation_manual";
+        }
+
+        return _simulationMode == SimulationMode.Auto
+            ? "route_simulation_auto"
+            : "manual_simulation_route";
     }
 
     private void QueueAutoPlayNarration(PoiExperienceDetail detail, long requestVersion)
@@ -646,24 +711,6 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         {
             // Best effort auto-play. Manual replay remains available.
         }
-    }
-
-    private async Task OpenDirectionsAsync()
-    {
-        var latitude = SelectedPoiDetail?.Latitude ?? SelectedPoi?.Latitude;
-        var longitude = SelectedPoiDetail?.Longitude ?? SelectedPoi?.Longitude;
-        if (latitude is null || longitude is null)
-        {
-            return;
-        }
-
-        await Map.Default.OpenAsync(
-            new Location(latitude.Value, longitude.Value),
-            new MapLaunchOptions
-            {
-                Name = SelectedPoiTitle,
-                NavigationMode = NavigationMode.Walking
-            });
     }
 
     private void ApplySearch()

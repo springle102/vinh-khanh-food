@@ -71,6 +71,8 @@ internal sealed class MobileRuntimeAppSettings
 {
     public string? ApiBaseUrl { get; set; }
     public Dictionary<string, string> PlatformApiBaseUrls { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public string? RoutingBaseUrl { get; set; }
+    public string? RoutingProfile { get; set; }
 }
 
 public sealed class AppSettingsService : IAppSettingsService

@@ -1,34 +1,49 @@
+using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Devices.Sensors;
 using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
 
-public interface IVirtualLocationService
+public interface ILocationService
 {
-    VirtualLocationPoint? CurrentLocation { get; }
+    event EventHandler<UserLocationChangedEventArgs>? LocationChanged;
+
+    UserLocationPoint? CurrentLocation { get; }
     bool HasLocation { get; }
-    void Initialize(double latitude, double longitude);
-    void SetLocation(double latitude, double longitude);
-    void Clear();
+    bool IsUsingMockLocation { get; }
+
+    Task<bool> EnsurePermissionAsync();
+    Task StartAsync(TimeSpan interval, CancellationToken cancellationToken = default);
+    Task StopAsync();
+    Task<UserLocationPoint?> GetCurrentLocationAsync(CancellationToken cancellationToken = default);
+    Task SetMockLocationAsync(double latitude, double longitude);
+    Task ClearMockLocationAsync();
 }
 
 public interface IPoiProximityService
 {
-    PoiProximitySnapshot Evaluate(VirtualLocationPoint location, IEnumerable<PoiLocation> pois, double activationRadiusMeters);
+    PoiProximitySnapshot Evaluate(UserLocationPoint location, IEnumerable<PoiLocation> pois, double activationRadiusMeters);
     double CalculateDistanceMeters(double latitude1, double longitude1, double latitude2, double longitude2);
 }
 
-public sealed class VirtualLocationService : IVirtualLocationService
+public sealed class DeviceLocationService : ILocationService
 {
+    private readonly SemaphoreSlim _loopLock = new(1, 1);
     private readonly object _syncRoot = new();
-    private VirtualLocationPoint? _currentLocation;
+    private CancellationTokenSource? _pollingCancellationSource;
+    private Task? _pollingTask;
+    private UserLocationPoint? _currentLocation;
+    private UserLocationPoint? _mockLocation;
 
-    public VirtualLocationPoint? CurrentLocation
+    public event EventHandler<UserLocationChangedEventArgs>? LocationChanged;
+
+    public UserLocationPoint? CurrentLocation
     {
         get
         {
             lock (_syncRoot)
             {
-                return _currentLocation;
+                return Clone(_currentLocation);
             }
         }
     }
@@ -44,12 +59,111 @@ public sealed class VirtualLocationService : IVirtualLocationService
         }
     }
 
-    public void Initialize(double latitude, double longitude)
-        => SetLocation(latitude, longitude);
-
-    public void SetLocation(double latitude, double longitude)
+    public bool IsUsingMockLocation
     {
-        var nextLocation = new VirtualLocationPoint
+        get
+        {
+            lock (_syncRoot)
+            {
+                return _mockLocation is not null;
+            }
+        }
+    }
+
+    public async Task<bool> EnsurePermissionAsync()
+    {
+        var status = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
+        if (status == PermissionStatus.Granted)
+        {
+            return true;
+        }
+
+        status = await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
+        return status == PermissionStatus.Granted;
+    }
+
+    public async Task StartAsync(TimeSpan interval, CancellationToken cancellationToken = default)
+    {
+        var normalizedInterval = interval <= TimeSpan.Zero
+            ? TimeSpan.FromSeconds(4)
+            : interval;
+
+        await _loopLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (_pollingTask is { IsCompleted: false })
+            {
+                return;
+            }
+
+            _pollingCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _pollingTask = RunPollingLoopAsync(normalizedInterval, _pollingCancellationSource.Token);
+        }
+        finally
+        {
+            _loopLock.Release();
+        }
+    }
+
+    public async Task StopAsync()
+    {
+        CancellationTokenSource? cancellationSource;
+        Task? pollingTask;
+
+        await _loopLock.WaitAsync();
+        try
+        {
+            cancellationSource = _pollingCancellationSource;
+            pollingTask = _pollingTask;
+            _pollingCancellationSource = null;
+            _pollingTask = null;
+        }
+        finally
+        {
+            _loopLock.Release();
+        }
+
+        cancellationSource?.Cancel();
+        if (pollingTask is not null)
+        {
+            try
+            {
+                await pollingTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        cancellationSource?.Dispose();
+    }
+
+    public async Task<UserLocationPoint?> GetCurrentLocationAsync(CancellationToken cancellationToken = default)
+    {
+        var mockLocation = GetMockLocation();
+        if (mockLocation is not null)
+        {
+            UpdateCurrentLocation(mockLocation);
+            return mockLocation;
+        }
+
+        if (!await HasLocationPermissionAsync())
+        {
+            return null;
+        }
+
+        var currentLocation = await ResolveDeviceLocationAsync(cancellationToken);
+        if (currentLocation is not null)
+        {
+            UpdateCurrentLocation(currentLocation);
+        }
+
+        return currentLocation;
+    }
+
+    public Task SetMockLocationAsync(double latitude, double longitude)
+    {
+        var nextLocation = new UserLocationPoint
         {
             Latitude = latitude,
             Longitude = longitude
@@ -57,24 +171,151 @@ public sealed class VirtualLocationService : IVirtualLocationService
 
         lock (_syncRoot)
         {
+            _mockLocation = nextLocation;
             _currentLocation = nextLocation;
         }
+
+        PublishLocationChanged(nextLocation, isMock: true);
+        return Task.CompletedTask;
     }
 
-    public void Clear()
+    public Task ClearMockLocationAsync()
     {
         lock (_syncRoot)
         {
-            _currentLocation = null;
+            _mockLocation = null;
+        }
+
+        _ = PublishCurrentLocationAsync(allowPermissionRequest: false, CancellationToken.None);
+        return Task.CompletedTask;
+    }
+
+    private async Task RunPollingLoopAsync(TimeSpan interval, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await PublishCurrentLocationAsync(allowPermissionRequest: true, cancellationToken);
+
+            using var timer = new PeriodicTimer(interval);
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await PublishCurrentLocationAsync(allowPermissionRequest: false, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
     }
+
+    private async Task PublishCurrentLocationAsync(bool allowPermissionRequest, CancellationToken cancellationToken)
+    {
+        var mockLocation = GetMockLocation();
+        if (mockLocation is not null)
+        {
+            UpdateCurrentLocation(mockLocation);
+            PublishLocationChanged(mockLocation, isMock: true);
+            return;
+        }
+
+        var hasPermission = allowPermissionRequest
+            ? await EnsurePermissionAsync()
+            : await HasLocationPermissionAsync();
+        if (!hasPermission)
+        {
+            return;
+        }
+
+        var currentLocation = await ResolveDeviceLocationAsync(cancellationToken);
+        if (currentLocation is null)
+        {
+            return;
+        }
+
+        UpdateCurrentLocation(currentLocation);
+        PublishLocationChanged(currentLocation, isMock: false);
+    }
+
+    private async Task<bool> HasLocationPermissionAsync()
+    {
+        var status = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
+        return status == PermissionStatus.Granted;
+    }
+
+    private static async Task<UserLocationPoint?> ResolveDeviceLocationAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var request = new GeolocationRequest(GeolocationAccuracy.Best, TimeSpan.FromSeconds(3));
+            var location = await Geolocation.Default.GetLocationAsync(request, cancellationToken)
+                ?? await Geolocation.Default.GetLastKnownLocationAsync();
+
+            return location is null
+                ? null
+                : new UserLocationPoint
+                {
+                    Latitude = location.Latitude,
+                    Longitude = location.Longitude
+                };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (FeatureNotSupportedException)
+        {
+            return null;
+        }
+        catch (FeatureNotEnabledException)
+        {
+            return null;
+        }
+        catch (PermissionException)
+        {
+            return null;
+        }
+    }
+
+    private UserLocationPoint? GetMockLocation()
+    {
+        lock (_syncRoot)
+        {
+            return Clone(_mockLocation);
+        }
+    }
+
+    private void UpdateCurrentLocation(UserLocationPoint location)
+    {
+        lock (_syncRoot)
+        {
+            _currentLocation = location;
+        }
+    }
+
+    private void PublishLocationChanged(UserLocationPoint location, bool isMock)
+    {
+        LocationChanged?.Invoke(this, new UserLocationChangedEventArgs
+        {
+            Location = location,
+            IsMock = isMock,
+            CapturedAt = DateTimeOffset.UtcNow
+        });
+    }
+
+    private static UserLocationPoint? Clone(UserLocationPoint? location)
+        => location is null
+            ? null
+            : new UserLocationPoint
+            {
+                Latitude = location.Latitude,
+                Longitude = location.Longitude
+            };
 }
 
 public sealed class PoiProximityService : IPoiProximityService
 {
     private const double EarthRadiusMeters = 6_371_000d;
 
-    public PoiProximitySnapshot Evaluate(VirtualLocationPoint location, IEnumerable<PoiLocation> pois, double activationRadiusMeters)
+    public PoiProximitySnapshot Evaluate(UserLocationPoint location, IEnumerable<PoiLocation> pois, double activationRadiusMeters)
     {
         ArgumentNullException.ThrowIfNull(location);
         ArgumentNullException.ThrowIfNull(pois);

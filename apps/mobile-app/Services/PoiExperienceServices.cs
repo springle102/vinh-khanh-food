@@ -22,7 +22,7 @@ public interface IPoiTourStoreService
     Task<bool> ToggleSavedAsync(string poiId);
 }
 
-public sealed class PoiNarrationService : IPoiNarrationService
+public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerService
 {
     private const string AppSettingsFileName = "appsettings.json";
     private const int TextToSpeechProxyMaxChars = 180;
@@ -43,6 +43,7 @@ public sealed class PoiNarrationService : IPoiNarrationService
     private CancellationTokenSource? _playbackCancellationSource;
     private AsyncAudioPlayer? _audioPlayer;
     private MemoryStream? _audioBuffer;
+    private bool _isPlaybackActive;
     private long _playbackId;
 
     public PoiNarrationService(
@@ -61,7 +62,10 @@ public sealed class PoiNarrationService : IPoiNarrationService
         _mediaClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Linux; Android 12; VinhKhanhMobile)");
     }
 
-    public bool IsPlaying => _audioPlayer?.IsPlaying ?? false;
+    public bool IsPlaying => _isPlaybackActive || (_audioPlayer?.IsPlaying ?? false);
+
+    public Task PlayPoiNarrationAsync(PoiExperienceDetail detail, string languageCode, CancellationToken cancellationToken = default)
+        => PlayAsync(detail, languageCode, cancellationToken);
 
     public async Task PlayAsync(PoiExperienceDetail detail, string languageCode, CancellationToken cancellationToken = default)
     {
@@ -126,6 +130,15 @@ public sealed class PoiNarrationService : IPoiNarrationService
         }
         finally
         {
+            await _stateLock.WaitAsync();
+            try
+            {
+                _isPlaybackActive = false;
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
         }
     }
 
@@ -177,6 +190,7 @@ public sealed class PoiNarrationService : IPoiNarrationService
         {
             ReleasePlaybackStateLocked();
             _playbackCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _isPlaybackActive = true;
             _playbackId++;
             return new PlaybackSession(_playbackId, _playbackCancellationSource.Token);
         }
@@ -391,6 +405,7 @@ public sealed class PoiNarrationService : IPoiNarrationService
         _playbackCancellationSource?.Cancel();
         _playbackCancellationSource?.Dispose();
         _playbackCancellationSource = null;
+        _isPlaybackActive = false;
         DisposeCurrentAudioResourcesLocked();
     }
 

@@ -89,17 +89,19 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
             _pendingPoiId = null;
         }
 
+        await _viewModel.StartLocationTrackingAsync();
         await RenderMapAsync();
         await PoiDetailBottomSheet.SetPresentedAsync(_viewModel.IsBottomSheetVisible);
         await SyncTourPanelAsync(animated: false, refitTour: false);
     }
 
-    protected override void OnDisappearing()
+    protected override async void OnDisappearing()
     {
         base.OnDisappearing();
         StopAutoRefreshLoop();
         AbortTourPanelAnimations();
-        _ = _viewModel.SuspendNarrationAsync();
+        await _viewModel.StopLocationTrackingAsync();
+        await _viewModel.SuspendNarrationAsync();
     }
 
     protected override void OnSizeAllocated(double width, double height)
@@ -198,6 +200,10 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         _isMapReady = true;
         await RefreshMapStateAsync();
         await UpdateMapViewportInsetsAsync(refitTour: _viewModel.HasVisibleTour && _viewModel.IsTourPanelVisible);
+        if (_viewModel.HasSimulationRoute)
+        {
+            await FitToSimulationRouteAsync();
+        }
     }
 
     private async void OnMapNavigating(object? sender, WebNavigatingEventArgs e)
@@ -216,12 +222,13 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
             return;
         }
 
-        if (string.Equals(uri.Host, "set-virtual-location", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(uri.Host, "set-mock-location", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(uri.Host, "set-simulated-location", StringComparison.OrdinalIgnoreCase))
         {
             if (TryReadCoordinate(uri, "lat", out var latitude) &&
                 TryReadCoordinate(uri, "lng", out var longitude))
             {
-                await _viewModel.SetVirtualLocationAsync(latitude, longitude);
+                await _viewModel.SetMockLocationAsync(latitude, longitude);
             }
 
             return;
@@ -239,11 +246,6 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         }
     }
 
-    private async void OnToggleHeatmapTapped(object? sender, TappedEventArgs e)
-    {
-        await _viewModel.ToggleHeatmapCommand.ExecuteAsync();
-    }
-
     private async void OnCenterTapped(object? sender, TappedEventArgs e)
     {
         if (_viewModel.SelectedPoi is not null)
@@ -252,9 +254,9 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
             return;
         }
 
-        var virtualUser = _viewModel.GetMapVirtualUserState();
-        if (virtualUser.Latitude is double latitude &&
-            virtualUser.Longitude is double longitude)
+        var userLocation = _viewModel.GetMapUserLocationState();
+        if (userLocation.Latitude is double latitude &&
+            userLocation.Longitude is double longitude)
         {
             await FlyToCoordinateAsync(latitude, longitude, 18);
         }
@@ -641,8 +643,9 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
             featuredLabel = _viewModel.FeaturedBadgeText,
             selectedPoiId = _viewModel.SelectedPoi?.Id,
             activePoiId = _viewModel.CurrentActivePoiId,
-            isHeatmapVisible = _viewModel.IsHeatmapVisible,
-            virtualUser = _viewModel.GetMapVirtualUserState(),
+            userLocation = _viewModel.GetMapUserLocationState(),
+            allowLocationMockSelection = true,
+            routeSimulation = _viewModel.GetMapRouteSimulationState(),
             currentTour = _viewModel.GetCurrentTourMapState(),
             pois = _viewModel.Pois.Select(poi => new
             {
@@ -654,14 +657,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
                 status = poi.IsFeatured ? "featured" : "standard",
                 latitude = poi.Latitude,
                 longitude = poi.Longitude,
-                isFeatured = poi.IsFeatured,
-                heatIntensity = poi.HeatIntensity
-            }),
-            heatPoints = _viewModel.HeatPoints.Select(point => new
-            {
-                latitude = point.Latitude,
-                longitude = point.Longitude,
-                intensity = point.Intensity
+                isFeatured = poi.IsFeatured
             })
         };
 
@@ -702,12 +698,19 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
                 });
                 break;
 
-            case nameof(HomeMapViewModel.IsHeatmapVisible):
+            case nameof(HomeMapViewModel.UserLocationVersion):
                 MainThread.BeginInvokeOnMainThread(() => _ = RefreshMapStateAsync());
                 break;
 
-            case nameof(HomeMapViewModel.VirtualLocationVersion):
-                MainThread.BeginInvokeOnMainThread(() => _ = RefreshMapStateAsync());
+            case nameof(HomeMapViewModel.SimulationMapVersion):
+                MainThread.BeginInvokeOnMainThread(async () =>
+                {
+                    await RefreshMapStateAsync();
+                    if (_viewModel.HasSimulationRoute)
+                    {
+                        await FitToSimulationRouteAsync();
+                    }
+                });
                 break;
 
             case nameof(HomeMapViewModel.IsTourPanelVisible):
@@ -760,12 +763,13 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         var activePoiIdLiteral = _viewModel.CurrentActivePoiId is null
             ? "null"
             : JsonSerializer.Serialize(_viewModel.CurrentActivePoiId, _jsonOptions);
-        var virtualUserStateLiteral = JsonSerializer.Serialize(_viewModel.GetMapVirtualUserState(), _jsonOptions);
+        var userLocationStateLiteral = JsonSerializer.Serialize(_viewModel.GetMapUserLocationState(), _jsonOptions);
+        var routeSimulationLiteral = JsonSerializer.Serialize(_viewModel.GetMapRouteSimulationState(), _jsonOptions);
         var tourStateLiteral = JsonSerializer.Serialize(_viewModel.GetCurrentTourMapState(), _jsonOptions);
         await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.selectPoi({selectedPoiIdLiteral});");
         await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setActivePoi({activePoiIdLiteral});");
-        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setHeatmapVisible({(_viewModel.IsHeatmapVisible ? "true" : "false")});");
-        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setVirtualUser({virtualUserStateLiteral});");
+        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setUserLocation({userLocationStateLiteral});");
+        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setRouteSimulation({routeSimulationLiteral});");
         await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setTourState({tourStateLiteral});");
     }
 
@@ -779,6 +783,16 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         var latitudeLiteral = latitude.ToString(CultureInfo.InvariantCulture);
         var longitudeLiteral = longitude.ToString(CultureInfo.InvariantCulture);
         await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.flyToCoordinate({latitudeLiteral}, {longitudeLiteral}, {zoom}, true);");
+    }
+
+    private async Task FitToSimulationRouteAsync()
+    {
+        if (!_isMapReady)
+        {
+            return;
+        }
+
+        await MapWebView.EvaluateJavaScriptAsync("window.vkFoodMap && window.vkFoodMap.fitToSimulationRoute();");
     }
 
     private static bool TryReadCoordinate(Uri uri, string key, out double value)

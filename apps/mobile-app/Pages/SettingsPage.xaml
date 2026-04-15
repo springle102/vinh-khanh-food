@@ -109,6 +109,35 @@
                     </Border>
 
                     <Border
+                        Padding="16"
+                        BackgroundColor="White"
+                        Stroke="#EFE5D8"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 22">
+                        <Border.Shadow>
+                            <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
+                        </Border.Shadow>
+
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <VerticalStackLayout Spacing="6">
+                                <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding AutoNarrationTitleText}" />
+                                <Label
+                                    FontSize="13"
+                                    LineBreakMode="WordWrap"
+                                    Text="{Binding AutoNarrationDescriptionText}"
+                                    TextColor="{StaticResource BrandTextSecondary}" />
+                            </VerticalStackLayout>
+
+                            <Switch
+                                Grid.Column="1"
+                                IsToggled="{Binding IsAutoNarrationEnabled}"
+                                OnColor="{StaticResource BrandPrimary}"
+                                ThumbColor="White"
+                                VerticalOptions="Start" />
+                        </Grid>
+                    </Border>
+
+                    <Border
                         Padding="0"
                         BackgroundColor="White"
                         Stroke="#EFE5D8"

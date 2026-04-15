@@ -83,6 +83,14 @@
       box-shadow: 0 12px 20px rgba(217, 119, 6, 0.22);
     }
 
+    .poi-marker.on-route .poi-marker__dot {
+      box-shadow: 0 12px 22px rgba(14, 165, 233, 0.24);
+    }
+
+    .poi-marker.route-destination .poi-marker__dot {
+      box-shadow: 0 14px 26px rgba(37, 99, 235, 0.26);
+    }
+
     @keyframes selected-marker-pulse {
       0% {
         transform: scale(1.78);
@@ -184,17 +192,6 @@
       background: #ffffff;
     }
 
-    .heat-point {
-      width: 124px;
-      height: 124px;
-      margin-left: -62px;
-      margin-top: -62px;
-      border-radius: 999px;
-      background: radial-gradient(circle, rgba(244, 88, 34, 0.60) 0%, rgba(255, 177, 56, 0.34) 30%, rgba(255, 200, 76, 0.16) 54%, rgba(255, 200, 76, 0) 74%);
-      filter: blur(1.6px);
-      pointer-events: none;
-    }
-
     .tour-checkpoint-label {
       background: transparent;
       border: none;
@@ -280,10 +277,11 @@
     }).setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM);
 
     const poiMarkers = new Map();
-    const heatLayers = [];
     let selectedPoiId = state.selectedPoiId ?? null;
     let activePoiId = state.activePoiId ?? null;
-    let virtualUserState = state.virtualUser ?? null;
+    let userLocationState = state.userLocation ?? null;
+    const allowLocationMockSelection = state.allowLocationMockSelection === true;
+    let routeSimulationState = state.routeSimulation ?? null;
     let currentTour = state.currentTour ?? null;
     let viewportInsets = {
       browseTop: 180,
@@ -292,6 +290,7 @@
       tourBottom: 210
     };
     let userMarker = null;
+    let routeSimulationLayer = null;
     let tourRouteLayer = null;
     const tourCheckpointLayers = [];
 
@@ -302,6 +301,12 @@
 
     const hasVisibleTour = () =>
       Boolean(currentTour && Array.isArray(currentTour.stopPoiIds) && currentTour.stopPoiIds.length);
+
+    const hasSimulationRoute = () =>
+      Boolean(routeSimulationState && Array.isArray(routeSimulationState.points) && routeSimulationState.points.length > 1);
+
+    const getSimulationEligiblePoiSet = () =>
+      new Set((routeSimulationState?.eligiblePoiIds ?? []).map((item) => String(item)));
 
     const getTourPoiSet = () => new Set((currentTour?.stopPoiIds ?? []).map((item) => String(item)));
 
@@ -317,6 +322,10 @@
       const isTourVisible = hasVisibleTour();
       const inTour = isTourVisible && getTourPoiSet().has(poi.id);
       const order = inTour ? getTourStopOrder(poi.id) : null;
+      const isSimulationVisible = hasSimulationRoute();
+      const simulationPoiSet = getSimulationEligiblePoiSet();
+      const isRouteDestination = isSimulationVisible && routeSimulationState.destinationPoiId === poi.id;
+      const isOnSimulationRoute = isSimulationVisible && simulationPoiSet.has(poi.id);
       const classes = ["poi-marker"];
 
       let color = poi.isFeatured ? "#f97316" : "#1f2937";
@@ -330,6 +339,14 @@
         color = "#ea580c";
         halo = "rgba(234, 88, 12, 0.24)";
         classes.push("active");
+      } else if (isRouteDestination) {
+        color = "#2563eb";
+        halo = "rgba(37, 99, 235, 0.22)";
+        classes.push("route-destination");
+      } else if (isOnSimulationRoute) {
+        color = "#0ea5e9";
+        halo = "rgba(14, 165, 233, 0.18)";
+        classes.push("on-route");
       } else if (inTour) {
         color = currentTour.mode === "active" ? "#c2410c" : "#f59e0b";
         halo = currentTour.mode === "active" ? "rgba(194, 65, 12, 0.18)" : "rgba(245, 158, 11, 0.18)";
@@ -356,13 +373,6 @@
         iconAnchor: [12, 12]
       });
     };
-
-    const createHeatIcon = (intensity) => L.divIcon({
-      className: "",
-      html: `<div class="heat-point" style="opacity:${Math.min(1, Math.max(0.32, intensity))}; transform: scale(${0.76 + intensity * 0.52});"></div>`,
-      iconSize: [124, 124],
-      iconAnchor: [62, 62]
-    });
 
     const createUserIcon = () => L.divIcon({
       className: "",
@@ -391,14 +401,23 @@
         return "";
       }
 
+      const sourceRow = user.sourceLabel && user.sourceText
+        ? `
+          <div class="popup-row">
+            <span class="popup-label">${user.sourceLabel}</span>
+            <span class="popup-value">${user.sourceText}</span>
+          </div>`
+        : "";
+
       return `
       <div>
-        <p class="popup-title">${user.popupTitle || "Virtual user"}</p>
+        <p class="popup-title">${user.popupTitle || "User location"}</p>
         <div class="popup-grid">
           <div class="popup-row">
             <span class="popup-label">${user.coordinatesLabel || "Coordinates"}</span>
             <span class="popup-value">${user.coordinatesText || "--"}</span>
           </div>
+          ${sourceRow}
           <div class="popup-row">
             <span class="popup-label">${user.statusLabel || "Status"}</span>
             <span class="popup-value">${user.statusText || "--"}</span>
@@ -424,6 +443,35 @@
       while (tourCheckpointLayers.length) {
         map.removeLayer(tourCheckpointLayers.pop());
       }
+    };
+
+    const refreshRouteSimulationLayer = () => {
+      if (routeSimulationLayer) {
+        map.removeLayer(routeSimulationLayer);
+        routeSimulationLayer = null;
+      }
+
+      if (!hasSimulationRoute()) {
+        return;
+      }
+
+      const points = (routeSimulationState.points || [])
+        .filter((item) => item.latitude != null && item.longitude != null);
+      if (points.length < 2) {
+        return;
+      }
+
+      routeSimulationLayer = L.polyline(
+        points.map((item) => [item.latitude, item.longitude]),
+        {
+          color: "#2563eb",
+          weight: 5,
+          opacity: 0.88,
+          lineCap: "round",
+          lineJoin: "round"
+        }
+      ).addTo(map);
+      routeSimulationLayer.bringToBack();
     };
 
     const refreshTourLayers = () => {
@@ -472,6 +520,8 @@
     const refreshPoiMarkers = (openPopupForSelection) => {
       const tourPoiSet = getTourPoiSet();
       const isTourVisible = hasVisibleTour();
+      const simulationPoiSet = getSimulationEligiblePoiSet();
+      const isSimulationVisible = hasSimulationRoute();
 
       state.pois.forEach((poi) => {
         const marker = poiMarkers.get(poi.id);
@@ -482,13 +532,19 @@
         const isSelected = poi.id === selectedPoiId;
         const isActive = poi.id === activePoiId;
         const isInTour = tourPoiSet.has(poi.id);
-        const isMuted = isTourVisible && !isSelected && !isActive && !isInTour;
+        const isRouteDestination = isSimulationVisible && routeSimulationState.destinationPoiId === poi.id;
+        const isOnSimulationRoute = isSimulationVisible && simulationPoiSet.has(poi.id);
+        const isMuted =
+          (!isSelected && !isActive && isTourVisible && !isInTour) ||
+          (!isSelected && !isActive && isSimulationVisible && !isOnSimulationRoute && !isRouteDestination);
 
         marker.setIcon(createPoiIcon(poi, isSelected, isActive));
         marker.setOpacity(isMuted ? 0.58 : 1);
         marker.setZIndexOffset(
           isActive ? 1200 :
           isSelected ? 1000 :
+          isRouteDestination ? 520 :
+          isOnSimulationRoute ? 460 :
           isInTour ? 420 :
           0
         );
@@ -518,6 +574,12 @@
     const setTourState = (nextTourState) => {
       currentTour = nextTourState || null;
       refreshTourLayers();
+      refreshPoiMarkers(false);
+    };
+
+    const setRouteSimulation = (nextRouteSimulation) => {
+      routeSimulationState = nextRouteSimulation || null;
+      refreshRouteSimulationLayer();
       refreshPoiMarkers(false);
     };
 
@@ -551,17 +613,17 @@
       window.location.href = `vkfood://select-poi/${encodeURIComponent(poiId)}`;
     };
 
-    const notifyVirtualUserMoved = (latitude, longitude) => {
-      window.location.href = `vkfood://set-virtual-location?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`;
+    const notifySimulatedLocationMoved = (latitude, longitude) => {
+      window.location.href = `vkfood://set-simulated-location?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`;
     };
 
-    const upsertVirtualUserMarker = (nextState) => {
+    const upsertUserLocationMarker = (nextState) => {
       const hasCoordinates = nextState &&
         nextState.latitude != null &&
         nextState.longitude != null;
 
-      virtualUserState = hasCoordinates ? nextState : null;
-      if (!virtualUserState) {
+      userLocationState = hasCoordinates ? nextState : null;
+      if (!userLocationState) {
         if (userMarker) {
           map.removeLayer(userMarker);
           userMarker = null;
@@ -570,12 +632,13 @@
         return;
       }
 
-      const latLng = [virtualUserState.latitude, virtualUserState.longitude];
+      const latLng = [userLocationState.latitude, userLocationState.longitude];
       const keepPopupOpen = Boolean(userMarker && userMarker.isPopupOpen());
 
       if (!userMarker) {
         userMarker = L.marker(latLng, {
           icon: createUserIcon(),
+          draggable: allowLocationMockSelection,
           keyboard: false,
           zIndexOffset: 1200
         }).addTo(map);
@@ -583,26 +646,25 @@
         userMarker.on("click", () => {
           userMarker.openPopup();
         });
+        userMarker.on("dragend", (event) => {
+          const nextPosition = event.target.getLatLng();
+          notifySimulatedLocationMoved(nextPosition.lat, nextPosition.lng);
+        });
       } else {
         userMarker.setLatLng(latLng);
         userMarker.setIcon(createUserIcon());
+        if (allowLocationMockSelection && userMarker.dragging && !userMarker.dragging.enabled()) {
+          userMarker.dragging.enable();
+        } else if (!allowLocationMockSelection && userMarker.dragging && userMarker.dragging.enabled()) {
+          userMarker.dragging.disable();
+        }
       }
 
-      userMarker.bindPopup(buildUserPopupHtml(virtualUserState));
+      userMarker.bindPopup(buildUserPopupHtml(userLocationState));
       if (keepPopupOpen) {
         userMarker.openPopup();
       }
     };
-
-    state.heatPoints.forEach((point) => {
-      const heat = L.marker([point.latitude, point.longitude], {
-        icon: createHeatIcon(point.intensity),
-        interactive: false,
-        keyboard: false
-      }).addTo(map);
-
-      heatLayers.push(heat);
-    });
 
     state.pois.forEach((poi) => {
       const marker = L.marker([poi.latitude, poi.longitude], {
@@ -620,8 +682,8 @@
 
     const fitMap = () => {
       if (!state.pois.length) {
-        if (virtualUserState && virtualUserState.latitude != null && virtualUserState.longitude != null) {
-          map.setView([virtualUserState.latitude, virtualUserState.longitude], 17, { animate: false });
+        if (userLocationState && userLocationState.latitude != null && userLocationState.longitude != null) {
+          map.setView([userLocationState.latitude, userLocationState.longitude], 17, { animate: false });
           return;
         }
 
@@ -665,18 +727,45 @@
       }
     };
 
-    map.on("click", (event) => {
-      notifyVirtualUserMoved(event.latlng.lat, event.latlng.lng);
-    });
+    if (allowLocationMockSelection) {
+      map.on("click", (event) => {
+        notifySimulatedLocationMoved(event.latlng.lat, event.latlng.lng);
+      });
+    }
 
     fitMap();
-    upsertVirtualUserMarker(virtualUserState);
+    upsertUserLocationMarker(userLocationState);
+    refreshRouteSimulationLayer();
     refreshTourLayers();
     refreshPoiMarkers(Boolean(selectedPoiId));
 
     if (hasVisibleTour()) {
       fitToTour();
     }
+
+    const fitToSimulationRoute = () => {
+      if (!hasSimulationRoute()) {
+        return;
+      }
+
+      const points = (routeSimulationState.points || [])
+        .filter((item) => item.latitude != null && item.longitude != null);
+      if (!points.length) {
+        return;
+      }
+
+      if (points.length === 1) {
+        map.flyTo([points[0].latitude, points[0].longitude], 17, {
+          animate: false
+        });
+        return;
+      }
+
+      const bounds = L.latLngBounds(points.map((item) => [item.latitude, item.longitude]));
+      if (bounds.isValid()) {
+        map.fitBounds(bounds.pad(0.14), getBrowseFitOptions());
+      }
+    };
 
     window.vkFoodMap = {
       selectPoi: (poiId) => {
@@ -694,16 +783,11 @@
       setActivePoi: (poiId) => {
         setActivePoi(poiId || null);
       },
-      setVirtualUser: (nextState) => {
-        upsertVirtualUserMarker(nextState);
+      setUserLocation: (nextState) => {
+        upsertUserLocationMarker(nextState);
       },
-      setHeatmapVisible: (isVisible) => {
-        heatLayers.forEach((heat) => {
-          const element = heat.getElement();
-          if (element) {
-            element.style.display = isVisible ? "block" : "none";
-          }
-        });
+      setRouteSimulation: (nextRouteSimulation) => {
+        setRouteSimulation(nextRouteSimulation);
       },
       setTourState: (nextTourState) => {
         setTourState(nextTourState);
@@ -713,6 +797,9 @@
       },
       fitToTour: () => {
         fitToTour();
+      },
+      fitToSimulationRoute: () => {
+        fitToSimulationRoute();
       },
       flyToCoordinate: (latitude, longitude, zoom, animate) => {
         if (latitude == null || longitude == null) {
@@ -726,7 +813,6 @@
       }
     };
 
-    window.vkFoodMap.setHeatmapVisible(state.isHeatmapVisible !== false);
   </script>
 </body>
 </html>

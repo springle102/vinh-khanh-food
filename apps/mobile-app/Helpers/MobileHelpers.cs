@@ -15,6 +15,7 @@ public static class ServiceHelper
 public static class AppPreferenceKeys
 {
     public const string CurrentCustomerId = "vkfood.current.customer.id";
+    public const string AutoNarrationEnabled = "vkfood.auto.narration.enabled";
 }
 
 public static class AppRoutes
