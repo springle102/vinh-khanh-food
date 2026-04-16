@@ -147,6 +147,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private readonly AsyncLocal<string?> _languageOverride = new();
     private readonly IAppLanguageService _languageService;
     private readonly ILogger<FoodStreetApiDataService> _logger;
+    private AdminBootstrapDto? _bootstrapSource;
     private BootstrapSnapshot? _bootstrapSnapshot;
     private string? _bootstrapSnapshotLanguageCode;
     private DataSyncStateDto? _syncState;
@@ -162,13 +163,6 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     {
         _languageService = languageService;
         _logger = logger;
-        _languageService.LanguageChanged += (_, _) =>
-        {
-            _bootstrapSnapshot = null;
-            _bootstrapSnapshotLanguageCode = null;
-            _syncState = null;
-            _lastSyncCheckAt = DateTimeOffset.MinValue;
-        };
     }
 
     public async Task<IReadOnlyList<LanguageOption>> GetLanguagesAsync()
@@ -425,6 +419,17 @@ public sealed partial class FoodStreetApiDataService
         await _bootstrapLock.WaitAsync();
         try
         {
+            var currentLanguageCode = SelectedLanguageCode;
+            if ((_bootstrapSnapshot is null ||
+                 !string.Equals(_bootstrapSnapshotLanguageCode, currentLanguageCode, StringComparison.OrdinalIgnoreCase)) &&
+                TryRebuildBootstrapSnapshotFromCache(currentLanguageCode, "language-change"))
+            {
+                if (!ShouldCheckSyncState(forceSyncCheck))
+                {
+                    return _bootstrapSnapshot;
+                }
+            }
+
             var client = await GetClientAsync();
             if (client is null)
             {
@@ -433,7 +438,7 @@ public sealed partial class FoodStreetApiDataService
 
             for (var attempt = 0; attempt < 3; attempt++)
             {
-                var currentLanguageCode = SelectedLanguageCode;
+                currentLanguageCode = SelectedLanguageCode;
                 if (_bootstrapSnapshot is null ||
                     !string.Equals(_bootstrapSnapshotLanguageCode, currentLanguageCode, StringComparison.OrdinalIgnoreCase))
                 {
@@ -529,6 +534,40 @@ public sealed partial class FoodStreetApiDataService
             : $"{BootstrapEndpoint}?{string.Join("&", query)}";
     }
 
+    private bool TryRebuildBootstrapSnapshotFromCache(string requestedLanguageCode, string reason)
+    {
+        if (_bootstrapSource is null)
+        {
+            return false;
+        }
+
+        using var _ = BeginLanguageScope(requestedLanguageCode);
+        var snapshot = CreateSnapshot(_bootstrapSource);
+
+        if (!IsSelectedLanguage(requestedLanguageCode))
+        {
+            _logger.LogInformation(
+                "Discarding stale cached bootstrap snapshot ({Reason}). Requested={RequestedLanguage}; Current={CurrentLanguage}.",
+                reason,
+                requestedLanguageCode,
+                SelectedLanguageCode);
+            return false;
+        }
+
+        _bootstrapSnapshot = snapshot;
+        _bootstrapSnapshotLanguageCode = AppLanguage.NormalizeCode(requestedLanguageCode);
+
+        _logger.LogInformation(
+            "Bootstrap snapshot rebuilt from cache ({Reason}). Language={LanguageCode}; Version={Version}; pois={PoiCount}; routes={RouteCount}",
+            reason,
+            _bootstrapSnapshotLanguageCode,
+            _syncState?.Version ?? "none",
+            snapshot.Pois.Count,
+            snapshot.Routes.Count);
+
+        return true;
+    }
+
     private async Task<BootstrapSnapshot?> RefreshBootstrapSnapshotAsync(
         HttpClient client,
         string requestedLanguageCode,
@@ -558,6 +597,7 @@ public sealed partial class FoodStreetApiDataService
         }
 
         using var _ = BeginLanguageScope(requestedLanguageCode);
+        _bootstrapSource = envelope.Data;
         var snapshot = CreateSnapshot(envelope.Data);
 
         if (!IsSelectedLanguage(requestedLanguageCode))

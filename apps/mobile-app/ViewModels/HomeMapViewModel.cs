@@ -13,6 +13,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     private readonly IPoiNarrationService _poiNarrationService;
     private readonly IAutoNarrationService _autoNarrationService;
     private readonly SemaphoreSlim _locationUpdateLock = new(1, 1);
+    private readonly SemaphoreSlim _stateReloadLock = new(1, 1);
 
     private string _searchText = string.Empty;
     private PoiLocation? _selectedPoi;
@@ -26,6 +27,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     private bool _isAutoNarrationPlaying;
     private volatile bool _isNarrationContextActive = true;
     private int _mapDataVersion;
+    private int _mapContentVersion;
     private int _userLocationVersion;
     private int _syncRefreshInProgress;
     private long _detailRequestVersion;
@@ -121,6 +123,12 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     {
         get => _mapDataVersion;
         private set => SetProperty(ref _mapDataVersion, value);
+    }
+
+    public int MapContentVersion
+    {
+        get => _mapContentVersion;
+        private set => SetProperty(ref _mapContentVersion, value);
     }
 
     public int UserLocationVersion
@@ -362,29 +370,80 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
     private async Task ReloadCurrentStateAsync(bool autoPlayNarrationForSelection)
     {
-        var currentPoiId = SelectedPoi?.Id;
-
-        Pois.ReplaceRange(await _dataService.GetPoisAsync());
-        ApplySearch();
-        await ReloadTourExperienceAsync();
-
-        SelectedPoi = currentPoiId is null
-            ? null
-            : Pois.FirstOrDefault(item => string.Equals(item.Id, currentPoiId, StringComparison.OrdinalIgnoreCase));
-
-        MapDataVersion++;
-
-        if (SelectedPoi is not null && (IsBottomSheetVisible || SelectedPoiDetail is not null))
+        await _stateReloadLock.WaitAsync();
+        try
         {
-            await LoadPoiDetailCoreAsync(SelectedPoi, IsBottomSheetVisible, autoPlayNarrationForSelection);
+            var currentPoiId = SelectedPoi?.Id;
+
+            Pois.ReplaceRange(await _dataService.GetPoisAsync());
+            ApplySearch();
+            await ReloadTourExperienceAsync();
+
+            SelectedPoi = currentPoiId is null
+                ? null
+                : Pois.FirstOrDefault(item => string.Equals(item.Id, currentPoiId, StringComparison.OrdinalIgnoreCase));
+
+            MapDataVersion++;
+
+            if (SelectedPoi is not null && (IsBottomSheetVisible || SelectedPoiDetail is not null))
+            {
+                await LoadPoiDetailCoreAsync(SelectedPoi, IsBottomSheetVisible, autoPlayNarrationForSelection);
+            }
+            else
+            {
+                RefreshLocalizedTexts();
+            }
+
+            await EnsureSimulationInitializedAsync();
+            await RefreshCurrentLocationAsync();
         }
-        else
+        finally
         {
+            _stateReloadLock.Release();
+        }
+    }
+
+    private async Task ReloadLocalizedMapStateAsync()
+    {
+        await _stateReloadLock.WaitAsync();
+        try
+        {
+            var currentPoiId = SelectedPoi?.Id;
+            var shouldRefreshSelectedDetail = !string.IsNullOrWhiteSpace(currentPoiId) &&
+                                              (SelectedPoiDetail is not null || IsBottomSheetVisible);
+
+            Pois.ReplaceRange(await _dataService.GetPoisAsync());
+            ApplySearch();
+            await ReloadTourExperienceAsync();
+
+            SelectedPoi = currentPoiId is null
+                ? null
+                : Pois.FirstOrDefault(item => string.Equals(item.Id, currentPoiId, StringComparison.OrdinalIgnoreCase));
+
+            if (SelectedPoi is null)
+            {
+                SelectedPoiDetail = null;
+            }
+            else if (shouldRefreshSelectedDetail)
+            {
+                try
+                {
+                    SelectedPoiDetail = await _dataService.GetPoiDetailAsync(SelectedPoi.Id) ?? CreateInlineFallbackDetail(SelectedPoi);
+                }
+                catch
+                {
+                    SelectedPoiDetail = CreateInlineFallbackDetail(SelectedPoi);
+                }
+            }
+
+            MapContentVersion++;
             RefreshLocalizedTexts();
+            await RefreshCurrentLocationAsync();
         }
-
-        await EnsureSimulationInitializedAsync();
-        await RefreshCurrentLocationAsync();
+        finally
+        {
+            _stateReloadLock.Release();
+        }
     }
 
     public async Task StartLocationTrackingAsync()
@@ -799,23 +858,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
     protected override async Task ReloadLocalizedStateAsync()
     {
-        try
-        {
-            await StopNarrationAsync();
-            SelectedPoiDetail = null;
-            if (SelectedPoi is not null && IsBottomSheetVisible)
-            {
-                IsPoiDetailLoading = true;
-            }
-
-            await LoadAsync(autoPlayNarrationForSelection: _isNarrationContextActive && IsBottomSheetVisible);
-        }
-        catch
-        {
-            if (SelectedPoi is not null)
-            {
-                SelectedPoiDetail = CreateInlineFallbackDetail(SelectedPoi);
-            }
-        }
+        await StopNarrationAsync();
+        await ReloadLocalizedMapStateAsync();
     }
 }

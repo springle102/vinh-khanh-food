@@ -1,4 +1,3 @@
-using System.Threading;
 using Microsoft.Maui.ApplicationModel;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Services;
@@ -7,8 +6,8 @@ namespace VinhKhanh.MobileApp.ViewModels;
 
 public abstract class LocalizedViewModelBase : BaseViewModel
 {
-    private readonly SemaphoreSlim _languageChangeLock = new(1, 1);
-    private int _languageChangeVersion;
+    private int _isLocalizedReloadRunning;
+    private int _hasPendingLocalizedReload;
 
     protected LocalizedViewModelBase(IAppLanguageService languageService)
     {
@@ -26,26 +25,43 @@ public abstract class LocalizedViewModelBase : BaseViewModel
 
     private void OnLanguageChangedInternal(object? sender, EventArgs e)
     {
-        var version = Interlocked.Increment(ref _languageChangeVersion);
-        MainThread.BeginInvokeOnMainThread(() => _ = ApplyLanguageChangeAsync(version));
+        MainThread.BeginInvokeOnMainThread(RefreshAllBindings);
+        QueueLocalizedReload();
     }
 
-    private async Task ApplyLanguageChangeAsync(int version)
+    private void QueueLocalizedReload()
     {
-        await _languageChangeLock.WaitAsync();
+        Interlocked.Exchange(ref _hasPendingLocalizedReload, 1);
+        if (Interlocked.CompareExchange(ref _isLocalizedReloadRunning, 1, 0) == 0)
+        {
+            _ = RunLocalizedReloadLoopAsync();
+        }
+    }
+
+    private async Task RunLocalizedReloadLoopAsync()
+    {
         try
         {
-            if (version != _languageChangeVersion)
+            while (Interlocked.Exchange(ref _hasPendingLocalizedReload, 0) == 1)
             {
-                return;
+                try
+                {
+                    await MainThread.InvokeOnMainThreadAsync(ReloadLocalizedStateAsync);
+                    await MainThread.InvokeOnMainThreadAsync(RefreshAllBindings);
+                }
+                catch
+                {
+                    // Best effort background reload. Immediate text bindings were already refreshed.
+                }
             }
-
-            await ReloadLocalizedStateAsync();
         }
         finally
         {
-            RefreshAllBindings();
-            _languageChangeLock.Release();
+            Interlocked.Exchange(ref _isLocalizedReloadRunning, 0);
+            if (Volatile.Read(ref _hasPendingLocalizedReload) == 1)
+            {
+                QueueLocalizedReload();
+            }
         }
     }
 }

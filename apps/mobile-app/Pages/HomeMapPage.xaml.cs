@@ -34,6 +34,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HomeMapViewModel _viewModel;
     private readonly LocalizedPageBindingSubscription _localizedPageBinding;
+    private readonly SemaphoreSlim _mapRenderLock = new(1, 1);
     private bool _isMapReady;
     private bool _isTourPanelPresented;
     private bool _isTourPanelExpanded;
@@ -49,6 +50,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private double _lastAllocatedWidth;
     private double _lastAllocatedHeight;
     private string _tourPanelToken = string.Empty;
+    private int _lastRenderedMapDataVersion = -1;
 
     public HomeMapPage()
     {
@@ -93,7 +95,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         }
 
         await _viewModel.StartLocationTrackingAsync();
-        await RenderMapAsync();
+        await EnsureMapRenderedAsync();
         await PoiDetailBottomSheet.SetPresentedAsync(_viewModel.IsBottomSheetVisible);
         await SyncTourPanelAsync(animated: false, refitTour: false);
     }
@@ -636,35 +638,32 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
 
     private async Task RenderMapAsync()
     {
+        var targetVersion = _viewModel.MapDataVersion;
+        await _mapRenderLock.WaitAsync();
+        try
+        {
+            if (targetVersion == _lastRenderedMapDataVersion && MapWebView.Source is not null)
+            {
+                return;
+            }
+
+            await RenderMapCoreAsync();
+            _lastRenderedMapDataVersion = targetVersion;
+        }
+        finally
+        {
+            _mapRenderLock.Release();
+        }
+    }
+
+    private async Task RenderMapCoreAsync()
+    {
         _isMapReady = false;
         var template = await ReadRawAssetTextAsync(MapTemplateFileName);
         var leafletCss = await ReadRawAssetTextAsync(LeafletCssFileName);
         var leafletJs = await ReadRawAssetTextAsync(LeafletJsFileName);
 
-        var payload = new
-        {
-            featuredLabel = _viewModel.FeaturedBadgeText,
-            selectedPoiId = _viewModel.SelectedPoi?.Id,
-            activePoiId = _viewModel.CurrentActivePoiId,
-            userLocation = _viewModel.GetMapUserLocationState(),
-            allowLocationMockSelection = true,
-            routeSimulation = _viewModel.GetMapRouteSimulationState(),
-            currentTour = _viewModel.GetCurrentTourMapState(),
-            pois = _viewModel.Pois.Select(poi => new
-            {
-                id = poi.Id,
-                title = poi.Title,
-                description = poi.ShortDescription,
-                address = poi.Address,
-                category = poi.Category,
-                status = poi.IsFeatured ? "featured" : "standard",
-                latitude = poi.Latitude,
-                longitude = poi.Longitude,
-                isFeatured = poi.IsFeatured
-            })
-        };
-
-        var json = JsonSerializer.Serialize(payload, _jsonOptions);
+        var json = JsonSerializer.Serialize(BuildMapPayload(), _jsonOptions);
         var encodedJson = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
         MapWebView.Source = new HtmlWebViewSource
         {
@@ -673,6 +672,66 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
                 .Replace(LeafletJsPlaceholder, leafletJs, StringComparison.Ordinal)
                 .Replace(MapStatePlaceholder, encodedJson, StringComparison.Ordinal)
         };
+    }
+
+    private async Task EnsureMapRenderedAsync()
+    {
+        if (_viewModel.MapDataVersion == _lastRenderedMapDataVersion && MapWebView.Source is not null)
+        {
+            return;
+        }
+
+        await RenderMapAsync();
+    }
+
+    private object BuildMapPayload()
+    {
+        return new
+        {
+            featuredLabel = _viewModel.FeaturedBadgeText,
+            selectedPoiId = _viewModel.SelectedPoi?.Id,
+            activePoiId = _viewModel.CurrentActivePoiId,
+            userLocation = _viewModel.GetMapUserLocationState(),
+            allowLocationMockSelection = true,
+            routeSimulation = _viewModel.GetMapRouteSimulationState(),
+            currentTour = _viewModel.GetCurrentTourMapState(),
+            pois = BuildPoiPayload()
+        };
+    }
+
+    private IEnumerable<object> BuildPoiPayload()
+    {
+        return _viewModel.Pois.Select(poi => new
+        {
+            id = poi.Id,
+            title = poi.Title,
+            description = poi.ShortDescription,
+            address = poi.Address,
+            category = poi.Category,
+            status = poi.IsFeatured ? "featured" : "standard",
+            latitude = poi.Latitude,
+            longitude = poi.Longitude,
+            isFeatured = poi.IsFeatured
+        });
+    }
+
+    private async Task RefreshMapContentAsync()
+    {
+        if (!_isMapReady)
+        {
+            await EnsureMapRenderedAsync();
+            return;
+        }
+
+        var payloadLiteral = JsonSerializer.Serialize(new
+        {
+            featuredLabel = _viewModel.FeaturedBadgeText,
+            pois = BuildPoiPayload()
+        }, _jsonOptions);
+
+        await MapWebView.EvaluateJavaScriptAsync(
+            $"window.vkFoodMap && window.vkFoodMap.setPoiData({payloadLiteral});");
+        await RefreshMapStateAsync();
     }
 
     private static async Task<string> ReadRawAssetTextAsync(string fileName)
@@ -687,7 +746,11 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         switch (e.PropertyName)
         {
             case nameof(HomeMapViewModel.MapDataVersion):
-                MainThread.BeginInvokeOnMainThread(() => _ = RenderMapAsync());
+                MainThread.BeginInvokeOnMainThread(() => _ = EnsureMapRenderedAsync());
+                break;
+
+            case nameof(HomeMapViewModel.MapContentVersion):
+                MainThread.BeginInvokeOnMainThread(() => _ = RefreshMapContentAsync());
                 break;
 
             case nameof(HomeMapViewModel.SelectedPoi):

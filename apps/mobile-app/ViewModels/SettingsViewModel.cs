@@ -53,23 +53,41 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
     public AsyncCommand<LanguageOption> SelectLanguageCommand => _selectLanguageCommand;
 
     public async Task LoadAsync()
-    {
-        await RefreshLocalizedStateAsync();
-    }
+        => await LoadSettingsAsync();
 
     protected override async Task ReloadLocalizedStateAsync()
-        => await RefreshLocalizedStateAsync();
-
-    private async Task RefreshLocalizedStateAsync()
     {
-        _isRestoringSettingsState = true;
-        IsAutoNarrationEnabled = _autoNarrationService.IsEnabled;
-        _isRestoringSettingsState = false;
+        RestoreAutoNarrationState();
+        SyncSelectedLanguage();
+        MenuItems.ReplaceRange(await _dataService.GetSettingsMenuAsync());
+    }
 
+    private async Task LoadSettingsAsync()
+    {
+        RestoreAutoNarrationState();
         await _dataService.EnsureAllowedLanguageSelectionAsync();
         Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
         MenuItems.ReplaceRange(await _dataService.GetSettingsMenuAsync());
         RefreshLocalizedBindings();
+    }
+
+    private void RestoreAutoNarrationState()
+    {
+        _isRestoringSettingsState = true;
+        IsAutoNarrationEnabled = _autoNarrationService.IsEnabled;
+        _isRestoringSettingsState = false;
+    }
+
+    private void SyncSelectedLanguage()
+    {
+        var currentLanguageCode = AppLanguage.NormalizeCode(LanguageService.CurrentLanguage);
+        foreach (var language in Languages)
+        {
+            language.IsSelected = string.Equals(
+                AppLanguage.NormalizeCode(language.Code),
+                currentLanguageCode,
+                StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private async Task SelectLanguageAsync(LanguageOption? language)

@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 
@@ -139,10 +141,55 @@ public static class ObservableCollectionExtensions
 {
     public static void ReplaceRange<T>(this ObservableCollection<T> collection, IEnumerable<T> items)
     {
+        ArgumentNullException.ThrowIfNull(collection);
+        ArgumentNullException.ThrowIfNull(items);
+
+        var nextItems = items as IList<T> ?? items.ToList();
+        if (TryReplaceWithSingleReset(collection, nextItems))
+        {
+            return;
+        }
+
         collection.Clear();
-        foreach (var item in items)
+        foreach (var item in nextItems)
         {
             collection.Add(item);
+        }
+    }
+
+    private static bool TryReplaceWithSingleReset<T>(ObservableCollection<T> collection, IList<T> items)
+    {
+        try
+        {
+            var backingStore = typeof(Collection<T>)
+                .GetProperty("Items", BindingFlags.Instance | BindingFlags.NonPublic)?
+                .GetValue(collection) as IList<T>;
+            if (backingStore is null)
+            {
+                return false;
+            }
+
+            backingStore.Clear();
+            foreach (var item in items)
+            {
+                backingStore.Add(item);
+            }
+
+            typeof(ObservableCollection<T>)
+                .GetMethod("OnPropertyChanged", BindingFlags.Instance | BindingFlags.NonPublic)?
+                .Invoke(collection, [new PropertyChangedEventArgs(nameof(collection.Count))]);
+            typeof(ObservableCollection<T>)
+                .GetMethod("OnPropertyChanged", BindingFlags.Instance | BindingFlags.NonPublic)?
+                .Invoke(collection, [new PropertyChangedEventArgs("Item[]")]);
+            typeof(ObservableCollection<T>)
+                .GetMethod("OnCollectionChanged", BindingFlags.Instance | BindingFlags.NonPublic)?
+                .Invoke(collection, [new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset)]);
+
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

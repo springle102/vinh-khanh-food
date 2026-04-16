@@ -242,7 +242,8 @@ public sealed class PremiumCheckoutViewModel : LocalizedViewModelBase
     {
         EnsurePaymentMethods();
         RefreshPaymentMethodTexts();
-        await LoadAsync();
+        RefreshViewState();
+        await Task.CompletedTask;
     }
 
     private void EnsurePaymentMethods()

@@ -49,8 +49,18 @@ public sealed class MyTourViewModel : LocalizedViewModelBase
     public AsyncCommand OpenMapCommand { get; }
 
     public async Task LoadAsync()
+        => await ReloadTourAsync(refreshDataIfChanged: true);
+
+    protected override async Task ReloadLocalizedStateAsync()
+        => await ReloadTourAsync(refreshDataIfChanged: false);
+
+    private async Task ReloadTourAsync(bool refreshDataIfChanged)
     {
-        await _dataService.RefreshDataIfChangedAsync();
+        if (refreshDataIfChanged)
+        {
+            await _dataService.RefreshDataIfChangedAsync();
+        }
+
         var activeSession = await _tourStateService.GetActiveTourAsync();
         Tour = activeSession is not null && !string.IsNullOrWhiteSpace(activeSession.TourId)
             ? await _dataService.GetTourPlanAsync(activeSession.TourId, activeSession.CompletedPoiIds)
@@ -69,7 +79,4 @@ public sealed class MyTourViewModel : LocalizedViewModelBase
 
         await Shell.Current.GoToAsync($"{AppRoutes.Root(AppRoutes.HomeMap)}?resumeActiveTour=true");
     }
-
-    protected override async Task ReloadLocalizedStateAsync()
-        => await LoadAsync();
 }

@@ -229,8 +229,28 @@ public sealed class LanguageSelectionViewModel : LocalizedViewModelBase
         await Shell.Current.GoToAsync(route);
     }
 
-    protected override async Task ReloadLocalizedStateAsync()
-        => await RefreshAsync();
+    protected override Task ReloadLocalizedStateAsync()
+    {
+        SyncSelectedLanguage();
+        OnPropertyChanged(nameof(IsPremiumActive));
+        OnPropertyChanged(nameof(CanPurchasePremium));
+        OnPropertyChanged(nameof(PremiumStatusText));
+        OnPropertyChanged(nameof(PremiumDescriptionText));
+        _buyPremiumCommand.NotifyCanExecuteChanged();
+        return Task.CompletedTask;
+    }
+
+    private void SyncSelectedLanguage()
+    {
+        var currentLanguageCode = AppLanguage.NormalizeCode(LanguageService.CurrentLanguage);
+        foreach (var language in Languages)
+        {
+            language.IsSelected = string.Equals(
+                AppLanguage.NormalizeCode(language.Code),
+                currentLanguageCode,
+                StringComparison.OrdinalIgnoreCase);
+        }
+    }
 
     private static string? ResolvePoiId(string? qrCode)
     {

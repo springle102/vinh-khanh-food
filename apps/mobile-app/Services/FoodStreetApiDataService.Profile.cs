@@ -405,6 +405,7 @@ public sealed partial class FoodStreetApiDataService
 
     private void InvalidateBootstrapSnapshot()
     {
+        _bootstrapSource = null;
         _bootstrapSnapshot = null;
         _bootstrapSnapshotLanguageCode = null;
         _syncState = null;

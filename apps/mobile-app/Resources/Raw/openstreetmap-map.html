@@ -277,6 +277,8 @@
     }).setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM);
 
     const poiMarkers = new Map();
+    let featuredLabel = state.featuredLabel ?? "";
+    let pois = Array.isArray(state.pois) ? state.pois : [];
     let selectedPoiId = state.selectedPoiId ?? null;
     let activePoiId = state.activePoiId ?? null;
     let userLocationState = state.userLocation ?? null;
@@ -387,7 +389,7 @@
     });
 
     const buildPoiPopupHtml = (poi) => {
-      const featuredText = poi.isFeatured && state.featuredLabel ? ` &bull; ${state.featuredLabel}` : "";
+      const featuredText = poi.isFeatured && featuredLabel ? ` &bull; ${featuredLabel}` : "";
       return `
       <div>
         <p class="popup-title">${poi.title}</p>
@@ -517,13 +519,61 @@
       });
     };
 
+    const createPoiMarker = (poi) => {
+      const marker = L.marker([poi.latitude, poi.longitude], {
+        icon: createPoiIcon(poi, poi.id === selectedPoiId, poi.id === activePoiId),
+        keyboard: false
+      }).addTo(map);
+
+      marker.bindPopup(buildPoiPopupHtml(poi));
+      marker.on("click", () => {
+        notifyPoiSelected(poi.id, true);
+      });
+
+      poiMarkers.set(poi.id, marker);
+    };
+
+    const syncPoiMarkers = (openPopupForSelection) => {
+      const nextPoiIds = new Set(pois.map((poi) => String(poi.id)));
+
+      Array.from(poiMarkers.entries()).forEach(([poiId, marker]) => {
+        if (nextPoiIds.has(poiId)) {
+          return;
+        }
+
+        map.removeLayer(marker);
+        poiMarkers.delete(poiId);
+      });
+
+      pois.forEach((poi) => {
+        const marker = poiMarkers.get(poi.id);
+        if (!marker) {
+          createPoiMarker(poi);
+          return;
+        }
+
+        marker.setLatLng([poi.latitude, poi.longitude]);
+        marker.bindPopup(buildPoiPopupHtml(poi));
+      });
+
+      if (selectedPoiId && !poiMarkers.has(selectedPoiId)) {
+        selectedPoiId = null;
+      }
+
+      if (activePoiId && !poiMarkers.has(activePoiId)) {
+        activePoiId = null;
+      }
+
+      refreshPoiMarkers(openPopupForSelection);
+    };
+
     const refreshPoiMarkers = (openPopupForSelection) => {
       const tourPoiSet = getTourPoiSet();
       const isTourVisible = hasVisibleTour();
       const simulationPoiSet = getSimulationEligiblePoiSet();
       const isSimulationVisible = hasSimulationRoute();
 
-      state.pois.forEach((poi) => {
+      pois.forEach((poi) => {
         const marker = poiMarkers.get(poi.id);
         if (!marker) {
           return;
@@ -666,22 +716,8 @@
       }
     };
 
-    state.pois.forEach((poi) => {
-      const marker = L.marker([poi.latitude, poi.longitude], {
-        icon: createPoiIcon(poi, poi.id === selectedPoiId, poi.id === activePoiId),
-        keyboard: false
-      }).addTo(map);
-
-      marker.bindPopup(buildPoiPopupHtml(poi));
-      marker.on("click", () => {
-        notifyPoiSelected(poi.id, true);
-      });
-
-      poiMarkers.set(poi.id, marker);
-    });
-
     const fitMap = () => {
-      if (!state.pois.length) {
+      if (!pois.length) {
         if (userLocationState && userLocationState.latitude != null && userLocationState.longitude != null) {
           map.setView([userLocationState.latitude, userLocationState.longitude], 17, { animate: false });
           return;
@@ -691,12 +727,12 @@
         return;
       }
 
-      if (state.pois.length === 1) {
-        map.setView([state.pois[0].latitude, state.pois[0].longitude], 16, { animate: false });
+      if (pois.length === 1) {
+        map.setView([pois[0].latitude, pois[0].longitude], 16, { animate: false });
         return;
       }
 
-      const bounds = L.latLngBounds(state.pois.map((poi) => [poi.latitude, poi.longitude]));
+      const bounds = L.latLngBounds(pois.map((poi) => [poi.latitude, poi.longitude]));
       if (bounds.isValid()) {
         map.fitBounds(bounds.pad(0.12), getBrowseFitOptions());
       }
@@ -737,7 +773,7 @@
     upsertUserLocationMarker(userLocationState);
     refreshRouteSimulationLayer();
     refreshTourLayers();
-    refreshPoiMarkers(Boolean(selectedPoiId));
+    syncPoiMarkers(Boolean(selectedPoiId));
 
     if (hasVisibleTour()) {
       fitToTour();
@@ -794,6 +830,11 @@
       },
       setViewportInsets: (nextInsets) => {
         setViewportInsets(nextInsets);
+      },
+      setPoiData: (nextPoiState) => {
+        featuredLabel = nextPoiState?.featuredLabel ?? "";
+        pois = Array.isArray(nextPoiState?.pois) ? nextPoiState.pois : [];
+        syncPoiMarkers(Boolean(selectedPoiId));
       },
       fitToTour: () => {
         fitToTour();

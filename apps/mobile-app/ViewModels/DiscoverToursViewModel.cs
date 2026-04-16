@@ -117,6 +117,12 @@ public sealed class DiscoverToursViewModel : LocalizedViewModelBase
     public AsyncCommand<TourDiscoverCardViewModel> SecondaryActionCommand { get; }
 
     public async Task LoadAsync()
+        => await ReloadToursAsync(refreshDataIfChanged: true);
+
+    protected override async Task ReloadLocalizedStateAsync()
+        => await ReloadToursAsync(refreshDataIfChanged: false);
+
+    private async Task ReloadToursAsync(bool refreshDataIfChanged)
     {
         if (IsBusy)
         {
@@ -127,7 +133,11 @@ public sealed class DiscoverToursViewModel : LocalizedViewModelBase
         OnPropertyChanged(nameof(ShowEmptyState));
         try
         {
-            await _dataService.RefreshDataIfChangedAsync();
+            if (refreshDataIfChanged)
+            {
+                await _dataService.RefreshDataIfChangedAsync();
+            }
+
             var publishedTours = await _dataService.GetPublishedToursAsync();
             var activeSession = await _tourStateService.GetActiveTourAsync();
             var cards = new List<TourDiscoverCardViewModel>();
@@ -161,9 +171,6 @@ public sealed class DiscoverToursViewModel : LocalizedViewModelBase
             RefreshLocalizedBindings();
         }
     }
-
-    protected override async Task ReloadLocalizedStateAsync()
-        => await LoadAsync();
 
     private async Task ExecutePrimaryActionAsync(TourDiscoverCardViewModel? tour)
     {
