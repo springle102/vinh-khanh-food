@@ -11,70 +11,35 @@
     Shell.NavBarIsVisible="False">
 
     <Grid RowDefinitions="*,Auto" BackgroundColor="{StaticResource BrandBackground}">
-        <Grid>
-            <Border HeightRequest="126" StrokeThickness="0">
-                <Border.Background>
-                    <LinearGradientBrush EndPoint="1,1">
-                        <GradientStop Color="{StaticResource BrandHeaderStart}" Offset="0.0" />
-                        <GradientStop Color="{StaticResource BrandHeaderEnd}" Offset="1.0" />
-                    </LinearGradientBrush>
-                </Border.Background>
-            </Border>
+        <ScrollView>
+            <VerticalStackLayout Padding="22,24,22,124" Spacing="18">
+                <Label
+                    HorizontalTextAlignment="Center"
+                    Text="{Binding HeaderTitleText}"
+                    Style="{StaticResource ScreenTitleStyle}" />
 
-            <ScrollView>
-                <VerticalStackLayout Padding="22,18,22,124" Spacing="14">
-                    <Grid ColumnDefinitions="32,*,32" HeightRequest="34" VerticalOptions="Center">
-                        <Label FontSize="22" HorizontalTextAlignment="Center" Text="&#x2039;" VerticalTextAlignment="Center" />
-                        <Label Grid.Column="1" HorizontalTextAlignment="Center" Text="{Binding HeaderTitleText}" FontFamily="OpenSansSemibold" FontSize="22" VerticalTextAlignment="Center" />
-                        <Label Grid.Column="2" Opacity="0" Text="&#x2039;" />
-                    </Grid>
+                <Border
+                    Margin="0,8,0,0"
+                    Style="{StaticResource CardBorderStyle}">
+                    <VerticalStackLayout Spacing="18">
+                        <Label FontFamily="OpenSansSemibold" FontSize="18" Text="{Binding LanguageTitleText}" />
 
-                    <Border
-                        Margin="0,10,0,0"
-                        Padding="16"
-                        BackgroundColor="White"
-                        Stroke="#EFE5D8"
-                        StrokeThickness="1"
-                        StrokeShape="RoundRectangle 22">
-                        <Border.Shadow>
-                            <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
-                        </Border.Shadow>
-
-                        <VerticalStackLayout Spacing="10">
-                            <Label FontFamily="OpenSansSemibold" FontSize="18" Text="{Binding PublicModeTitleText}" />
-                            <Label FontSize="14" LineBreakMode="WordWrap" Text="{Binding PublicModeDescriptionText}" TextColor="{StaticResource BrandTextSecondary}" />
-                        </VerticalStackLayout>
-                    </Border>
-
-                    <Border
-                        Padding="16"
-                        BackgroundColor="White"
-                        Stroke="#EFE5D8"
-                        StrokeThickness="1"
-                        StrokeShape="RoundRectangle 22">
-                        <Border.Shadow>
-                            <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
-                        </Border.Shadow>
-
-                        <VerticalStackLayout Spacing="14">
-                            <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding LanguageTitleText}" />
-
-                            <FlexLayout
-                                Wrap="Wrap"
-                                JustifyContent="SpaceBetween"
-                                AlignItems="Stretch"
-                                BindableLayout.ItemsSource="{Binding Languages}">
-                                <BindableLayout.ItemTemplate>
-                                    <DataTemplate x:DataType="models:LanguageOption">
-                                        <Border
-                                            Margin="0,0,0,12"
-                                            Padding="14,14,14,12"
-                                            BackgroundColor="White"
-                                            MinimumHeightRequest="84"
-                                            Stroke="{StaticResource BrandStrokeStrong}"
-                                            StrokeShape="RoundRectangle 16"
-                                            FlexLayout.Basis="48%"
-                                            FlexLayout.Grow="1">
+                        <FlexLayout
+                            Wrap="Wrap"
+                            JustifyContent="SpaceBetween"
+                            AlignItems="Stretch"
+                            BindableLayout.ItemsSource="{Binding Languages}">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="models:LanguageOption">
+                                    <Border
+                                        Margin="0,0,0,12"
+                                        Padding="14,14,14,12"
+                                        BackgroundColor="White"
+                                        MinimumHeightRequest="84"
+                                        Stroke="{StaticResource BrandStrokeStrong}"
+                                        StrokeShape="RoundRectangle 16"
+                                        FlexLayout.Basis="48%"
+                                        FlexLayout.Grow="1">
                                         <Border.Triggers>
                                             <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
                                                 <Setter Property="BackgroundColor" Value="{StaticResource BrandPrimaryPale}" />
@@ -87,112 +52,48 @@
                                             </DataTrigger>
                                         </Border.Triggers>
 
-                                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                                            <Label
+                                                Grid.RowSpan="2"
+                                                FontSize="28"
+                                                Text="{Binding Flag}"
+                                                VerticalOptions="Center" />
+                                            <Label
+                                                Grid.Column="1"
+                                                FontFamily="OpenSansSemibold"
+                                                FontSize="14"
+                                                LineBreakMode="WordWrap"
+                                                MaxLines="2"
+                                                Text="{Binding DisplayName}"
+                                                VerticalOptions="Center" />
+                                            <Border
+                                                Grid.Row="1"
+                                                Grid.Column="1"
+                                                Padding="10,4"
+                                                BackgroundColor="#FFF1D6"
+                                                HorizontalOptions="Start"
+                                                IsVisible="{Binding IsPremium}"
+                                                StrokeThickness="0"
+                                                StrokeShape="RoundRectangle 12">
                                                 <Label
-                                                    Grid.RowSpan="2"
-                                                    FontSize="28"
-                                                    Text="{Binding Flag}"
-                                                    VerticalOptions="Center" />
-                                                <Label
-                                                    Grid.Column="1"
                                                     FontFamily="OpenSansSemibold"
-                                                    FontSize="14"
-                                                    LineBreakMode="WordWrap"
-                                                    MaxLines="2"
-                                                    Text="{Binding DisplayName}"
-                                                    VerticalOptions="Center" />
-                                                <Border
-                                                    Grid.Row="1"
-                                                    Grid.Column="1"
-                                                    Padding="10,4"
-                                                    BackgroundColor="#FFF1D6"
-                                                    HorizontalOptions="Start"
-                                                    IsVisible="{Binding IsPremium}"
-                                                    StrokeThickness="0"
-                                                    StrokeShape="RoundRectangle 12">
-                                                    <Label
-                                                        FontFamily="OpenSansSemibold"
-                                                        FontSize="10"
-                                                        Text="{Binding Source={x:Reference PageRoot}, Path=BindingContext.PremiumBadgeText}"
-                                                        TextColor="#9A5B12" />
-                                                </Border>
-                                            </Grid>
-
-                                            <Border.GestureRecognizers>
-                                                <TapGestureRecognizer Command="{Binding Source={x:Reference PageRoot}, Path=BindingContext.SelectLanguageCommand}" CommandParameter="{Binding .}" />
-                                            </Border.GestureRecognizers>
-                                        </Border>
-                                    </DataTemplate>
-                                </BindableLayout.ItemTemplate>
-                            </FlexLayout>
-                        </VerticalStackLayout>
-                    </Border>
-
-                    <Border
-                        Padding="16"
-                        BackgroundColor="White"
-                        Stroke="#EFE5D8"
-                        StrokeThickness="1"
-                        StrokeShape="RoundRectangle 22">
-                        <Border.Shadow>
-                            <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
-                        </Border.Shadow>
-
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                            <VerticalStackLayout Spacing="6">
-                                <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding AutoNarrationTitleText}" />
-                                <Label
-                                    FontSize="13"
-                                    LineBreakMode="WordWrap"
-                                    Text="{Binding AutoNarrationDescriptionText}"
-                                    TextColor="{StaticResource BrandTextSecondary}" />
-                            </VerticalStackLayout>
-
-                            <Switch
-                                Grid.Column="1"
-                                IsToggled="{Binding IsAutoNarrationEnabled}"
-                                OnColor="{StaticResource BrandPrimary}"
-                                ThumbColor="White"
-                                VerticalOptions="Start" />
-                        </Grid>
-                    </Border>
-
-                    <Border
-                        Padding="0"
-                        BackgroundColor="White"
-                        Stroke="#EFE5D8"
-                        StrokeThickness="1"
-                        StrokeShape="RoundRectangle 22">
-                        <Border.Shadow>
-                            <Shadow Brush="#14000000" Offset="0,5" Radius="14" Opacity="0.08" />
-                        </Border.Shadow>
-
-                        <VerticalStackLayout Spacing="0">
-                            <Label
-                                Margin="16,16,16,0"
-                                FontFamily="OpenSansSemibold"
-                                FontSize="16"
-                                Text="{Binding MoreTitleText}" />
-
-                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding MenuItems}" Spacing="0">
-                                <BindableLayout.ItemTemplate>
-                                    <DataTemplate x:DataType="models:SettingsMenuItem">
-                                        <Grid RowDefinitions="Auto,1">
-                                            <Grid Padding="16,14" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                                <Label FontSize="19" Text="{Binding Icon}" VerticalOptions="Center" TextColor="{StaticResource BrandTextSecondary}" />
-                                                <Label Grid.Column="1" FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding Title}" VerticalOptions="Center" />
-                                                <Label Grid.Column="2" FontSize="22" Text="&#x203A;" TextColor="{StaticResource BrandTextMuted}" VerticalOptions="Center" />
-                                            </Grid>
-                                            <BoxView Grid.Row="1" Margin="16,0" HeightRequest="1" Color="#F2ECE4" />
+                                                    FontSize="10"
+                                                    Text="{Binding Source={x:Reference PageRoot}, Path=BindingContext.PremiumBadgeText}"
+                                                    TextColor="#9A5B12" />
+                                            </Border>
                                         </Grid>
-                                    </DataTemplate>
-                                </BindableLayout.ItemTemplate>
-                            </VerticalStackLayout>
-                        </VerticalStackLayout>
-                    </Border>
-                </VerticalStackLayout>
-            </ScrollView>
-        </Grid>
+
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference PageRoot}, Path=BindingContext.SelectLanguageCommand}" CommandParameter="{Binding .}" />
+                                        </Border.GestureRecognizers>
+                                    </Border>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </FlexLayout>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+        </ScrollView>
 
         <controls:AppBottomBar Grid.Row="1" />
     </Grid>

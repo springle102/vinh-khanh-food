@@ -349,8 +349,3 @@ public sealed class CustomerRegistrationRequest
     public string Country { get; set; } = "VN";
 }
 
-public sealed class SettingsMenuItem
-{
-    public string Icon { get; set; } = string.Empty;
-    public string Title { get; set; } = string.Empty;
-}

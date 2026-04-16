@@ -28,7 +28,6 @@ public interface IFoodStreetDataService
     Task<string> EnsureAllowedLanguageSelectionAsync();
     // ✅ NEW: Explicitly restore to allowed language when needed
     Task<string> RestoreToAllowedLanguageAsync();
-    Task<IReadOnlyList<SettingsMenuItem>> GetSettingsMenuAsync();
     Task TrackPoiViewAsync(string poiId, string? languageCode = null, string source = "poi_detail");
     Task TrackAudioPlayAsync(string poiId, string? languageCode = null, string source = "audio_player", int? durationInSeconds = null);
     Task TrackQrScanAsync(string poiId, string? qrCode = null, string? languageCode = null);
@@ -311,8 +310,6 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             new SettingsMenuItem { Icon = "❓", Title = _languageService.GetText("settings_support") }
         ]);
 
-#endif
-
     public Task<IReadOnlyList<SettingsMenuItem>> GetSettingsMenuAsync()
         => Task.FromResult<IReadOnlyList<SettingsMenuItem>>(
         [
@@ -320,6 +317,8 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             new SettingsMenuItem { Icon = "\uD83C\uDFA7", Title = _languageService.GetText("poi_detail_listen") },
             new SettingsMenuItem { Icon = "\u2753", Title = _languageService.GetText("settings_support") }
         ]);
+
+#endif
 
     public string GetBackdropImageUrl()
         => _bootstrapSnapshot?.BackdropImageUrl ?? DefaultBackdropImageUrl;
