@@ -526,6 +526,7 @@ public sealed partial class AdminDataRepository
     {
         EnsureAdminUsersRuntimeSchema(connection);
         EnsurePoiRuntimeSchema(connection);
+        EnsureTranslationRuntimeSchema(connection);
         EnsureRefreshSessionsTable(connection);
         EnsureSeparatedAuditLogSchema(connection);
         RemoveLegacyReviewData(connection);
@@ -803,6 +804,26 @@ public sealed partial class AdminDataRepository
             )
             BEGIN
                 ALTER TABLE dbo.Pois ALTER COLUMN LockedBySuperAdmin BIT NOT NULL;
+            END;
+            """);
+    }
+
+    private void EnsureTranslationRuntimeSchema(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.PoiTranslations', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.PoiTranslations', N'SourceLanguageCode') IS NULL
+                    ALTER TABLE dbo.PoiTranslations ADD SourceLanguageCode NVARCHAR(20) NULL;
+
+                IF COL_LENGTH(N'dbo.PoiTranslations', N'SourceHash') IS NULL
+                    ALTER TABLE dbo.PoiTranslations ADD SourceHash NVARCHAR(128) NULL;
+
+                IF COL_LENGTH(N'dbo.PoiTranslations', N'SourceUpdatedAt') IS NULL
+                    ALTER TABLE dbo.PoiTranslations ADD SourceUpdatedAt DATETIMEOFFSET(7) NULL;
             END;
             """);
     }

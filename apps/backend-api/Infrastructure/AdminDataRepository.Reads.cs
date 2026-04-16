@@ -221,7 +221,8 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<Translation> GetTranslations(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
+            SELECT Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium,
+                   SourceLanguageCode, SourceHash, SourceUpdatedAt, UpdatedBy, UpdatedAt
             FROM dbo.PoiTranslations
             ORDER BY UpdatedAt DESC, Id DESC;
             """;

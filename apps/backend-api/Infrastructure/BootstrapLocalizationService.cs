@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
 
@@ -8,18 +7,13 @@ public sealed class BootstrapLocalizationService(
     ITextTranslationClient translationClient,
     ILogger<BootstrapLocalizationService> logger)
 {
-    private static readonly HashSet<string> AutoTranslateLanguages = new(
-        ["en", "zh-CN", "ko", "ja"],
-        StringComparer.OrdinalIgnoreCase);
-
     public async Task<AdminBootstrapResponse> ApplyAutoTranslationsAsync(
         AdminBootstrapResponse bootstrap,
         string? requestedLanguageCode,
         CancellationToken cancellationToken)
     {
         var targetLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(requestedLanguageCode);
-        if (!AutoTranslateLanguages.Contains(targetLanguageCode) ||
-            LocalizationContentPolicy.IsSourceLanguage(targetLanguageCode))
+        if (!CanAutoTranslateRequestedLanguage(bootstrap.Settings, targetLanguageCode))
         {
             return bootstrap;
         }
@@ -34,62 +28,91 @@ public sealed class BootstrapLocalizationService(
         var segments = workItems
             .SelectMany(item => item.GetSegments())
             .ToList();
-        if (segments.Count == 0)
+
+        if (segments.Count > 0)
         {
-            return bootstrap;
+            try
+            {
+                var translated = await translationClient.TranslateAsync(
+                    new TextTranslationRequest(
+                        targetLanguageCode,
+                        null,
+                        segments.Select(item => item.SourceText).ToList()),
+                    cancellationToken);
+
+                for (var index = 0; index < segments.Count; index += 1)
+                {
+                    var translatedText = translated.Texts.ElementAtOrDefault(index);
+                    segments[index].Apply(translatedText, targetLanguageCode);
+                }
+            }
+            catch (Exception exception) when (
+                exception is HttpRequestException ||
+                exception is InvalidOperationException ||
+                exception is TaskCanceledException)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Unable to auto-translate bootstrap content to {LanguageCode}. Stale target translations will be omitted from the response.",
+                    targetLanguageCode);
+            }
         }
 
-        TextTranslationResponse translated;
-        try
-        {
-            translated = await translationClient.TranslateAsync(
-                new TextTranslationRequest(
-                    targetLanguageCode,
-                    "vi",
-                    segments.Select(item => item.SourceText).ToList()),
-                cancellationToken);
-        }
-        catch (Exception exception) when (
-            exception is HttpRequestException ||
-            exception is InvalidOperationException ||
-            exception is TaskCanceledException)
-        {
-            logger.LogWarning(
-                exception,
-                "Unable to auto-translate bootstrap content to {LanguageCode}.",
-                targetLanguageCode);
-            return bootstrap;
-        }
-
-        for (var index = 0; index < segments.Count; index += 1)
-        {
-            var translatedText = translated.Texts.ElementAtOrDefault(index);
-            segments[index].Apply(translatedText, targetLanguageCode);
-        }
-
+        var replacementKeys = workItems
+            .Select(item => item.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var generated = workItems
-            .Where(item => item.HasContent)
+            .Where(item => item.ShouldMaterialize)
             .Select(item => item.ToTranslation(targetLanguageCode))
             .ToList();
-        if (generated.Count == 0)
-        {
-            return bootstrap;
-        }
-
-        var generatedKeys = generated
-            .Select(item => CreateTranslationKey(item.EntityType, item.EntityId, item.LanguageCode))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var nextTranslations = translations
-            .Where(item => !generatedKeys.Contains(CreateTranslationKey(item.EntityType, item.EntityId, item.LanguageCode)))
+            .Where(item => !replacementKeys.Contains(CreateTranslationKey(item.EntityType, item.EntityId, item.LanguageCode)))
             .Concat(generated)
             .ToList();
 
+        foreach (var workItem in workItems)
+        {
+            logger.LogDebug(
+                "Bootstrap localization resolved. entityType={EntityType}; entityId={EntityId}; requestedLanguage={RequestedLanguage}; dbSourceTitle={DbSourceTitle}; translatorInputTitle={TranslatorInputTitle}; translationCache={TranslationCache}; sourceHash={SourceHash}; finalTitle={FinalTitle}",
+                workItem.EntityType,
+                workItem.EntityId,
+                targetLanguageCode,
+                workItem.SourceTitle,
+                workItem.TranslatorInputTitle,
+                workItem.TranslationCacheStatus,
+                workItem.SourceHash,
+                workItem.Title);
+        }
+
         logger.LogInformation(
-            "Auto-translated {TranslationCount} bootstrap translation records to {LanguageCode}.",
-            generated.Count,
-            targetLanguageCode);
+            "Refreshed bootstrap localization for {LanguageCode}. workItems={WorkItemCount}, segments={SegmentCount}, translationsReturned={TranslationCount}",
+            targetLanguageCode,
+            workItems.Count,
+            segments.Count,
+            generated.Count);
 
         return bootstrap with { Translations = nextTranslations };
+    }
+
+    private static bool CanAutoTranslateRequestedLanguage(SystemSetting settings, string targetLanguageCode)
+    {
+        if (LocalizationContentPolicy.IsSourceLanguage(targetLanguageCode))
+        {
+            return false;
+        }
+
+        var supportedLanguages = settings.SupportedLanguages
+            .Select(PremiumAccessCatalog.NormalizeLanguageCode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (supportedLanguages.Count == 0)
+        {
+            supportedLanguages.UnionWith(PremiumAccessCatalog.FreeLanguages);
+            supportedLanguages.UnionWith(PremiumAccessCatalog.PremiumLanguages);
+        }
+
+        supportedLanguages.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.DefaultLanguage));
+        supportedLanguages.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.FallbackLanguage));
+        return supportedLanguages.Contains(targetLanguageCode);
     }
 
     private static IEnumerable<BootstrapTranslationWorkItem> BuildWorkItems(
@@ -99,13 +122,21 @@ public sealed class BootstrapLocalizationService(
     {
         foreach (var poi in bootstrap.Pois)
         {
-            var exact = FindTranslation(translations, "poi", poi.Id, targetLanguageCode);
-            var source = BuildSourceContent(
-                FindTranslation(translations, "poi", poi.Id, "vi"),
-                null,
-                null,
-                null);
-            var workItem = BootstrapTranslationWorkItem.Create("poi", poi.Id, exact, source, targetLanguageCode);
+            var workItem = BootstrapTranslationWorkItem.Create(
+                "poi",
+                poi.Id,
+                FindTranslation(translations, "poi", poi.Id, targetLanguageCode),
+                TranslationSourceVersioning.ResolveCurrentSource(
+                    "poi",
+                    poi.Id,
+                    translations,
+                    bootstrap.Settings.DefaultLanguage,
+                    bootstrap.Settings.FallbackLanguage,
+                    poi.Slug,
+                    null,
+                    null,
+                    poi.UpdatedAt),
+                targetLanguageCode);
             if (workItem is not null)
             {
                 yield return workItem;
@@ -114,13 +145,21 @@ public sealed class BootstrapLocalizationService(
 
         foreach (var foodItem in bootstrap.FoodItems)
         {
-            var exact = FindTranslation(translations, "food_item", foodItem.Id, targetLanguageCode);
-            var source = BuildSourceContent(
-                FindTranslation(translations, "food_item", foodItem.Id, "vi"),
-                foodItem.Name,
-                null,
-                foodItem.Description);
-            var workItem = BootstrapTranslationWorkItem.Create("food_item", foodItem.Id, exact, source, targetLanguageCode);
+            var workItem = BootstrapTranslationWorkItem.Create(
+                "food_item",
+                foodItem.Id,
+                FindTranslation(translations, "food_item", foodItem.Id, targetLanguageCode),
+                TranslationSourceVersioning.ResolveCurrentSource(
+                    "food_item",
+                    foodItem.Id,
+                    translations,
+                    bootstrap.Settings.DefaultLanguage,
+                    bootstrap.Settings.FallbackLanguage,
+                    foodItem.Name,
+                    null,
+                    foodItem.Description,
+                    DateTimeOffset.MinValue),
+                targetLanguageCode);
             if (workItem is not null)
             {
                 yield return workItem;
@@ -129,13 +168,21 @@ public sealed class BootstrapLocalizationService(
 
         foreach (var promotion in bootstrap.Promotions)
         {
-            var exact = FindTranslation(translations, "promotion", promotion.Id, targetLanguageCode);
-            var source = BuildSourceContent(
-                FindTranslation(translations, "promotion", promotion.Id, "vi"),
-                promotion.Title,
-                null,
-                promotion.Description);
-            var workItem = BootstrapTranslationWorkItem.Create("promotion", promotion.Id, exact, source, targetLanguageCode);
+            var workItem = BootstrapTranslationWorkItem.Create(
+                "promotion",
+                promotion.Id,
+                FindTranslation(translations, "promotion", promotion.Id, targetLanguageCode),
+                TranslationSourceVersioning.ResolveCurrentSource(
+                    "promotion",
+                    promotion.Id,
+                    translations,
+                    bootstrap.Settings.DefaultLanguage,
+                    bootstrap.Settings.FallbackLanguage,
+                    promotion.Title,
+                    null,
+                    promotion.Description,
+                    DateTimeOffset.MinValue),
+                targetLanguageCode);
             if (workItem is not null)
             {
                 yield return workItem;
@@ -144,34 +191,27 @@ public sealed class BootstrapLocalizationService(
 
         foreach (var route in bootstrap.Routes)
         {
-            var exact = FindTranslation(translations, "route", route.Id, targetLanguageCode);
-            var source = BuildSourceContent(
-                FindTranslation(translations, "route", route.Id, "vi"),
-                route.Name,
-                route.Theme,
-                route.Description);
-            var workItem = BootstrapTranslationWorkItem.Create("route", route.Id, exact, source, targetLanguageCode);
+            var workItem = BootstrapTranslationWorkItem.Create(
+                "route",
+                route.Id,
+                FindTranslation(translations, "route", route.Id, targetLanguageCode),
+                TranslationSourceVersioning.ResolveCurrentSource(
+                    "route",
+                    route.Id,
+                    translations,
+                    bootstrap.Settings.DefaultLanguage,
+                    bootstrap.Settings.FallbackLanguage,
+                    route.Name,
+                    route.Theme,
+                    route.Description,
+                    route.UpdatedAt),
+                targetLanguageCode);
             if (workItem is not null)
             {
                 yield return workItem;
             }
         }
     }
-
-    private static TranslationContent BuildSourceContent(
-        Translation? source,
-        string? fallbackTitle,
-        string? fallbackShortText,
-        string? fallbackFullText)
-        => new(
-            FirstNonEmptySource(source?.Title, fallbackTitle),
-            FirstNonEmptySource(source?.ShortText, fallbackShortText),
-            FirstNonEmptySource(source?.FullText, fallbackFullText, fallbackShortText));
-
-    private static string FirstNonEmptySource(params string?[] values)
-        => values
-            .Select(value => LocalizationContentPolicy.CleanForLanguage(value, "vi"))
-            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
 
     private static Translation? FindTranslation(
         IEnumerable<Translation> translations,
@@ -186,22 +226,22 @@ public sealed class BootstrapLocalizationService(
     private static string CreateTranslationKey(string entityType, string entityId, string languageCode)
         => $"{entityType.Trim().ToLowerInvariant()}:{entityId.Trim().ToLowerInvariant()}:{PremiumAccessCatalog.NormalizeLanguageCode(languageCode).ToLowerInvariant()}";
 
-    private sealed record TranslationContent(
-        string Title,
-        string ShortText,
-        string FullText);
-
     private sealed class BootstrapTranslationWorkItem
     {
         private readonly Translation? _existing;
-        private readonly TranslationContent _source;
+        private readonly TranslationSourceSnapshot _sourceSnapshot;
         private readonly List<BootstrapTranslationSegment> _segments = [];
+        private readonly string _targetLanguageCode;
+        private readonly bool _canReuseExisting;
+        private bool _titleQueued;
 
         private BootstrapTranslationWorkItem(
             string entityType,
             string entityId,
             Translation? existing,
-            TranslationContent source,
+            TranslationSourceSnapshot sourceSnapshot,
+            string targetLanguageCode,
+            bool canReuseExisting,
             string title,
             string shortText,
             string fullText)
@@ -209,7 +249,9 @@ public sealed class BootstrapLocalizationService(
             EntityType = entityType;
             EntityId = entityId;
             _existing = existing;
-            _source = source;
+            _sourceSnapshot = sourceSnapshot;
+            _targetLanguageCode = targetLanguageCode;
+            _canReuseExisting = canReuseExisting;
             Title = title;
             ShortText = shortText;
             FullText = fullText;
@@ -218,6 +260,18 @@ public sealed class BootstrapLocalizationService(
         public string EntityType { get; }
 
         public string EntityId { get; }
+
+        public string Key => CreateTranslationKey(EntityType, EntityId, _targetLanguageCode);
+
+        public string SourceLanguageCode => _sourceSnapshot.LanguageCode;
+
+        public string SourceHash => _sourceSnapshot.Hash;
+
+        public string? SourceTitle => string.IsNullOrWhiteSpace(_sourceSnapshot.Title) ? null : _sourceSnapshot.Title;
+
+        public string? TranslatorInputTitle => _titleQueued ? _sourceSnapshot.Title : null;
+
+        public string TranslationCacheStatus => _canReuseExisting ? "hit" : "miss";
 
         public string Title { get; private set; }
 
@@ -230,24 +284,34 @@ public sealed class BootstrapLocalizationService(
             !string.IsNullOrWhiteSpace(ShortText) ||
             !string.IsNullOrWhiteSpace(FullText);
 
+        public bool ShouldMaterialize => HasContent;
+
         public static BootstrapTranslationWorkItem? Create(
             string entityType,
             string entityId,
             Translation? existing,
-            TranslationContent source,
+            TranslationSourceSnapshot? sourceSnapshot,
             string targetLanguageCode)
         {
+            if (sourceSnapshot is null)
+            {
+                return null;
+            }
+
+            var canReuseExisting = TranslationSourceVersioning.MatchesCurrentSource(existing, sourceSnapshot);
             var item = new BootstrapTranslationWorkItem(
                 entityType,
                 entityId,
                 existing,
-                source,
-                LocalizationContentPolicy.CleanForLanguage(existing?.Title, targetLanguageCode) ?? string.Empty,
-                LocalizationContentPolicy.CleanForLanguage(existing?.ShortText, targetLanguageCode) ?? string.Empty,
-                LocalizationContentPolicy.CleanForLanguage(existing?.FullText, targetLanguageCode) ?? string.Empty);
+                sourceSnapshot,
+                targetLanguageCode,
+                canReuseExisting,
+                canReuseExisting ? CleanTargetValue(existing?.Title, targetLanguageCode) : string.Empty,
+                canReuseExisting ? CleanTargetValue(existing?.ShortText, targetLanguageCode) : string.Empty,
+                canReuseExisting ? CleanTargetValue(existing?.FullText, targetLanguageCode) : string.Empty);
 
             item.QueueMissingSegments();
-            return item.HasContent || item._segments.Count > 0 ? item : null;
+            return item.HasContent || item._segments.Count > 0 || existing is not null ? item : null;
         }
 
         public IReadOnlyList<BootstrapTranslationSegment> GetSegments()
@@ -265,29 +329,38 @@ public sealed class BootstrapLocalizationService(
                 Title = Title,
                 ShortText = ShortText,
                 FullText = FullText,
-                SeoTitle = LocalizationContentPolicy.CleanForLanguage(_existing?.SeoTitle, targetLanguageCode) ?? string.Empty,
-                SeoDescription = LocalizationContentPolicy.CleanForLanguage(_existing?.SeoDescription, targetLanguageCode) ?? string.Empty,
+                SeoTitle = CleanTargetValue(_existing?.SeoTitle, targetLanguageCode),
+                SeoDescription = CleanTargetValue(_existing?.SeoDescription, targetLanguageCode),
+                SourceLanguageCode = _sourceSnapshot.LanguageCode,
+                SourceHash = _sourceSnapshot.Hash,
+                SourceUpdatedAt = _sourceSnapshot.UpdatedAt,
                 UpdatedBy = string.IsNullOrWhiteSpace(_existing?.UpdatedBy) ? "auto-translation" : _existing.UpdatedBy,
-                UpdatedAt = _existing?.UpdatedAt ?? DateTimeOffset.UtcNow
+                UpdatedAt = _sourceSnapshot.UpdatedAt == DateTimeOffset.MinValue
+                    ? _existing?.UpdatedAt ?? DateTimeOffset.UtcNow
+                    : _sourceSnapshot.UpdatedAt
             };
 
         private void QueueMissingSegments()
         {
-            if (string.IsNullOrWhiteSpace(Title) && !string.IsNullOrWhiteSpace(_source.Title))
+            if (string.IsNullOrWhiteSpace(Title) && !string.IsNullOrWhiteSpace(_sourceSnapshot.Title))
             {
-                _segments.Add(new BootstrapTranslationSegment(_source.Title, value => Title = value));
+                _titleQueued = true;
+                _segments.Add(new BootstrapTranslationSegment(_sourceSnapshot.Title, value => Title = value));
             }
 
-            if (string.IsNullOrWhiteSpace(ShortText) && !string.IsNullOrWhiteSpace(_source.ShortText))
+            if (string.IsNullOrWhiteSpace(ShortText) && !string.IsNullOrWhiteSpace(_sourceSnapshot.ShortText))
             {
-                _segments.Add(new BootstrapTranslationSegment(_source.ShortText, value => ShortText = value));
+                _segments.Add(new BootstrapTranslationSegment(_sourceSnapshot.ShortText, value => ShortText = value));
             }
 
-            if (string.IsNullOrWhiteSpace(FullText) && !string.IsNullOrWhiteSpace(_source.FullText))
+            if (string.IsNullOrWhiteSpace(FullText) && !string.IsNullOrWhiteSpace(_sourceSnapshot.FullText))
             {
-                _segments.Add(new BootstrapTranslationSegment(_source.FullText, value => FullText = value));
+                _segments.Add(new BootstrapTranslationSegment(_sourceSnapshot.FullText, value => FullText = value));
             }
         }
+
+        private static string CleanTargetValue(string? value, string targetLanguageCode)
+            => LocalizationContentPolicy.CleanForLanguage(value, targetLanguageCode) ?? string.Empty;
     }
 
     private sealed class BootstrapTranslationSegment(

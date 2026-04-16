@@ -60,34 +60,43 @@ public sealed class PoiNarrationService(
             .OrderByDescending(item => item.UpdatedAt)
             .ToList();
 
-        var exactTranslation = FindExactPoiTranslation(translations, normalizedRequestedLanguage);
-        var sourceTranslation = FindBestSourcePoiTranslation(
+        var sourceSnapshot = TranslationSourceVersioning.ResolveCurrentSource(
+            "poi",
+            poiId,
             translations,
-            normalizedRequestedLanguage,
             settings.DefaultLanguage,
-            settings.FallbackLanguage);
-
-        var exactTitle = CleanNullableForLanguage(exactTranslation?.Title, normalizedRequestedLanguage);
-        var exactBody = GetNarrationBodyForLanguage(exactTranslation, normalizedRequestedLanguage);
+            settings.FallbackLanguage,
+            poi.Slug,
+            null,
+            null,
+            poi.UpdatedAt);
+        var exactTranslation = FindExactPoiTranslation(translations, normalizedRequestedLanguage);
+        var exactTranslationIsFresh = TranslationSourceVersioning.MatchesCurrentSource(exactTranslation, sourceSnapshot);
+        var exactTitle = exactTranslationIsFresh
+            ? CleanNullableForLanguage(exactTranslation?.Title, normalizedRequestedLanguage)
+            : null;
+        var exactBody = exactTranslationIsFresh
+            ? GetNarrationBodyForLanguage(exactTranslation, normalizedRequestedLanguage)
+            : string.Empty;
         var exactText = BuildNarrationText(exactTitle, exactBody);
-        var sourceLanguageForContent = NormalizeLanguageCode(
-            sourceTranslation?.LanguageCode,
-            settings.DefaultLanguage,
-            settings.FallbackLanguage);
-        var sourceTitle = CleanNullableForLanguage(sourceTranslation?.Title, sourceLanguageForContent);
-        var sourceBody = GetNarrationBodyForLanguage(sourceTranslation, sourceLanguageForContent);
+        var sourceLanguageCode = sourceSnapshot?.LanguageCode;
+        var sourceTitle = sourceSnapshot?.Title;
+        var sourceBody = sourceSnapshot?.Body ?? string.Empty;
         var sourceText = BuildNarrationText(sourceTitle, sourceBody);
-        var hasExactNarration = HasNarrationContent(exactBody);
-        var hasSourceNarration = HasNarrationContent(sourceBody);
+        var hasExactNarration = HasNarrationContent(exactTitle) || HasNarrationContent(exactBody);
+        var hasSourceNarration = HasNarrationContent(sourceTitle) || HasNarrationContent(sourceBody);
         var shouldAutoTranslateFromSource =
             hasSourceNarration &&
-            sourceTranslation is not null &&
-            !string.Equals(sourceTranslation.LanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) &&
-            (!hasExactNarration ||
-            IsEquivalentNarration(exactBody, sourceBody) ||
-            ShouldRefreshAutoTranslation(exactTranslation, sourceTranslation));
+            !string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) &&
+            (!exactTranslationIsFresh ||
+             !hasExactNarration ||
+             IsEquivalentNarration(exactBody, sourceBody));
 
-        var displayTitle = exactTitle ?? sourceTitle ?? poi.Slug;
+        var displayTitle = exactTitle ??
+            (string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase)
+                ? sourceTitle
+                : null) ??
+            poi.Slug;
         var displayText = hasExactNarration
             ? exactText
             : string.Empty;
@@ -97,13 +106,14 @@ public sealed class PoiNarrationService(
         const string autoTranslatedStatus = "auto_translated";
         const string fallbackSourceStatus = "fallback_source";
         var translationStatus = storedStatus;
-        string? sourceLanguageCode = sourceTranslation is not null && hasSourceNarration
-            ? NormalizeLanguageCode(sourceTranslation.LanguageCode, settings.DefaultLanguage, settings.FallbackLanguage)
-            : hasExactNarration
-                ? NormalizeLanguageCode(exactTranslation?.LanguageCode, normalizedRequestedLanguage, settings.DefaultLanguage, settings.FallbackLanguage)
-                : null;
         var effectiveLanguageCode = normalizedRequestedLanguage;
         string? fallbackMessage = null;
+        var sourceHash = sourceSnapshot?.Hash ?? string.Empty;
+        var translationCacheStatus = sourceSnapshot is null
+            ? "no_source"
+            : exactTranslationIsFresh
+                ? "hit"
+                : "miss";
 
         if (shouldAutoTranslateFromSource)
         {
@@ -116,11 +126,12 @@ public sealed class PoiNarrationService(
                     normalizedRequestedLanguage,
                     cancellationToken);
 
-                displayTitle = translatedFragments.Title ?? sourceTitle ?? poi.Slug;
+                displayTitle = translatedFragments.Title ?? displayTitle;
                 displayText = BuildNarrationText(translatedFragments.Title, translatedFragments.Body);
                 ttsInputText = displayText;
                 translatedText = displayText;
                 translationStatus = autoTranslatedStatus;
+                translationCacheStatus = "miss";
 
                 if (!HasNarrationContent(displayText))
                 {
@@ -140,7 +151,7 @@ public sealed class PoiNarrationService(
                     sourceLanguageCode,
                     normalizedRequestedLanguage);
 
-                if (hasExactNarration && !IsEquivalentNarration(exactBody, sourceBody))
+                if (hasExactNarration && exactTranslationIsFresh && !IsEquivalentNarration(exactBody, sourceBody))
                 {
                     displayTitle = exactTitle ?? poi.Slug;
                     displayText = exactText;
@@ -156,7 +167,7 @@ public sealed class PoiNarrationService(
                         string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) ||
                         (!IsSourceLanguage(sourceLanguageCode) && IsUsableTextForLanguage(sourceText, sourceLanguageCode));
                     displayTitle = canUseSourceFallback
-                        ? sourceTitle ?? exactTitle ?? poi.Slug
+                        ? sourceTitle ?? poi.Slug
                         : exactTitle ?? poi.Slug;
                     displayText = canUseSourceFallback ? sourceText : string.Empty;
                     ttsInputText = displayText;
@@ -171,13 +182,13 @@ public sealed class PoiNarrationService(
                 }
             }
         }
-        else if (!hasExactNarration && hasSourceNarration && sourceTranslation is not null)
+        else if (!hasExactNarration && hasSourceNarration && sourceSnapshot is not null)
         {
             var canUseSourceFallback =
                 string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) ||
                 (!IsSourceLanguage(sourceLanguageCode) && IsUsableTextForLanguage(sourceText, sourceLanguageCode));
             displayTitle = canUseSourceFallback
-                ? sourceTitle ?? exactTitle ?? poi.Slug
+                ? sourceTitle ?? poi.Slug
                 : exactTitle ?? poi.Slug;
             displayText = canUseSourceFallback ? sourceText : string.Empty;
             ttsInputText = displayText;
@@ -190,7 +201,7 @@ public sealed class PoiNarrationService(
         {
             displayText = string.Empty;
             ttsInputText = string.Empty;
-            effectiveLanguageCode = sourceLanguageCode ?? normalizedRequestedLanguage;
+            effectiveLanguageCode = normalizedRequestedLanguage;
         }
 
         AudioGuide? audioGuide = null;
@@ -207,6 +218,7 @@ public sealed class PoiNarrationService(
             translationStatus,
             effectiveLanguageCode,
             sourceLanguageCode,
+            sourceHash,
             ttsInputText,
             audioGuide);
         var sourceTextForResponse =
@@ -234,10 +246,15 @@ public sealed class PoiNarrationService(
             GetLocale(effectiveLanguageCode));
 
         logger.LogDebug(
-            "Resolved POI narration. PoiId={PoiId}; languageSelected={LanguageSelected}; sourceLanguage={SourceLanguage}; sourceText={SourceText}; translatedText={TranslatedText}; ttsInputText={TtsInputText}; cacheKey={CacheKey}; status={Status}; fallbackMessage={FallbackMessage}",
+            "Resolved POI narration. PoiId={PoiId}; languageSelected={LanguageSelected}; dbSourceTitle={DbSourceTitle}; translatorInputTitle={TranslatorInputTitle}; translationCache={TranslationCache}; sourceHash={SourceHash}; sourceLanguage={SourceLanguage}; finalTitle={FinalTitle}; sourceText={SourceText}; translatedText={TranslatedText}; ttsInputText={TtsInputText}; cacheKey={CacheKey}; status={Status}; fallbackMessage={FallbackMessage}",
             poi.Id,
             normalizedRequestedLanguage,
+            sourceTitle,
+            shouldAutoTranslateFromSource ? sourceTitle : null,
+            translationCacheStatus,
+            sourceHash,
             sourceLanguageCode,
+            resolved.DisplayTitle,
             resolved.SourceText,
             resolved.TranslatedText,
             resolved.TtsInputText,
@@ -420,6 +437,7 @@ public sealed class PoiNarrationService(
         string translationStatus,
         string effectiveLanguageCode,
         string? sourceLanguageCode,
+        string sourceVersion,
         string ttsInputText,
         AudioGuide? audioGuide) =>
         string.Join(
@@ -428,6 +446,7 @@ public sealed class PoiNarrationService(
             $"status={translationStatus}",
             $"effective={effectiveLanguageCode}",
             $"source={sourceLanguageCode ?? "none"}",
+            $"sourceVersion={sourceVersion}",
             $"text={CreateHash(ttsInputText)}",
             $"guide={audioGuide?.Id ?? "none"}",
             $"guideUpdated={audioGuide?.UpdatedAt.ToString("O") ?? "none"}",

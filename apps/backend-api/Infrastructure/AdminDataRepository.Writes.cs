@@ -912,7 +912,9 @@ public bool DeletePoi(string id, AdminRequestContext actor)
         EnsureActorCanManagePoiContentEntity(connection, transaction, actor, request.EntityType, request.EntityId, "chỉnh sửa nội dung POI");
 
         var now = DateTimeOffset.UtcNow;
+        var settings = GetSettings(connection, transaction);
         var normalizedEntityType = NormalizeEntityType(request.EntityType);
+        var normalizedLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(request.LanguageCode);
         var existing = !string.IsNullOrWhiteSpace(id)
             ? GetTranslationById(connection, transaction, id)
             : null;
@@ -921,9 +923,36 @@ public bool DeletePoi(string id, AdminRequestContext actor)
 
         var isNew = existing is null;
         var translationId = existing?.Id ?? id ?? CreateId("trans");
+        var pendingTranslation = new Translation
+        {
+            Id = translationId,
+            EntityType = normalizedEntityType,
+            EntityId = request.EntityId,
+            LanguageCode = request.LanguageCode,
+            Title = request.Title,
+            ShortText = request.ShortText,
+            FullText = request.FullText,
+            SeoTitle = request.SeoTitle,
+            SeoDescription = request.SeoDescription,
+            SourceLanguageCode = existing?.SourceLanguageCode,
+            SourceHash = existing?.SourceHash,
+            SourceUpdatedAt = existing?.SourceUpdatedAt,
+            UpdatedBy = actor.Name,
+            UpdatedAt = now
+        };
+        var sourceSnapshot = ResolveTranslationSourceSnapshot(
+            connection,
+            transaction,
+            normalizedEntityType,
+            request.EntityId,
+            settings.DefaultLanguage,
+            settings.FallbackLanguage,
+            pendingTranslation);
+        var isSourceTranslation = sourceSnapshot is not null &&
+            string.Equals(normalizedLanguageCode, sourceSnapshot.LanguageCode, StringComparison.OrdinalIgnoreCase);
 
         _logger.LogInformation(
-            "SaveTranslation request received. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, title={Title}, shortTextLength={ShortTextLength}, fullTextLength={FullTextLength}, isNew={IsNew}",
+            "SaveTranslation request received. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, title={Title}, shortTextLength={ShortTextLength}, fullTextLength={FullTextLength}, isNew={IsNew}, sourceLanguageCode={SourceLanguageCode}, sourceHash={SourceHash}",
             translationId,
             normalizedEntityType,
             request.EntityId,
@@ -931,7 +960,9 @@ public bool DeletePoi(string id, AdminRequestContext actor)
             request.Title,
             request.ShortText?.Length ?? 0,
             request.FullText?.Length ?? 0,
-            isNew);
+            isNew,
+            sourceSnapshot?.LanguageCode,
+            sourceSnapshot?.Hash);
 
         if (isNew)
         {
@@ -946,9 +977,10 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                 transaction,
                 """
                 INSERT INTO dbo.PoiTranslations (
-                    Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
+                    Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium,
+                    SourceLanguageCode, SourceHash, SourceUpdatedAt, UpdatedBy, UpdatedAt
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 translationId,
                 normalizedEntityType,
@@ -960,6 +992,9 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                 request.SeoTitle,
                 request.SeoDescription,
                 request.IsPremium,
+                sourceSnapshot?.LanguageCode,
+                sourceSnapshot?.Hash,
+                sourceSnapshot?.UpdatedAt,
                 actor.Name,
                 now);
         }
@@ -986,6 +1021,9 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                     SeoTitle = ?,
                     SeoDescription = ?,
                     IsPremium = ?,
+                    SourceLanguageCode = ?,
+                    SourceHash = ?,
+                    SourceUpdatedAt = ?,
                     UpdatedBy = ?,
                     UpdatedAt = ?
                 WHERE Id = ?;
@@ -999,9 +1037,28 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                 request.SeoTitle,
                 request.SeoDescription,
                 request.IsPremium,
+                sourceSnapshot?.LanguageCode,
+                sourceSnapshot?.Hash,
+                sourceSnapshot?.UpdatedAt,
                 actor.Name,
                 now,
                 translationId);
+        }
+
+        if (isSourceTranslation)
+        {
+            InvalidateDependentTranslations(
+                connection,
+                transaction,
+                normalizedEntityType,
+                request.EntityId,
+                request.LanguageCode);
+
+            _logger.LogDebug(
+                "Invalidated dependent translations after source translation change. entityType={EntityType}, entityId={EntityId}, sourceLanguageCode={SourceLanguageCode}",
+                normalizedEntityType,
+                request.EntityId,
+                request.LanguageCode);
         }
 
         TouchRelatedPoisForContentEntityChange(
@@ -1043,11 +1100,30 @@ public bool DeletePoi(string id, AdminRequestContext actor)
         using var transaction = connection.BeginTransaction();
 
         var now = DateTimeOffset.UtcNow;
+        var settings = GetSettings(connection, transaction);
         var existing = GetTranslationById(connection, transaction, id);
+        var normalizedExistingLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(existing?.LanguageCode);
+        var invalidatesDependents =
+            !string.IsNullOrWhiteSpace(existing?.EntityType) &&
+            !string.IsNullOrWhiteSpace(existing?.EntityId) &&
+            (
+                string.Equals(normalizedExistingLanguageCode, PremiumAccessCatalog.NormalizeLanguageCode(settings.DefaultLanguage), StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalizedExistingLanguageCode, PremiumAccessCatalog.NormalizeLanguageCode(settings.FallbackLanguage), StringComparison.OrdinalIgnoreCase)
+            );
         EnsureActorCanManagePoiContentEntity(connection, transaction, actor, existing?.EntityType, existing?.EntityId, "xóa nội dung POI");
         var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTranslations WHERE Id = ?;", id) > 0;
         if (deleted)
         {
+            if (invalidatesDependents)
+            {
+                InvalidateDependentTranslations(
+                    connection,
+                    transaction,
+                    NormalizeEntityType(existing!.EntityType),
+                    existing.EntityId,
+                    existing.LanguageCode);
+            }
+
             TouchRelatedPoisForContentEntityChange(
                 connection,
                 transaction,

@@ -96,6 +96,9 @@ public sealed class Translation
     public string SeoDescription { get; set; } = string.Empty;
     [Obsolete("Premium gating is deprecated for the public Android app.")]
     public bool IsPremium { get; set; }
+    public string? SourceLanguageCode { get; set; }
+    public string? SourceHash { get; set; }
+    public DateTimeOffset? SourceUpdatedAt { get; set; }
     public string UpdatedBy { get; set; } = string.Empty;
     public DateTimeOffset UpdatedAt { get; set; }
 }

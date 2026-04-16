@@ -436,7 +436,8 @@ public sealed partial class AdminDataRepository
     private Translation? GetTranslationById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
+            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium,
+                   SourceLanguageCode, SourceHash, SourceUpdatedAt, UpdatedBy, UpdatedAt
             FROM dbo.PoiTranslations
             WHERE Id = ?;
             """;
@@ -454,7 +455,8 @@ public sealed partial class AdminDataRepository
         string languageCode)
     {
         const string sql = """
-            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium, UpdatedBy, UpdatedAt
+            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium,
+                   SourceLanguageCode, SourceHash, SourceUpdatedAt, UpdatedBy, UpdatedAt
             FROM dbo.PoiTranslations
             WHERE EntityId = ? AND LanguageCode = ?
               AND (
