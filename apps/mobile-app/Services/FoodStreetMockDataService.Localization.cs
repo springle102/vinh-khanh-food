@@ -23,6 +23,8 @@ public sealed partial class FoodStreetApiDataService
             ThumbnailUrl = poi.ThumbnailUrl,
             Latitude = poi.Latitude,
             Longitude = poi.Longitude,
+            TriggerRadius = poi.TriggerRadius,
+            Priority = poi.Priority,
             IsFeatured = poi.IsFeatured,
             HeatIntensity = poi.HeatIntensity,
             DistanceText = LocalizeDistanceText(poi.DistanceText)

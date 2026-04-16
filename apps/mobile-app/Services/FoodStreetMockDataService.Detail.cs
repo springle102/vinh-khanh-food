@@ -80,6 +80,8 @@ public sealed partial class FoodStreetApiDataService
             ThumbnailUrl = detail.Images.FirstOrDefault() ?? DefaultBackdropImageUrl,
             Latitude = detail.Latitude,
             Longitude = detail.Longitude,
+            TriggerRadius = ResolvePoiTriggerRadius(poi),
+            Priority = ResolvePoiPriority(poi),
             IsFeatured = detail.IsFeatured,
             HeatIntensity = ResolveHeatIntensity(poi, []),
             DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))

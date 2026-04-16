@@ -646,6 +646,12 @@ public sealed partial class AdminDataRepository
 
             IF COL_LENGTH(N'dbo.Pois', N'RejectedAt') IS NULL
                 ALTER TABLE dbo.Pois ADD RejectedAt DATETIMEOFFSET(7) NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'TriggerRadius') IS NULL
+                ALTER TABLE dbo.Pois ADD TriggerRadius FLOAT NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'Priority') IS NULL
+                ALTER TABLE dbo.Pois ADD Priority INT NULL;
             """);
 
         ExecuteNonQuery(
@@ -739,6 +745,40 @@ public sealed partial class AdminDataRepository
             connection,
             null,
             """
+            IF COL_LENGTH(N'dbo.Pois', N'TriggerRadius') IS NOT NULL
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM sys.default_constraints defaultConstraint
+                   INNER JOIN sys.columns columnInfo
+                       ON columnInfo.object_id = defaultConstraint.parent_object_id
+                      AND columnInfo.column_id = defaultConstraint.parent_column_id
+                   WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.Pois')
+                     AND columnInfo.name = N'TriggerRadius'
+               )
+                ALTER TABLE dbo.Pois ADD CONSTRAINT DF_Pois_TriggerRadius DEFAULT ((20)) FOR TriggerRadius;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF COL_LENGTH(N'dbo.Pois', N'Priority') IS NOT NULL
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM sys.default_constraints defaultConstraint
+                   INNER JOIN sys.columns columnInfo
+                       ON columnInfo.object_id = defaultConstraint.parent_object_id
+                      AND columnInfo.column_id = defaultConstraint.parent_column_id
+                   WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.Pois')
+                     AND columnInfo.name = N'Priority'
+               )
+                ALTER TABLE dbo.Pois ADD CONSTRAINT DF_Pois_Priority DEFAULT ((100)) FOR Priority;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
             IF OBJECT_ID(N'dbo.PoiTags', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.PoiTags (
@@ -771,6 +811,16 @@ public sealed partial class AdminDataRepository
                     WHEN LOWER(COALESCE(LTRIM(RTRIM([Status])), N'')) = N'rejected'
                         THEN COALESCE(RejectedAt, UpdatedAt)
                     ELSE NULL
+                END,
+                TriggerRadius = CASE
+                    WHEN COALESCE(TriggerRadius, 0) < 20
+                        THEN 20.0
+                    ELSE TriggerRadius
+                END,
+                Priority = CASE
+                    WHEN COALESCE(Priority, 0) <= 0
+                        THEN CASE WHEN IsFeatured = 1 THEN 200 ELSE 100 END
+                    ELSE Priority
                 END;
             """);
 
@@ -803,6 +853,38 @@ public sealed partial class AdminDataRepository
             )
             BEGIN
                 ALTER TABLE dbo.Pois ALTER COLUMN LockedBySuperAdmin BIT NOT NULL;
+            END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Pois')
+                  AND name = N'TriggerRadius'
+                  AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Pois ALTER COLUMN TriggerRadius FLOAT NOT NULL;
+            END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Pois')
+                  AND name = N'Priority'
+                  AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Pois ALTER COLUMN Priority INT NOT NULL;
             END;
             """);
     }

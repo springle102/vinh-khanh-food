@@ -41,6 +41,8 @@ public sealed record PoiUpsertRequest(
     string District,
     string Ward,
     string PriceRange,
+    double TriggerRadius,
+    int Priority,
     List<string> Tags,
     string? OwnerUserId,
     string UpdatedBy,

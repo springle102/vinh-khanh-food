@@ -6,11 +6,15 @@ using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Storage;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.ViewModels;
+#if ANDROID
+using Android.Webkit;
+#endif
 
 namespace VinhKhanh.MobileApp.Pages;
 
 public partial class HomeMapPage : ContentPage, IQueryAttributable
 {
+    private const string AppSettingsFileName = "appsettings.json";
     private const string MapTemplateFileName = "openstreetmap-map.html";
     private const string LeafletCssFileName = "leaflet.css";
     private const string LeafletJsFileName = "leaflet.js";
@@ -19,6 +23,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private const string LeafletJsPlaceholder = "__LEAFLET_JS__";
     private const string TourPanelHeightAnimationName = "HomeMapPage.TourPanel.Height";
     private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromSeconds(5);
+    private static readonly SemaphoreSlim MapTemplateLock = new(1, 1);
     private const uint TourPanelAnimationDuration = 240;
     private const double TourPanelCollapsedHeightMin = 118;
     private const double TourPanelCollapsedHeightMax = 156;
@@ -35,6 +40,9 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private readonly HomeMapViewModel _viewModel;
     private readonly LocalizedPageBindingSubscription _localizedPageBinding;
     private readonly SemaphoreSlim _mapRenderLock = new(1, 1);
+    private readonly SemaphoreSlim _mapBridgeReadyLock = new(1, 1);
+    private static string? _cachedMapHtmlTemplate;
+    private static string? _cachedMapTileUrlTemplate;
     private bool _isMapReady;
     private bool _isTourPanelPresented;
     private bool _isTourPanelExpanded;
@@ -50,7 +58,6 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private double _lastAllocatedWidth;
     private double _lastAllocatedHeight;
     private string _tourPanelToken = string.Empty;
-    private int _lastRenderedMapDataVersion = -1;
 
     public HomeMapPage()
     {
@@ -59,7 +66,9 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         BindingContext = _viewModel;
         _localizedPageBinding = new(this);
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        MapWebView.HandlerChanged += OnMapWebViewHandlerChanged;
         InitializeTourPanelVisualState();
+        _ = WarmMapTemplateAsync();
     }
 
     protected override async void OnAppearing()
@@ -68,6 +77,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         _localizedPageBinding.Rebind();
         _viewModel.ActivateNarrationContext();
         StartAutoRefreshLoop();
+        var ensureMapRenderedTask = EnsureMapRenderedAsync();
         await _viewModel.LoadAsync();
         if (!string.IsNullOrWhiteSpace(_pendingStartTourId))
         {
@@ -95,7 +105,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         }
 
         await _viewModel.StartLocationTrackingAsync();
-        await EnsureMapRenderedAsync();
+        await ensureMapRenderedTask;
         await PoiDetailBottomSheet.SetPresentedAsync(_viewModel.IsBottomSheetVisible);
         await SyncTourPanelAsync(animated: false, refitTour: false);
     }
@@ -127,8 +137,12 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         _lastAllocatedWidth = width;
         _lastAllocatedHeight = height;
 
-        MainThread.BeginInvokeOnMainThread(() => _ = RefreshTourPanelLayoutAsync(
-            refitTour: TourPanelOverlay.IsVisible && _isTourPanelExpanded && _viewModel.HasVisibleTour));
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            await InvalidateMapSizeAsync();
+            await RefreshTourPanelLayoutAsync(
+                refitTour: TourPanelOverlay.IsVisible && _isTourPanelExpanded && _viewModel.HasVisibleTour);
+        });
     }
 
     private void StartAutoRefreshLoop()
@@ -202,13 +216,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
             return;
         }
 
-        _isMapReady = true;
-        await RefreshMapStateAsync();
-        await UpdateMapViewportInsetsAsync(refitTour: _viewModel.HasVisibleTour && _viewModel.IsTourPanelVisible);
-        if (_viewModel.HasSimulationRoute)
-        {
-            await FitToSimulationRouteAsync();
-        }
+        await EnsureMapBridgeReadyAsync();
     }
 
     private async void OnMapNavigating(object? sender, WebNavigatingEventArgs e)
@@ -602,6 +610,86 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         TourPanelExpandedContent.CancelAnimations();
     }
 
+    private void OnMapWebViewHandlerChanged(object? sender, EventArgs e)
+    {
+#if ANDROID
+        if (MapWebView.Handler?.PlatformView is Android.Webkit.WebView nativeWebView)
+        {
+            nativeWebView.Settings.JavaScriptEnabled = true;
+            nativeWebView.Settings.DomStorageEnabled = true;
+            nativeWebView.Settings.DatabaseEnabled = true;
+            nativeWebView.Settings.AllowFileAccess = true;
+            nativeWebView.Settings.LoadWithOverviewMode = true;
+            nativeWebView.Settings.UseWideViewPort = true;
+            nativeWebView.SetWebChromeClient(new WebChromeClient());
+        }
+#endif
+    }
+
+    private async Task EnsureMapBridgeReadyAsync()
+    {
+        if (_isMapReady || MapWebView.Source is null)
+        {
+            return;
+        }
+
+        await _mapBridgeReadyLock.WaitAsync();
+        try
+        {
+            if (_isMapReady || MapWebView.Source is null)
+            {
+                return;
+            }
+
+            for (var attempt = 0; attempt < 24; attempt += 1)
+            {
+                if (await TryActivateMapBridgeAsync())
+                {
+                    return;
+                }
+
+                await Task.Delay(150);
+            }
+        }
+        finally
+        {
+            _mapBridgeReadyLock.Release();
+        }
+    }
+
+    private async Task<bool> TryActivateMapBridgeAsync()
+    {
+        if (MapWebView.Source is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var bridgeReadyState = await MapWebView.EvaluateJavaScriptAsync("window.vkFoodMap ? 'ready' : '';");
+            var normalizedBridgeReadyState = bridgeReadyState?.Trim().Trim('"');
+            if (!string.Equals(normalizedBridgeReadyState, "ready", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            _isMapReady = true;
+            await InvalidateMapSizeAsync();
+            await RefreshMapContentAsync();
+            await UpdateMapViewportInsetsAsync(refitTour: _viewModel.HasVisibleTour && _viewModel.IsTourPanelVisible);
+            if (_viewModel.HasSimulationRoute)
+            {
+                await FitToSimulationRouteAsync();
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task UpdateMapViewportInsetsAsync(bool refitTour)
     {
         if (!_isMapReady)
@@ -638,17 +726,15 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
 
     private async Task RenderMapAsync()
     {
-        var targetVersion = _viewModel.MapDataVersion;
         await _mapRenderLock.WaitAsync();
         try
         {
-            if (targetVersion == _lastRenderedMapDataVersion && MapWebView.Source is not null)
+            if (MapWebView.Source is not null)
             {
                 return;
             }
 
             await RenderMapCoreAsync();
-            _lastRenderedMapDataVersion = targetVersion;
         }
         finally
         {
@@ -659,24 +745,20 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private async Task RenderMapCoreAsync()
     {
         _isMapReady = false;
-        var template = await ReadRawAssetTextAsync(MapTemplateFileName);
-        var leafletCss = await ReadRawAssetTextAsync(LeafletCssFileName);
-        var leafletJs = await ReadRawAssetTextAsync(LeafletJsFileName);
-
-        var json = JsonSerializer.Serialize(BuildMapPayload(), _jsonOptions);
+        var template = await GetMapHtmlTemplateAsync();
+        var tileUrlTemplate = await GetMapTileUrlTemplateAsync();
+        var json = JsonSerializer.Serialize(BuildMapPayload(tileUrlTemplate), _jsonOptions);
         var encodedJson = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
         MapWebView.Source = new HtmlWebViewSource
         {
-            Html = template
-                .Replace(LeafletCssPlaceholder, leafletCss, StringComparison.Ordinal)
-                .Replace(LeafletJsPlaceholder, leafletJs, StringComparison.Ordinal)
-                .Replace(MapStatePlaceholder, encodedJson, StringComparison.Ordinal)
+            Html = template.Replace(MapStatePlaceholder, encodedJson, StringComparison.Ordinal)
         };
+        _ = EnsureMapBridgeReadyAsync();
     }
 
     private async Task EnsureMapRenderedAsync()
     {
-        if (_viewModel.MapDataVersion == _lastRenderedMapDataVersion && MapWebView.Source is not null)
+        if (MapWebView.Source is not null)
         {
             return;
         }
@@ -684,10 +766,11 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         await RenderMapAsync();
     }
 
-    private object BuildMapPayload()
+    private object BuildMapPayload(string? tileUrlTemplate = null)
     {
         return new
         {
+            tileUrlTemplate,
             featuredLabel = _viewModel.FeaturedBadgeText,
             selectedPoiId = _viewModel.SelectedPoi?.Id,
             activePoiId = _viewModel.CurrentActivePoiId,
@@ -711,15 +794,29 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
             status = poi.IsFeatured ? "featured" : "standard",
             latitude = poi.Latitude,
             longitude = poi.Longitude,
+            triggerRadius = poi.TriggerRadius,
             isFeatured = poi.IsFeatured
         });
     }
 
     private async Task RefreshMapContentAsync()
     {
-        if (!_isMapReady)
+        if (MapWebView.Source is null)
         {
             await EnsureMapRenderedAsync();
+        }
+
+        if (!_isMapReady)
+        {
+            await EnsureMapBridgeReadyAsync();
+            if (!_isMapReady)
+            {
+                return;
+            }
+        }
+
+        if (MapWebView.Source is null)
+        {
             return;
         }
 
@@ -734,6 +831,17 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         await RefreshMapStateAsync();
     }
 
+    private async Task InvalidateMapSizeAsync()
+    {
+        if (!_isMapReady)
+        {
+            return;
+        }
+
+        await MapWebView.EvaluateJavaScriptAsync(
+            "window.vkFoodMap && window.vkFoodMap.invalidateSize && window.vkFoodMap.invalidateSize();");
+    }
+
     private static async Task<string> ReadRawAssetTextAsync(string fileName)
     {
         await using var stream = await FileSystem.OpenAppPackageFileAsync(fileName);
@@ -741,12 +849,90 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         return await reader.ReadToEndAsync();
     }
 
+    private async Task<string> GetMapTileUrlTemplateAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_cachedMapTileUrlTemplate))
+        {
+            return _cachedMapTileUrlTemplate;
+        }
+
+        try
+        {
+            var appSettingsJson = await ReadRawAssetTextAsync(AppSettingsFileName);
+            var runtimeSettings = JsonSerializer.Deserialize<MapRuntimeSettings>(appSettingsJson, _jsonOptions);
+            var resolvedTileBaseUrl = MobileApiEndpointHelper.EnsureTrailingSlash(
+                string.IsNullOrWhiteSpace(runtimeSettings?.MapTilesBaseUrl)
+                    ? MobileApiEndpointHelper.ResolveBaseUrl(runtimeSettings?.ApiBaseUrl, runtimeSettings?.PlatformApiBaseUrls)
+                    : runtimeSettings.MapTilesBaseUrl);
+
+            _cachedMapTileUrlTemplate = string.IsNullOrWhiteSpace(resolvedTileBaseUrl)
+                ? "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                : $"{resolvedTileBaseUrl}map-tiles/osm/{{z}}/{{x}}/{{y}}.png";
+        }
+        catch
+        {
+            _cachedMapTileUrlTemplate = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+        }
+
+        return _cachedMapTileUrlTemplate;
+    }
+
+    private static async Task WarmMapTemplateAsync()
+    {
+        try
+        {
+            await GetMapHtmlTemplateAsync();
+        }
+        catch
+        {
+            // Best effort warm-up. Initial render will retry if needed.
+        }
+    }
+
+    private static async Task<string> GetMapHtmlTemplateAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_cachedMapHtmlTemplate))
+        {
+            return _cachedMapHtmlTemplate;
+        }
+
+        await MapTemplateLock.WaitAsync();
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_cachedMapHtmlTemplate))
+            {
+                return _cachedMapHtmlTemplate;
+            }
+
+            var templateTask = ReadRawAssetTextAsync(MapTemplateFileName);
+            var leafletCssTask = ReadRawAssetTextAsync(LeafletCssFileName);
+            var leafletJsTask = ReadRawAssetTextAsync(LeafletJsFileName);
+
+            await Task.WhenAll(templateTask, leafletCssTask, leafletJsTask);
+
+            _cachedMapHtmlTemplate = templateTask.Result
+                .Replace(LeafletCssPlaceholder, leafletCssTask.Result, StringComparison.Ordinal)
+                .Replace(LeafletJsPlaceholder, leafletJsTask.Result, StringComparison.Ordinal);
+
+            return _cachedMapHtmlTemplate;
+        }
+        finally
+        {
+            MapTemplateLock.Release();
+        }
+    }
+
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
         {
             case nameof(HomeMapViewModel.MapDataVersion):
-                MainThread.BeginInvokeOnMainThread(() => _ = EnsureMapRenderedAsync());
+                MainThread.BeginInvokeOnMainThread(() =>
+                    _ = MapWebView.Source is null
+                        ? EnsureMapRenderedAsync()
+                        : _isMapReady
+                            ? RefreshMapContentAsync()
+                            : EnsureMapBridgeReadyAsync());
                 break;
 
             case nameof(HomeMapViewModel.MapContentVersion):
@@ -889,5 +1075,14 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         }
 
         return false;
+    }
+
+    private sealed class MapRuntimeSettings
+    {
+        public string? ApiBaseUrl { get; set; }
+
+        public Dictionary<string, string> PlatformApiBaseUrls { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public string? MapTilesBaseUrl { get; set; }
     }
 }

@@ -369,8 +369,6 @@ public sealed partial class AdminDataRepository
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
 
-        request = NormalizePoiRequestForPersistence(request);
-
         var now = DateTimeOffset.UtcNow;
         var existing = !string.IsNullOrWhiteSpace(id) ? GetPoiById(connection, transaction, id) : null;
         EnsureActorCanManagePoiContent(connection, transaction, actor, existing, "chỉnh sửa nội dung POI");
@@ -379,6 +377,8 @@ public sealed partial class AdminDataRepository
         var poiId = ResolveRequestedPoiId(request.RequestedId, currentPoiId);
         var createdAt = existing?.CreatedAt ?? now;
         var isOwnerActor = actor.IsPlaceOwner;
+        var currentFeatured = existing?.Featured ?? false;
+        request = NormalizePoiRequestForPersistence(request, currentFeatured);
         if (isOwnerActor)
         {
             if (false)
@@ -394,7 +394,6 @@ public sealed partial class AdminDataRepository
         }
 
         var nextStatus = NormalizePoiStatus(request.Status, isOwnerActor);
-        var currentFeatured = existing?.Featured ?? false;
         var nextPublicationMetadata = ResolvePoiPublicationMetadataForSave(existing, nextStatus, isOwnerActor);
         var nextOwnerUserId = isOwnerActor ? actor.UserId : request.OwnerUserId;
         var nextReviewMetadata = ResolvePoiReviewMetadataForSave(existing, nextStatus, isOwnerActor);
@@ -675,10 +674,10 @@ public sealed partial class AdminDataRepository
             """
             INSERT INTO dbo.Pois (
                 Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, IsActive, LockedBySuperAdmin,
-                District, Ward, PriceRange, OwnerUserId,
+                District, Ward, PriceRange, TriggerRadius, Priority, OwnerUserId,
                 ApprovedAt, RejectionReason, RejectedAt, UpdatedBy, CreatedAt, UpdatedAt
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             poiId,
             request.Slug,
@@ -693,6 +692,8 @@ public sealed partial class AdminDataRepository
             request.District,
             request.Ward,
             request.PriceRange,
+            request.TriggerRadius,
+            request.Priority,
             ownerUserId,
             approvedAt,
             rejectionReason,
@@ -735,6 +736,8 @@ public sealed partial class AdminDataRepository
                 District = ?,
                 Ward = ?,
                 PriceRange = ?,
+                TriggerRadius = ?,
+                Priority = ?,
                 OwnerUserId = ?,
                 ApprovedAt = ?,
                 RejectionReason = ?,
@@ -755,6 +758,8 @@ public sealed partial class AdminDataRepository
             request.District,
             request.Ward,
             request.PriceRange,
+            request.TriggerRadius,
+            request.Priority,
             ownerUserId,
             approvedAt,
             rejectionReason,

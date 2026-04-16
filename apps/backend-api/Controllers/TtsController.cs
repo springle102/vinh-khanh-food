@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Infrastructure;
 
@@ -8,6 +9,7 @@ namespace VinhKhanh.BackendApi.Controllers;
 [Route("api/v1/tts")]
 public sealed class TtsController(
     ITextToSpeechService textToSpeechService,
+    IOptions<TextToSpeechOptions> optionsAccessor,
     ILogger<TtsController> logger) : ControllerBase
 {
     [HttpGet]
@@ -22,6 +24,20 @@ public sealed class TtsController(
         [FromQuery(Name = "output_format")] string? outputFormat,
         CancellationToken cancellationToken)
     {
+        var apiKeyPresent = !string.IsNullOrWhiteSpace(optionsAccessor.Value.ApiKey);
+        Response.Headers["X-TTS-Config-Api-Key-Present"] = apiKeyPresent ? "true" : "false";
+        Response.Headers["X-TTS-Requested-Language"] = languageCode?.Trim() ?? string.Empty;
+
+        logger.LogInformation(
+            "Received TTS proxy request. language={LanguageCode}; textLength={TextLength}; voiceId={VoiceId}; modelId={ModelId}; apiKeyPresent={ApiKeyPresent}; segment={SegmentIndex}/{TotalSegments}",
+            languageCode,
+            text?.Trim().Length ?? 0,
+            voiceId,
+            modelId,
+            apiKeyPresent,
+            idx,
+            total);
+
         if (string.IsNullOrWhiteSpace(text))
         {
             return BadRequest(ApiResponse<string>.Fail("Text is required."));
@@ -63,23 +79,47 @@ public sealed class TtsController(
                 idx,
                 total);
             return StatusCode(
-                StatusCodes.Status503ServiceUnavailable,
+                exception.StatusCode,
                 ApiResponse<string>.Fail(exception.Message));
         }
-        catch (Exception exception) when (
-            exception is TextToSpeechGenerationException ||
-            exception is HttpRequestException ||
-            exception is TaskCanceledException)
+        catch (TextToSpeechGenerationException exception)
+        {
+            Response.Headers["X-TTS-Upstream-Status"] = exception.StatusCode.ToString();
+            logger.LogWarning(
+                exception,
+                "Unable to generate ElevenLabs TTS audio. language={LanguageCode}; segment={SegmentIndex}/{TotalSegments}; status={StatusCode}; response={ResponseSnippet}",
+                languageCode,
+                idx,
+                total,
+                exception.StatusCode,
+                exception.ResponseSnippet);
+            return StatusCode(
+                exception.StatusCode,
+                ApiResponse<string>.Fail(exception.Message));
+        }
+        catch (TaskCanceledException exception)
         {
             logger.LogWarning(
                 exception,
-                "Unable to generate ElevenLabs TTS audio. language={LanguageCode}; segment={SegmentIndex}/{TotalSegments}",
+                "TTS proxy request timed out before ElevenLabs returned audio. language={LanguageCode}; segment={SegmentIndex}/{TotalSegments}",
                 languageCode,
                 idx,
                 total);
             return StatusCode(
-                StatusCodes.Status502BadGateway,
-                ApiResponse<string>.Fail("Unable to generate audio at this time."));
+                StatusCodes.Status504GatewayTimeout,
+                ApiResponse<string>.Fail("Yeu cau tao audio dang bi timeout."));
+        }
+        catch (HttpRequestException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Unable to reach ElevenLabs TTS upstream. language={LanguageCode}; segment={SegmentIndex}/{TotalSegments}",
+                languageCode,
+                idx,
+                total);
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                ApiResponse<string>.Fail("Khong the ket noi den ElevenLabs TTS."));
         }
     }
 }

@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Devices;
 using Microsoft.Maui.Media;
 using Microsoft.Maui.Storage;
 using Plugin.Maui.Audio;
@@ -25,9 +27,6 @@ public interface IPoiTourStoreService
 public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerService
 {
     private const string AppSettingsFileName = "appsettings.json";
-    private const int TextToSpeechProxyMaxChars = 180;
-    private const string TextToSpeechProxyModelId = "eleven_flash_v2_5";
-    private static readonly TimeSpan TextToSpeechProxySegmentTimeout = TimeSpan.FromSeconds(12);
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
@@ -36,22 +35,29 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
     };
     private readonly IAudioManager _audioManager;
     private readonly IFoodStreetDataService _dataService;
+    private readonly IElevenLabsTtsService _elevenLabsTtsService;
+    private readonly ILogger<PoiNarrationService> _logger;
     private readonly HttpClient _mediaClient;
     private HttpClient? _apiClient;
     private string? _resolvedBaseUrl;
     private MobileRuntimeAppSettings? _runtimeSettings;
     private CancellationTokenSource? _playbackCancellationSource;
     private AsyncAudioPlayer? _audioPlayer;
-    private MemoryStream? _audioBuffer;
+    private Stream? _audioStream;
+    private string? _tempAudioFilePath;
     private bool _isPlaybackActive;
     private long _playbackId;
 
     public PoiNarrationService(
         IAudioManager audioManager,
-        IFoodStreetDataService dataService)
+        IFoodStreetDataService dataService,
+        IElevenLabsTtsService elevenLabsTtsService,
+        ILogger<PoiNarrationService> logger)
     {
         _audioManager = audioManager;
         _dataService = dataService;
+        _elevenLabsTtsService = elevenLabsTtsService;
+        _logger = logger;
         _mediaClient = new HttpClient(new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
@@ -73,8 +79,18 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
 
         var requestedLanguageCode = AppLanguage.NormalizeCode(languageCode);
         var session = await BeginPlaybackSessionAsync(cancellationToken);
+        var poiTitle = FirstNonEmpty(
+            GetRequestedLocalizedText(detail.Name, requestedLanguageCode),
+            GetRequestedLocalizedText(detail.Name, AppLanguage.DefaultLanguage),
+            detail.Id);
         try
         {
+            _logger.LogInformation(
+                "POI narration requested. poiId={PoiId}; poiTitle={PoiTitle}; requestedLanguage={RequestedLanguageCode}",
+                detail.Id,
+                poiTitle,
+                requestedLanguageCode);
+
             var resolvedNarration = await TryResolveNarrationAsync(
                 detail.Id,
                 requestedLanguageCode,
@@ -96,37 +112,112 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
                 audioUrl = string.Empty;
             }
 
-            var textToSpeechBaseUrl = await GetTextToSpeechBaseUrlAsync();
-            var playbackUrls = !string.IsNullOrWhiteSpace(audioUrl)
-                ? new[] { audioUrl }
-                : BuildTextToSpeechAudioUrls(
-                    narrationText,
-                    effectiveLanguageCode,
-                    textToSpeechBaseUrl);
+            _logger.LogInformation(
+                "Narration payload prepared. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; translationStatus={TranslationStatus}; hasPreparedAudio={HasPreparedAudio}; narrationLength={NarrationLength}; narrationPreview={NarrationPreview}",
+                detail.Id,
+                requestedLanguageCode,
+                effectiveLanguageCode,
+                resolvedNarration?.TranslationStatus ?? "local_fallback",
+                !string.IsNullOrWhiteSpace(audioUrl),
+                narrationText.Length,
+                ToLogPreview(narrationText));
 
-            if (playbackUrls.Count > 0)
+            if (!string.IsNullOrWhiteSpace(audioUrl))
             {
-                var playedAudio = await TryPlayRemoteAudioSequenceAsync(playbackUrls, session.PlaybackId, session.Token);
+                _logger.LogInformation(
+                    "Attempting prepared remote audio playback. poiId={PoiId}; effectiveLanguage={EffectiveLanguage}; audioUrl={AudioUrl}",
+                    detail.Id,
+                    effectiveLanguageCode,
+                    GetSafeUrlForLog(audioUrl));
+
+                var playedAudio = await TryPlayRemoteAudioSequenceAsync([audioUrl], session.PlaybackId, session.Token);
                 if (playedAudio)
                 {
+                    _logger.LogInformation(
+                        "Prepared remote audio playback started successfully. poiId={PoiId}; effectiveLanguage={EffectiveLanguage}",
+                        detail.Id,
+                        effectiveLanguageCode);
                     await _dataService.TrackAudioPlayAsync(detail.Id, effectiveLanguageCode, "remote_audio");
                     return;
                 }
+
+                _logger.LogWarning(
+                    "Prepared remote audio playback failed. poiId={PoiId}; effectiveLanguage={EffectiveLanguage}; audioUrl={AudioUrl}",
+                    detail.Id,
+                    effectiveLanguageCode,
+                    GetSafeUrlForLog(audioUrl));
             }
 
             if (string.IsNullOrWhiteSpace(narrationText))
             {
+                _logger.LogWarning(
+                    "Narration text is empty after all fallbacks. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}",
+                    detail.Id,
+                    requestedLanguageCode,
+                    effectiveLanguageCode);
                 return;
+            }
+
+            try
+            {
+                var generatedSpeech = await _elevenLabsTtsService.GenerateSpeechAsync(
+                    narrationText,
+                    effectiveLanguageCode,
+                    cancellationToken: session.Token);
+                _logger.LogInformation(
+                    "ElevenLabs TTS proxy request succeeded. poiId={PoiId}; apiKeyPresent={ApiKeyPresent}; segmentCount={SegmentCount}; modelId={ModelId}; voiceId={VoiceId}",
+                    detail.Id,
+                    generatedSpeech.ApiKeyPresent,
+                    generatedSpeech.Segments.Count,
+                    generatedSpeech.ModelId,
+                    generatedSpeech.VoiceId ?? "default");
+
+                var playedGeneratedAudio = await TryPlayGeneratedSpeechAsync(generatedSpeech, session.PlaybackId, session.Token);
+                if (playedGeneratedAudio)
+                {
+                    _logger.LogInformation(
+                        "Generated ElevenLabs audio playback started successfully. poiId={PoiId}; segmentCount={SegmentCount}",
+                        detail.Id,
+                        generatedSpeech.Segments.Count);
+                    await _dataService.TrackAudioPlayAsync(detail.Id, effectiveLanguageCode, "elevenlabs_tts");
+                    return;
+                }
+
+                _logger.LogWarning(
+                    "Generated ElevenLabs audio was received but could not be played. poiId={PoiId}; segmentCount={SegmentCount}",
+                    detail.Id,
+                    generatedSpeech.Segments.Count);
+            }
+            catch (ElevenLabsTtsException exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "ElevenLabs TTS generation failed. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; apiKeyPresent={ApiKeyPresent}; status={StatusCode}; response={ResponseBody}",
+                    detail.Id,
+                    requestedLanguageCode,
+                    effectiveLanguageCode,
+                    exception.ApiKeyPresent,
+                    exception.StatusCode,
+                    exception.ResponseBody);
             }
 
             await SpeakWithDeviceTextToSpeechAsync(
                 narrationText,
                 resolvedNarration?.TtsLocale,
                 session.Token);
+            _logger.LogInformation(
+                "Fell back to device text-to-speech. poiId={PoiId}; effectiveLanguage={EffectiveLanguage}; narrationLength={NarrationLength}",
+                detail.Id,
+                effectiveLanguageCode,
+                narrationText.Length);
             await _dataService.TrackAudioPlayAsync(detail.Id, effectiveLanguageCode, "device_tts");
         }
         catch (OperationCanceledException) when (session.Token.IsCancellationRequested)
         {
+            _logger.LogInformation(
+                "POI narration playback was cancelled. poiId={PoiId}; requestedLanguage={RequestedLanguageCode}",
+                detail.Id,
+                requestedLanguageCode);
         }
         finally
         {
@@ -167,6 +258,15 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
     private static string GetRequestedLocalizedText(LocalizedTextSet source, string languageCode)
     {
         foreach (var candidate in GetRequestedLanguageCandidates(languageCode))
+        {
+            if (source.Values.TryGetValue(candidate, out var value) &&
+                LocalizationFallbackPolicy.IsUsableTextForLanguage(value, candidate))
+            {
+                return value.Trim();
+            }
+        }
+
+        foreach (var candidate in GetRequestedLanguageCandidates(AppLanguage.DefaultLanguage))
         {
             if (source.Values.TryGetValue(candidate, out var value) &&
                 LocalizationFallbackPolicy.IsUsableTextForLanguage(value, candidate))
@@ -216,6 +316,7 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
             {
                 if (!Uri.TryCreate(audioUrl, UriKind.Absolute, out _))
                 {
+                    _logger.LogWarning("Remote audio URL is invalid and cannot be played. audioUrl={AudioUrl}", GetSafeUrlForLog(audioUrl));
                     return false;
                 }
 
@@ -228,27 +329,39 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
         {
             return false;
         }
-        catch
+        catch (Exception exception)
         {
+            _logger.LogWarning(exception, "Remote audio playback failed for POI narration.");
             return false;
         }
     }
 
     private async Task PlayRemoteAudioSegmentAsync(string audioUrl, long playbackId, CancellationToken cancellationToken)
     {
-        using var timeoutSource = IsTextToSpeechProxyUrl(audioUrl)
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-            : null;
-        timeoutSource?.CancelAfter(TextToSpeechProxySegmentTimeout);
-        var requestCancellationToken = timeoutSource?.Token ?? cancellationToken;
+        _logger.LogInformation("Sending remote audio request. audioUrl={AudioUrl}", GetSafeUrlForLog(audioUrl));
 
-        using var response = await _mediaClient.GetAsync(audioUrl, HttpCompletionOption.ResponseHeadersRead, requestCancellationToken);
-        response.EnsureSuccessStatusCode();
+        using var response = await _mediaClient.GetAsync(audioUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await SafeReadBodyAsync(response, cancellationToken);
+            _logger.LogWarning(
+                "Remote audio request failed. audioUrl={AudioUrl}; status={StatusCode}; response={ResponseBody}",
+                GetSafeUrlForLog(audioUrl),
+                response.StatusCode,
+                errorBody);
+            response.EnsureSuccessStatusCode();
+        }
 
-        await using var networkStream = await response.Content.ReadAsStreamAsync(requestCancellationToken);
+        await using var networkStream = await response.Content.ReadAsStreamAsync(cancellationToken);
         var buffer = new MemoryStream();
-        await networkStream.CopyToAsync(buffer, requestCancellationToken);
+        await networkStream.CopyToAsync(buffer, cancellationToken);
         buffer.Position = 0;
+
+        _logger.LogInformation(
+            "Remote audio response received. audioUrl={AudioUrl}; contentType={ContentType}; contentLength={ContentLength}",
+            GetSafeUrlForLog(audioUrl),
+            response.Content.Headers.ContentType?.ToString() ?? "unknown",
+            response.Content.Headers.ContentLength ?? buffer.Length);
 
         AsyncAudioPlayer player;
         await _stateLock.WaitAsync(cancellationToken);
@@ -261,8 +374,103 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
             }
 
             DisposeCurrentAudioResourcesLocked();
-            _audioBuffer = buffer;
-            _audioPlayer = _audioManager.CreateAsyncPlayer(_audioBuffer);
+            _audioStream = buffer;
+            _audioPlayer = _audioManager.CreateAsyncPlayer(_audioStream);
+            player = _audioPlayer;
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+
+        try
+        {
+            await player.PlayAsync(cancellationToken);
+        }
+        finally
+        {
+            await _stateLock.WaitAsync();
+            try
+            {
+                if (ReferenceEquals(_audioPlayer, player))
+                {
+                    DisposeCurrentAudioResourcesLocked();
+                }
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+        }
+    }
+
+    private async Task<bool> TryPlayGeneratedSpeechAsync(
+        GeneratedSpeechResult generatedSpeech,
+        long playbackId,
+        CancellationToken cancellationToken)
+    {
+        if (generatedSpeech.Segments.Count == 0)
+        {
+            _logger.LogWarning("Generated ElevenLabs speech result has no audio segments to play.");
+            return false;
+        }
+
+        try
+        {
+            foreach (var segment in generatedSpeech.Segments)
+            {
+                await PlayGeneratedAudioSegmentAsync(segment, playbackId, cancellationToken);
+            }
+
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Unable to play generated ElevenLabs audio for POI narration.");
+            return false;
+        }
+        finally
+        {
+            _elevenLabsTtsService.CleanupGeneratedSpeech(generatedSpeech.Segments);
+        }
+    }
+
+    private async Task PlayGeneratedAudioSegmentAsync(
+        GeneratedSpeechSegment segment,
+        long playbackId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(segment.FilePath) || !File.Exists(segment.FilePath))
+        {
+            throw new FileNotFoundException("Generated speech segment file was not found.", segment.FilePath);
+        }
+
+        _logger.LogInformation(
+            "Starting generated ElevenLabs audio playback. filePath={FilePath}; contentType={ContentType}; contentLength={ContentLength}",
+            segment.FilePath,
+            segment.ContentType,
+            segment.ContentLength);
+
+        var fileStream = File.OpenRead(segment.FilePath);
+
+        AsyncAudioPlayer player;
+        await _stateLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (playbackId != _playbackId || cancellationToken.IsCancellationRequested)
+            {
+                fileStream.Dispose();
+                throw new OperationCanceledException(cancellationToken);
+            }
+
+            DisposeCurrentAudioResourcesLocked();
+            _audioStream = fileStream;
+            _tempAudioFilePath = segment.FilePath;
+            _audioPlayer = _audioManager.CreateAsyncPlayer(_audioStream);
             player = _audioPlayer;
         }
         finally
@@ -312,9 +520,20 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
             var relativeUrl =
                 $"api/v1/pois/{Uri.EscapeDataString(poiId)}/narration?" +
                 string.Join("&", query.Select(item => $"{item.Key}={Uri.EscapeDataString(item.Value)}"));
+            _logger.LogInformation(
+                "Resolving POI narration from backend. poiId={PoiId}; languageCode={LanguageCode}; relativeUrl={RelativeUrl}",
+                poiId,
+                languageCode,
+                relativeUrl);
             var envelope = await client.GetFromJsonAsync<ApiEnvelope<PoiNarrationResponseDto>>(relativeUrl, _jsonOptions, cancellationToken);
             if (envelope?.Success != true || envelope.Data is null)
             {
+                _logger.LogWarning(
+                    "POI narration response was empty or unsuccessful. poiId={PoiId}; languageCode={LanguageCode}; success={Success}; message={Message}",
+                    poiId,
+                    languageCode,
+                    envelope?.Success,
+                    envelope?.Message);
                 return null;
             }
 
@@ -323,14 +542,27 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
                 envelope.Data.AudioGuide.AudioUrl = NormalizeAudioUrl(envelope.Data.AudioGuide.AudioUrl, client.BaseAddress);
             }
 
+            _logger.LogInformation(
+                "POI narration resolved. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; translationStatus={TranslationStatus}; hasAudioGuide={HasAudioGuide}; ttsTextLength={TtsTextLength}",
+                poiId,
+                envelope.Data.RequestedLanguageCode,
+                envelope.Data.EffectiveLanguageCode,
+                envelope.Data.TranslationStatus,
+                envelope.Data.AudioGuide is not null && !string.IsNullOrWhiteSpace(envelope.Data.AudioGuide.AudioUrl),
+                envelope.Data.TtsInputText?.Length ?? 0);
             return envelope.Data;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
+            _logger.LogWarning(
+                exception,
+                "Unable to resolve POI narration from backend. poiId={PoiId}; languageCode={LanguageCode}",
+                poiId,
+                languageCode);
             return null;
         }
     }
@@ -341,6 +573,7 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
         var nextBaseUrl = EnsureTrailingSlash(ResolveApiBaseUrl(runtimeSettings));
         if (string.IsNullOrWhiteSpace(nextBaseUrl))
         {
+            _logger.LogWarning("POI narration has no API base URL configured for backend narration requests.");
             return null;
         }
 
@@ -360,16 +593,9 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
             Timeout = TimeSpan.FromSeconds(6)
         };
         _resolvedBaseUrl = nextBaseUrl;
+        WarnIfLoopbackBaseUrlOnPhysicalDevice(nextBaseUrl);
+        _logger.LogInformation("Configured POI narration backend client. baseUrl={BaseUrl}", nextBaseUrl);
         return _apiClient;
-    }
-
-    private async Task<string?> GetTextToSpeechBaseUrlAsync()
-    {
-        var runtimeSettings = await LoadRuntimeSettingsAsync();
-        var nextBaseUrl = EnsureTrailingSlash(ResolveApiBaseUrl(runtimeSettings));
-        return string.IsNullOrWhiteSpace(nextBaseUrl)
-            ? null
-            : nextBaseUrl;
     }
 
     private async Task<MobileRuntimeAppSettings> LoadRuntimeSettingsAsync()
@@ -386,10 +612,16 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
             var content = await reader.ReadToEndAsync();
             _runtimeSettings = JsonSerializer.Deserialize<MobileRuntimeAppSettings>(content, _jsonOptions) ?? new MobileRuntimeAppSettings();
         }
-        catch
+        catch (Exception exception)
         {
+            _logger.LogWarning(exception, "Unable to load mobile appsettings.json for POI narration.");
             _runtimeSettings = new MobileRuntimeAppSettings();
         }
+
+        _logger.LogInformation(
+            "Loaded POI narration runtime settings. apiBaseUrl={ApiBaseUrl}; resolvedApiBaseUrl={ResolvedApiBaseUrl}",
+            _runtimeSettings.ApiBaseUrl ?? "(empty)",
+            ResolveApiBaseUrl(_runtimeSettings));
 
         return _runtimeSettings;
     }
@@ -415,8 +647,22 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
         _audioPlayer?.Dispose();
         _audioPlayer = null;
 
-        _audioBuffer?.Dispose();
-        _audioBuffer = null;
+        _audioStream?.Dispose();
+        _audioStream = null;
+
+        if (!string.IsNullOrWhiteSpace(_tempAudioFilePath) && File.Exists(_tempAudioFilePath))
+        {
+            try
+            {
+                File.Delete(_tempAudioFilePath);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogDebug(exception, "Unable to delete temporary narration audio file {FilePath}.", _tempAudioFilePath);
+            }
+        }
+
+        _tempAudioFilePath = null;
     }
 
     private static string FirstNonEmpty(params string?[] values)
@@ -454,14 +700,41 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
                parsed.Host.Contains("example.com", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsTextToSpeechProxyUrl(string audioUrl)
+    private async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        if (!Uri.TryCreate(audioUrl, UriKind.Absolute, out var parsed))
+        try
         {
-            return false;
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return string.Empty;
+            }
+
+            return content.Length <= 300 ? content : content[..300];
+        }
+        catch (Exception exception)
+        {
+            _logger.LogDebug(exception, "Unable to read remote audio error response body.");
+            return string.Empty;
+        }
+    }
+
+    private void WarnIfLoopbackBaseUrlOnPhysicalDevice(string baseUrl)
+    {
+        if (DeviceInfo.Current.Platform != DevicePlatform.Android ||
+            DeviceInfo.Current.DeviceType == DeviceType.Virtual ||
+            !Uri.TryCreate(baseUrl, UriKind.Absolute, out var parsed))
+        {
+            return;
         }
 
-        return parsed.AbsolutePath.EndsWith("/api/v1/tts", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(parsed.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(parsed.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "ApiBaseUrl {ApiBaseUrl} is using loopback on a physical Android device. Use the computer LAN IP instead of localhost.",
+                baseUrl);
+        }
     }
 
     private static async Task SpeakWithDeviceTextToSpeechAsync(
@@ -506,83 +779,32 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
             };
     }
 
-    private static IReadOnlyList<string> BuildTextToSpeechAudioUrls(
-        string text,
-        string languageCode,
-        string? apiBaseUrl)
+    private static string ToLogPreview(string value)
     {
-        if (string.IsNullOrWhiteSpace(text) ||
-            string.IsNullOrWhiteSpace(languageCode) ||
-            string.IsNullOrWhiteSpace(apiBaseUrl))
+        var normalized = value?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized))
         {
-            return Array.Empty<string>();
+            return "(empty)";
         }
 
-        var normalizedLanguageCode = AppLanguage.NormalizeCode(languageCode);
-        var chunks = SplitNarrationIntoChunks(text.Trim(), TextToSpeechProxyMaxChars);
-        if (chunks.Count == 0)
-        {
-            return Array.Empty<string>();
-        }
-
-        var baseUri = new Uri(apiBaseUrl, UriKind.Absolute);
-        return chunks
-            .Select((chunk, index) =>
-            {
-                var query = new Dictionary<string, string>
-                {
-                    ["languageCode"] = normalizedLanguageCode,
-                    ["text"] = chunk,
-                    ["total"] = chunks.Count.ToString(),
-                    ["idx"] = index.ToString(),
-                    ["model_id"] = TextToSpeechProxyModelId
-                };
-
-                var relativePath =
-                    "api/v1/tts?" +
-                    string.Join("&", query.Select(item => $"{item.Key}={Uri.EscapeDataString(item.Value)}"));
-
-                return new Uri(baseUri, relativePath).ToString();
-            })
-            .ToArray();
+        return normalized.Length <= 180
+            ? normalized
+            : $"{normalized[..180]}...";
     }
 
-    private static IReadOnlyList<string> SplitNarrationIntoChunks(string text, int maxLength)
+    private static string GetSafeUrlForLog(string? value)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(value))
         {
-            return Array.Empty<string>();
+            return "(empty)";
         }
 
-        var chunks = new List<string>();
-        var start = 0;
-
-        while (start < text.Length)
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var parsed))
         {
-            var end = Math.Min(start + maxLength, text.Length);
-            if (end < text.Length)
-            {
-                var searchStart = start + (int)(maxLength * 0.6);
-                for (var index = end; index > searchStart; index -= 1)
-                {
-                    if (char.IsWhiteSpace(text[index - 1]) || ".!?,;:".Contains(text[index - 1]))
-                    {
-                        end = index;
-                        break;
-                    }
-                }
-            }
-
-            var chunk = text[start..end].Trim();
-            if (!string.IsNullOrWhiteSpace(chunk))
-            {
-                chunks.Add(chunk);
-            }
-
-            start = end;
+            return value.Trim();
         }
 
-        return chunks;
+        return $"{parsed.Scheme}://{parsed.Host}{parsed.AbsolutePath}";
     }
 
     private sealed record PlaybackSession(long PlaybackId, CancellationToken Token);

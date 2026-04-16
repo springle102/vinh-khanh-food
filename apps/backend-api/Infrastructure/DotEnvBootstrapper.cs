@@ -1,15 +1,24 @@
 namespace VinhKhanh.BackendApi.Infrastructure;
 
+internal sealed record DotEnvBootstrapResult(
+    IReadOnlyList<string> ExistingFiles,
+    IReadOnlyList<string> ImportedKeys);
+
 internal static class DotEnvBootstrapper
 {
-    public static void LoadIntoEnvironment(params string[] candidatePaths)
+    public static DotEnvBootstrapResult LoadIntoEnvironment(params string[] candidatePaths)
     {
+        var existingFiles = new List<string>();
+        var importedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var path in candidatePaths.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (!File.Exists(path))
             {
                 continue;
             }
+
+            existingFiles.Add(path);
 
             foreach (var rawLine in File.ReadLines(path))
             {
@@ -39,7 +48,10 @@ internal static class DotEnvBootstrapper
                 }
 
                 Environment.SetEnvironmentVariable(key, value);
+                importedKeys.Add(key);
             }
         }
+
+        return new DotEnvBootstrapResult(existingFiles, importedKeys.ToList());
     }
 }

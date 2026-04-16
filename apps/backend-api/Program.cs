@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Infrastructure;
@@ -8,7 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 var backendRoot = builder.Environment.ContentRootPath;
 var repositoryRoot = Path.GetFullPath(Path.Combine(backendRoot, "..", ".."));
 
-DotEnvBootstrapper.LoadIntoEnvironment(
+var dotEnvResult = DotEnvBootstrapper.LoadIntoEnvironment(
     Path.Combine(repositoryRoot, ".env"),
     Path.Combine(repositoryRoot, ".env.local"),
     Path.Combine(backendRoot, ".env"),
@@ -41,6 +42,12 @@ builder.Services.AddHttpClient<TranslationProxyService>(client =>
     client.Timeout = TimeSpan.FromSeconds(12);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("VinhKhanhAdmin/1.0");
     client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+});
+builder.Services.AddHttpClient<OpenStreetMapTileProxyService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(12);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("VinhKhanhAdmin/1.0");
+    client.DefaultRequestHeaders.Accept.ParseAdd("image/png,image/*;q=0.9,*/*;q=0.8");
 });
 builder.Services.AddScoped<ITextTranslationClient>(provider => provider.GetRequiredService<TranslationProxyService>());
 builder.Services.AddHttpClient<ITextToSpeechService, ElevenLabsTextToSpeechService>(client =>
@@ -86,6 +93,27 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+var textToSpeechOptions = app.Services.GetRequiredService<IOptions<TextToSpeechOptions>>().Value;
+var textToSpeechApiKeyPresent = !string.IsNullOrWhiteSpace(textToSpeechOptions.ApiKey);
+app.Logger.LogInformation(
+    "ElevenLabs TTS startup config loaded. apiKeyPresent={ApiKeyPresent}; defaultVoiceId={DefaultVoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; envFiles={EnvFiles}; importedKeys={ImportedKeys}",
+    textToSpeechApiKeyPresent,
+    textToSpeechOptions.DefaultVoiceId,
+    textToSpeechOptions.ModelId,
+    textToSpeechOptions.OutputFormat,
+    dotEnvResult.ExistingFiles.Count == 0
+        ? "none"
+        : string.Join(", ", dotEnvResult.ExistingFiles.Select(Path.GetFileName)),
+    dotEnvResult.ImportedKeys.Count == 0
+        ? "none"
+        : string.Join(", ", dotEnvResult.ImportedKeys.OrderBy(value => value, StringComparer.OrdinalIgnoreCase)));
+
+if (!textToSpeechApiKeyPresent)
+{
+    app.Logger.LogWarning(
+        "ELEVENLABS_API_KEY is currently missing from the backend runtime. Add it via .env, .env.local, appsettings, or environment variables before testing TTS.");
+}
 
 app.Use(async (context, next) =>
 {

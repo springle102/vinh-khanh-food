@@ -33,6 +33,7 @@ public static class MauiProgram
         // builder.Services.AddSingleton<IGuideApiService, GuideApiService>();
 
         builder.Services.AddSingleton<IFoodStreetDataService, FoodStreetApiDataService>();
+        builder.Services.AddSingleton<IElevenLabsTtsService, ElevenLabsTtsService>();
         builder.Services.AddSingleton<PoiNarrationService>();
         builder.Services.AddSingleton<IPoiNarrationService>(sp => sp.GetRequiredService<PoiNarrationService>());
         builder.Services.AddSingleton<IAudioPlayerService>(sp => sp.GetRequiredService<PoiNarrationService>());

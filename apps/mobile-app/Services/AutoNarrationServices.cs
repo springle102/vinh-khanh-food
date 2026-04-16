@@ -1,4 +1,5 @@
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.Storage;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
@@ -31,37 +32,53 @@ public interface IAutoNarrationService
 
 public sealed class AutoNarrationService : IAutoNarrationService
 {
+    private const double DefaultTriggerRadiusMeters = 20d;
+    private const int DefaultPriority = 100;
+    private const int ImportantPriority = 200;
+    private static readonly TimeSpan DefaultCooldown = TimeSpan.FromSeconds(25);
+    private static readonly TimeSpan AntiJumpDwellTime = TimeSpan.FromSeconds(3);
+
     private readonly SemaphoreSlim _stateLock = new(1, 1);
-    private readonly HashSet<string> _triggeredPoiIds = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _queuedPoiIds = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<RouteEligiblePoi> _queuedPois = [];
+    private readonly HashSet<string> _recentlyPlayedPoiIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _lastNearbyPoiIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly IFoodStreetDataService _dataService;
     private readonly IPoiProximityService _poiProximityService;
     private readonly IAudioPlayerService _audioPlayerService;
     private readonly IAppLanguageService _languageService;
+    private readonly ITourStateService _tourStateService;
+    private readonly ILogger<AutoNarrationService> _logger;
 
     private RouteNarrationPlan? _activeRoutePlan;
-    private bool _isPlaybackDispatching;
-    private DateTimeOffset _nextPlaybackAllowedAt = DateTimeOffset.MinValue;
+    private string? _currentPlayingPoiId;
+    private DateTimeOffset _lastPlayedTime = DateTimeOffset.MinValue;
+    private string? _lastPlayedPoiId;
+    private string? _pendingPoiId;
+    private DateTimeOffset _pendingPoiEnteredAt = DateTimeOffset.MinValue;
+    private string? _cachedActiveTourId;
+    private HashSet<string> _cachedActiveTourPoiIds = new(StringComparer.OrdinalIgnoreCase);
 
     public AutoNarrationService(
         IFoodStreetDataService dataService,
         IPoiProximityService poiProximityService,
         IAudioPlayerService audioPlayerService,
-        IAppLanguageService languageService)
+        IAppLanguageService languageService,
+        ITourStateService tourStateService,
+        ILogger<AutoNarrationService> logger)
     {
         _dataService = dataService;
         _poiProximityService = poiProximityService;
         _audioPlayerService = audioPlayerService;
         _languageService = languageService;
+        _tourStateService = tourStateService;
+        _logger = logger;
         IsEnabled = Preferences.Default.Get(AppPreferenceKeys.AutoNarrationEnabled, true);
     }
 
     public bool IsEnabled { get; private set; }
 
-    public double ActivationRadiusMeters => 30d;
+    public double ActivationRadiusMeters => DefaultTriggerRadiusMeters;
 
-    public TimeSpan PlaybackGap => TimeSpan.FromSeconds(4);
+    public TimeSpan PlaybackGap => DefaultCooldown;
 
     public Task SetEnabledAsync(bool isEnabled)
     {
@@ -72,23 +89,18 @@ public sealed class AutoNarrationService : IAutoNarrationService
 
     public async Task ConfigureRouteAsync(RouteNarrationPlan? routePlan, CancellationToken cancellationToken = default)
     {
-        const bool shouldStopAudio = true;
-
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
             _activeRoutePlan = routePlan;
-            ResetRouteStateLocked();
+            ResetNarrationStateLocked();
         }
         finally
         {
             _stateLock.Release();
         }
 
-        if (shouldStopAudio)
-        {
-            await _audioPlayerService.StopAsync();
-        }
+        await _audioPlayerService.StopAsync();
     }
 
     public async Task ResetAsync(bool stopAudio = true, CancellationToken cancellationToken = default)
@@ -97,7 +109,9 @@ public sealed class AutoNarrationService : IAutoNarrationService
         try
         {
             _activeRoutePlan = null;
-            ResetRouteStateLocked();
+            _cachedActiveTourId = null;
+            _cachedActiveTourPoiIds.Clear();
+            ResetNarrationStateLocked();
         }
         finally
         {
@@ -119,89 +133,90 @@ public sealed class AutoNarrationService : IAutoNarrationService
         ArgumentNullException.ThrowIfNull(location);
         ArgumentNullException.ThrowIfNull(allPois);
 
-        var routePlan = _activeRoutePlan;
-        var snapshotPois = routePlan?.EligiblePois.Count > 0
-            ? routePlan.EligiblePois.Select(item => item.Poi).ToList()
-            : allPois;
-        var snapshotActivationRadius = routePlan?.EligiblePois.Count > 0
-            ? ActivationRadiusMeters
-            : 0d;
-        var snapshot = snapshotPois.Count == 0
-            ? new PoiProximitySnapshot
-            {
-                Location = location,
-                ActivationRadiusMeters = snapshotActivationRadius
-            }
-            : _poiProximityService.Evaluate(location, snapshotPois, snapshotActivationRadius);
-
-        if (routePlan is null || routePlan.EligiblePois.Count == 0)
-        {
-            return new AutoNarrationResult
-            {
-                Snapshot = snapshot,
-                Decision = IsEnabled ? AutoNarrationDecision.NoRoute : AutoNarrationDecision.Disabled,
-                IsMockLocation = isMockLocation
-            };
-        }
+        var currentTourPoiIds = await ResolveCurrentTourPoiIdsAsync(cancellationToken);
+        var evaluation = BuildEvaluation(location, allPois, currentTourPoiIds);
 
         if (!IsEnabled)
         {
+            _logger.LogDebug(
+                "Auto narration is disabled. location={Latitude},{Longitude}",
+                location.Latitude,
+                location.Longitude);
             return new AutoNarrationResult
             {
-                Snapshot = snapshot,
+                Snapshot = evaluation.Snapshot,
                 Decision = AutoNarrationDecision.Disabled,
                 IsMockLocation = isMockLocation
             };
         }
 
-        RouteEligiblePoi? nextPlaybackCandidate = null;
-        AutoNarrationDecision decision = AutoNarrationDecision.NoNearbyPoi;
+        if (evaluation.NearbyCandidates.Count == 0)
+        {
+            _logger.LogDebug(
+                "No nearby POI matched the auto narration trigger radius. location={Latitude},{Longitude}",
+                location.Latitude,
+                location.Longitude);
+            await _stateLock.WaitAsync(cancellationToken);
+            try
+            {
+                UpdateNearbyStateLocked(new HashSet<string>(StringComparer.OrdinalIgnoreCase), null, DateTimeOffset.UtcNow);
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+
+            return new AutoNarrationResult
+            {
+                Snapshot = evaluation.Snapshot,
+                Decision = AutoNarrationDecision.NoNearbyPoi,
+                IsMockLocation = isMockLocation
+            };
+        }
+
+        var selectedCandidate = evaluation.NearbyCandidates[0];
+        var nearbyPoiIds = evaluation.NearbyCandidates
+            .Select(item => item.Poi.Id)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var now = DateTimeOffset.UtcNow;
+        var shouldPlay = false;
+        var decision = AutoNarrationDecision.None;
 
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
-            var activeCandidates = routePlan.EligiblePois
-                .Where(item => !_triggeredPoiIds.Contains(item.Poi.Id))
-                .Select(item => new
-                {
-                    Candidate = item,
-                    DistanceToUserMeters = _poiProximityService.CalculateDistanceMeters(
-                        location.Latitude,
-                        location.Longitude,
-                        item.Poi.Latitude,
-                        item.Poi.Longitude)
-                })
-                .Where(item => item.DistanceToUserMeters <= ActivationRadiusMeters)
-                .OrderByDescending(item => item.Candidate.IsDestination)
-                .ThenBy(item => item.DistanceToUserMeters)
-                .ThenBy(item => item.Candidate.ClosestSegmentIndex)
-                .Select(item => item.Candidate)
-                .ToList();
+            var selectedPoiId = selectedCandidate.Poi.Id;
+            var enteredSelectedPoi = !_lastNearbyPoiIds.Contains(selectedPoiId);
+            UpdateNearbyStateLocked(nearbyPoiIds, selectedPoiId, now);
 
-            if (activeCandidates.Count > 0)
+            var hasExitedLastPlayedPoi =
+                string.IsNullOrWhiteSpace(_lastPlayedPoiId) ||
+                !nearbyPoiIds.Contains(_lastPlayedPoiId);
+            var hasStayedInsideSelectedPoi = HasPendingCandidateSettledLocked(selectedPoiId, now);
+            var canSwitchByExitAndEnter = hasExitedLastPlayedPoi && enteredSelectedPoi;
+
+            if (!string.IsNullOrWhiteSpace(_currentPlayingPoiId) || _audioPlayerService.IsPlaying)
             {
-                if (CanStartPlaybackLocked())
-                {
-                    nextPlaybackCandidate = activeCandidates[0];
-                    ReserveForPlaybackLocked(nextPlaybackCandidate);
-                    QueueCandidatesLocked(activeCandidates.Skip(1));
-                    decision = AutoNarrationDecision.Played;
-                }
-                else
-                {
-                    var queuedAny = QueueCandidatesLocked(activeCandidates);
-                    decision = queuedAny
-                        ? AutoNarrationDecision.Queued
-                        : AutoNarrationDecision.Busy;
-                }
+                decision = AutoNarrationDecision.Busy;
             }
-            else if (CanStartPlaybackLocked() &&
-                     TryDequeueNextLocked(out var queuedCandidate) &&
-                     queuedCandidate is not null)
+            else if (_recentlyPlayedPoiIds.Contains(selectedPoiId))
             {
-                nextPlaybackCandidate = queuedCandidate;
-                ReserveForPlaybackLocked(nextPlaybackCandidate);
+                decision = AutoNarrationDecision.Busy;
+            }
+            else if (IsInCooldownLocked(now))
+            {
+                decision = AutoNarrationDecision.Cooldown;
+            }
+            else if (canSwitchByExitAndEnter || hasStayedInsideSelectedPoi)
+            {
+                _currentPlayingPoiId = selectedPoiId;
+                shouldPlay = true;
                 decision = AutoNarrationDecision.Played;
+            }
+            else
+            {
+                decision = AutoNarrationDecision.Busy;
             }
         }
         finally
@@ -209,34 +224,61 @@ public sealed class AutoNarrationService : IAutoNarrationService
             _stateLock.Release();
         }
 
-        if (nextPlaybackCandidate is null)
+        if (!shouldPlay)
         {
+            _logger.LogInformation(
+                "Auto narration decision completed without playback. poiId={PoiId}; decision={Decision}; distanceMeters={DistanceMeters:0.##}; currentPlayingPoiId={CurrentPlayingPoiId}; recentlyPlayed={RecentlyPlayed}",
+                selectedCandidate.Poi.Id,
+                decision,
+                selectedCandidate.DistanceMeters,
+                _currentPlayingPoiId ?? "(none)",
+                _recentlyPlayedPoiIds.Contains(selectedCandidate.Poi.Id));
             return new AutoNarrationResult
             {
-                Snapshot = snapshot,
+                Snapshot = evaluation.Snapshot,
                 Decision = decision,
                 IsMockLocation = isMockLocation
             };
         }
 
-        var detail = await LoadPoiDetailOrFallbackAsync(nextPlaybackCandidate.Poi);
+        var detail = await LoadPoiDetailOrFallbackAsync(selectedCandidate.Poi);
         if (detail is null)
         {
-            await ReleasePlaybackReservationAsync(nextPlaybackCandidate.Poi.Id, cancellationToken);
+            await ReleasePlaybackReservationAsync(selectedCandidate.Poi.Id, cancellationToken);
             return new AutoNarrationResult
             {
-                Snapshot = snapshot,
-                TriggeredPoi = nextPlaybackCandidate.Poi,
+                Snapshot = evaluation.Snapshot,
+                TriggeredPoi = selectedCandidate.Poi,
                 Decision = AutoNarrationDecision.None,
                 IsMockLocation = isMockLocation
             };
         }
 
-        BeginBackgroundPlayback(nextPlaybackCandidate.Poi, detail);
+        var playbackConfirmed = await ConfirmPlaybackStartAsync(selectedCandidate.Poi.Id, now, cancellationToken);
+        if (!playbackConfirmed)
+        {
+            _logger.LogInformation(
+                "Auto narration lost the playback reservation before starting. poiId={PoiId}",
+                selectedCandidate.Poi.Id);
+            return new AutoNarrationResult
+            {
+                Snapshot = evaluation.Snapshot,
+                Decision = AutoNarrationDecision.Busy,
+                IsMockLocation = isMockLocation
+            };
+        }
+
+        _logger.LogInformation(
+            "Auto narration will start playback. poiId={PoiId}; distanceMeters={DistanceMeters:0.##}; language={LanguageCode}; isMockLocation={IsMockLocation}",
+            selectedCandidate.Poi.Id,
+            selectedCandidate.DistanceMeters,
+            _languageService.CurrentLanguage,
+            isMockLocation);
+        BeginBackgroundPlayback(selectedCandidate.Poi, detail);
         return new AutoNarrationResult
         {
-            Snapshot = snapshot,
-            TriggeredPoi = nextPlaybackCandidate.Poi,
+            Snapshot = evaluation.Snapshot,
+            TriggeredPoi = selectedCandidate.Poi,
             TriggeredDetail = detail,
             Decision = AutoNarrationDecision.Played,
             IsMockLocation = isMockLocation
@@ -247,20 +289,23 @@ public sealed class AutoNarrationService : IAutoNarrationService
     {
         ArgumentNullException.ThrowIfNull(poi);
 
-        var snapshot = _poiProximityService.Evaluate(
+        var evaluation = BuildEvaluation(
             new UserLocationPoint
             {
                 Latitude = poi.Latitude,
                 Longitude = poi.Longitude
             },
-            [poi],
-            ActivationRadiusMeters);
+            new[] { poi },
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                poi.Id
+            });
         var detail = await LoadPoiDetailOrFallbackAsync(poi);
         if (detail is null)
         {
             return new AutoNarrationResult
             {
-                Snapshot = snapshot,
+                Snapshot = evaluation.Snapshot,
                 TriggeredPoi = poi,
                 Decision = AutoNarrationDecision.None,
                 IsMockLocation = true
@@ -268,23 +313,34 @@ public sealed class AutoNarrationService : IAutoNarrationService
         }
 
         await _audioPlayerService.StopAsync();
+
+        var now = DateTimeOffset.UtcNow;
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
-            _triggeredPoiIds.Add(poi.Id);
-            _queuedPoiIds.Remove(poi.Id);
-            _queuedPois.RemoveAll(item => string.Equals(item.Poi.Id, poi.Id, StringComparison.OrdinalIgnoreCase));
-            _isPlaybackDispatching = true;
+            _currentPlayingPoiId = poi.Id;
+            _lastPlayedTime = now;
+            _lastPlayedPoiId = poi.Id;
+            _recentlyPlayedPoiIds.Clear();
+            _recentlyPlayedPoiIds.Add(poi.Id);
+            _lastNearbyPoiIds.Clear();
+            _lastNearbyPoiIds.Add(poi.Id);
+            _pendingPoiId = poi.Id;
+            _pendingPoiEnteredAt = now;
         }
         finally
         {
             _stateLock.Release();
         }
 
+        _logger.LogInformation(
+            "Auto narration was triggered manually for POI. poiId={PoiId}; language={LanguageCode}",
+            poi.Id,
+            _languageService.CurrentLanguage);
         BeginBackgroundPlayback(poi, detail);
         return new AutoNarrationResult
         {
-            Snapshot = snapshot,
+            Snapshot = evaluation.Snapshot,
             TriggeredPoi = poi,
             TriggeredDetail = detail,
             Decision = AutoNarrationDecision.Played,
@@ -292,74 +348,65 @@ public sealed class AutoNarrationService : IAutoNarrationService
         };
     }
 
-    private void ResetRouteStateLocked()
+    private void ResetNarrationStateLocked()
     {
-        _triggeredPoiIds.Clear();
-        _queuedPoiIds.Clear();
-        _queuedPois.Clear();
-        _isPlaybackDispatching = false;
-        _nextPlaybackAllowedAt = DateTimeOffset.MinValue;
+        _currentPlayingPoiId = null;
+        _lastPlayedTime = DateTimeOffset.MinValue;
+        _lastPlayedPoiId = null;
+        _pendingPoiId = null;
+        _pendingPoiEnteredAt = DateTimeOffset.MinValue;
+        _recentlyPlayedPoiIds.Clear();
+        _lastNearbyPoiIds.Clear();
     }
 
-    private bool CanStartPlaybackLocked()
-        => !_isPlaybackDispatching &&
-           !_audioPlayerService.IsPlaying &&
-           DateTimeOffset.UtcNow >= _nextPlaybackAllowedAt;
+    private bool IsInCooldownLocked(DateTimeOffset now)
+        => _lastPlayedTime != DateTimeOffset.MinValue &&
+           now - _lastPlayedTime < PlaybackGap;
 
-    private bool QueueCandidatesLocked(IEnumerable<RouteEligiblePoi> candidates)
+    private bool HasPendingCandidateSettledLocked(string poiId, DateTimeOffset now)
+        => string.Equals(_pendingPoiId, poiId, StringComparison.OrdinalIgnoreCase) &&
+           _pendingPoiEnteredAt != DateTimeOffset.MinValue &&
+           now - _pendingPoiEnteredAt >= AntiJumpDwellTime;
+
+    private void UpdateNearbyStateLocked(
+        HashSet<string> nearbyPoiIds,
+        string? selectedPoiId,
+        DateTimeOffset now)
     {
-        var queuedAny = false;
-        foreach (var candidate in candidates)
-        {
-            if (_triggeredPoiIds.Contains(candidate.Poi.Id) ||
-                _queuedPoiIds.Contains(candidate.Poi.Id))
-            {
-                continue;
-            }
+        _recentlyPlayedPoiIds.RemoveWhere(item => !nearbyPoiIds.Contains(item));
 
-            _queuedPoiIds.Add(candidate.Poi.Id);
-            _queuedPois.Add(candidate);
-            queuedAny = true;
+        if (string.IsNullOrWhiteSpace(selectedPoiId))
+        {
+            _pendingPoiId = null;
+            _pendingPoiEnteredAt = DateTimeOffset.MinValue;
+        }
+        else if (!string.Equals(_pendingPoiId, selectedPoiId, StringComparison.OrdinalIgnoreCase))
+        {
+            _pendingPoiId = selectedPoiId;
+            _pendingPoiEnteredAt = now;
         }
 
-        return queuedAny;
+        _lastNearbyPoiIds.Clear();
+        _lastNearbyPoiIds.UnionWith(nearbyPoiIds);
     }
 
-    private bool TryDequeueNextLocked(out RouteEligiblePoi? candidate)
-    {
-        if (_queuedPois.Count == 0)
-        {
-            candidate = null;
-            return false;
-        }
-
-        var nextCandidate = _queuedPois
-            .OrderByDescending(item => item.IsDestination)
-            .ThenBy(item => item.ClosestSegmentIndex)
-            .ThenBy(item => item.DistanceToRouteMeters)
-            .First();
-
-        _queuedPois.Remove(nextCandidate);
-        _queuedPoiIds.Remove(nextCandidate.Poi.Id);
-        candidate = nextCandidate;
-        return true;
-    }
-
-    private void ReserveForPlaybackLocked(RouteEligiblePoi candidate)
-    {
-        _queuedPoiIds.Remove(candidate.Poi.Id);
-        _queuedPois.RemoveAll(item => string.Equals(item.Poi.Id, candidate.Poi.Id, StringComparison.OrdinalIgnoreCase));
-        _triggeredPoiIds.Add(candidate.Poi.Id);
-        _isPlaybackDispatching = true;
-    }
-
-    private async Task ReleasePlaybackReservationAsync(string poiId, CancellationToken cancellationToken)
+    private async Task<bool> ConfirmPlaybackStartAsync(
+        string poiId,
+        DateTimeOffset playedAt,
+        CancellationToken cancellationToken)
     {
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
-            _isPlaybackDispatching = false;
-            _triggeredPoiIds.Remove(poiId);
+            if (!string.Equals(_currentPlayingPoiId, poiId, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            _lastPlayedTime = playedAt;
+            _lastPlayedPoiId = poiId;
+            _recentlyPlayedPoiIds.Add(poiId);
+            return true;
         }
         finally
         {
@@ -367,9 +414,120 @@ public sealed class AutoNarrationService : IAutoNarrationService
         }
     }
 
+    private async Task ReleasePlaybackReservationAsync(string poiId, CancellationToken cancellationToken)
+    {
+        await _stateLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (string.Equals(_currentPlayingPoiId, poiId, StringComparison.OrdinalIgnoreCase))
+            {
+                _currentPlayingPoiId = null;
+            }
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+    }
+
+    private async Task<HashSet<string>> ResolveCurrentTourPoiIdsAsync(CancellationToken cancellationToken)
+    {
+        var routePlan = _activeRoutePlan;
+        if (routePlan?.EligiblePois.Count > 0)
+        {
+            return routePlan.EligiblePois
+                .Select(item => item.Poi.Id)
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var activeTour = await _tourStateService.GetActiveTourAsync();
+        if (activeTour is null || string.IsNullOrWhiteSpace(activeTour.TourId))
+        {
+            _cachedActiveTourId = null;
+            _cachedActiveTourPoiIds.Clear();
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (string.Equals(_cachedActiveTourId, activeTour.TourId, StringComparison.OrdinalIgnoreCase) &&
+            _cachedActiveTourPoiIds.Count > 0)
+        {
+            return new HashSet<string>(_cachedActiveTourPoiIds, StringComparer.OrdinalIgnoreCase);
+        }
+
+        var tourPlan = await _dataService.GetTourPlanAsync(activeTour.TourId, activeTour.CompletedPoiIds);
+        _cachedActiveTourId = activeTour.TourId;
+        _cachedActiveTourPoiIds = tourPlan.Stops
+            .Select(item => item.PoiId)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return new HashSet<string>(_cachedActiveTourPoiIds, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private PoiEvaluation BuildEvaluation(
+        UserLocationPoint location,
+        IReadOnlyList<PoiLocation> allPois,
+        IReadOnlySet<string> currentTourPoiIds)
+    {
+        PoiPlaybackCandidate? nearestCandidate = null;
+        var nearbyCandidates = new List<PoiPlaybackCandidate>();
+
+        foreach (var poi in allPois)
+        {
+            var distanceMeters = _poiProximityService.CalculateDistanceMeters(
+                location.Latitude,
+                location.Longitude,
+                poi.Latitude,
+                poi.Longitude);
+            var candidate = new PoiPlaybackCandidate(
+                poi,
+                distanceMeters,
+                currentTourPoiIds.Contains(poi.Id));
+
+            if (nearestCandidate is null || distanceMeters < nearestCandidate.DistanceMeters)
+            {
+                nearestCandidate = candidate;
+            }
+
+            if (distanceMeters <= ResolveTriggerRadius(poi))
+            {
+                nearbyCandidates.Add(candidate);
+            }
+        }
+
+        var orderedNearbyCandidates = nearbyCandidates
+            .OrderByDescending(item => item.IsInCurrentTour)
+            .ThenByDescending(item => ResolvePriority(item.Poi))
+            .ThenBy(item => item.DistanceMeters)
+            .ThenBy(item => item.Poi.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var activeCandidate = orderedNearbyCandidates.FirstOrDefault();
+
+        return new PoiEvaluation(
+            new PoiProximitySnapshot
+            {
+                Location = location,
+                NearestPoi = nearestCandidate?.Poi,
+                NearestPoiDistanceMeters = nearestCandidate?.DistanceMeters,
+                ActivePoi = activeCandidate?.Poi,
+                ActivePoiDistanceMeters = activeCandidate?.DistanceMeters,
+                ActivationRadiusMeters = activeCandidate is null
+                    ? nearestCandidate is null
+                        ? 0d
+                        : ResolveTriggerRadius(nearestCandidate.Poi)
+                    : ResolveTriggerRadius(activeCandidate.Poi)
+            },
+            orderedNearbyCandidates);
+    }
+
     private void BeginBackgroundPlayback(PoiLocation poi, PoiExperienceDetail detail)
     {
         var languageCode = _languageService.CurrentLanguage;
+        _logger.LogInformation(
+            "Dispatching background POI narration playback. poiId={PoiId}; language={LanguageCode}",
+            poi.Id,
+            languageCode);
         MainThread.BeginInvokeOnMainThread(() => _ = RunPlaybackAsync(poi, detail, languageCode));
     }
 
@@ -378,46 +536,34 @@ public sealed class AutoNarrationService : IAutoNarrationService
         try
         {
             await _audioPlayerService.PlayPoiNarrationAsync(detail, languageCode);
+            _logger.LogInformation(
+                "Background POI narration playback completed. poiId={PoiId}; language={LanguageCode}",
+                poi.Id,
+                languageCode);
         }
-        catch
+        catch (Exception exception)
         {
-            // Best effort only. Manual replay is still available from the POI sheet.
-        }
-
-        await Task.Delay(PlaybackGap);
-
-        RouteEligiblePoi? nextQueuedCandidate = null;
-        await _stateLock.WaitAsync();
-        try
-        {
-            _isPlaybackDispatching = false;
-            _nextPlaybackAllowedAt = DateTimeOffset.UtcNow;
-            if (CanStartPlaybackLocked() &&
-                TryDequeueNextLocked(out var candidate) &&
-                candidate is not null)
-            {
-                nextQueuedCandidate = candidate;
-                ReserveForPlaybackLocked(nextQueuedCandidate);
-            }
+            _logger.LogWarning(
+                exception,
+                "Background POI narration playback failed. poiId={PoiId}; language={LanguageCode}",
+                poi.Id,
+                languageCode);
         }
         finally
         {
-            _stateLock.Release();
+            await _stateLock.WaitAsync();
+            try
+            {
+                if (string.Equals(_currentPlayingPoiId, poi.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    _currentPlayingPoiId = null;
+                }
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
         }
-
-        if (nextQueuedCandidate is null)
-        {
-            return;
-        }
-
-        var nextDetail = await LoadPoiDetailOrFallbackAsync(nextQueuedCandidate.Poi);
-        if (nextDetail is null)
-        {
-            await ReleasePlaybackReservationAsync(nextQueuedCandidate.Poi.Id, CancellationToken.None);
-            return;
-        }
-
-        BeginBackgroundPlayback(nextQueuedCandidate.Poi, nextDetail);
     }
 
     private async Task<PoiExperienceDetail?> LoadPoiDetailOrFallbackAsync(PoiLocation poi)
@@ -471,4 +617,25 @@ public sealed class AutoNarrationService : IAutoNarrationService
             target.Set(normalizedLanguage[..separatorIndex], value);
         }
     }
+
+    private static double ResolveTriggerRadius(PoiLocation poi)
+        => double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= DefaultTriggerRadiusMeters
+            ? poi.TriggerRadius
+            : DefaultTriggerRadiusMeters;
+
+    private static int ResolvePriority(PoiLocation poi)
+        => poi.Priority > 0
+            ? poi.Priority
+            : poi.IsFeatured
+                ? ImportantPriority
+                : DefaultPriority;
+
+    private sealed record PoiPlaybackCandidate(
+        PoiLocation Poi,
+        double DistanceMeters,
+        bool IsInCurrentTour);
+
+    private sealed record PoiEvaluation(
+        PoiProximitySnapshot Snapshot,
+        IReadOnlyList<PoiPlaybackCandidate> NearbyCandidates);
 }

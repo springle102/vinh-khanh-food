@@ -26,17 +26,37 @@ public sealed record TextToSpeechResult(
     string ModelId,
     string OutputFormat);
 
-public sealed class TextToSpeechConfigurationException(string message) : InvalidOperationException(message);
+public sealed class TextToSpeechConfigurationException : InvalidOperationException
+{
+    public TextToSpeechConfigurationException(string message, int statusCode = 503)
+        : base(message)
+    {
+        StatusCode = statusCode;
+    }
+
+    public int StatusCode { get; }
+}
 
 public sealed class TextToSpeechGenerationException : InvalidOperationException
 {
-    public TextToSpeechGenerationException(string message)
+    public TextToSpeechGenerationException(string message, int statusCode = 502, string? responseSnippet = null)
         : base(message)
     {
+        StatusCode = statusCode;
+        ResponseSnippet = responseSnippet;
     }
 
-    public TextToSpeechGenerationException(string message, Exception innerException)
+    public TextToSpeechGenerationException(
+        string message,
+        Exception innerException,
+        int statusCode = 502,
+        string? responseSnippet = null)
         : base(message, innerException)
     {
+        StatusCode = statusCode;
+        ResponseSnippet = responseSnippet;
     }
+
+    public int StatusCode { get; }
+    public string? ResponseSnippet { get; }
 }

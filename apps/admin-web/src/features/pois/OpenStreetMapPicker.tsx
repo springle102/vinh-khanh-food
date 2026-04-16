@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import L from "leaflet";
 import {
-  CircleMarker,
+  Circle,
   MapContainer,
   Marker,
   Popup,
@@ -19,6 +19,8 @@ const DEFAULT_CENTER = {
 const DEFAULT_EDITABLE_ZOOM = 16;
 const DEFAULT_BROWSE_ZOOM = 15;
 const SELECTION_RADIUS_METERS = 180;
+const DEFAULT_TRIGGER_RADIUS_METERS = 20;
+const EARTH_RADIUS_METERS = 6_371_000;
 const BASE_TILE_SOURCE: {
   url: string;
   maxZoom: number;
@@ -147,6 +149,50 @@ type MapPosition = {
   lng: number;
 };
 
+const resolvePoiTriggerRadiusMeters = (triggerRadius?: number) => {
+  const normalizedValue = Number(triggerRadius);
+  return Number.isFinite(normalizedValue) && normalizedValue >= DEFAULT_TRIGGER_RADIUS_METERS
+    ? normalizedValue
+    : DEFAULT_TRIGGER_RADIUS_METERS;
+};
+
+const toDegrees = (value: number) => (value * 180) / Math.PI;
+
+const clampLatitude = (value: number) => Math.max(-90, Math.min(90, value));
+const clampLongitude = (value: number) => Math.max(-180, Math.min(180, value));
+
+const buildPoiRadiusBounds = (lat: number, lng: number, radiusMeters: number) => {
+  const angularDistance = radiusMeters / EARTH_RADIUS_METERS;
+  const latOffset = toDegrees(angularDistance);
+  const safeCosLatitude = Math.max(Math.abs(Math.cos((lat * Math.PI) / 180)), 0.000001);
+  const lngOffset = toDegrees(angularDistance / safeCosLatitude);
+
+  return L.latLngBounds(
+    [clampLatitude(lat - latOffset), clampLongitude(lng - lngOffset)],
+    [clampLatitude(lat + latOffset), clampLongitude(lng + lngOffset)],
+  );
+};
+
+const buildPoiBounds = (pois: PoiMapItem[]) => {
+  let bounds: L.LatLngBounds | null = null;
+
+  pois.forEach((poi) => {
+    if (!isValidLatitude(poi.lat) || !isValidLongitude(poi.lng)) {
+      return;
+    }
+
+    const nextBounds = buildPoiRadiusBounds(
+      poi.lat,
+      poi.lng,
+      resolvePoiTriggerRadiusMeters(poi.triggerRadius),
+    );
+
+    bounds = bounds ? bounds.extend(nextBounds) : nextBounds;
+  });
+
+  return bounds;
+};
+
 export type PoiMapItem = {
   id: string;
   title: string;
@@ -155,12 +201,14 @@ export type PoiMapItem = {
   status: string;
   lat: number;
   lng: number;
+  triggerRadius?: number;
 };
 
 type OpenStreetMapPickerProps = {
   address?: string;
   lat: number;
   lng: number;
+  selectedTriggerRadius?: number;
   isVisible?: boolean;
   onChange?: (lat: number, lng: number) => void;
   onLocationResolved?: (location: GeocodingResult) => void;
@@ -307,28 +355,56 @@ const BrowseMapViewport = ({
       ? pois.find((poi) => poi.id === selectedPoiId) ?? null
       : null;
 
+    if (!pois.length) {
+      map.setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM, { animate: false });
+      return;
+    }
+
+    const poiBounds = buildPoiBounds(pois);
+
     if (selectedPoi) {
+      if (poiBounds && pois.length === 1) {
+        map.fitBounds(poiBounds.pad(0.5), {
+          animate: false,
+          maxZoom: 17,
+        });
+        return;
+      }
+
+      const selectedBounds = buildPoiBounds([selectedPoi]);
+      if (selectedBounds) {
+        map.fitBounds(selectedBounds.pad(0.8), {
+          animate: false,
+          maxZoom: 17,
+        });
+        return;
+      }
+
       map.setView([selectedPoi.lat, selectedPoi.lng], Math.max(map.getZoom(), 16), {
         animate: false,
       });
       return;
     }
 
-    if (!pois.length) {
-      map.setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM, { animate: false });
-      return;
-    }
-
     if (pois.length === 1) {
+      if (poiBounds) {
+        map.fitBounds(poiBounds.pad(0.8), {
+          animate: false,
+          maxZoom: 17,
+        });
+        return;
+      }
+
       map.setView([pois[0].lat, pois[0].lng], 16, { animate: false });
       return;
     }
 
-    const bounds = L.latLngBounds(pois.map((poi) => [poi.lat, poi.lng] as [number, number]));
-    map.fitBounds(bounds.pad(0.12), {
-      animate: false,
-      maxZoom: 16,
-    });
+    if (poiBounds) {
+      map.fitBounds(poiBounds.pad(0.12), {
+        animate: false,
+        maxZoom: 16,
+      });
+    }
   }, [map, pois, selectedPoiId]);
 
   useEffect(() => {
@@ -362,6 +438,7 @@ export const OpenStreetMapPicker = ({
   address = "",
   lat,
   lng,
+  selectedTriggerRadius = DEFAULT_TRIGGER_RADIUS_METERS,
   isVisible = true,
   onChange,
   onLocationResolved,
@@ -675,13 +752,14 @@ export const OpenStreetMapPicker = ({
           {editable ? (
             <>
               <EditableMapClickHandler onSelectPosition={handleMapSelect} />
-              <CircleMarker
+              <Circle
                 center={position}
-                radius={16}
+                radius={resolvePoiTriggerRadiusMeters(selectedTriggerRadius)}
                 color="#f97316"
                 weight={2}
                 fillColor="#fb923c"
-                fillOpacity={0.18}
+                fillOpacity={0.12}
+                opacity={0.46}
                 interactive={false}
               />
               <Marker
@@ -728,33 +806,49 @@ export const OpenStreetMapPicker = ({
                 selectedPoiId={selectedPoiId}
                 onVisiblePoiIdsChange={handleVisiblePoiIdsChange}
               />
-              {selectablePois.map((poi) => (
-                <Marker
-                  key={poi.id}
-                  position={[poi.lat, poi.lng]}
-                  icon={createPoiMarkerIcon(poi.id === selectedPoiId)}
-                  eventHandlers={{
-                    click: () => {
-                      onPoiSelectRef.current?.(poi.id);
-                    },
-                    mouseover: () => {
-                      onPoiHoverRef.current?.(poi.id);
-                    },
-                  }}
-                >
-                  <Popup closeButton={false} offset={[0, -10]}>
-                      <div style={{ minWidth: 180 }}>
-                      <div style={{ fontWeight: 700, color: "#111827" }}>{poi.title}</div>
-                      <div style={{ marginTop: 6, fontSize: 12, color: "#475569" }}>
-                        {poi.category}
-                      </div>
-                      <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
-                        {poi.address}
-                      </div>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
+              {selectablePois.map((poi) => {
+                const isSelected = poi.id === selectedPoiId;
+                const circleRadius = resolvePoiTriggerRadiusMeters(poi.triggerRadius);
+
+                return (
+                  <Fragment key={poi.id}>
+                    <Circle
+                      center={[poi.lat, poi.lng]}
+                      radius={circleRadius}
+                      color={isSelected ? "#0f766e" : "#64748b"}
+                      weight={isSelected ? 2 : 1.5}
+                      opacity={isSelected ? 0.56 : 0.34}
+                      fillColor={isSelected ? "#14b8a6" : "#cbd5e1"}
+                      fillOpacity={isSelected ? 0.14 : 0.08}
+                      interactive={false}
+                    />
+                    <Marker
+                      position={[poi.lat, poi.lng]}
+                      icon={createPoiMarkerIcon(isSelected)}
+                      eventHandlers={{
+                        click: () => {
+                          onPoiSelectRef.current?.(poi.id);
+                        },
+                        mouseover: () => {
+                          onPoiHoverRef.current?.(poi.id);
+                        },
+                      }}
+                    >
+                      <Popup closeButton={false} offset={[0, -10]}>
+                          <div style={{ minWidth: 180 }}>
+                          <div style={{ fontWeight: 700, color: "#111827" }}>{poi.title}</div>
+                          <div style={{ marginTop: 6, fontSize: 12, color: "#475569" }}>
+                            {poi.category}
+                          </div>
+                          <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
+                            {poi.address}
+                          </div>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  </Fragment>
+                );
+              })}
             </>
           )}
         </MapContainer>

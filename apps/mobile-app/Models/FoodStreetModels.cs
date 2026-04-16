@@ -47,6 +47,8 @@ public sealed class PoiLocation
     public string ThumbnailUrl { get; set; } = string.Empty;
     public double Latitude { get; set; }
     public double Longitude { get; set; }
+    public double TriggerRadius { get; set; } = 20d;
+    public int Priority { get; set; } = 100;
     public bool IsFeatured { get; set; }
     public double HeatIntensity { get; set; }
     public string DistanceText { get; set; } = string.Empty;

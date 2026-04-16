@@ -6,7 +6,11 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed partial class AdminDataRepository
 {
-    private PoiUpsertRequest NormalizePoiRequestForPersistence(PoiUpsertRequest request)
+    private const double DefaultPoiTriggerRadius = 20d;
+    private const int DefaultPoiPriority = 100;
+    private const int ImportantPoiPriority = 200;
+
+    private PoiUpsertRequest NormalizePoiRequestForPersistence(PoiUpsertRequest request, bool isFeatured)
     {
         var normalized = PoiAddressNormalizer.NormalizeStoredPoiAddress(
             request.Address,
@@ -14,14 +18,18 @@ public sealed partial class AdminDataRepository
             request.Ward,
             request.Lat,
             request.Lng);
+        var normalizedTriggerRadius = NormalizePoiTriggerRadius(request.TriggerRadius);
+        var normalizedPriority = NormalizePoiPriority(request.Priority, isFeatured);
 
-        if (!HasPoiAddressChanges(request.Address, request.District, request.Ward, normalized))
+        if (!HasPoiAddressChanges(request.Address, request.District, request.Ward, normalized) &&
+            Math.Abs(normalizedTriggerRadius - request.TriggerRadius) < 0.001d &&
+            normalizedPriority == request.Priority)
         {
             return request;
         }
 
         _logger.LogInformation(
-            "Normalized POI address before save. slug={Slug}, rawAddress={RawAddress}, rawDistrict={RawDistrict}, rawWard={RawWard}, normalizedAddress={NormalizedAddress}, normalizedDistrict={NormalizedDistrict}, normalizedWard={NormalizedWard}, override={OverrideReason}",
+            "Normalized POI payload before save. slug={Slug}, rawAddress={RawAddress}, rawDistrict={RawDistrict}, rawWard={RawWard}, normalizedAddress={NormalizedAddress}, normalizedDistrict={NormalizedDistrict}, normalizedWard={NormalizedWard}, triggerRadius={TriggerRadius}, priority={Priority}, override={OverrideReason}",
             request.Slug,
             request.Address,
             request.District,
@@ -29,13 +37,17 @@ public sealed partial class AdminDataRepository
             normalized.Address,
             normalized.District,
             normalized.Ward,
+            normalizedTriggerRadius,
+            normalizedPriority,
             normalized.OverrideReason);
 
         return request with
         {
             Address = normalized.Address,
             District = normalized.District,
-            Ward = normalized.Ward
+            Ward = normalized.Ward,
+            TriggerRadius = normalizedTriggerRadius,
+            Priority = normalizedPriority
         };
     }
 
@@ -47,14 +59,18 @@ public sealed partial class AdminDataRepository
             poi.Ward,
             poi.Lat,
             poi.Lng);
+        var normalizedTriggerRadius = NormalizePoiTriggerRadius(poi.TriggerRadius);
+        var normalizedPriority = NormalizePoiPriority(poi.Priority, poi.Featured);
 
-        if (!HasPoiAddressChanges(poi.Address, poi.District, poi.Ward, normalized))
+        if (!HasPoiAddressChanges(poi.Address, poi.District, poi.Ward, normalized) &&
+            Math.Abs(normalizedTriggerRadius - poi.TriggerRadius) < 0.001d &&
+            normalizedPriority == poi.Priority)
         {
             return poi;
         }
 
         _logger.LogInformation(
-            "Normalized POI address while reading from DB. poiId={PoiId}, rawAddress={RawAddress}, rawDistrict={RawDistrict}, rawWard={RawWard}, normalizedAddress={NormalizedAddress}, normalizedDistrict={NormalizedDistrict}, normalizedWard={NormalizedWard}, override={OverrideReason}",
+            "Normalized POI while reading from DB. poiId={PoiId}, rawAddress={RawAddress}, rawDistrict={RawDistrict}, rawWard={RawWard}, normalizedAddress={NormalizedAddress}, normalizedDistrict={NormalizedDistrict}, normalizedWard={NormalizedWard}, triggerRadius={TriggerRadius}, priority={Priority}, override={OverrideReason}",
             poi.Id,
             poi.Address,
             poi.District,
@@ -62,13 +78,29 @@ public sealed partial class AdminDataRepository
             normalized.Address,
             normalized.District,
             normalized.Ward,
+            normalizedTriggerRadius,
+            normalizedPriority,
             normalized.OverrideReason);
 
         poi.Address = normalized.Address;
         poi.District = normalized.District;
         poi.Ward = normalized.Ward;
+        poi.TriggerRadius = normalizedTriggerRadius;
+        poi.Priority = normalizedPriority;
         return poi;
     }
+
+    private static double NormalizePoiTriggerRadius(double triggerRadius)
+        => double.IsFinite(triggerRadius) && triggerRadius >= DefaultPoiTriggerRadius
+            ? triggerRadius
+            : DefaultPoiTriggerRadius;
+
+    private static int NormalizePoiPriority(int priority, bool isFeatured)
+        => priority > 0
+            ? priority
+            : isFeatured
+                ? ImportantPoiPriority
+                : DefaultPoiPriority;
 
     private void NormalizePersistedPoiAddresses(SqlConnection connection)
     {

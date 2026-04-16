@@ -32,7 +32,8 @@ public sealed class ElevenLabsTextToSpeechService(
                 "ElevenLabs API key is missing. Configure {ApiKeyConfigKey} via environment variables, appsettings, or user secrets.",
                 TextToSpeechOptions.ApiKeyConfigKey);
             throw new TextToSpeechConfigurationException(
-                $"Thieu cau hinh {TextToSpeechOptions.ApiKeyConfigKey} cho ElevenLabs Text-to-Speech.");
+                $"Thieu cau hinh {TextToSpeechOptions.ApiKeyConfigKey} cho ElevenLabs Text-to-Speech.",
+                statusCode: 503);
         }
 
         var voiceId = FirstNonEmpty(
@@ -48,12 +49,25 @@ public sealed class ElevenLabsTextToSpeechService(
             options.OutputFormat,
             TextToSpeechOptions.DefaultOutputFormatValue)!;
         var normalizedLanguageCode = NormalizeLanguageCode(request.LanguageCode);
+        var textHash = CreateHash(normalizedText);
         var cacheKey = BuildCacheKey(
             normalizedText,
             normalizedLanguageCode ?? request.LanguageCode?.Trim() ?? string.Empty,
             voiceId,
             modelId,
             outputFormat);
+
+        logger.LogInformation(
+            "ElevenLabs TTS request starting. apiKeyPresent={ApiKeyPresent}; language={LanguageCode}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; segment={SegmentIndex}/{TotalSegments}; textLength={TextLength}; textHash={TextHash}",
+            !string.IsNullOrWhiteSpace(apiKey),
+            normalizedLanguageCode ?? request.LanguageCode?.Trim(),
+            voiceId,
+            modelId,
+            outputFormat,
+            request.SegmentIndex,
+            request.TotalSegments,
+            normalizedText.Length,
+            textHash);
 
         if (cache.TryGetValue<TextToSpeechResult>(cacheKey, out var cachedAudio) &&
             cachedAudio is not null)
@@ -63,7 +77,7 @@ public sealed class ElevenLabsTextToSpeechService(
                 normalizedLanguageCode ?? request.LanguageCode?.Trim(),
                 voiceId,
                 modelId,
-                CreateHash(normalizedText));
+                textHash);
             return cachedAudio;
         }
 
@@ -117,9 +131,12 @@ public sealed class ElevenLabsTextToSpeechService(
                     request.SegmentIndex,
                     request.TotalSegments,
                     normalizedText.Length,
-                    CreateHash(normalizedText),
+                    textHash,
                     responseSnippet);
-                throw new TextToSpeechGenerationException("Khong the tao audio tu ElevenLabs Text-to-Speech.");
+                throw new TextToSpeechGenerationException(
+                    BuildFailureMessage(response.StatusCode, responseSnippet),
+                    (int)response.StatusCode,
+                    responseSnippet);
             }
 
             var contentType = response.Content.Headers.ContentType?.ToString();
@@ -133,8 +150,10 @@ public sealed class ElevenLabsTextToSpeechService(
                     modelId,
                     request.SegmentIndex,
                     request.TotalSegments,
-                    CreateHash(normalizedText));
-                throw new TextToSpeechGenerationException("ElevenLabs Text-to-Speech khong tra ve du lieu audio.");
+                    textHash);
+                throw new TextToSpeechGenerationException(
+                    "ElevenLabs Text-to-Speech khong tra ve du lieu audio.",
+                    statusCode: 502);
             }
 
             var result = new TextToSpeechResult(
@@ -157,8 +176,11 @@ public sealed class ElevenLabsTextToSpeechService(
                 modelId,
                 request.SegmentIndex,
                 request.TotalSegments,
-                CreateHash(normalizedText));
-            throw new TextToSpeechGenerationException("Yeu cau ElevenLabs Text-to-Speech bi timeout.", exception);
+                textHash);
+            throw new TextToSpeechGenerationException(
+                "Yeu cau ElevenLabs Text-to-Speech bi timeout.",
+                exception,
+                statusCode: 504);
         }
         catch (HttpRequestException exception)
         {
@@ -170,8 +192,11 @@ public sealed class ElevenLabsTextToSpeechService(
                 modelId,
                 request.SegmentIndex,
                 request.TotalSegments,
-                CreateHash(normalizedText));
-            throw new TextToSpeechGenerationException("Khong the ket noi den ElevenLabs Text-to-Speech.", exception);
+                textHash);
+            throw new TextToSpeechGenerationException(
+                "Khong the ket noi den ElevenLabs Text-to-Speech.",
+                exception,
+                statusCode: 503);
         }
     }
 
@@ -226,6 +251,22 @@ public sealed class ElevenLabsTextToSpeechService(
 
     private static string? FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private static string BuildFailureMessage(HttpStatusCode statusCode, string? responseSnippet)
+    {
+        var baseMessage = statusCode switch
+        {
+            HttpStatusCode.Unauthorized => "ElevenLabs tra ve 401. API key co the sai, het han, hoac chua duoc nap vao runtime.",
+            HttpStatusCode.Forbidden => "ElevenLabs tra ve 403. API key khong co quyen su dung voice hoac model duoc chon.",
+            HttpStatusCode.NotFound => "ElevenLabs tra ve 404. VoiceId, endpoint, hoac tai nguyen TTS khong ton tai.",
+            (HttpStatusCode)429 => "ElevenLabs tra ve 429. Ban da vuot quota hoac bi rate limit.",
+            _ => $"Khong the tao audio tu ElevenLabs Text-to-Speech. Upstream status {(int)statusCode}."
+        };
+
+        return string.IsNullOrWhiteSpace(responseSnippet)
+            ? baseMessage
+            : $"{baseMessage} {responseSnippet}";
+    }
 
     private void CacheAudio(string cacheKey, TextToSpeechResult result, TextToSpeechOptions options)
     {

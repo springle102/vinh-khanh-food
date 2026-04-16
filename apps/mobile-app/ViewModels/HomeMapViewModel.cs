@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
@@ -12,6 +13,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     private readonly IFoodStreetDataService _dataService;
     private readonly IPoiNarrationService _poiNarrationService;
     private readonly IAutoNarrationService _autoNarrationService;
+    private readonly ILogger<HomeMapViewModel> _logger;
     private readonly SemaphoreSlim _locationUpdateLock = new(1, 1);
     private readonly SemaphoreSlim _stateReloadLock = new(1, 1);
 
@@ -40,7 +42,8 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         IRoutePoiFilterService routePoiFilterService,
         ISimulationService simulationService,
         IAutoNarrationService autoNarrationService,
-        ITourStateService tourStateService)
+        ITourStateService tourStateService,
+        ILogger<HomeMapViewModel> logger)
         : base(languageService)
     {
         _dataService = dataService;
@@ -50,6 +53,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         _simulationService = simulationService;
         _autoNarrationService = autoNarrationService;
         _tourStateService = tourStateService;
+        _logger = logger;
         InitializeTourCommands();
     }
 
@@ -344,8 +348,19 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
     public async Task LoadAsync(bool autoPlayNarrationForSelection)
     {
-        await _dataService.RefreshDataIfChangedAsync();
+        var hadVisibleState =
+            Pois.Count > 0 ||
+            AvailableTours.Count > 0 ||
+            SelectedPoi is not null ||
+            ActiveTour is not null ||
+            PreviewTour is not null;
+
         await ReloadCurrentStateAsync(autoPlayNarrationForSelection);
+
+        if (hadVisibleState)
+        {
+            _ = RefreshIfNeededSafelyAsync();
+        }
     }
 
     public async Task RefreshIfNeededAsync()
@@ -365,6 +380,18 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         finally
         {
             Interlocked.Exchange(ref _syncRefreshInProgress, 0);
+        }
+    }
+
+    private async Task RefreshIfNeededSafelyAsync()
+    {
+        try
+        {
+            await RefreshIfNeededAsync();
+        }
+        catch
+        {
+            // Best effort background refresh. Existing snapshot stays visible.
         }
     }
 
@@ -526,6 +553,13 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         bool autoPlayNarration = false,
         string usageSource = "map")
     {
+        _logger.LogInformation(
+            "POI selected for detail loading. poiId={PoiId}; poiTitle={PoiTitle}; usageSource={UsageSource}; autoPlayNarration={AutoPlayNarration}",
+            poi.Id,
+            poi.Title,
+            usageSource,
+            autoPlayNarration);
+
         var requestVersion = Interlocked.Increment(ref _detailRequestVersion);
         await StopNarrationAsync();
 
@@ -547,6 +581,11 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
             if (requestVersion != _detailRequestVersion)
             {
+                _logger.LogDebug(
+                    "Skipping stale POI detail response. poiId={PoiId}; requestVersion={RequestVersion}; currentVersion={CurrentVersion}",
+                    poi.Id,
+                    requestVersion,
+                    _detailRequestVersion);
                 return;
             }
 
@@ -612,6 +651,14 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
             var narrationResult = await _autoNarrationService.ProcessLocationAsync(location, Pois, isMockLocation);
             ApplyUserLocationSnapshot(narrationResult.Snapshot, isMockLocation);
+
+            _logger.LogInformation(
+                "Auto narration location evaluation completed. activePoiId={ActivePoiId}; nearestPoiId={NearestPoiId}; decision={Decision}; playbackStarted={PlaybackStarted}; isMockLocation={IsMockLocation}",
+                narrationResult.Snapshot.ActivePoi?.Id ?? "(none)",
+                narrationResult.Snapshot.NearestPoi?.Id ?? "(none)",
+                narrationResult.Decision,
+                narrationResult.PlaybackStarted,
+                isMockLocation);
 
             if (!narrationResult.PlaybackStarted ||
                 narrationResult.TriggeredPoi is null ||
@@ -710,9 +757,17 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     {
         if (SelectedPoiDetail is null || !_isNarrationContextActive)
         {
+            _logger.LogInformation(
+                "Manual narration request was ignored. hasSelectedPoiDetail={HasSelectedPoiDetail}; isNarrationContextActive={IsNarrationContextActive}",
+                SelectedPoiDetail is not null,
+                _isNarrationContextActive);
             return;
         }
 
+        _logger.LogInformation(
+            "Manual narration playback requested. poiId={PoiId}; language={LanguageCode}",
+            SelectedPoiDetail.Id,
+            LanguageService.CurrentLanguage);
         await _poiNarrationService.PlayAsync(SelectedPoiDetail, LanguageService.CurrentLanguage);
     }
 
@@ -734,9 +789,17 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     {
         if (!_isNarrationContextActive)
         {
+            _logger.LogInformation(
+                "Auto-play narration was skipped because narration context is inactive. poiId={PoiId}",
+                detail.Id);
             return;
         }
 
+        _logger.LogInformation(
+            "Queueing auto-play narration. poiId={PoiId}; requestVersion={RequestVersion}; language={LanguageCode}",
+            detail.Id,
+            requestVersion,
+            LanguageService.CurrentLanguage);
         MainThread.BeginInvokeOnMainThread(() => _ = AutoPlayNarrationAsync(detail, requestVersion));
     }
 
@@ -747,6 +810,13 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             SelectedPoiDetail is null ||
             !string.Equals(SelectedPoiDetail.Id, detail.Id, StringComparison.OrdinalIgnoreCase))
         {
+            _logger.LogDebug(
+                "Auto-play narration was skipped after detail load validation. poiId={PoiId}; requestVersion={RequestVersion}; currentVersion={CurrentVersion}; isNarrationContextActive={IsNarrationContextActive}; selectedPoiDetailId={SelectedPoiDetailId}",
+                detail.Id,
+                requestVersion,
+                _detailRequestVersion,
+                _isNarrationContextActive,
+                SelectedPoiDetail?.Id ?? "(none)");
             return;
         }
 
@@ -754,9 +824,13 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         {
             await _poiNarrationService.PlayAsync(detail, LanguageService.CurrentLanguage);
         }
-        catch
+        catch (Exception exception)
         {
-            // Best effort auto-play. Manual replay remains available.
+            _logger.LogWarning(
+                exception,
+                "Auto-play narration failed. poiId={PoiId}; language={LanguageCode}",
+                detail.Id,
+                LanguageService.CurrentLanguage);
         }
     }
 

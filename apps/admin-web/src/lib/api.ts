@@ -495,6 +495,8 @@ export const adminApi = {
     district: string;
     ward: string;
     priceRange: string;
+    triggerRadius: number;
+    priority: number;
     tags: string[];
     ownerUserId: string | null;
     updatedBy: string;

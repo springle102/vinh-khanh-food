@@ -35,6 +35,7 @@ type PoiFormState = {
   address: string;
   lat: string;
   lng: string;
+  triggerRadius: string;
   categoryId: string;
   status: Poi["status"];
   contentLanguageCode: LanguageCode;
@@ -73,6 +74,7 @@ const createDefaultForm = (status: Poi["status"] = "draft"): PoiFormState => ({
   address: "",
   lat: "",
   lng: "",
+  triggerRadius: "20",
   categoryId: "",
   status,
   contentLanguageCode: "vi",
@@ -188,6 +190,22 @@ const parseRequiredCoordinate = (value: string) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const parseTriggerRadius = (value: string) => {
+  const normalizedValue = value.trim().replace(",", ".");
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const parsed = Number(normalizedValue);
+  return Number.isFinite(parsed) && parsed >= 20 ? parsed : null;
+};
+
+const resolveTriggerRadiusPreview = (value: string) => {
+  const normalizedValue = value.trim().replace(",", ".");
+  const parsed = Number(normalizedValue);
+  return Number.isFinite(parsed) && parsed >= 20 ? parsed : 20;
+};
+
 const findPoiAudioGuide = (
   audioGuides: AudioGuide[],
   poiId?: string,
@@ -301,6 +319,7 @@ const buildPoiEditorContentSnapshot = (
     address: form.address.trim(),
     lat: form.lat.trim(),
     lng: form.lng.trim(),
+    triggerRadius: form.triggerRadius.trim(),
     categoryId: form.categoryId.trim(),
     contentLanguageCode: form.contentLanguageCode,
     district: form.district.trim(),
@@ -574,6 +593,7 @@ export const PoisPage = () => {
         status: poi.status,
         lat: poi.lat,
         lng: poi.lng,
+        triggerRadius: poi.triggerRadius,
       })),
     [filteredPois, getDisplayedPoiTranslation, selectedNarrationLanguage, state],
   );
@@ -833,6 +853,7 @@ export const PoisPage = () => {
         address: loadedPoi.address,
         lat: loadedPoi.lat.toString(),
         lng: loadedPoi.lng.toString(),
+        triggerRadius: loadedPoi.triggerRadius.toString(),
         categoryId: loadedPoi.categoryId,
         status: getSubmissionStatus(
           user?.role,
@@ -1244,6 +1265,13 @@ export const PoisPage = () => {
         return;
       }
 
+      const triggerRadius = parseTriggerRadius(form.triggerRadius);
+      if (triggerRadius === null) {
+        setFormError("Bán kính kích hoạt phải là số hợp lệ và tối thiểu 20m.");
+        setSaving(false);
+        return;
+      }
+
       const normalizedFoodItemDrafts = poiFoodItemForms
         .map((item) => ({
           ...item,
@@ -1266,6 +1294,7 @@ export const PoisPage = () => {
         title: form.title,
         contentLanguageCode: form.contentLanguageCode,
         address: form.address,
+        triggerRadius,
         tags: form.tags,
         shortTextLength: form.shortText.length,
         fullTextLength: form.fullText.length,
@@ -1337,6 +1366,8 @@ export const PoisPage = () => {
           district: form.district,
           ward: form.ward,
           priceRange: form.priceRange,
+          triggerRadius,
+          priority: originalPoi?.priority ?? 0,
           tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
           ownerUserId: (isOwner ? user.id : form.ownerUserId) || null,
           translationLanguageCode: form.contentLanguageCode,
@@ -1882,6 +1913,7 @@ export const PoisPage = () => {
                   ["Slug", selectedPoi.slug],
                   ["Phân loại", getCategoryName(state, selectedPoi.categoryId)],
                   ["Khoảng giá", selectedPoi.priceRange || "Chưa cập nhật"],
+                  ["Bán kính kích hoạt", `${formatNumber(selectedPoi.triggerRadius)} m`],
                   ["Chủ quản lý", getOwnerName(state, selectedPoi.ownerUserId)],
                   ["Ngôn ngữ", languageLabels[selectedNarrationLanguage]],
                   ["Khu vực", `${selectedPoi.ward}, ${selectedPoi.district}`],
@@ -2243,7 +2275,7 @@ export const PoisPage = () => {
                 </div>
               </div>
 
-              <div className="grid gap-5 md:grid-cols-2">
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <label className="field-label">Khoảng giá</label>
                   <Input
@@ -2252,6 +2284,22 @@ export const PoisPage = () => {
                     onChange={(event) => setForm((current) => ({ ...current, priceRange: event.target.value }))}
                     placeholder="Ví dụ: 50.000 - 150.000 VND"
                   />
+                </div>
+                <div>
+                  <label className="field-label">Bán kính kích hoạt (m)</label>
+                  <Input
+                    type="number"
+                    min="20"
+                    step="0.5"
+                    inputMode="decimal"
+                    value={form.triggerRadius}
+                    disabled={isPoiModalViewOnly}
+                    onChange={(event) => setForm((current) => ({ ...current, triggerRadius: event.target.value }))}
+                    placeholder="Tối thiểu 20"
+                  />
+                  <p className="mt-2 text-xs text-ink-500">
+                    Chủ quán có thể chỉnh bán kính này để phù hợp thực tế tại từng POI.
+                  </p>
                 </div>
                 <div>
                   <label className="field-label">Người quản lý</label>
@@ -2505,6 +2553,7 @@ export const PoisPage = () => {
               address={form.address}
               lat={parseCoordinate(form.lat, DEFAULT_LAT)}
               lng={parseCoordinate(form.lng, DEFAULT_LNG)}
+              selectedTriggerRadius={resolveTriggerRadiusPreview(form.triggerRadius)}
               addressSearchVersion={addressSearchVersion}
               onLocationResolved={(location) =>
                 setForm((current) => ({

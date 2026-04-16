@@ -73,6 +73,8 @@ public sealed class Poi
     public string District { get; set; } = string.Empty;
     public string Ward { get; set; } = string.Empty;
     public string PriceRange { get; set; } = string.Empty;
+    public double TriggerRadius { get; set; }
+    public int Priority { get; set; }
     public List<string> Tags { get; set; } = [];
     public string? OwnerUserId { get; set; }
     public string UpdatedBy { get; set; } = string.Empty;

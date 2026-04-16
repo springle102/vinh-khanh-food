@@ -44,6 +44,9 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private const string DefaultBackdropImageUrl = "https://images.unsplash.com/photo-1520201163981-8cc95007dd2e?auto=format&fit=crop&w=1200&q=80";
     private const int DefaultPremiumPriceUsd = 10;
     private static readonly TimeSpan SyncCheckInterval = TimeSpan.FromSeconds(5);
+    private const double DefaultPoiTriggerRadius = 20d;
+    private const int DefaultPoiPriority = 100;
+    private const int ImportantPoiPriority = 200;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -94,6 +97,8 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             ThumbnailUrl = FallbackPoiImages["poi-snail-signature"],
             Latitude = 10.75803,
             Longitude = 106.70162,
+            TriggerRadius = DefaultPoiTriggerRadius,
+            Priority = ImportantPoiPriority,
             IsFeatured = true,
             HeatIntensity = 1.0,
             DistanceText = "45 phút"
@@ -109,6 +114,8 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             ThumbnailUrl = FallbackPoiImages["poi-bbq-night"],
             Latitude = 10.763724,
             Longitude = 106.701693,
+            TriggerRadius = DefaultPoiTriggerRadius,
+            Priority = ImportantPoiPriority,
             IsFeatured = true,
             HeatIntensity = 0.86,
             DistanceText = "50 phút"
@@ -124,6 +131,8 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             ThumbnailUrl = FallbackPoiImages["poi-sweet-lane"],
             Latitude = 10.75712,
             Longitude = 106.70302,
+            TriggerRadius = DefaultPoiTriggerRadius,
+            Priority = DefaultPoiPriority,
             IsFeatured = false,
             HeatIntensity = 0.62,
             DistanceText = "25 phút"
@@ -194,7 +203,10 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             return snapshot.Pois;
         }
 
-        return [];
+        _logger.LogWarning(
+            "Using fallback POIs because bootstrap snapshot is unavailable or empty. Language={LanguageCode}",
+            CurrentLanguageCode);
+        return BuildLocalizedFallbackPois();
     }
 
     public async Task<IReadOnlyList<MapHeatPoint>> GetHeatPointsAsync()
@@ -205,7 +217,8 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             return snapshot.HeatPoints;
         }
 
-        return [];
+        _logger.LogWarning("Using fallback heat points because bootstrap snapshot is unavailable or empty.");
+        return FallbackHeatPoints;
     }
 
     public async Task<PoiExperienceDetail?> GetPoiDetailAsync(string poiId)
@@ -221,7 +234,10 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             return detail;
         }
 
-        return null;
+        _logger.LogWarning(
+            "Using fallback POI detail for {PoiId} because bootstrap snapshot detail is unavailable.",
+            poiId);
+        return BuildFallbackPoiDetail(poiId);
     }
 
     public async Task<IReadOnlyList<TourCatalogItem>> GetPublishedToursAsync()
@@ -789,6 +805,8 @@ public sealed partial class FoodStreetApiDataService
                 ThumbnailUrl = ResolvePoiImageUrl(poi.Id, poiImages, foodImages),
                 Latitude = poi.Lat,
                 Longitude = poi.Lng,
+                TriggerRadius = ResolvePoiTriggerRadius(poi),
+                Priority = ResolvePoiPriority(poi),
                 IsFeatured = poi.Featured,
                 HeatIntensity = ResolveHeatIntensity(poi, bootstrap.UsageEvents),
                 DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))
@@ -1281,6 +1299,18 @@ public sealed partial class FoodStreetApiDataService
         return Clamp((popularityScore * 0.72) + activityBoost + featuredBoost, 0.38, 1.0);
     }
 
+    private static double ResolvePoiTriggerRadius(PoiDto poi)
+        => double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= DefaultPoiTriggerRadius
+            ? poi.TriggerRadius
+            : DefaultPoiTriggerRadius;
+
+    private static int ResolvePoiPriority(PoiDto poi)
+        => poi.Priority > 0
+            ? poi.Priority
+            : poi.Featured
+                ? ImportantPoiPriority
+                : DefaultPoiPriority;
+
     private TourStop CreateTourStop(IReadOnlyDictionary<string, PoiLocation> poiLookup, string poiId, int order)
     {
         if (poiLookup.TryGetValue(poiId, out var localizedPoi))
@@ -1628,6 +1658,8 @@ public sealed partial class FoodStreetApiDataService
         public string Status { get; set; } = string.Empty;
         public bool Featured { get; set; }
         public string PriceRange { get; set; } = string.Empty;
+        public double TriggerRadius { get; set; }
+        public int Priority { get; set; }
         public int AverageVisitDuration { get; set; }
         public int PopularityScore { get; set; }
         public List<string> Tags { get; set; } = [];
