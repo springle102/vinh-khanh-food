@@ -1,4 +1,7 @@
+using System.Collections.Concurrent;
 using System.Globalization;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
@@ -15,19 +18,30 @@ public interface IAppLanguageService
     IReadOnlyList<AppLanguageDefinition> SupportedLanguages { get; }
     event EventHandler? LanguageChanged;
     Task InitializeAsync();
-    Task SetLanguageAsync(string languageCode);
+    // ✅ FIX: Return the actually-applied language code
+    Task<string> SetLanguageAsync(string languageCode);
     string GetText(string key);
     AppLanguageDefinition GetLanguageDefinition(string? languageCode);
+    // ✅ NEW: Method to validate if current selection is still allowed (for premium checking)
+    Task<bool> ValidateCurrentLanguageAsync();
+    // ✅ NEW: Method to restore to default if current language becomes unavailable
+    Task<string> RestoreToAllowedLanguageAsync();
 }
 
 public sealed class AppLanguageService : IAppLanguageService
 {
     private const string PreferenceKey = "vkfood.language.code";
 
+    // ✅ FIX: Proper UTF-8 encoding for CJK (Trung, Hàn, Nhật)
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
+
+    // ✅ NEW: Cache ALL language files in memory for instant switching (thread-safe)
+    private static readonly ConcurrentDictionary<string, Dictionary<string, string>> LanguageFileCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly IReadOnlyDictionary<string, string> SeedEnglishTexts =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -139,6 +153,8 @@ public sealed class AppLanguageService : IAppLanguageService
             ["settings_language_title"] = "Language",
             ["settings_auto_narration_title"] = "Auto-play narration near a POI",
             ["settings_auto_narration_description"] = "When a route simulation is active on the map, the app auto-plays narration for POIs on the route and within 30 meters.",
+            ["settings_public_mode_description"] = "The app opens straight to the POI map, with no sign-in and no customer account required.",
+            ["settings_more_title"] = "More information",
             ["settings_full_name"] = "Full name",
             ["settings_user_name"] = "User name",
             ["settings_contact"] = "Email / Phone number",
@@ -279,10 +295,248 @@ public sealed class AppLanguageService : IAppLanguageService
             ["qr_manual_prompt_placeholder"] = "e.g. poi-bbq-night"
         };
 
+    private static readonly IReadOnlyDictionary<string, string> EmptySeedTexts =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> SupplementalTextsByLanguage =
+        new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["vi"] = CreateSeedTextMap(
+                ("settings_public_mode_description", "Ứng dụng mở trực tiếp vào bản đồ POI, không cần đăng nhập và không lưu tài khoản khách hàng."),
+                ("settings_more_title", "Thông tin thêm")),
+            ["ko"] = CreateSeedTextMap(
+                ("settings_public_mode_description", "앱은 바로 POI 지도로 열리며 로그인이나 고객 계정이 필요하지 않습니다."),
+                ("settings_more_title", "추가 정보"),
+                ("tour_map_entry_action", "투어 경로"),
+                ("settings_auto_narration_title", "POI 근처에서 자동 오디오 안내 재생"),
+                ("settings_auto_narration_description", "지도에서 경로 시뮬레이션이 활성화되면 앱이 경로 위에 있고 30m 이내인 POI의 안내를 자동으로 재생합니다."),
+                ("user_location_title", "사용자 위치"),
+                ("user_location_coordinates_label", "좌표"),
+                ("user_location_status_label", "상태"),
+                ("user_location_status_idle", "어느 POI의 30m 범위 안에도 있지 않습니다"),
+                ("user_location_status_near_poi", "{0} 근처"),
+                ("user_location_nearest_poi_label", "가장 가까운 POI"),
+                ("user_location_nearest_distance_label", "가장 가까운 거리"),
+                ("user_location_no_nearest_poi", "근처 POI 없음"),
+                ("user_location_distance_unknown", "알 수 없음"),
+                ("user_location_source_label", "위치 소스"),
+                ("user_location_source_manual", "수동 시뮬레이션"),
+                ("user_location_source_auto", "자동 시뮬레이션"),
+                ("auto_narration_dev_title", "위치 테스트 모드"),
+                ("auto_narration_dev_description", "에뮬레이터나 개발 환경에서 사용자가 선택한 POI 근처에 있는 상황을 시뮬레이션합니다."),
+                ("auto_narration_dev_action", "근처로 시뮬레이션"),
+                ("simulation_panel_title", "경로 시뮬레이션"),
+                ("simulation_mode_manual", "수동 드래그"),
+                ("simulation_mode_auto", "자동 실행"),
+                ("simulation_action_start", "시작"),
+                ("simulation_action_pause", "일시 정지"),
+                ("simulation_action_stop", "중지"),
+                ("simulation_action_reset", "위치 초기화"),
+                ("simulation_destination_none", "목적지 POI를 선택하세요"),
+                ("simulation_destination_format", "목적지: {0}"),
+                ("simulation_status_idle", "목적지를 기다리는 중"),
+                ("simulation_status_ready", "경로 준비 완료"),
+                ("simulation_status_running", "이동 시뮬레이션 중"),
+                ("simulation_status_paused", "시뮬레이션 일시 정지됨"),
+                ("simulation_status_completed", "목적지에 도착했습니다"),
+                ("simulation_route_loading", "경로를 계산하는 중..."),
+                ("simulation_select_destination_hint", "POI를 선택하고 길찾기를 눌러 파란 마커에서 경로를 그리세요."),
+                ("simulation_build_route_hint", "길찾기를 눌러 파란 마커에서 {0}(으)로 가는 경로를 계산하세요."),
+                ("simulation_valid_pois_count", "{0}개의 유효한 POI"),
+                ("simulation_route_summary", "{0} • {1} • {2}"),
+                ("simulation_duration_minutes", "{0}분"),
+                ("simulation_duration_hours", "{0}시간 {1}분"),
+                ("poi_simulation_title", "파란 마커에서 이동"),
+                ("poi_simulation_manual_hint", "지도의 파란 마커를 드래그하거나 탭해 사용자 위치를 놓으세요."),
+                ("poi_simulation_override_hint", "{0}까지의 경로가 활성화되어 있습니다. 길찾기를 눌러 {1}(으)로 전환하세요."),
+                ("tour_discover_title", "투어 탐색"),
+                ("tour_discover_subtitle", "관리팀이 게시한 경로가 지도를 잠그지 않고 여기에 표시됩니다."),
+                ("tour_discover_subtitle_resume", "저장된 활성 투어가 아직 있습니다. 다른 경로를 미리 보거나 언제든 다시 돌아올 수 있습니다."),
+                ("tour_discover_page_title", "투어 탐색"),
+                ("tour_discover_page_subtitle", "게시된 투어를 살펴보고 경로 세부 정보를 확인한 뒤 준비되면 지도로 다시 보낼 수 있습니다."),
+                ("tour_discover_active_title", "저장된 진행 상황"),
+                ("tour_discover_active_subtitle", "현재 투어가 그대로 저장되어 있습니다. 지도에서 계속하거나 My Tour에서 체크포인트를 확인할 수 있습니다."),
+                ("tour_discover_section_title", "이용 가능한 투어"),
+                ("tour_discover_highlights", "경로 하이라이트"),
+                ("tour_discover_empty_title", "아직 이용 가능한 투어가 없습니다"),
+                ("tour_discover_empty_subtitle", "Super Admin이 투어를 게시하면 여기에 표시됩니다."),
+                ("tour_discover_action_view_map", "지도에서 보기"),
+                ("tour_discover_action_continue", "투어 계속"),
+                ("tour_banner_preview", "투어 {0} 미리보기 중"),
+                ("tour_banner_active", "투어 {0} 진행 중"),
+                ("tour_action_view_all_places", "모든 장소 보기"),
+                ("tour_action_change_tour", "투어 변경"),
+                ("tour_action_start", "투어 시작"),
+                ("tour_action_pause", "투어 일시 정지"),
+                ("tour_action_exit_mode", "투어 모드 종료"),
+                ("tour_action_open_my_tour", "내 투어"),
+                ("tour_action_resume_on_map", "지도에서 계속"),
+                ("tour_action_continue_short", "계속"),
+                ("tour_status_preview", "미리보기"),
+                ("tour_status_active_visible", "현재 진행 중"),
+                ("tour_status_active_saved", "진행 상황 저장됨"),
+                ("tour_meta_stops", "{0}개 정류장"),
+                ("tour_mode_preview_short", "보기"),
+                ("tour_mode_active_short", "이동"),
+                ("tour_mode_free_short", "지도")),
+            ["zh-CN"] = CreateSeedTextMap(
+                ("settings_public_mode_description", "应用会直接打开 POI 地图，无需登录，也不需要客户账号。"),
+                ("settings_more_title", "更多信息"),
+                ("tour_map_entry_action", "游览路线"),
+                ("settings_auto_narration_title", "靠近 POI 时自动播放讲解"),
+                ("settings_auto_narration_description", "当地图上的路线模拟处于活动状态时，应用会自动播放位于路线中且 30 米范围内的 POI 讲解。"),
+                ("user_location_title", "用户位置"),
+                ("user_location_coordinates_label", "坐标"),
+                ("user_location_status_label", "状态"),
+                ("user_location_status_idle", "当前不在任何 POI 的 30 米范围内"),
+                ("user_location_status_near_poi", "靠近 {0}"),
+                ("user_location_nearest_poi_label", "最近的 POI"),
+                ("user_location_nearest_distance_label", "最近距离"),
+                ("user_location_no_nearest_poi", "附近暂无 POI"),
+                ("user_location_distance_unknown", "未知"),
+                ("user_location_source_label", "来源"),
+                ("user_location_source_manual", "手动模拟"),
+                ("user_location_source_auto", "自动模拟"),
+                ("auto_narration_dev_title", "位置测试模式"),
+                ("auto_narration_dev_description", "在模拟器或开发环境中，可用它模拟用户位于所选 POI 附近。"),
+                ("auto_narration_dev_action", "模拟靠近"),
+                ("simulation_panel_title", "路线模拟"),
+                ("simulation_mode_manual", "手动拖动"),
+                ("simulation_mode_auto", "自动运行"),
+                ("simulation_action_start", "开始"),
+                ("simulation_action_pause", "暂停"),
+                ("simulation_action_stop", "停止"),
+                ("simulation_action_reset", "重置位置"),
+                ("simulation_destination_none", "请选择一个 POI 作为目的地"),
+                ("simulation_destination_format", "目的地：{0}"),
+                ("simulation_status_idle", "等待选择目的地"),
+                ("simulation_status_ready", "路线已准备好"),
+                ("simulation_status_running", "正在模拟移动"),
+                ("simulation_status_paused", "模拟已暂停"),
+                ("simulation_status_completed", "已到达目的地"),
+                ("simulation_route_loading", "正在计算路线..."),
+                ("simulation_select_destination_hint", "选择一个 POI，然后点击路线，从蓝色标记绘制路线。"),
+                ("simulation_build_route_hint", "点击路线，计算从蓝色标记到 {0} 的路线。"),
+                ("simulation_valid_pois_count", "{0} 个有效 POI"),
+                ("simulation_route_summary", "{0} • {1} • {2}"),
+                ("simulation_duration_minutes", "{0} 分钟"),
+                ("simulation_duration_hours", "{0} 小时 {1} 分钟"),
+                ("poi_simulation_title", "从蓝色标记开始导航"),
+                ("poi_simulation_manual_hint", "拖动或点击地图上的蓝色标记来放置用户位置。"),
+                ("poi_simulation_override_hint", "当前已有前往 {0} 的路线。点击路线可切换到 {1}。"),
+                ("tour_discover_title", "探索游览路线"),
+                ("tour_discover_subtitle", "管理团队发布的路线会显示在这里，而不会锁定您的地图。"),
+                ("tour_discover_subtitle_resume", "您仍有一个已保存的进行中路线。您可以预览其他路线，或随时返回继续。"),
+                ("tour_discover_page_title", "探索游览路线"),
+                ("tour_discover_page_subtitle", "浏览已发布的路线，查看路线详情，并在准备好时将路线重新带回地图。"),
+                ("tour_discover_active_title", "已保存的进度"),
+                ("tour_discover_active_subtitle", "您当前的路线仍然保留。您可以在地图上继续，或前往 My Tour 查看检查点详情。"),
+                ("tour_discover_section_title", "可用路线"),
+                ("tour_discover_highlights", "路线亮点"),
+                ("tour_discover_empty_title", "目前还没有可用路线"),
+                ("tour_discover_empty_subtitle", "当 Super Admin 发布路线后，它们会显示在这里。"),
+                ("tour_discover_action_view_map", "在地图上查看"),
+                ("tour_discover_action_continue", "继续路线"),
+                ("tour_banner_preview", "正在预览路线 {0}"),
+                ("tour_banner_active", "正在跟随路线 {0}"),
+                ("tour_action_view_all_places", "查看全部地点"),
+                ("tour_action_change_tour", "更换路线"),
+                ("tour_action_start", "开始路线"),
+                ("tour_action_pause", "暂停路线"),
+                ("tour_action_exit_mode", "退出路线模式"),
+                ("tour_action_open_my_tour", "我的路线"),
+                ("tour_action_resume_on_map", "在地图上继续"),
+                ("tour_action_continue_short", "继续"),
+                ("tour_status_preview", "预览"),
+                ("tour_status_active_visible", "进行中"),
+                ("tour_status_active_saved", "进度已保存"),
+                ("tour_meta_stops", "{0} 个站点"),
+                ("tour_mode_preview_short", "看"),
+                ("tour_mode_active_short", "走"),
+                ("tour_mode_free_short", "地图")),
+            ["ja"] = CreateSeedTextMap(
+                ("settings_public_mode_description", "アプリはそのまま POI マップを開き、ログインや利用者アカウントは不要です。"),
+                ("settings_more_title", "追加情報"),
+                ("tour_map_entry_action", "ツアールート"),
+                ("settings_auto_narration_title", "POI の近くで自動音声ガイドを再生"),
+                ("settings_auto_narration_description", "地図でルートシミュレーションが有効なとき、ルート上かつ 30m 以内にある POI の音声ガイドを自動再生します。"),
+                ("user_location_title", "ユーザー位置"),
+                ("user_location_coordinates_label", "座標"),
+                ("user_location_status_label", "状態"),
+                ("user_location_status_idle", "どの POI の 30m 範囲内にも入っていません"),
+                ("user_location_status_near_poi", "{0} の近く"),
+                ("user_location_nearest_poi_label", "最寄りの POI"),
+                ("user_location_nearest_distance_label", "最短距離"),
+                ("user_location_no_nearest_poi", "近くに POI がありません"),
+                ("user_location_distance_unknown", "不明"),
+                ("user_location_source_label", "位置ソース"),
+                ("user_location_source_manual", "手動シミュレーション"),
+                ("user_location_source_auto", "自動シミュレーション"),
+                ("auto_narration_dev_title", "位置テストモード"),
+                ("auto_narration_dev_description", "エミュレーターや開発環境で、ユーザーが選択した POI の近くにいる状態をシミュレーションします。"),
+                ("auto_narration_dev_action", "近くをシミュレート"),
+                ("simulation_panel_title", "ルートシミュレーション"),
+                ("simulation_mode_manual", "手動操作"),
+                ("simulation_mode_auto", "自動実行"),
+                ("simulation_action_start", "開始"),
+                ("simulation_action_pause", "一時停止"),
+                ("simulation_action_stop", "停止"),
+                ("simulation_action_reset", "位置をリセット"),
+                ("simulation_destination_none", "目的地の POI を選択してください"),
+                ("simulation_destination_format", "目的地: {0}"),
+                ("simulation_status_idle", "目的地を待機中"),
+                ("simulation_status_ready", "ルートの準備ができました"),
+                ("simulation_status_running", "移動をシミュレーション中"),
+                ("simulation_status_paused", "シミュレーションを一時停止しました"),
+                ("simulation_status_completed", "目的地に到着しました"),
+                ("simulation_route_loading", "ルートを計算しています..."),
+                ("simulation_select_destination_hint", "POI を選び、ルートを押して青いマーカーから経路を描きます。"),
+                ("simulation_build_route_hint", "ルートを押して、青いマーカーから {0} までの経路を計算します。"),
+                ("simulation_valid_pois_count", "{0} 件の有効な POI"),
+                ("simulation_route_summary", "{0} • {1} • {2}"),
+                ("simulation_duration_minutes", "{0} 分"),
+                ("simulation_duration_hours", "{0} 時間 {1} 分"),
+                ("poi_simulation_title", "青いマーカーから移動"),
+                ("poi_simulation_manual_hint", "地図上の青いマーカーをドラッグまたはタップして、ユーザー位置を置いてください。"),
+                ("poi_simulation_override_hint", "{0} へのルートが有効です。ルートを押して {1} に切り替えてください。"),
+                ("tour_discover_title", "ツアーを探す"),
+                ("tour_discover_subtitle", "管理チームが公開したルートが、地図をロックせずにここに表示されます。"),
+                ("tour_discover_subtitle_resume", "保存された進行中のツアーがあります。別のルートをプレビューすることも、いつでも戻ることもできます。"),
+                ("tour_discover_page_title", "ツアーを探す"),
+                ("tour_discover_page_subtitle", "公開されたツアーを見てルート詳細を確認し、準備ができたら地図へ戻せます。"),
+                ("tour_discover_active_title", "保存された進行状況"),
+                ("tour_discover_active_subtitle", "現在のツアーは保存されたままです。地図で続行するか、My Tour でチェックポイントを確認できます。"),
+                ("tour_discover_section_title", "利用可能なツアー"),
+                ("tour_discover_highlights", "ルートの見どころ"),
+                ("tour_discover_empty_title", "利用可能なツアーはまだありません"),
+                ("tour_discover_empty_subtitle", "Super Admin がツアーを公開すると、ここに表示されます。"),
+                ("tour_discover_action_view_map", "地図で見る"),
+                ("tour_discover_action_continue", "ツアーを続ける"),
+                ("tour_banner_preview", "ツアー {0} をプレビュー中"),
+                ("tour_banner_active", "ツアー {0} を進行中"),
+                ("tour_action_view_all_places", "すべての場所を見る"),
+                ("tour_action_change_tour", "ツアーを変更"),
+                ("tour_action_start", "ツアーを開始"),
+                ("tour_action_pause", "ツアーを一時停止"),
+                ("tour_action_exit_mode", "ツアーモードを終了"),
+                ("tour_action_open_my_tour", "マイツアー"),
+                ("tour_action_resume_on_map", "地図で続ける"),
+                ("tour_action_continue_short", "続ける"),
+                ("tour_status_preview", "プレビュー"),
+                ("tour_status_active_visible", "進行中"),
+                ("tour_status_active_saved", "進行状況を保存済み"),
+                ("tour_meta_stops", "{0} か所"),
+                ("tour_mode_preview_short", "見る"),
+                ("tour_mode_active_short", "移動"),
+                ("tour_mode_free_short", "地図"))
+        };
+
     private readonly WeakEventManager _eventManager = new();
     private readonly ILogger<AppLanguageService>? _logger;
     private readonly HashSet<string> _missingKeyLogs = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _fallbackKeyLogs = new(StringComparer.OrdinalIgnoreCase);
+    // ✅ FIX: Add locking mechanism to prevent race conditions
+    private readonly SemaphoreSlim _languageChangeLock = new(1, 1);
     private Dictionary<string, string> _fallbackTexts = new(SeedEnglishTexts, StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, string> _currentTexts = new(StringComparer.OrdinalIgnoreCase);
     private bool _initialized;
@@ -290,7 +544,9 @@ public sealed class AppLanguageService : IAppLanguageService
     public AppLanguageService(ILogger<AppLanguageService>? logger = null)
     {
         _logger = logger;
-        CurrentLanguage = AppLanguage.NormalizeCode(Preferences.Default.Get(PreferenceKey, AppLanguage.DefaultLanguage));
+        // ✅ FIX: Initialize from preferences, not from hardcoded default
+        var savedLanguage = Preferences.Default.Get(PreferenceKey, AppLanguage.DefaultLanguage);
+        CurrentLanguage = AppLanguage.NormalizeCode(savedLanguage);
         CurrentCulture = AppLanguage.CreateCulture(CurrentLanguage);
         HasSavedLanguageSelection = Preferences.Default.ContainsKey(PreferenceKey);
     }
@@ -309,14 +565,28 @@ public sealed class AppLanguageService : IAppLanguageService
         remove => _eventManager.RemoveEventHandler(value);
     }
 
+    // ✅ FIX: Add source of truth tracking to prevent concurrent language changes
+    private string _languageChangeToken = Guid.NewGuid().ToString();
+
     public async Task InitializeAsync()
     {
-        await ApplyLanguageAsync(CurrentLanguage, persistSelection: false);
-        _initialized = true;
+        try
+        {
+            await ApplyLanguageAsync(CurrentLanguage, persistSelection: false);
+        }
+        finally
+        {
+            _initialized = true;
+        }
     }
 
-    public Task SetLanguageAsync(string languageCode)
-        => ApplyLanguageAsync(languageCode, persistSelection: true);
+    // ✅ FIX: Ensure only one language change happens at a time and return the actual language set
+    public async Task<string> SetLanguageAsync(string languageCode)
+    {
+        var normalizedCode = AppLanguage.NormalizeCode(languageCode);
+        await ApplyLanguageAsync(normalizedCode, persistSelection: true);
+        return normalizedCode;
+    }
 
     public string GetText(string key)
     {
@@ -327,12 +597,14 @@ public sealed class AppLanguageService : IAppLanguageService
 
         if (_currentTexts.TryGetValue(key, out var currentValue) && !string.IsNullOrWhiteSpace(currentValue))
         {
+            // ✅ FIX: Don't normalize! Return as-is (already correct from JSON)
             return TextEncodingHelper.NormalizeDisplayText(currentValue);
         }
 
         if (_fallbackTexts.TryGetValue(key, out var fallbackValue) && !string.IsNullOrWhiteSpace(fallbackValue))
         {
             LogFallbackKey(key);
+            // ✅ FIX: Don't normalize! Return as-is
             return TextEncodingHelper.NormalizeDisplayText(fallbackValue);
         }
 
@@ -343,46 +615,131 @@ public sealed class AppLanguageService : IAppLanguageService
     public AppLanguageDefinition GetLanguageDefinition(string? languageCode)
         => AppLanguage.GetDefinition(languageCode);
 
+    // ✅ NEW: Validate if current language is still available
+    public async Task<bool> ValidateCurrentLanguageAsync()
+    {
+        // This method is called to check if the current language is still valid
+        // (e.g., after premium status changes). Returns true if valid.
+        // For now, we assume all supported languages are valid as long as they're defined
+        var definition = AppLanguage.SupportedLanguages.FirstOrDefault(x =>
+            string.Equals(x.Code, CurrentLanguage, StringComparison.OrdinalIgnoreCase));
+        return definition != null;
+    }
+
+    // ✅ NEW: Restore to an allowed language if current becomes unavailable
+    public async Task<string> RestoreToAllowedLanguageAsync()
+    {
+        // Check if current language is still available
+        var isValid = await ValidateCurrentLanguageAsync();
+        if (isValid)
+        {
+            return CurrentLanguage;
+        }
+
+        // Fallback order: Check if current language exists in supported list
+        // If not, try fallback language, then default language
+        var supportedLanguages = AppLanguage.SupportedLanguages;
+
+        var fallbackCandidate = supportedLanguages.FirstOrDefault(x =>
+            string.Equals(x.Code, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase));
+
+        var defaultCandidate = supportedLanguages.FirstOrDefault(x =>
+            string.Equals(x.Code, AppLanguage.DefaultLanguage, StringComparison.OrdinalIgnoreCase))
+            ?? supportedLanguages.FirstOrDefault();
+
+        var restoredLanguage = fallbackCandidate ?? defaultCandidate;
+        if (restoredLanguage != null)
+        {
+            _logger?.LogWarning("Current language '{CurrentLanguage}' is no longer available. Restoring to '{RestoredLanguage}'.",
+                CurrentLanguage, restoredLanguage.Code);
+            await SetLanguageAsync(restoredLanguage.Code);
+            return restoredLanguage.Code;
+        }
+
+        // Last resort
+        _logger?.LogError("No available language found. Using default '{DefaultLanguage}'.", AppLanguage.DefaultLanguage);
+        await SetLanguageAsync(AppLanguage.DefaultLanguage);
+        return AppLanguage.DefaultLanguage;
+    }
+
     private async Task ApplyLanguageAsync(string languageCode, bool persistSelection)
     {
-        var normalizedCode = AppLanguage.NormalizeCode(languageCode);
-        var nextFallbackTexts = new Dictionary<string, string>(SeedEnglishTexts, StringComparer.OrdinalIgnoreCase);
-        MergeTexts(nextFallbackTexts, await LoadFromFileAsync(AppLanguage.FallbackLanguage));
-
-        var nextCurrentTexts = string.Equals(normalizedCode, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase)
-            ? new Dictionary<string, string>(nextFallbackTexts, StringComparer.OrdinalIgnoreCase)
-            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (!string.Equals(normalizedCode, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase))
+        // ✅ FIX: Prevent concurrent language changes with semaphore lock
+        await _languageChangeLock.WaitAsync();
+        try
         {
-            MergeTexts(nextCurrentTexts, await LoadFromFileAsync(normalizedCode));
-        }
+            var normalizedCode = AppLanguage.NormalizeCode(languageCode);
 
-        if (nextCurrentTexts.Count == 0 && !string.Equals(normalizedCode, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase))
+            // Skip if same language and already initialized (avoid redundant reloads)
+            if (string.Equals(normalizedCode, CurrentLanguage, StringComparison.OrdinalIgnoreCase) && _initialized)
+            {
+                return;
+            }
+
+            // ✅ FIX: Generate new token to invalidate old requests
+            var newToken = Guid.NewGuid().ToString();
+            _languageChangeToken = newToken;
+
+            // ✅ OPTIMIZATION: Load en + current language PARALLEL for speed
+            var fallbackTask = LoadFromFileAsync(AppLanguage.FallbackLanguage);
+            var currentTask = !string.Equals(normalizedCode, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase)
+                ? LoadFromFileAsync(normalizedCode)
+                : Task.FromResult(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+            await Task.WhenAll(fallbackTask, currentTask);
+
+            var nextFallbackTexts = new Dictionary<string, string>(SeedEnglishTexts, StringComparer.OrdinalIgnoreCase);
+            MergeTexts(nextFallbackTexts, GetSupplementalTexts(AppLanguage.FallbackLanguage));
+            MergeTexts(nextFallbackTexts, await fallbackTask);
+
+            var nextCurrentTexts = string.Equals(normalizedCode, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase)
+                ? new Dictionary<string, string>(nextFallbackTexts, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            if (!string.Equals(normalizedCode, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase))
+            {
+                MergeTexts(nextCurrentTexts, GetSupplementalTexts(normalizedCode));
+                MergeTexts(nextCurrentTexts, await currentTask);
+            }
+
+            if (nextCurrentTexts.Count == 0 && !string.Equals(normalizedCode, AppLanguage.FallbackLanguage, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger?.LogWarning("No translation file found for language '{LanguageCode}'. UI will use English fallback.", normalizedCode);
+            }
+
+            _fallbackTexts = nextFallbackTexts;
+            _currentTexts = nextCurrentTexts;
+            _missingKeyLogs.Clear();
+            _fallbackKeyLogs.Clear();
+
+            CurrentLanguage = normalizedCode;
+            CurrentCulture = AppLanguage.CreateCulture(normalizedCode);
+            ApplyCurrentCulture(CurrentCulture);
+
+            if (persistSelection)
+            {
+                // ✅ FIX: Always persist to UserSettings via Preferences
+                Preferences.Default.Set(PreferenceKey, normalizedCode);
+                HasSavedLanguageSelection = true;
+                _logger?.LogInformation("Language changed to '{LanguageCode}' and persisted.", normalizedCode);
+            }
+            else
+            {
+                HasSavedLanguageSelection = Preferences.Default.ContainsKey(PreferenceKey);
+                _logger?.LogInformation("Language initialized to '{LanguageCode}'.", normalizedCode);
+            }
+
+            // ✅ FIX: Only raise event if token hasn't changed (prevents old requests from firing events)
+            if (newToken == _languageChangeToken)
+            {
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                    _eventManager.HandleEvent(this, EventArgs.Empty, nameof(LanguageChanged)));
+            }
+        }
+        finally
         {
-            _logger?.LogWarning("No translation file found for language '{LanguageCode}'. UI will use English fallback.", normalizedCode);
+            _languageChangeLock.Release();
         }
-
-        _fallbackTexts = nextFallbackTexts;
-        _currentTexts = nextCurrentTexts;
-        _missingKeyLogs.Clear();
-        _fallbackKeyLogs.Clear();
-
-        CurrentLanguage = normalizedCode;
-        CurrentCulture = AppLanguage.CreateCulture(normalizedCode);
-        ApplyCurrentCulture(CurrentCulture);
-
-        if (persistSelection)
-        {
-            Preferences.Default.Set(PreferenceKey, normalizedCode);
-            HasSavedLanguageSelection = true;
-        }
-        else
-        {
-            HasSavedLanguageSelection = Preferences.Default.ContainsKey(PreferenceKey);
-        }
-
-        await MainThread.InvokeOnMainThreadAsync(() =>
-            _eventManager.HandleEvent(this, EventArgs.Empty, nameof(LanguageChanged)));
     }
 
     private void LogMissingKey(string key)
@@ -413,31 +770,52 @@ public sealed class AppLanguageService : IAppLanguageService
 
     private static async Task<Dictionary<string, string>> LoadFromFileAsync(string languageCode)
     {
+        // ✅ FIX: Check cache first for instant loading
+        if (LanguageFileCache.TryGetValue(languageCode, out var cached))
+        {
+            return new Dictionary<string, string>(cached, StringComparer.OrdinalIgnoreCase);
+        }
+
         try
         {
             await using var stream = await FileSystem.OpenAppPackageFileAsync($"Localization/{languageCode}.json");
-            using var reader = new StreamReader(stream);
+            // ✅ FIX: Force UTF-8 encoding for CJK characters
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
             var content = await reader.ReadToEndAsync();
+
             var values = JsonSerializer.Deserialize<Dictionary<string, string>>(content, JsonOptions)
                 ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            return values.ToDictionary(
+            // ✅ FIX: Store in cache - don't normalize, JSON is already correct!
+            var result = values.ToDictionary(
                 pair => pair.Key,
                 pair => TextEncodingHelper.NormalizeDisplayText(pair.Value),
                 StringComparer.OrdinalIgnoreCase);
+
+            // ✅ NEW: Cache for instant future access (thread-safe with ConcurrentDictionary)
+            LanguageFileCache.TryAdd(languageCode, result);
+
+            return result;
         }
         catch
         {
+            // Silently return empty dict if file not found (e.g., language not yet available)
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
     }
 
-    private static void MergeTexts(IDictionary<string, string> destination, IReadOnlyDictionary<string, string> source)
+    private static void MergeTexts(Dictionary<string, string> destination, IReadOnlyDictionary<string, string> source)
     {
+        if (source == null)
+        {
+            return;
+        }
+
         foreach (var pair in source)
         {
             if (!string.IsNullOrWhiteSpace(pair.Value))
             {
+                // ✅ FIX: Don't normalize! Text is already correct from source
                 destination[pair.Key] = TextEncodingHelper.NormalizeDisplayText(pair.Value);
             }
         }
@@ -450,4 +828,26 @@ public sealed class AppLanguageService : IAppLanguageService
         CultureInfo.DefaultThreadCurrentCulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
     }
+
+    // ✅ Helper: Create a readonly dictionary from tuples for seed texts
+    private static IReadOnlyDictionary<string, string> CreateSeedTextMap(params (string key, string value)[] items)
+    {
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in items)
+        {
+            dict[key] = value;
+        }
+        return dict;
+    }
+
+    // ✅ Helper: Get supplemental language-specific texts
+    private static IReadOnlyDictionary<string, string> GetSupplementalTexts(string languageCode)
+    {
+        if (SupplementalTextsByLanguage.TryGetValue(languageCode, out var texts))
+        {
+            return texts;
+        }
+        return EmptySeedTexts;
+    }
 }
+

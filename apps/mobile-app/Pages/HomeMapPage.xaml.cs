@@ -33,6 +33,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
 
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HomeMapViewModel _viewModel;
+    private readonly LocalizedPageBindingSubscription _localizedPageBinding;
     private bool _isMapReady;
     private bool _isTourPanelPresented;
     private bool _isTourPanelExpanded;
@@ -54,6 +55,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         InitializeComponent();
         _viewModel = ServiceHelper.GetService<HomeMapViewModel>();
         BindingContext = _viewModel;
+        _localizedPageBinding = new(this);
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         InitializeTourPanelVisualState();
     }
@@ -61,6 +63,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        _localizedPageBinding.Rebind();
         _viewModel.ActivateNarrationContext();
         StartAutoRefreshLoop();
         await _viewModel.LoadAsync();

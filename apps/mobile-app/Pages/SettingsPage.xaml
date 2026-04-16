@@ -75,16 +75,21 @@
                                             StrokeShape="RoundRectangle 16"
                                             FlexLayout.Basis="48%"
                                             FlexLayout.Grow="1">
-                                            <Border.Triggers>
-                                                <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
-                                                    <Setter Property="BackgroundColor" Value="{StaticResource BrandPrimaryPale}" />
-                                                    <Setter Property="Stroke" Value="{StaticResource BrandPrimary}" />
-                                                    <Setter Property="StrokeThickness" Value="1.6" />
-                                                </DataTrigger>
-                                            </Border.Triggers>
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="BackgroundColor" Value="{StaticResource BrandPrimaryPale}" />
+                                                <Setter Property="Stroke" Value="{StaticResource BrandPrimary}" />
+                                                <Setter Property="StrokeThickness" Value="1.6" />
+                                            </DataTrigger>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsLocked}" Value="True">
+                                                <Setter Property="BackgroundColor" Value="#FFF8F1" />
+                                                <Setter Property="Stroke" Value="#E8D2A8" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
 
-                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="8">
                                                 <Label
+                                                    Grid.RowSpan="2"
                                                     FontSize="28"
                                                     Text="{Binding Flag}"
                                                     VerticalOptions="Center" />
@@ -96,6 +101,21 @@
                                                     MaxLines="2"
                                                     Text="{Binding DisplayName}"
                                                     VerticalOptions="Center" />
+                                                <Border
+                                                    Grid.Row="1"
+                                                    Grid.Column="1"
+                                                    Padding="10,4"
+                                                    BackgroundColor="#FFF1D6"
+                                                    HorizontalOptions="Start"
+                                                    IsVisible="{Binding IsPremium}"
+                                                    StrokeThickness="0"
+                                                    StrokeShape="RoundRectangle 12">
+                                                    <Label
+                                                        FontFamily="OpenSansSemibold"
+                                                        FontSize="10"
+                                                        Text="{Binding Source={x:Reference PageRoot}, Path=BindingContext.PremiumBadgeText}"
+                                                        TextColor="#9A5B12" />
+                                                </Border>
                                             </Grid>
 
                                             <Border.GestureRecognizers>

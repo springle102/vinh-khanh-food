@@ -145,70 +145,59 @@ public sealed partial class FoodStreetApiDataService
         return NormalizeLookupKey(theme) switch
         {
             "an-vat" => SelectLocalizedText(CreateLocalizedMap(
-                "Ä‚n váº·t",
+                "Ăn vặt",
                 "Street snacks",
-                "å°åƒ",
-                "ê¸¸ê±°ë¦¬ ê°„ì‹",
-                "ã‚¹ãƒˆãƒªãƒ¼ãƒˆã‚¹ãƒŠãƒƒã‚¯",
+                "小吃",
+                "길거리 간식",
+                "ストリートスナック",
                 "Street food")),
             "hai-san" => SelectLocalizedText(CreateLocalizedMap(
-                "Háº£i sáº£n",
+                "Hải sản",
                 "Seafood",
-                "æµ·é²œ",
-                "í•´ì‚°ë¬¼",
-                "æµ·é®®",
+                "海鲜",
+                "해산물",
+                "海鮮",
                 "Fruits de mer")),
             "buoi-toi" => SelectLocalizedText(CreateLocalizedMap(
-                "Buá»•i tá»‘i",
+                "Buổi tối",
                 "Evening route",
-                "å¤œé—´è·¯çº¿",
-                "ì €ë… ì½”ìŠ¤",
-                "å¤œã®ãƒ«ãƒ¼ãƒˆ",
+                "夜间路线",
+                "저녁 코스",
+                "夜のルート",
                 "Parcours du soir")),
             "khach-quoc-te" => SelectLocalizedText(CreateLocalizedMap(
-                "KhÃ¡ch quá»‘c táº¿",
+                "Khách quốc tế",
                 "International visitors",
-                "å›½é™…æ¸¸å®¢",
-                "í•´ì™¸ ë°©ë¬¸ê°",
-                "æµ·å¤–ã‹ã‚‰ã®è¨ªå•è€…",
+                "国际游客",
+                "해외 방문객",
+                "海外からの訪問者",
                 "Visiteurs internationaux")),
             "gia-dinh" => SelectLocalizedText(CreateLocalizedMap(
-                "Gia Ä‘Ã¬nh",
+                "Gia đình",
                 "Family friendly",
-                "é€‚åˆå®¶åº­",
-                "ê°€ì¡±ì—ê²Œ ì¢‹ìŒ",
-                "å®¶æ—å‘ã‘",
-                "AdaptÃ© aux familles")),
+                "适合家庭",
+                "가족에게 좋음",
+                "家族向け",
+                "Adapté aux familles")),
             "tong-hop" => SelectLocalizedText(CreateLocalizedMap(
-                "Tá»•ng há»£p",
+                "Tổng hợp",
                 "Mixed highlights",
-                "ç²¾é€‰ç»„åˆ",
-                "ì¶”ì²œ ëª¨ìŒ",
-                "ãƒã‚¤ãƒ©ã‚¤ãƒˆãƒŸãƒƒã‚¯ã‚¹",
-                "SÃ©lection variÃ©e")),
+                "精选组合",
+                "추천 모음",
+                "ハイライトミックス",
+                "Sélection variée")),
             _ => LocalizationFallbackPolicy.SourceTextForLanguage(theme, CurrentLanguageCode)
         };
     }
 
-    /*
     private string GetTourDescriptionText()
         => SelectLocalizedText(CreateLocalizedMap(
-            "Tour ngắn ưu tiên các POI đang được quản lý trong admin và fallback mock khi backend chưa bật.",
-            "A short route built from admin-managed POIs, with mock fallback content when the backend is unavailable.",
-            "这条短路线优先展示后台管理中的 POI；当后端未开启时会改用内置示例数据。",
-            "이 짧은 코스는 관리자에서 관리 중인 POI를 우선 사용하며, 백엔드가 꺼져 있으면 내장 목업 데이터로 대체됩니다.",
-            "この短いコースでは管理画面で運用中の POI を優先し、バックエンドが使えない場合は内蔵モックデータに切り替えます。",
-            "Ce parcours court privilégie les POI gérés dans l'admin et bascule sur des données fictives intégrées lorsque le backend est indisponible."));
-
-    */
-    private string GetTourDescriptionText()
-        => SelectLocalizedText(CreateLocalizedMap(
-            "Tour ngáº¯n Ä‘Æ°á»£c táº¡o tá»« cÃ¡c POI Ä‘ang Ä‘Æ°á»£c quáº£n lÃ½ trong admin.",
+            "Tour ngắn được tạo từ các POI đang được quản lý trong admin.",
             "A short route built from the POIs currently managed in admin.",
-            "è¿™æ¡çŸ­è·¯çº¿ç”±å½“å‰åœ¨ç®¡ç†åŽå°ä¸­ç»´æŠ¤çš„ POI ç»„æˆã€‚",
-            "ì´ ì§§ì€ ì½”ìŠ¤ëŠ” í˜„ìž¬ adminì—ì„œ ê´€ë¦¬ ì¤‘ì¸ POIë¡œ êµ¬ì„±ë©ë‹ˆë‹¤.",
-            "ã“ã®çŸ­ã„ã‚³ãƒ¼ã‚¹ã¯ç¾åœ¨ admin ã§ç®¡ç†ã•ã‚Œã¦ã„ã‚‹ POI ã‹ã‚‰æ§‹æˆã•ã‚Œã¦ã„ã¾ã™ã€‚",
-            "Ce parcours court est construit Ã  partir des POI actuellement gÃ©rÃ©s dans l'admin."));
+            "这条短路线由当前在管理后台中维护的 POI 组成。",
+            "이 짧은 코스는 현재 admin에서 관리 중인 POI로 구성됩니다.",
+            "この短いコースは現在 admin で管理されている POI から構成されています。",
+            "Ce parcours court est construit à partir des POI actuellement gérés dans l'admin."));
 
     private string GetTourSummaryText()
         => SelectLocalizedText(CreateLocalizedMap(
@@ -230,7 +219,7 @@ public sealed partial class FoodStreetApiDataService
 
     private string GetTourStopDescription(string distanceText)
         => SelectLocalizedText(CreateLocalizedMap(
-            $"Tạo Tour - {distanceText}",
+            $"Điểm trong tour - {distanceText}",
             $"Planned stop - {distanceText}",
             $"行程站点 - {distanceText}",
             $"코스 정차지 - {distanceText}",
@@ -267,7 +256,7 @@ public sealed partial class FoodStreetApiDataService
             return string.Empty;
         }
 
-        var raw = value.Trim();
+        var raw = TextEncodingHelper.NormalizeDisplayText(value);
         var normalized = ToLatinText(raw);
         var parts = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length < 2)
@@ -324,8 +313,24 @@ public sealed partial class FoodStreetApiDataService
                 "Spot gourmand"));
         }
 
-        return NormalizeLookupKey(category) switch
+        var normalizedCategory = TextEncodingHelper.NormalizeDisplayText(category);
+
+        return NormalizeLookupKey(normalizedCategory) switch
         {
+            "nuong-beer" => SelectLocalizedText(CreateLocalizedMap(
+                "Nướng & Beer",
+                "Grill & beer",
+                "烧烤与啤酒",
+                "구이와 맥주",
+                "焼き物とビール",
+                "Grillades & bière")),
+            "oc-hai-san" => SelectLocalizedText(CreateLocalizedMap(
+                "Ốc & Hải sản",
+                "Snails & seafood",
+                "螺类与海鲜",
+                "달팽이와 해산물",
+                "貝料理と海鮮",
+                "Escargots & fruits de mer")),
             "oc-dac-san" => SelectLocalizedText(CreateLocalizedMap(
                 "Ốc đặc sản",
                 "Signature snails",
@@ -362,13 +367,13 @@ public sealed partial class FoodStreetApiDataService
                 "コーヒー&ティー",
                 "Café & thé")),
             _ => LocalizationFallbackPolicy.CanUseSourceLanguageText(CurrentLanguageCode)
-                ? TextEncodingHelper.NormalizeDisplayText(category)
+                ? normalizedCategory
                 : SelectLocalizedText(CreateLocalizedMap(
-                    "Äá»‹a Ä‘iá»ƒm áº©m thá»±c",
+                    "Địa điểm ẩm thực",
                     "Food spot",
-                    "ç¾Žé£Ÿåœ°ç‚¹",
-                    "ë§›ì§‘",
-                    "ã‚°ãƒ«ãƒ¡ã‚¹ãƒãƒƒãƒˆ",
+                    "美食地点",
+                    "맛집",
+                    "グルメスポット",
                     "Spot gourmand"))
         };
     }
@@ -382,10 +387,10 @@ public sealed partial class FoodStreetApiDataService
 
         if (CurrentLanguageCode == "vi")
         {
-            return address.Trim();
+            return TextEncodingHelper.NormalizeDisplayText(address);
         }
 
-        var text = address.Trim();
+        var text = TextEncodingHelper.NormalizeDisplayText(address);
         var normalizedKey = NormalizeLookupKey(text);
 
         return normalizedKey switch
@@ -393,14 +398,14 @@ public sealed partial class FoodStreetApiDataService
             "42-vinh-khanh-phuong-khanh-hoi-tp-hcm" => SelectLocalizedText(CreateLocalizedMap(
                 "42 Vĩnh Khánh, Phường Khánh Hội, TP.HCM",
                 "42 Vinh Khanh, Khanh Hoi Ward, Ho Chi Minh City",
-                "42 永庆街, 庆会坊, 胡志明市",
+                "42 永庆街，庆会坊，胡志明市",
                 "호찌민시 카인호이동 빈카인 42",
                 "ホーチミン市カインホイ街区ヴィンカイン42",
                 "42 Vinh Khanh, quartier Khanh Hoi, Hô-Chi-Minh-Ville")),
             "126-vinh-khanh-phuong-khanh-hoi-tp-hcm" => SelectLocalizedText(CreateLocalizedMap(
                 "126 Vĩnh Khánh, Phường Khánh Hội, TP.HCM",
                 "126 Vinh Khanh, Khanh Hoi Ward, Ho Chi Minh City",
-                "126 永庆街, 庆会坊, 胡志明市",
+                "126 永庆街，庆会坊，胡志明市",
                 "호찌민시 카인호이동 빈카인 126",
                 "ホーチミン市カインホイ街区ヴィンカイン126",
                 "126 Vinh Khanh, quartier Khanh Hoi, Hô-Chi-Minh-Ville")),
@@ -428,7 +433,11 @@ public sealed partial class FoodStreetApiDataService
                 ("TP. HCM", "胡志明市"),
                 ("Thành phố Hồ Chí Minh", "胡志明市"),
                 ("Vĩnh Khánh", "永庆"),
-                ("Đường", "街")
+                ("Đường", "街"),
+                ("Hẻm", "巷"),
+                ("Việt Nam", "越南"),
+                ("Viet Nam", "越南"),
+                ("Vietnam", "越南")
             },
             "ko" => new[]
             {
@@ -439,7 +448,11 @@ public sealed partial class FoodStreetApiDataService
                 ("TP. HCM", "호찌민시"),
                 ("Thành phố Hồ Chí Minh", "호찌민시"),
                 ("Vĩnh Khánh", "빈카인"),
-                ("Đường", "도로")
+                ("Đường", "도로"),
+                ("Hẻm", "골목"),
+                ("Việt Nam", "베트남"),
+                ("Viet Nam", "베트남"),
+                ("Vietnam", "베트남")
             },
             "ja" => new[]
             {
@@ -450,7 +463,11 @@ public sealed partial class FoodStreetApiDataService
                 ("TP. HCM", "ホーチミン市"),
                 ("Thành phố Hồ Chí Minh", "ホーチミン市"),
                 ("Vĩnh Khánh", "ヴィンカイン"),
-                ("Đường", "通り")
+                ("Đường", "通り"),
+                ("Hẻm", "路地"),
+                ("Việt Nam", "ベトナム"),
+                ("Viet Nam", "ベトナム"),
+                ("Vietnam", "ベトナム")
             },
             "fr" => new[]
             {
@@ -461,7 +478,11 @@ public sealed partial class FoodStreetApiDataService
                 ("TP. HCM", "Hô-Chi-Minh-Ville"),
                 ("Thành phố Hồ Chí Minh", "Hô-Chi-Minh-Ville"),
                 ("Vĩnh Khánh", "Vinh Khanh"),
-                ("Đường", "rue")
+                ("Đường", "rue"),
+                ("Hẻm", "ruelle"),
+                ("Việt Nam", "Vietnam"),
+                ("Viet Nam", "Vietnam"),
+                ("Vietnam", "Vietnam")
             },
             _ => new[]
             {
@@ -472,18 +493,25 @@ public sealed partial class FoodStreetApiDataService
                 ("TP. HCM", "Ho Chi Minh City"),
                 ("Thành phố Hồ Chí Minh", "Ho Chi Minh City"),
                 ("Vĩnh Khánh", "Vinh Khanh"),
-                ("Đường", "Street")
+                ("Đường", "Street"),
+                ("Hẻm", "Alley"),
+                ("Việt Nam", "Vietnam"),
+                ("Viet Nam", "Vietnam"),
+                ("Vietnam", "Vietnam")
             }
         };
 
-        var localized = ApplyReplacements(address, replacements);
-        return ToLatinText(localized);
+        return TextEncodingHelper.NormalizeDisplayText(ApplyReplacements(address, replacements));
     }
 
     private string SelectLocalizedText(IReadOnlyDictionary<string, string> values)
         => LocalizedTextHelper.GetLocalizedText(values, CurrentLanguageCode);
 
-    private string CurrentLanguageCode => AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
+    private string CurrentLanguageCode
+        => AppLanguage.NormalizeCode(
+            string.IsNullOrWhiteSpace(_languageOverride.Value)
+                ? SelectedLanguageCode
+                : _languageOverride.Value);
 
     private static IReadOnlyDictionary<string, string> CreateLocalizedMap(
         string vietnameseText,
@@ -508,7 +536,7 @@ public sealed partial class FoodStreetApiDataService
         {
             ["en"] = englishFallback
         };
-        var sourceText = TextEncodingHelper.NormalizeDisplayText(fallbackText).Trim();
+        var sourceText = fallbackText?.Trim() ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(sourceText))
         {
             values["vi"] = sourceText;
@@ -519,12 +547,12 @@ public sealed partial class FoodStreetApiDataService
 
     private static string ApplyReplacements(string source, IEnumerable<(string From, string To)> replacements)
     {
-        var result = TextEncodingHelper.NormalizeDisplayText(source);
+        var result = source?.Trim() ?? string.Empty;
         foreach (var (from, to) in replacements)
         {
             result = result.Replace(
-                TextEncodingHelper.NormalizeDisplayText(from),
-                TextEncodingHelper.NormalizeDisplayText(to),
+                from?.Trim() ?? string.Empty,
+                to?.Trim() ?? string.Empty,
                 StringComparison.OrdinalIgnoreCase);
         }
 
@@ -553,7 +581,7 @@ public sealed partial class FoodStreetApiDataService
 
     private static string ToLatinText(string value)
     {
-        var source = TextEncodingHelper.NormalizeDisplayText(value);
+        var source = value?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(source))
         {
             return string.Empty;
@@ -581,12 +609,7 @@ public sealed partial class FoodStreetApiDataService
                 continue;
             }
 
-            builder.Append(character switch
-            {
-                'Đ' => 'D',
-                'đ' => 'd',
-                _ => character
-            });
+            builder.Append(character);
         }
 
         return builder.ToString().Normalize(NormalizationForm.FormC);

@@ -8,6 +8,7 @@ namespace VinhKhanh.MobileApp.Pages;
 public partial class QrScannerPage : ContentPage
 {
     private readonly QrScannerViewModel _viewModel;
+    private readonly LocalizedPageBindingSubscription _localizedPageBinding;
     private bool _hasNavigated;
 
     public QrScannerPage()
@@ -15,6 +16,7 @@ public partial class QrScannerPage : ContentPage
         InitializeComponent();
         _viewModel = ServiceHelper.GetService<QrScannerViewModel>();
         BindingContext = _viewModel;
+        _localizedPageBinding = new(this);
         BarcodeReader.Options = new BarcodeReaderOptions
         {
             AutoRotate = true,
@@ -26,6 +28,7 @@ public partial class QrScannerPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        _localizedPageBinding.Rebind();
         _hasNavigated = false;
 
         var cameraStatus = await Permissions.RequestAsync<Permissions.Camera>();

@@ -46,24 +46,9 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
     public string AutoNarrationTitleText => LanguageService.GetText("settings_auto_narration_title");
     public string AutoNarrationDescriptionText => LanguageService.GetText("settings_auto_narration_description");
     public string PublicModeTitleText => LanguageService.GetText("brand_title");
-    public string PublicModeDescriptionText => AppLanguage.NormalizeCode(LanguageService.CurrentLanguage) switch
-    {
-        "vi" => "Ung dung mo truc tiep vao ban do POI, khong can dang nhap va khong luu tai khoan khach hang.",
-        "en" => "The app opens straight to the POI map, with no sign-in and no customer account required.",
-        "zh-CN" => "应用会直接打开 POI 地图，无需登录，也不需要客户账号。",
-        "ko" => "앱은 바로 POI 지도로 열리며 로그인이나 고객 계정이 필요하지 않습니다.",
-        "ja" => "アプリはそのまま POI マップを開き、ログインや利用者アカウントは不要です。",
-        _ => "The app opens straight to the POI map, with no sign-in and no customer account required."
-    };
-    public string MoreTitleText => AppLanguage.NormalizeCode(LanguageService.CurrentLanguage) switch
-    {
-        "vi" => "Thong tin them",
-        "en" => "More information",
-        "zh-CN" => "更多信息",
-        "ko" => "추가 정보",
-        "ja" => "追加情報",
-        _ => "More information"
-    };
+    public string PublicModeDescriptionText => LanguageService.GetText("settings_public_mode_description");
+    public string MoreTitleText => LanguageService.GetText("settings_more_title");
+    public string PremiumBadgeText => LanguageService.GetText("premium_badge");
 
     public AsyncCommand<LanguageOption> SelectLanguageCommand => _selectLanguageCommand;
 
@@ -94,11 +79,48 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
             return;
         }
 
-        foreach (var item in Languages)
+        if (language.IsLocked)
         {
-            item.IsSelected = string.Equals(item.Code, language.Code, StringComparison.OrdinalIgnoreCase);
+            await ShowLockedLanguageMessageAsync(language);
+            Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
+            return;
         }
 
-        await LanguageService.SetLanguageAsync(language.Code);
+        var normalizedCode = AppLanguage.NormalizeCode(language.Code);
+        if (string.Equals(normalizedCode, LanguageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase))
+        {
+            Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
+            return;
+        }
+
+        foreach (var item in Languages)
+        {
+            item.IsSelected = string.Equals(
+                AppLanguage.NormalizeCode(item.Code),
+                normalizedCode,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        await LanguageService.SetLanguageAsync(normalizedCode);
+    }
+
+    private async Task ShowLockedLanguageMessageAsync(LanguageOption language)
+    {
+        if (Shell.Current is null)
+        {
+            return;
+        }
+
+        var premiumOffer = await _dataService.GetPremiumOfferAsync();
+        var message = string.Format(
+            LanguageService.CurrentCulture,
+            LanguageService.GetText("premium_upgrade_required_message"),
+            language.DisplayName,
+            premiumOffer.PriceUsd);
+
+        await Shell.Current.DisplayAlertAsync(
+            LanguageService.GetText("premium_upgrade_required_title"),
+            message,
+            LanguageService.GetText("common_ok"));
     }
 }

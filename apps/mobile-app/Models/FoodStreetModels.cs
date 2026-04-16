@@ -32,7 +32,7 @@ public sealed class LocalizedTextSet
             return;
         }
 
-        _values[languageCode.Trim()] = value.Trim();
+        _values[languageCode.Trim()] = TextEncodingHelper.NormalizeDisplayText(value);
     }
 }
 

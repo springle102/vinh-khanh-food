@@ -26,6 +26,8 @@ public interface IFoodStreetDataService
     Task<PremiumPurchaseOffer> GetPremiumOfferAsync();
     Task<PremiumPurchaseResult> PurchasePremiumAsync(PremiumCheckoutRequest request);
     Task<string> EnsureAllowedLanguageSelectionAsync();
+    // ✅ NEW: Explicitly restore to allowed language when needed
+    Task<string> RestoreToAllowedLanguageAsync();
     Task<IReadOnlyList<SettingsMenuItem>> GetSettingsMenuAsync();
     Task TrackPoiViewAsync(string poiId, string? languageCode = null, string source = "poi_detail");
     Task TrackAudioPlayAsync(string poiId, string? languageCode = null, string source = "audio_player", int? durationInSeconds = null);
@@ -57,7 +59,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             ["poi-sweet-lane"] = "https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&fit=crop&w=1200&q=80"
         };
 
-    #if false
+#if false
     private static readonly IReadOnlyList<LanguageOption> LanguagesLegacy =
     [
         new() { Code = "vi", Flag = "🇻🇳", DisplayName = "Tiếng Việt", IsSelected = true },
@@ -68,7 +70,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         new() { Code = "fr", Flag = "🇫🇷", DisplayName = "Français" }
     ];
 
-    #endif
+#endif
 
     private static readonly IReadOnlyList<LanguageOption> Languages = AppLanguage.SupportedLanguages
         .Select(item => new LanguageOption
@@ -142,6 +144,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     ];
 
     private readonly SemaphoreSlim _bootstrapLock = new(1, 1);
+    private readonly AsyncLocal<string?> _languageOverride = new();
     private readonly IAppLanguageService _languageService;
     private readonly ILogger<FoodStreetApiDataService> _logger;
     private BootstrapSnapshot? _bootstrapSnapshot;
@@ -181,8 +184,8 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             return new LanguageOption
             {
                 Code = normalizedCode,
-                Flag = TextEncodingHelper.NormalizeDisplayText(language.Flag),
-                DisplayName = TextEncodingHelper.NormalizeDisplayText(language.DisplayName),
+                Flag = language.Flag?.Trim() ?? string.Empty,
+                DisplayName = language.DisplayName?.Trim() ?? normalizedCode,
                 IsPremium = language.IsPremium,
                 IsLocked = language.IsLocked,
                 IsSelected = string.Equals(normalizedCode, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase)
@@ -292,19 +295,19 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         }
 
         return new UserProfileCard();
-/*
+        /*
 
-        return new UserProfileCard
-        {
-            FullName = "Nguyễn Bảo Vy",
-            Email = "baovy@gmail.com",
-            Phone = "0911 000 111",
-            AvatarInitials = "BV",
-            MetaLine = $"ID customer-1 • android • {_languageService.CurrentLanguage}"
+                return new UserProfileCard
+                {
+                    FullName = "Nguyễn Bảo Vy",
+                    Email = "baovy@gmail.com",
+                    Phone = "0911 000 111",
+                    AvatarInitials = "BV",
+                    MetaLine = $"ID customer-1 • android • {_languageService.CurrentLanguage}"
 
-*/
+        */
     }
-    #if false
+#if false
     public Task<IReadOnlyList<SettingsMenuItem>> GetSettingsMenuLegacyAsync()
         => Task.FromResult<IReadOnlyList<SettingsMenuItem>>(
         [
@@ -314,7 +317,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             new SettingsMenuItem { Icon = "❓", Title = _languageService.GetText("settings_support") }
         ]);
 
-    #endif
+#endif
 
     public Task<IReadOnlyList<SettingsMenuItem>> GetSettingsMenuAsync()
         => Task.FromResult<IReadOnlyList<SettingsMenuItem>>(
@@ -428,36 +431,63 @@ public sealed partial class FoodStreetApiDataService
                 return _bootstrapSnapshot;
             }
 
-            var currentLanguageCode = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
-            if (_bootstrapSnapshot is null ||
-                !string.Equals(_bootstrapSnapshotLanguageCode, currentLanguageCode, StringComparison.OrdinalIgnoreCase))
+            for (var attempt = 0; attempt < 3; attempt++)
             {
-                return await RefreshBootstrapSnapshotAsync(client, null, "initial");
+                var currentLanguageCode = SelectedLanguageCode;
+                if (_bootstrapSnapshot is null ||
+                    !string.Equals(_bootstrapSnapshotLanguageCode, currentLanguageCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    await RefreshBootstrapSnapshotAsync(
+                        client,
+                        currentLanguageCode,
+                        remoteSyncState: null,
+                        reason: attempt == 0 ? "initial" : "language-retry");
+
+                    if (string.Equals(SelectedLanguageCode, currentLanguageCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return _bootstrapSnapshot;
+                    }
+
+                    continue;
+                }
+
+                if (!ShouldCheckSyncState(forceSyncCheck))
+                {
+                    return _bootstrapSnapshot;
+                }
+
+                var remoteSyncState = await FetchSyncStateAsync(client);
+                _lastSyncCheckAt = DateTimeOffset.UtcNow;
+
+                if (!string.Equals(SelectedLanguageCode, currentLanguageCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (remoteSyncState is null)
+                {
+                    _logger.LogDebug(
+                        "Sync-state check failed. Reusing cached bootstrap version {Version}.",
+                        _syncState?.Version ?? "none");
+                    return _bootstrapSnapshot;
+                }
+
+                if (string.Equals(_syncState?.Version, remoteSyncState.Version, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogDebug("Bootstrap snapshot is already current at version {Version}.", remoteSyncState.Version);
+                    return _bootstrapSnapshot;
+                }
+
+                currentLanguageCode = SelectedLanguageCode;
+                await RefreshBootstrapSnapshotAsync(client, currentLanguageCode, remoteSyncState, "version-changed");
+
+                if (string.Equals(SelectedLanguageCode, currentLanguageCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    return _bootstrapSnapshot;
+                }
             }
 
-            if (!ShouldCheckSyncState(forceSyncCheck))
-            {
-                return _bootstrapSnapshot;
-            }
-
-            var remoteSyncState = await FetchSyncStateAsync(client);
-            _lastSyncCheckAt = DateTimeOffset.UtcNow;
-
-            if (remoteSyncState is null)
-            {
-                _logger.LogDebug(
-                    "Sync-state check failed. Reusing cached bootstrap version {Version}.",
-                    _syncState?.Version ?? "none");
-                return _bootstrapSnapshot;
-            }
-
-            if (string.Equals(_syncState?.Version, remoteSyncState.Version, StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogDebug("Bootstrap snapshot is already current at version {Version}.", remoteSyncState.Version);
-                return _bootstrapSnapshot;
-            }
-
-            return await RefreshBootstrapSnapshotAsync(client, remoteSyncState, "version-changed");
+            return _bootstrapSnapshot;
         }
         catch (Exception exception)
         {
@@ -501,10 +531,11 @@ public sealed partial class FoodStreetApiDataService
 
     private async Task<BootstrapSnapshot?> RefreshBootstrapSnapshotAsync(
         HttpClient client,
+        string requestedLanguageCode,
         DataSyncStateDto? remoteSyncState,
         string reason)
     {
-        using var response = await client.GetAsync(BuildBootstrapEndpoint(_languageService.CurrentLanguage));
+        using var response = await client.GetAsync(BuildBootstrapEndpoint(requestedLanguageCode));
         if (!response.IsSuccessStatusCode)
         {
             return _bootstrapSnapshot;
@@ -516,9 +547,31 @@ public sealed partial class FoodStreetApiDataService
             return _bootstrapSnapshot;
         }
 
+        if (!IsSelectedLanguage(requestedLanguageCode))
+        {
+            _logger.LogInformation(
+                "Discarding stale bootstrap response ({Reason}). Requested={RequestedLanguage}; Current={CurrentLanguage}.",
+                reason,
+                requestedLanguageCode,
+                SelectedLanguageCode);
+            return _bootstrapSnapshot;
+        }
+
+        using var _ = BeginLanguageScope(requestedLanguageCode);
         var snapshot = CreateSnapshot(envelope.Data);
+
+        if (!IsSelectedLanguage(requestedLanguageCode))
+        {
+            _logger.LogInformation(
+                "Discarding stale bootstrap snapshot ({Reason}). Requested={RequestedLanguage}; Current={CurrentLanguage}.",
+                reason,
+                requestedLanguageCode,
+                SelectedLanguageCode);
+            return _bootstrapSnapshot;
+        }
+
         _bootstrapSnapshot = snapshot;
-        _bootstrapSnapshotLanguageCode = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
+        _bootstrapSnapshotLanguageCode = AppLanguage.NormalizeCode(requestedLanguageCode);
         _syncState = envelope.Data.SyncState ?? remoteSyncState;
         _lastSyncCheckAt = DateTimeOffset.UtcNow;
 
@@ -531,6 +584,42 @@ public sealed partial class FoodStreetApiDataService
             snapshot.Routes.Count);
 
         return _bootstrapSnapshot;
+    }
+
+    private string SelectedLanguageCode => AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
+
+    private bool IsSelectedLanguage(string languageCode)
+        => string.Equals(
+            SelectedLanguageCode,
+            AppLanguage.NormalizeCode(languageCode),
+            StringComparison.OrdinalIgnoreCase);
+
+    private IDisposable BeginLanguageScope(string languageCode)
+        => new LanguageScope(this, languageCode);
+
+    private sealed class LanguageScope : IDisposable
+    {
+        private readonly FoodStreetApiDataService _owner;
+        private readonly string? _previousLanguageCode;
+        private bool _disposed;
+
+        public LanguageScope(FoodStreetApiDataService owner, string languageCode)
+        {
+            _owner = owner;
+            _previousLanguageCode = owner._languageOverride.Value;
+            owner._languageOverride.Value = AppLanguage.NormalizeCode(languageCode);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _owner._languageOverride.Value = _previousLanguageCode;
+            _disposed = true;
+        }
     }
 
     private async Task<HttpClient?> GetClientAsync()
@@ -640,7 +729,7 @@ public sealed partial class FoodStreetApiDataService
         var poiLocations = orderedPois.Select(poi =>
         {
             translationsByPoiId.TryGetValue(poi.Id, out var poiTranslations);
-            var translation = SelectTranslation(poiTranslations, _languageService.CurrentLanguage, "poi", poi.Id);
+            var translation = SelectTranslation(poiTranslations, CurrentLanguageCode, "poi", poi.Id);
             var title = FirstNonEmpty(translation?.Title, CreateSafePoiTitleFallback(poi.Slug), poi.Id);
             var category = LocalizeCategory(GetCategoryName(categoriesById, poi.CategoryId));
             var shortDescription = FirstNonEmpty(translation?.ShortText, translation?.FullText);
@@ -906,7 +995,7 @@ public sealed partial class FoodStreetApiDataService
             .ToList();
     }
 
-    #if false
+#if false
     private LanguageOption CreateLanguageOptionLegacy(string code)
     {
         var template = Languages.FirstOrDefault(item =>
@@ -921,7 +1010,7 @@ public sealed partial class FoodStreetApiDataService
         };
     }
 
-    #endif
+#endif
 
     private LanguageOption CreateLanguageOption(string code, bool isPremium = false, bool isLocked = false)
     {
@@ -932,8 +1021,8 @@ public sealed partial class FoodStreetApiDataService
         return new LanguageOption
         {
             Code = normalizedCode,
-            Flag = TextEncodingHelper.NormalizeDisplayText(template?.Flag ?? "\uD83C\uDF10"),
-            DisplayName = TextEncodingHelper.NormalizeDisplayText(template?.DisplayName ?? normalizedCode),
+            Flag = template?.Flag?.Trim() ?? "🌐",
+            DisplayName = template?.DisplayName?.Trim() ?? normalizedCode,
             IsPremium = isPremium,
             IsLocked = isLocked,
             IsSelected = string.Equals(normalizedCode, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase)
@@ -1018,7 +1107,7 @@ public sealed partial class FoodStreetApiDataService
 
     private TranslationDto? SelectRouteTranslation(IReadOnlyList<TranslationDto>? translations, string routeId)
     {
-        return SelectTranslation(translations, _languageService.CurrentLanguage, "route", routeId);
+        return SelectTranslation(translations, CurrentLanguageCode, "route", routeId);
     }
 
     private static IReadOnlyDictionary<string, IReadOnlyList<string>> BuildMediaImageLookupByEntityId(
@@ -1212,17 +1301,17 @@ public sealed partial class FoodStreetApiDataService
         if (customer is null)
         {
             return new UserProfileCard();
-/*
+            /*
 
-            return new UserProfileCard
-            {
-                FullName = "Nguyễn Bảo Vy",
-                Email = "baovy@gmail.com",
-                Phone = "0911 000 111",
-                AvatarInitials = "BV",
-                MetaLine = $"ID customer-1 • android • {_languageService.CurrentLanguage}"
+                        return new UserProfileCard
+                        {
+                            FullName = "Nguyễn Bảo Vy",
+                            Email = "baovy@gmail.com",
+                            Phone = "0911 000 111",
+                            AvatarInitials = "BV",
+                            MetaLine = $"ID customer-1 • android • {_languageService.CurrentLanguage}"
 
-*/
+            */
         }
         return new UserProfileCard
         {

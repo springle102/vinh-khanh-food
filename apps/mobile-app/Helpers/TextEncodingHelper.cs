@@ -59,18 +59,41 @@ public static class TextEncodingHelper
             return trimmed;
         }
 
+        var current = trimmed;
+        for (var attempt = 0; attempt < 3; attempt += 1)
+        {
+            var decoded = TryDecodeLegacyUtf8(current);
+            if (string.IsNullOrWhiteSpace(decoded) ||
+                string.Equals(decoded, current, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            if (GetSuspiciousScore(decoded) >= GetSuspiciousScore(current))
+            {
+                break;
+            }
+
+            current = decoded.Trim();
+            if (!LooksMisencoded(current))
+            {
+                break;
+            }
+        }
+
+        return current;
+    }
+
+    private static string TryDecodeLegacyUtf8(string value)
+    {
         try
         {
-            var bytes = LegacyEncoding.GetBytes(trimmed);
-            var decoded = Encoding.UTF8.GetString(bytes);
-
-            return GetSuspiciousScore(decoded) < GetSuspiciousScore(trimmed)
-                ? decoded.Trim()
-                : trimmed;
+            var bytes = LegacyEncoding.GetBytes(value);
+            return Encoding.UTF8.GetString(bytes);
         }
         catch
         {
-            return trimmed;
+            return value;
         }
     }
 
@@ -81,11 +104,13 @@ public static class TextEncodingHelper
     }
 
     private static bool LooksMisencoded(string value)
-        => MojibakeMarkers.Any(marker => value.Contains(marker, StringComparison.Ordinal));
+        => GetSuspiciousScore(value) >= 12;
 
     private static int GetSuspiciousScore(string value)
     {
         var score = 0;
+        var latinSupplementCount = 0;
+        var latinSupplementRun = 0;
 
         foreach (var marker in MojibakeMarkers)
         {
@@ -103,10 +128,30 @@ public static class TextEncodingHelper
                 continue;
             }
 
+            if (character is >= '\u00C0' and <= '\u00FF')
+            {
+                latinSupplementCount += 1;
+                latinSupplementRun += 1;
+
+                if (latinSupplementRun >= 3)
+                {
+                    score += 6;
+                }
+
+                continue;
+            }
+
+            latinSupplementRun = 0;
+
             if (char.IsControl(character) && character is not '\r' and not '\n' and not '\t')
             {
                 score += 20;
             }
+        }
+
+        if (latinSupplementCount >= 4)
+        {
+            score += latinSupplementCount * 2;
         }
 
         return score;

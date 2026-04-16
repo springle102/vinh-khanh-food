@@ -217,22 +217,70 @@ public sealed partial class FoodStreetApiDataService
         var currentLanguage = languages.FirstOrDefault(item =>
             string.Equals(item.Code, currentLanguageCode, StringComparison.OrdinalIgnoreCase));
 
+        // ✅ FIX: If current language is available and not locked, return it without resetting
         if (currentLanguage is not null && !currentLanguage.IsLocked)
         {
+            _logger?.LogInformation("Current language '{CurrentLanguage}' is valid and allowed.", currentLanguageCode);
             return currentLanguage.Code;
         }
 
+        // ✅ FIX: Find a fallback language without automatically resetting
+        var allowedLanguage = languages.FirstOrDefault(item => !item.IsLocked)
+            ?? languages.FirstOrDefault()
+            ?? new LanguageOption
+            {
+                Code = AppLanguage.DefaultLanguage,
+                Flag = "🇻🇳",
+                DisplayName = "Tiếng Việt"
+            };
+
+        // ✅ FIX: CRITICAL - DO NOT auto-reset here. Just log and return the recommendation.
+        // The caller must decide whether to reset. This prevents the silent auto-reset bug.
+        if (!string.Equals(currentLanguageCode, allowedLanguage.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger?.LogWarning(
+                "Current language '{CurrentLanguage}' is locked or unavailable. Recommended fallback: '{AllowedLanguage}'. " +
+                "Call RestoreToAllowedLanguageAsync() if you want to change it.",
+                currentLanguageCode,
+                allowedLanguage.Code);
+        }
+
+        return allowedLanguage.Code;
+    }
+
+    // ✅ NEW: Explicit method for restoring to allowed language when needed
+    public async Task<string> RestoreToAllowedLanguageAsync()
+    {
+        var snapshot = await GetBootstrapSnapshotAsync();
+        var languages = snapshot?.SupportedLanguages.Count > 0
+            ? snapshot.SupportedLanguages
+            : BuildSupportedLanguages(null);
+        var currentLanguageCode = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
+        var currentLanguage = languages.FirstOrDefault(item =>
+            string.Equals(item.Code, currentLanguageCode, StringComparison.OrdinalIgnoreCase));
+
+        // If current is allowed, don't reset
+        if (currentLanguage is not null && !currentLanguage.IsLocked)
+        {
+            return currentLanguageCode;
+        }
+
+        // Find and restore to fallback
         var fallbackLanguage = languages.FirstOrDefault(item => !item.IsLocked)
             ?? languages.FirstOrDefault()
             ?? new LanguageOption
             {
                 Code = AppLanguage.DefaultLanguage,
-                Flag = "\uD83C\uDDFB\uD83C\uDDF3",
-                DisplayName = "Tieng Viet"
+                Flag = "🇻🇳",
+                DisplayName = "Tiếng Việt"
             };
 
         if (!string.Equals(currentLanguageCode, fallbackLanguage.Code, StringComparison.OrdinalIgnoreCase))
         {
+            _logger?.LogWarning(
+                "Resetting language from '{CurrentLanguage}' to '{FallbackLanguage}' due to access restrictions.",
+                currentLanguageCode,
+                fallbackLanguage.Code);
             await _languageService.SetLanguageAsync(fallbackLanguage.Code);
         }
 

@@ -6,17 +6,20 @@ namespace VinhKhanh.MobileApp.Pages;
 public partial class PremiumCheckoutPage : ContentPage, IQueryAttributable
 {
     private readonly PremiumCheckoutViewModel _viewModel;
+    private readonly LocalizedPageBindingSubscription _localizedPageBinding;
 
     public PremiumCheckoutPage()
     {
         InitializeComponent();
         _viewModel = ServiceHelper.GetService<PremiumCheckoutViewModel>();
         BindingContext = _viewModel;
+        _localizedPageBinding = new(this);
     }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        _localizedPageBinding.Rebind();
         await _viewModel.LoadAsync();
     }
 
