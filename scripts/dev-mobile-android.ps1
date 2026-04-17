@@ -3,7 +3,8 @@ param(
     [string]$Configuration = "Debug",
     [string]$ProjectPath = "",
     [string]$PackageId = "com.vinhkhanh.foodguide.mobile",
-    [int]$DebounceMilliseconds = 900
+    [int]$DebounceMilliseconds = 900,
+    [int]$SourcePollingIntervalMilliseconds = 2000
 )
 
 Set-StrictMode -Version Latest
@@ -496,6 +497,8 @@ $watchState = [hashtable]::Synchronized(@{
     Dirty = $false
     LastChange = [datetime]::MinValue
     LastPath = ""
+    SourceWriteUtc = [datetime]::MinValue
+    LastSourceProbeUtc = [datetime]::MinValue
 })
 
 $watchers = @()
@@ -532,6 +535,16 @@ $action = {
     $state.LastPath = $path
 }
 
+$errorAction = {
+    $data = $Event.MessageData
+    $state = $data.State
+    $sourceRoot = $data.SourceRoot
+
+    $state.Dirty = $true
+    $state.LastChange = Get-Date
+    $state.LastPath = "[watcher-overflow] $sourceRoot"
+}
+
 $eventNames = @()
 
 for ($watcherIndex = 0; $watcherIndex -lt $watchRoots.Count; $watcherIndex++) {
@@ -539,6 +552,7 @@ for ($watcherIndex = 0; $watcherIndex -lt $watchRoots.Count; $watcherIndex++) {
     $watcher.Path = $watchRoots[$watcherIndex]
     $watcher.IncludeSubdirectories = $true
     $watcher.NotifyFilter = [System.IO.NotifyFilters]"FileName, LastWrite, DirectoryName"
+    $watcher.InternalBufferSize = 65536
     $watcher.EnableRaisingEvents = $true
     $watchers += $watcher
 
@@ -546,7 +560,8 @@ for ($watcherIndex = 0; $watcherIndex -lt $watchRoots.Count; $watcherIndex++) {
         "VKMobileAndroidChanged-$watcherIndex",
         "VKMobileAndroidCreated-$watcherIndex",
         "VKMobileAndroidDeleted-$watcherIndex",
-        "VKMobileAndroidRenamed-$watcherIndex"
+        "VKMobileAndroidRenamed-$watcherIndex",
+        "VKMobileAndroidError-$watcherIndex"
     )
     $eventNames += $watcherEventNames
 
@@ -554,6 +569,10 @@ for ($watcherIndex = 0; $watcherIndex -lt $watchRoots.Count; $watcherIndex++) {
     Register-ObjectEvent -InputObject $watcher -EventName Created -SourceIdentifier $watcherEventNames[1] -MessageData $messageData -Action $action | Out-Null
     Register-ObjectEvent -InputObject $watcher -EventName Deleted -SourceIdentifier $watcherEventNames[2] -MessageData $messageData -Action $action | Out-Null
     Register-ObjectEvent -InputObject $watcher -EventName Renamed -SourceIdentifier $watcherEventNames[3] -MessageData $messageData -Action $action | Out-Null
+    Register-ObjectEvent -InputObject $watcher -EventName Error -SourceIdentifier $watcherEventNames[4] -MessageData @{
+        State = $watchState
+        SourceRoot = $watchRoots[$watcherIndex]
+    } -Action $errorAction | Out-Null
 }
 
 try {
@@ -595,11 +614,25 @@ try {
             Write-Host ""
             Write-Host "[watch] Detected change: $($watchState.LastPath)" -ForegroundColor Yellow
         }
+        elseif (((Get-Date) - $watchState.LastSourceProbeUtc).TotalMilliseconds -ge $SourcePollingIntervalMilliseconds) {
+            $watchState.LastSourceProbeUtc = Get-Date
+            $latestSourceWriteUtc = Get-LatestWriteTimeUtc -Paths (Get-MobileProjectInputPaths -ProjectFile $resolvedProjectPath)
+            if ($null -ne $latestSourceWriteUtc -and $latestSourceWriteUtc -gt $watchState.SourceWriteUtc) {
+                $watchState.SourceWriteUtc = $latestSourceWriteUtc
+                $pendingDeploy = $true
+                Write-Host ""
+                Write-Host "[watch] Polling detected source updates that may have been missed by file-system events." -ForegroundColor Yellow
+            }
+        }
 
         if ($pendingDeploy -and -not [string]::IsNullOrWhiteSpace($activeDeviceSerial)) {
             try {
                 Invoke-Deploy -AdbPath $adbPath -ProjectFile $resolvedProjectPath -TargetFramework $Framework -BuildConfiguration $Configuration -DeviceSerial $activeDeviceSerial -AndroidPackageId $PackageId
                 $pendingDeploy = $false
+                $latestSourceWriteUtc = Get-LatestWriteTimeUtc -Paths (Get-MobileProjectInputPaths -ProjectFile $resolvedProjectPath)
+                if ($null -ne $latestSourceWriteUtc) {
+                    $watchState.SourceWriteUtc = $latestSourceWriteUtc
+                }
 
                 if (-not $hasPrintedReadyMessage) {
                     Write-Host "[watch] Waiting for the next change. Press Ctrl+C to stop." -ForegroundColor Yellow

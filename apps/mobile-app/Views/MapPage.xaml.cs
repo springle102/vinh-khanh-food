@@ -13,6 +13,11 @@ namespace VinhKhanh.MobileApp;
 public partial class MapPage : ContentPage
 {
     private const string MapTemplateFileName = "openstreetmap-map.html";
+    private const string LeafletCssFileName = "leaflet.css";
+    private const string LeafletJsFileName = "leaflet.js";
+    private const string MapStatePlaceholder = "__MAP_STATE_BASE64__";
+    private const string LeafletCssPlaceholder = "__LEAFLET_CSS__";
+    private const string LeafletJsPlaceholder = "__LEAFLET_JS__";
 
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly MapViewModel _viewModel;
@@ -103,9 +108,9 @@ public partial class MapPage : ContentPage
 
     private async Task<string> BuildMapHtmlAsync()
     {
-        await using var stream = await FileSystem.OpenAppPackageFileAsync(MapTemplateFileName);
-        using var reader = new StreamReader(stream);
-        var template = await reader.ReadToEndAsync();
+        var template = await ReadRawAssetTextAsync(MapTemplateFileName);
+        var leafletCss = await ReadRawAssetTextAsync(LeafletCssFileName);
+        var leafletJs = await ReadRawAssetTextAsync(LeafletJsFileName);
 
         var payload = new MapPageState
         {
@@ -132,7 +137,17 @@ public partial class MapPage : ContentPage
 
         var json = JsonSerializer.Serialize(payload, _jsonOptions);
         var encodedJson = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
-        return template.Replace("__MAP_STATE_BASE64__", encodedJson, StringComparison.Ordinal);
+        return template
+            .Replace(LeafletCssPlaceholder, leafletCss, StringComparison.Ordinal)
+            .Replace(LeafletJsPlaceholder, leafletJs, StringComparison.Ordinal)
+            .Replace(MapStatePlaceholder, encodedJson, StringComparison.Ordinal);
+    }
+
+    private static async Task<string> ReadRawAssetTextAsync(string fileName)
+    {
+        await using var stream = await FileSystem.OpenAppPackageFileAsync(fileName);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
