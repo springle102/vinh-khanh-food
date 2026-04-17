@@ -790,6 +790,10 @@ public sealed partial class FoodStreetApiDataService
                 Latitude = poi.Lat,
                 Longitude = poi.Lng,
                 IsFeatured = poi.Featured,
+                TriggerRadius = double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= 20d
+                    ? poi.TriggerRadius
+                    : 20d,
+                Priority = Math.Max(0, poi.Priority),
                 HeatIntensity = ResolveHeatIntensity(poi, bootstrap.UsageEvents),
                 DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))
             };
@@ -1628,6 +1632,8 @@ public sealed partial class FoodStreetApiDataService
         public string Status { get; set; } = string.Empty;
         public bool Featured { get; set; }
         public string PriceRange { get; set; } = string.Empty;
+        public double TriggerRadius { get; set; }
+        public int Priority { get; set; }
         public int AverageVisitDuration { get; set; }
         public int PopularityScore { get; set; }
         public List<string> Tags { get; set; } = [];

@@ -480,7 +480,6 @@ public sealed class SimulationService : ISimulationService
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private CancellationTokenSource? _runCancellationSource;
-    private Task? _runTask;
     private UserLocationPoint? _initialLocation;
     private UserLocationPoint? _currentLocation;
     private RouteComputationResult? _currentRoute;
@@ -534,26 +533,18 @@ public sealed class SimulationService : ISimulationService
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
-            if (fromUserInteraction && RunState == SimulationRunState.Running)
-            {
-                CancelRunnerLocked();
-                RunState = SimulationRunState.Paused;
-            }
-
-            if (fromUserInteraction)
-            {
-                Mode = SimulationMode.Manual;
-            }
+            CancelRunnerLocked();
 
             _currentLocation = new UserLocationPoint
             {
                 Latitude = latitude,
                 Longitude = longitude
             };
-            if (_routePlaybackPoints.Count > 0)
-            {
-                _routePlaybackIndex = FindClosestRouteIndex(_currentLocation, _routePlaybackPoints);
-            }
+            _currentRoute = null;
+            _routePlaybackPoints = [];
+            _routePlaybackIndex = 0;
+            RunState = SimulationRunState.Idle;
+            Mode = SimulationMode.Manual;
 
             PublishStateChanged();
         }
@@ -562,7 +553,7 @@ public sealed class SimulationService : ISimulationService
             _stateLock.Release();
         }
 
-        PublishLocationChanged(_currentLocation!);
+        PublishLocationChanged(_currentLocation!, fromUserInteraction);
     }
 
     public async Task SetModeAsync(SimulationMode mode, CancellationToken cancellationToken = default)
@@ -570,17 +561,10 @@ public sealed class SimulationService : ISimulationService
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
-            if (Mode == mode)
-            {
-                return;
-            }
-
-            Mode = mode;
-            if (mode == SimulationMode.Manual && RunState == SimulationRunState.Running)
-            {
-                CancelRunnerLocked();
-                RunState = SimulationRunState.Paused;
-            }
+            // Route auto-run is disabled. Keep the simulation in manual click-to-place mode.
+            CancelRunnerLocked();
+            Mode = SimulationMode.Manual;
+            RunState = SimulationRunState.Idle;
 
             PublishStateChanged();
         }
@@ -592,35 +576,20 @@ public sealed class SimulationService : ISimulationService
 
     public async Task LoadRouteAsync(RouteComputationResult route, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(route);
-
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
             CancelRunnerLocked();
-            _currentRoute = route;
-            _routePlaybackPoints = DensifyRoute(route.Points, SimulationStepMeters);
+            _currentRoute = null;
+            _routePlaybackPoints = [];
             _routePlaybackIndex = 0;
-
-            if (_routePlaybackPoints.Count > 0)
-            {
-                _currentLocation = Clone(_routePlaybackPoints[0]);
-                _initialLocation ??= Clone(_currentLocation);
-            }
-
-            RunState = _routePlaybackPoints.Count > 1
-                ? SimulationRunState.Ready
-                : SimulationRunState.Completed;
+            RunState = SimulationRunState.Idle;
+            Mode = SimulationMode.Manual;
             PublishStateChanged();
         }
         finally
         {
             _stateLock.Release();
-        }
-
-        if (_currentLocation is not null)
-        {
-            PublishLocationChanged(_currentLocation);
         }
     }
 
@@ -629,26 +598,10 @@ public sealed class SimulationService : ISimulationService
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
-            if (_routePlaybackPoints.Count <= 1)
-            {
-                return;
-            }
-
-            if (_runTask is { IsCompleted: false })
-            {
-                return;
-            }
-
-            Mode = SimulationMode.Auto;
-            if (_routePlaybackIndex >= _routePlaybackPoints.Count - 1)
-            {
-                _routePlaybackIndex = 0;
-                _currentLocation = Clone(_routePlaybackPoints[0]);
-            }
-
-            _runCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            RunState = SimulationRunState.Running;
-            _runTask = RunSimulationLoopAsync(interval ?? DefaultTickInterval, _runCancellationSource.Token);
+            // Route playback is intentionally disabled for click-to-place mock location mode.
+            CancelRunnerLocked();
+            Mode = SimulationMode.Manual;
+            RunState = SimulationRunState.Idle;
             PublishStateChanged();
         }
         finally
@@ -662,13 +615,9 @@ public sealed class SimulationService : ISimulationService
         await _stateLock.WaitAsync();
         try
         {
-            if (RunState != SimulationRunState.Running)
-            {
-                return;
-            }
-
             CancelRunnerLocked();
-            RunState = SimulationRunState.Paused;
+            RunState = SimulationRunState.Idle;
+            Mode = SimulationMode.Manual;
             PublishStateChanged();
         }
         finally
@@ -683,20 +632,11 @@ public sealed class SimulationService : ISimulationService
         try
         {
             CancelRunnerLocked();
-            if (!keepRoute)
-            {
-                _currentRoute = null;
-                _routePlaybackPoints = [];
-                _routePlaybackIndex = 0;
-                RunState = SimulationRunState.Idle;
-            }
-            else
-            {
-                RunState = _routePlaybackPoints.Count > 1
-                    ? SimulationRunState.Ready
-                    : SimulationRunState.Idle;
-            }
-
+            _currentRoute = null;
+            _routePlaybackPoints = [];
+            _routePlaybackIndex = 0;
+            RunState = SimulationRunState.Idle;
+            Mode = SimulationMode.Manual;
             PublishStateChanged();
         }
         finally
@@ -726,7 +666,7 @@ public sealed class SimulationService : ISimulationService
 
         if (_currentLocation is not null)
         {
-            PublishLocationChanged(_currentLocation);
+            PublishLocationChanged(_currentLocation, isUserInitiated: false);
         }
     }
 
@@ -800,15 +740,15 @@ public sealed class SimulationService : ISimulationService
         _runCancellationSource?.Cancel();
         _runCancellationSource?.Dispose();
         _runCancellationSource = null;
-        _runTask = null;
     }
 
-    private void PublishLocationChanged(UserLocationPoint location)
+    private void PublishLocationChanged(UserLocationPoint location, bool isUserInitiated = false)
     {
         LocationChanged?.Invoke(this, new UserLocationChangedEventArgs
         {
             Location = location,
             IsMock = true,
+            IsUserInitiated = isUserInitiated,
             CapturedAt = DateTimeOffset.UtcNow
         });
     }

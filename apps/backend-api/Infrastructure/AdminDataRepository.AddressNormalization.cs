@@ -8,6 +8,13 @@ public sealed partial class AdminDataRepository
 {
     private PoiUpsertRequest NormalizePoiRequestForPersistence(PoiUpsertRequest request)
     {
+        var normalizedTriggerRadius = request.TriggerRadius switch
+        {
+            <= 0 => 20,
+            < 20 => 20,
+            _ => request.TriggerRadius
+        };
+        var normalizedPriority = request.Priority < 0 ? 0 : request.Priority;
         var normalized = PoiAddressNormalizer.NormalizeStoredPoiAddress(
             request.Address,
             request.District,
@@ -15,7 +22,9 @@ public sealed partial class AdminDataRepository
             request.Lat,
             request.Lng);
 
-        if (!HasPoiAddressChanges(request.Address, request.District, request.Ward, normalized))
+        if (!HasPoiAddressChanges(request.Address, request.District, request.Ward, normalized) &&
+            normalizedTriggerRadius == request.TriggerRadius &&
+            normalizedPriority == request.Priority)
         {
             return request;
         }
@@ -35,7 +44,9 @@ public sealed partial class AdminDataRepository
         {
             Address = normalized.Address,
             District = normalized.District,
-            Ward = normalized.Ward
+            Ward = normalized.Ward,
+            TriggerRadius = normalizedTriggerRadius,
+            Priority = normalizedPriority
         };
     }
 

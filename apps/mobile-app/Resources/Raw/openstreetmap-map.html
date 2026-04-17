@@ -269,6 +269,8 @@
 
     const DEFAULT_CENTER = [10.7578, 106.7033];
     const DEFAULT_BROWSE_ZOOM = 15;
+    const DEFAULT_TRIGGER_RADIUS_METERS = 20;
+    const EARTH_RADIUS_METERS = 6371000;
     const state = decodeBase64Json("__MAP_STATE_BASE64__");
     const map = L.map("map", {
       zoomControl: false,
@@ -320,10 +322,63 @@
       return currentTour.stopOrderByPoiId[poiId] ?? null;
     };
 
-    const createPoiIcon = (poi, selected, active) => {
+    const resolvePoiTriggerRadius = (poi) =>
+      Number.isFinite(poi?.triggerRadius) && poi.triggerRadius >= DEFAULT_TRIGGER_RADIUS_METERS
+        ? poi.triggerRadius
+        : DEFAULT_TRIGGER_RADIUS_METERS;
+
+    const toDegrees = (radians) => (radians * 180) / Math.PI;
+    const clampLatitude = (latitude) => Math.max(-90, Math.min(90, latitude));
+    const clampLongitude = (longitude) => Math.max(-180, Math.min(180, longitude));
+
+    const buildPoiRadiusBounds = (latitude, longitude, radiusMeters) => {
+      const safeRadius = Math.max(DEFAULT_TRIGGER_RADIUS_METERS, radiusMeters || 0);
+      const angularDistance = safeRadius / EARTH_RADIUS_METERS;
+      const latitudeDelta = toDegrees(angularDistance);
+      const latitudeRadians = latitude * (Math.PI / 180);
+      const cosLatitude = Math.cos(latitudeRadians);
+      const longitudeDelta = Math.abs(cosLatitude) < 1e-6
+        ? 180
+        : toDegrees(angularDistance / Math.max(Math.abs(cosLatitude), 1e-6));
+
+      return L.latLngBounds(
+        [
+          clampLatitude(latitude - latitudeDelta),
+          clampLongitude(longitude - longitudeDelta)
+        ],
+        [
+          clampLatitude(latitude + latitudeDelta),
+          clampLongitude(longitude + longitudeDelta)
+        ]
+      );
+    };
+
+    const buildPoiBounds = (items) => {
+      const validItems = (items || []).filter((item) => item.latitude != null && item.longitude != null);
+      if (!validItems.length) {
+        return null;
+      }
+
+      return validItems.reduce((bounds, item) => {
+        const poiBounds = buildPoiRadiusBounds(
+          item.latitude,
+          item.longitude,
+          resolvePoiTriggerRadius(item)
+        );
+
+        if (!bounds) {
+          return poiBounds;
+        }
+
+        bounds.extend(poiBounds);
+        return bounds;
+      }, null);
+    };
+
+    const getPoiVisualState = (poi, selected, active) => {
       const isTourVisible = hasVisibleTour();
-      const inTour = isTourVisible && getTourPoiSet().has(poi.id);
-      const order = inTour ? getTourStopOrder(poi.id) : null;
+      const isInTour = isTourVisible && getTourPoiSet().has(poi.id);
+      const order = isInTour ? getTourStopOrder(poi.id) : null;
       const isSimulationVisible = hasSimulationRoute();
       const simulationPoiSet = getSimulationEligiblePoiSet();
       const isRouteDestination = isSimulationVisible && routeSimulationState.destinationPoiId === poi.id;
@@ -349,7 +404,7 @@
         color = "#0ea5e9";
         halo = "rgba(14, 165, 233, 0.18)";
         classes.push("on-route");
-      } else if (inTour) {
+      } else if (isInTour) {
         color = currentTour.mode === "active" ? "#c2410c" : "#f59e0b";
         halo = currentTour.mode === "active" ? "rgba(194, 65, 12, 0.18)" : "rgba(245, 158, 11, 0.18)";
         classes.push("in-tour");
@@ -359,16 +414,59 @@
         classes.push("muted");
       }
 
-      const orderBadge = order == null
+      const isMuted =
+        (!selected && !active && isTourVisible && !isInTour) ||
+        (!selected && !active && isSimulationVisible && !isOnSimulationRoute && !isRouteDestination);
+
+      return {
+        classes,
+        color,
+        halo,
+        order,
+        isInTour,
+        isRouteDestination,
+        isOnSimulationRoute,
+        isMuted
+      };
+    };
+
+    const createPoiCircleOptions = (poi, selected, active) => {
+      const visualState = getPoiVisualState(poi, selected, active);
+
+      let fillColor = poi.isFeatured ? "#fb923c" : "#64748b";
+      if (selected) {
+        fillColor = "#14b8a6";
+      } else if (active) {
+        fillColor = "#fb923c";
+      } else if (visualState.isRouteDestination) {
+        fillColor = "#60a5fa";
+      } else if (visualState.isOnSimulationRoute) {
+        fillColor = "#38bdf8";
+      } else if (visualState.isInTour) {
+        fillColor = currentTour.mode === "active" ? "#fb923c" : "#fbbf24";
+      }
+
+      return {
+        color: visualState.color,
+        weight: selected || active ? 2 : 1.5,
+        opacity: visualState.isMuted ? 0.44 : selected || active ? 0.92 : 0.68,
+        fillColor,
+        fillOpacity: visualState.isMuted ? 0.05 : selected || active ? 0.16 : 0.1
+      };
+    };
+
+    const createPoiIcon = (poi, selected, active) => {
+      const visualState = getPoiVisualState(poi, selected, active);
+      const orderBadge = visualState.order == null
         ? ""
-        : `<span class="poi-marker__order">${order}</span>`;
+        : `<span class="poi-marker__order">${visualState.order}</span>`;
 
       return L.divIcon({
         className: "",
         html: `
-          <div class="${classes.join(" ")}">
-            <span class="poi-marker__halo" style="background:${halo};"></span>
-            <span class="poi-marker__dot" style="background:${color};"></span>
+          <div class="${visualState.classes.join(" ")}">
+            <span class="poi-marker__halo" style="background:${visualState.halo};"></span>
+            <span class="poi-marker__dot" style="background:${visualState.color};"></span>
             ${orderBadge}
           </div>`,
         iconSize: [24, 24],
@@ -390,11 +488,18 @@
 
     const buildPoiPopupHtml = (poi) => {
       const featuredText = poi.isFeatured && featuredLabel ? ` &bull; ${featuredLabel}` : "";
+      const triggerRadiusText = `${resolvePoiTriggerRadius(poi)} m`;
       return `
       <div>
         <p class="popup-title">${poi.title}</p>
         <div class="popup-meta">${poi.category}${featuredText}</div>
         <div class="popup-description">${poi.address}</div>
+        <div class="popup-grid">
+          <div class="popup-row">
+            <span class="popup-label">Bán kính kích hoạt</span>
+            <span class="popup-value">${triggerRadiusText}</span>
+          </div>
+        </div>
       </div>`;
     };
 
@@ -520,8 +625,16 @@
     };
 
     const createPoiMarker = (poi) => {
+      const isSelected = poi.id === selectedPoiId;
+      const isActive = poi.id === activePoiId;
+      const circle = L.circle([poi.latitude, poi.longitude], {
+        radius: resolvePoiTriggerRadius(poi),
+        ...createPoiCircleOptions(poi, isSelected, isActive),
+        interactive: false
+      }).addTo(map);
+
       const marker = L.marker([poi.latitude, poi.longitude], {
-        icon: createPoiIcon(poi, poi.id === selectedPoiId, poi.id === activePoiId),
+        icon: createPoiIcon(poi, isSelected, isActive),
         keyboard: false
       }).addTo(map);
 
@@ -530,30 +643,34 @@
         notifyPoiSelected(poi.id, true);
       });
 
-      poiMarkers.set(poi.id, marker);
+      circle.bringToBack();
+      poiMarkers.set(poi.id, { marker, circle });
     };
 
     const syncPoiMarkers = (openPopupForSelection) => {
       const nextPoiIds = new Set(pois.map((poi) => String(poi.id)));
 
-      Array.from(poiMarkers.entries()).forEach(([poiId, marker]) => {
+      Array.from(poiMarkers.entries()).forEach(([poiId, layers]) => {
         if (nextPoiIds.has(poiId)) {
           return;
         }
 
-        map.removeLayer(marker);
+        map.removeLayer(layers.marker);
+        map.removeLayer(layers.circle);
         poiMarkers.delete(poiId);
       });
 
       pois.forEach((poi) => {
-        const marker = poiMarkers.get(poi.id);
-        if (!marker) {
+        const layers = poiMarkers.get(poi.id);
+        if (!layers) {
           createPoiMarker(poi);
           return;
         }
 
-        marker.setLatLng([poi.latitude, poi.longitude]);
-        marker.bindPopup(buildPoiPopupHtml(poi));
+        layers.marker.setLatLng([poi.latitude, poi.longitude]);
+        layers.marker.bindPopup(buildPoiPopupHtml(poi));
+        layers.circle.setLatLng([poi.latitude, poi.longitude]);
+        layers.circle.setRadius(resolvePoiTriggerRadius(poi));
       });
 
       if (selectedPoiId && !poiMarkers.has(selectedPoiId)) {
@@ -574,8 +691,8 @@
       const isSimulationVisible = hasSimulationRoute();
 
       pois.forEach((poi) => {
-        const marker = poiMarkers.get(poi.id);
-        if (!marker) {
+        const layers = poiMarkers.get(poi.id);
+        if (!layers) {
           return;
         }
 
@@ -584,13 +701,11 @@
         const isInTour = tourPoiSet.has(poi.id);
         const isRouteDestination = isSimulationVisible && routeSimulationState.destinationPoiId === poi.id;
         const isOnSimulationRoute = isSimulationVisible && simulationPoiSet.has(poi.id);
-        const isMuted =
-          (!isSelected && !isActive && isTourVisible && !isInTour) ||
-          (!isSelected && !isActive && isSimulationVisible && !isOnSimulationRoute && !isRouteDestination);
+        const visualState = getPoiVisualState(poi, isSelected, isActive);
 
-        marker.setIcon(createPoiIcon(poi, isSelected, isActive));
-        marker.setOpacity(isMuted ? 0.58 : 1);
-        marker.setZIndexOffset(
+        layers.marker.setIcon(createPoiIcon(poi, isSelected, isActive));
+        layers.marker.setOpacity(visualState.isMuted ? 0.58 : 1);
+        layers.marker.setZIndexOffset(
           isActive ? 1200 :
           isSelected ? 1000 :
           isRouteDestination ? 520 :
@@ -598,16 +713,20 @@
           isInTour ? 420 :
           0
         );
+        layers.circle.setLatLng([poi.latitude, poi.longitude]);
+        layers.circle.setRadius(resolvePoiTriggerRadius(poi));
+        layers.circle.setStyle(createPoiCircleOptions(poi, isSelected, isActive));
+        layers.circle.bringToBack();
 
         if (isSelected) {
           if (openPopupForSelection) {
-            marker.openPopup();
+            layers.marker.openPopup();
           }
 
           return;
         }
 
-        marker.closePopup();
+        layers.marker.closePopup();
       });
     };
 
@@ -728,12 +847,18 @@
       }
 
       if (pois.length === 1) {
+        const singlePoiBounds = buildPoiBounds(pois);
+        if (singlePoiBounds && singlePoiBounds.isValid()) {
+          map.fitBounds(singlePoiBounds.pad(0.18), getBrowseFitOptions());
+          return;
+        }
+
         map.setView([pois[0].latitude, pois[0].longitude], 16, { animate: false });
         return;
       }
 
-      const bounds = L.latLngBounds(pois.map((poi) => [poi.latitude, poi.longitude]));
-      if (bounds.isValid()) {
+      const bounds = buildPoiBounds(pois);
+      if (bounds && bounds.isValid()) {
         map.fitBounds(bounds.pad(0.12), getBrowseFitOptions());
       }
     };
@@ -821,6 +946,18 @@
       },
       setUserLocation: (nextState) => {
         upsertUserLocationMarker(nextState);
+      },
+      setCurrentLocation: (latitude, longitude) => {
+        if (latitude == null || longitude == null) {
+          upsertUserLocationMarker(null);
+          return;
+        }
+
+        upsertUserLocationMarker({
+          ...(userLocationState || {}),
+          latitude,
+          longitude
+        });
       },
       setRouteSimulation: (nextRouteSimulation) => {
         setRouteSimulation(nextRouteSimulation);

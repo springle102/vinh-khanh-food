@@ -30,6 +30,8 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private const double BrowseViewportBottomInset = 168;
     private const double TourViewportTopInset = 230;
     private const double TourViewportBottomInsetFallback = 176;
+    private static readonly SemaphoreSlim MapTemplateLock = new(1, 1);
+    private static string? _cachedMapHtmlTemplate;
 
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HomeMapViewModel _viewModel;
@@ -50,7 +52,6 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private double _lastAllocatedWidth;
     private double _lastAllocatedHeight;
     private string _tourPanelToken = string.Empty;
-    private int _lastRenderedMapDataVersion = -1;
 
     public HomeMapPage()
     {
@@ -60,6 +61,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         _localizedPageBinding = new(this);
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         InitializeTourPanelVisualState();
+        _ = WarmMapTemplateAsync();
     }
 
     protected override async void OnAppearing()
@@ -68,6 +70,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         _localizedPageBinding.Rebind();
         _viewModel.ActivateNarrationContext();
         StartAutoRefreshLoop();
+        var renderTask = EnsureMapRenderedAsync();
         await _viewModel.LoadAsync();
         if (!string.IsNullOrWhiteSpace(_pendingStartTourId))
         {
@@ -95,7 +98,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         }
 
         await _viewModel.StartLocationTrackingAsync();
-        await EnsureMapRenderedAsync();
+        await renderTask;
         await PoiDetailBottomSheet.SetPresentedAsync(_viewModel.IsBottomSheetVisible);
         await SyncTourPanelAsync(animated: false, refitTour: false);
     }
@@ -203,7 +206,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         }
 
         _isMapReady = true;
-        await RefreshMapStateAsync();
+        await RefreshMapContentAsync();
         await UpdateMapViewportInsetsAsync(refitTour: _viewModel.HasVisibleTour && _viewModel.IsTourPanelVisible);
         if (_viewModel.HasSimulationRoute)
         {
@@ -638,17 +641,15 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
 
     private async Task RenderMapAsync()
     {
-        var targetVersion = _viewModel.MapDataVersion;
         await _mapRenderLock.WaitAsync();
         try
         {
-            if (targetVersion == _lastRenderedMapDataVersion && MapWebView.Source is not null)
+            if (MapWebView.Source is not null)
             {
                 return;
             }
 
             await RenderMapCoreAsync();
-            _lastRenderedMapDataVersion = targetVersion;
         }
         finally
         {
@@ -659,24 +660,19 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private async Task RenderMapCoreAsync()
     {
         _isMapReady = false;
-        var template = await ReadRawAssetTextAsync(MapTemplateFileName);
-        var leafletCss = await ReadRawAssetTextAsync(LeafletCssFileName);
-        var leafletJs = await ReadRawAssetTextAsync(LeafletJsFileName);
-
+        var template = await GetMapHtmlTemplateAsync();
         var json = JsonSerializer.Serialize(BuildMapPayload(), _jsonOptions);
         var encodedJson = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
         MapWebView.Source = new HtmlWebViewSource
         {
             Html = template
-                .Replace(LeafletCssPlaceholder, leafletCss, StringComparison.Ordinal)
-                .Replace(LeafletJsPlaceholder, leafletJs, StringComparison.Ordinal)
                 .Replace(MapStatePlaceholder, encodedJson, StringComparison.Ordinal)
         };
     }
 
     private async Task EnsureMapRenderedAsync()
     {
-        if (_viewModel.MapDataVersion == _lastRenderedMapDataVersion && MapWebView.Source is not null)
+        if (MapWebView.Source is not null)
         {
             return;
         }
@@ -711,7 +707,8 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
             status = poi.IsFeatured ? "featured" : "standard",
             latitude = poi.Latitude,
             longitude = poi.Longitude,
-            isFeatured = poi.IsFeatured
+            isFeatured = poi.IsFeatured,
+            triggerRadius = poi.TriggerRadius
         });
     }
 
@@ -741,12 +738,51 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         return await reader.ReadToEndAsync();
     }
 
+    private static Task WarmMapTemplateAsync() => GetMapHtmlTemplateAsync();
+
+    private static async Task<string> GetMapHtmlTemplateAsync()
+    {
+        if (_cachedMapHtmlTemplate is not null)
+        {
+            return _cachedMapHtmlTemplate;
+        }
+
+        await MapTemplateLock.WaitAsync();
+        try
+        {
+            if (_cachedMapHtmlTemplate is not null)
+            {
+                return _cachedMapHtmlTemplate;
+            }
+
+            var templateTask = ReadRawAssetTextAsync(MapTemplateFileName);
+            var leafletCssTask = ReadRawAssetTextAsync(LeafletCssFileName);
+            var leafletJsTask = ReadRawAssetTextAsync(LeafletJsFileName);
+            await Task.WhenAll(templateTask, leafletCssTask, leafletJsTask);
+
+            _cachedMapHtmlTemplate = templateTask.Result
+                .Replace(LeafletCssPlaceholder, leafletCssTask.Result, StringComparison.Ordinal)
+                .Replace(LeafletJsPlaceholder, leafletJsTask.Result, StringComparison.Ordinal);
+
+            return _cachedMapHtmlTemplate;
+        }
+        finally
+        {
+            MapTemplateLock.Release();
+        }
+    }
+
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
         {
             case nameof(HomeMapViewModel.MapDataVersion):
-                MainThread.BeginInvokeOnMainThread(() => _ = EnsureMapRenderedAsync());
+                MainThread.BeginInvokeOnMainThread(() =>
+                    _ = MapWebView.Source is null
+                        ? EnsureMapRenderedAsync()
+                        : _isMapReady
+                            ? RefreshMapContentAsync()
+                            : Task.CompletedTask);
                 break;
 
             case nameof(HomeMapViewModel.MapContentVersion):

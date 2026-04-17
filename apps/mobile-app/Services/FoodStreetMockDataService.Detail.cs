@@ -81,6 +81,10 @@ public sealed partial class FoodStreetApiDataService
             Latitude = detail.Latitude,
             Longitude = detail.Longitude,
             IsFeatured = detail.IsFeatured,
+            TriggerRadius = double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= 20d
+                ? poi.TriggerRadius
+                : 20d,
+            Priority = Math.Max(0, poi.Priority),
             HeatIntensity = ResolveHeatIntensity(poi, []),
             DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))
         };

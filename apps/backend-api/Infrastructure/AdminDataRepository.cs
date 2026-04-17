@@ -647,6 +647,12 @@ public sealed partial class AdminDataRepository
 
             IF COL_LENGTH(N'dbo.Pois', N'RejectedAt') IS NULL
                 ALTER TABLE dbo.Pois ADD RejectedAt DATETIMEOFFSET(7) NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'TriggerRadius') IS NULL
+                ALTER TABLE dbo.Pois ADD TriggerRadius INT NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'Priority') IS NULL
+                ALTER TABLE dbo.Pois ADD Priority INT NULL;
             """);
 
         ExecuteNonQuery(
@@ -740,6 +746,40 @@ public sealed partial class AdminDataRepository
             connection,
             null,
             """
+            IF COL_LENGTH(N'dbo.Pois', N'TriggerRadius') IS NOT NULL
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM sys.default_constraints defaultConstraint
+                   INNER JOIN sys.columns columnInfo
+                       ON columnInfo.object_id = defaultConstraint.parent_object_id
+                      AND columnInfo.column_id = defaultConstraint.parent_column_id
+                   WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.Pois')
+                     AND columnInfo.name = N'TriggerRadius'
+               )
+                ALTER TABLE dbo.Pois ADD CONSTRAINT DF_Pois_TriggerRadius DEFAULT ((20)) FOR TriggerRadius;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF COL_LENGTH(N'dbo.Pois', N'Priority') IS NOT NULL
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM sys.default_constraints defaultConstraint
+                   INNER JOIN sys.columns columnInfo
+                       ON columnInfo.object_id = defaultConstraint.parent_object_id
+                      AND columnInfo.column_id = defaultConstraint.parent_column_id
+                   WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.Pois')
+                     AND columnInfo.name = N'Priority'
+               )
+                ALTER TABLE dbo.Pois ADD CONSTRAINT DF_Pois_Priority DEFAULT ((0)) FOR Priority;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
             IF OBJECT_ID(N'dbo.PoiTags', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.PoiTags (
@@ -772,7 +812,12 @@ public sealed partial class AdminDataRepository
                     WHEN LOWER(COALESCE(LTRIM(RTRIM([Status])), N'')) = N'rejected'
                         THEN COALESCE(RejectedAt, UpdatedAt)
                     ELSE NULL
-                END;
+                END,
+                TriggerRadius = CASE
+                    WHEN TriggerRadius IS NULL OR TriggerRadius < 20 THEN 20
+                    ELSE TriggerRadius
+                END,
+                Priority = COALESCE(Priority, 0);
             """);
 
         ExecuteNonQuery(

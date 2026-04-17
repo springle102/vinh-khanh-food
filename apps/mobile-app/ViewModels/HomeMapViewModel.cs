@@ -344,8 +344,19 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
     public async Task LoadAsync(bool autoPlayNarrationForSelection)
     {
-        await _dataService.RefreshDataIfChangedAsync();
+        var hasVisibleState =
+            Pois.Count > 0 ||
+            AvailableTours.Count > 0 ||
+            SelectedPoi is not null ||
+            ActiveTour is not null ||
+            PreviewTour is not null;
+
         await ReloadCurrentStateAsync(autoPlayNarrationForSelection);
+
+        if (hasVisibleState)
+        {
+            _ = RefreshIfNeededSafelyAsync();
+        }
     }
 
     public async Task RefreshIfNeededAsync()
@@ -365,6 +376,18 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         finally
         {
             Interlocked.Exchange(ref _syncRefreshInProgress, 0);
+        }
+    }
+
+    private async Task RefreshIfNeededSafelyAsync()
+    {
+        try
+        {
+            await RefreshIfNeededAsync();
+        }
+        catch
+        {
+            // Best-effort background refresh. Existing snapshot should remain visible.
         }
     }
 
@@ -588,13 +611,19 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             return;
         }
 
-        await ApplyLocationUpdateAsync(currentLocation, isMockLocation: true);
+        await ApplyLocationUpdateAsync(currentLocation, isMockLocation: true, isUserInitiated: false);
     }
 
     private void OnUserLocationChanged(object? sender, UserLocationChangedEventArgs e)
-        => MainThread.BeginInvokeOnMainThread(() => _ = ApplyLocationUpdateAsync(e.Location, e.IsMock));
+        => MainThread.BeginInvokeOnMainThread(() => _ = ApplyLocationUpdateAsync(
+            e.Location,
+            e.IsMock,
+            e.IsUserInitiated));
 
-    private async Task ApplyLocationUpdateAsync(UserLocationPoint location, bool isMockLocation)
+    private async Task ApplyLocationUpdateAsync(
+        UserLocationPoint location,
+        bool isMockLocation,
+        bool isUserInitiated)
     {
         await _locationUpdateLock.WaitAsync();
         try
@@ -610,7 +639,16 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
                 return;
             }
 
-            var narrationResult = await _autoNarrationService.ProcessLocationAsync(location, Pois, isMockLocation);
+            if (isMockLocation && !isUserInitiated && _simulationMode == SimulationMode.Manual)
+            {
+                ApplyUserLocationSnapshot(BuildPassiveLocationSnapshot(location), isMockLocation);
+                return;
+            }
+
+            // Map clicks in mock mode should trigger POI lookup immediately at the clicked point.
+            var narrationResult = isMockLocation && isUserInitiated
+                ? await _autoNarrationService.ProcessMockLocationTapAsync(location, Pois)
+                : await _autoNarrationService.ProcessLocationAsync(location, Pois, isMockLocation);
             ApplyUserLocationSnapshot(narrationResult.Snapshot, isMockLocation);
 
             if (!narrationResult.PlaybackStarted ||
@@ -637,6 +675,55 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         _userLocationSnapshot = snapshot;
         CurrentActivePoiId = snapshot.ActivePoi?.Id;
         UserLocationVersion++;
+    }
+
+    private PoiProximitySnapshot BuildPassiveLocationSnapshot(UserLocationPoint location)
+    {
+        PoiLocation? nearestPoi = null;
+        double? nearestDistanceMeters = null;
+        PoiLocation? activePoi = null;
+        double? activeDistanceMeters = null;
+
+        foreach (var poi in Pois)
+        {
+            var distanceMeters = CalculateDistanceMeters(
+                location.Latitude,
+                location.Longitude,
+                poi.Latitude,
+                poi.Longitude);
+
+            if (nearestDistanceMeters is null || distanceMeters < nearestDistanceMeters.Value)
+            {
+                nearestPoi = poi;
+                nearestDistanceMeters = distanceMeters;
+            }
+
+            if (distanceMeters > ResolveTriggerRadius(poi))
+            {
+                continue;
+            }
+
+            if (activePoi is null ||
+                distanceMeters < activeDistanceMeters.GetValueOrDefault(double.MaxValue) ||
+                (Math.Abs(distanceMeters - activeDistanceMeters.GetValueOrDefault()) < 0.01d &&
+                 (poi.Priority > activePoi.Priority ||
+                  (poi.Priority == activePoi.Priority &&
+                   string.CompareOrdinal(poi.Id, activePoi.Id) < 0))))
+            {
+                activePoi = poi;
+                activeDistanceMeters = distanceMeters;
+            }
+        }
+
+        return new PoiProximitySnapshot
+        {
+            Location = location,
+            NearestPoi = nearestPoi,
+            NearestPoiDistanceMeters = nearestDistanceMeters,
+            ActivePoi = activePoi,
+            ActivePoiDistanceMeters = activeDistanceMeters,
+            ActivationRadiusMeters = activePoi is null ? 0d : ResolveTriggerRadius(activePoi)
+        };
     }
 
     private async Task PresentAutoNarratedPoiAsync(PoiLocation poi, PoiExperienceDetail detail, string usageSource)
@@ -680,22 +767,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             return;
         }
 
-        var narrationResult = await _autoNarrationService.TriggerPoiAsync(SelectedPoi);
         await _simulationService.SetCurrentLocationAsync(SelectedPoi.Latitude, SelectedPoi.Longitude);
-
-        if (!narrationResult.PlaybackStarted ||
-            narrationResult.TriggeredPoi is null ||
-            narrationResult.TriggeredDetail is null)
-        {
-            return;
-        }
-
-        ApplyUserLocationSnapshot(narrationResult.Snapshot, isMockLocation: true);
-        LastTriggeredPoiId = narrationResult.TriggeredPoi.Id;
-        await PresentAutoNarratedPoiAsync(
-            narrationResult.TriggeredPoi,
-            narrationResult.TriggeredDetail,
-            usageSource: "mock_location_test");
     }
 
     private async Task CloseBottomSheetAsync()
@@ -727,8 +799,36 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
         return _simulationMode == SimulationMode.Auto
             ? "route_simulation_auto"
-            : "manual_simulation_route";
+            : "mock_location_test";
     }
+
+    private static double ResolveTriggerRadius(PoiLocation poi)
+        => double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= 20d
+            ? poi.TriggerRadius
+            : 20d;
+
+    private static double CalculateDistanceMeters(
+        double latitude1,
+        double longitude1,
+        double latitude2,
+        double longitude2)
+    {
+        const double earthRadiusMeters = 6_371_000d;
+        var latitudeDelta = DegreesToRadians(latitude2 - latitude1);
+        var longitudeDelta = DegreesToRadians(longitude2 - longitude1);
+        var latitudeStart = DegreesToRadians(latitude1);
+        var latitudeEnd = DegreesToRadians(latitude2);
+        var haversine =
+            Math.Pow(Math.Sin(latitudeDelta / 2d), 2d) +
+            Math.Cos(latitudeStart) *
+            Math.Cos(latitudeEnd) *
+            Math.Pow(Math.Sin(longitudeDelta / 2d), 2d);
+        var centralAngle = 2d * Math.Atan2(Math.Sqrt(haversine), Math.Sqrt(1d - haversine));
+        return earthRadiusMeters * centralAngle;
+    }
+
+    private static double DegreesToRadians(double degrees)
+        => degrees * (Math.PI / 180d);
 
     private void QueueAutoPlayNarration(PoiExperienceDetail detail, long requestVersion)
     {

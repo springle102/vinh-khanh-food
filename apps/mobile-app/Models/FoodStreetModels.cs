@@ -48,6 +48,8 @@ public sealed class PoiLocation
     public double Latitude { get; set; }
     public double Longitude { get; set; }
     public bool IsFeatured { get; set; }
+    public double TriggerRadius { get; set; } = 20d;
+    public int Priority { get; set; }
     public double HeatIntensity { get; set; }
     public string DistanceText { get; set; } = string.Empty;
 }

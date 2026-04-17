@@ -236,6 +236,8 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
         district: draft.district,
         ward: draft.ward,
         priceRange: draft.priceRange,
+        triggerRadius: draft.triggerRadius,
+        priority: draft.priority,
         tags: draft.tags,
         ownerUserId: draft.ownerUserId,
         updatedBy: actor.name,

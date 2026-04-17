@@ -40,6 +40,7 @@ public sealed class UserLocationChangedEventArgs : EventArgs
 {
     public UserLocationPoint Location { get; init; } = new();
     public bool IsMock { get; init; }
+    public bool IsUserInitiated { get; init; }
     public DateTimeOffset CapturedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 

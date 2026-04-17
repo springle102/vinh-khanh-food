@@ -1,7 +1,7 @@
+using Microsoft.Maui.ApplicationModel;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 using VinhKhanh.MobileApp.Services;
-using Microsoft.Maui.ApplicationModel;
 
 namespace VinhKhanh.MobileApp.ViewModels;
 
@@ -16,11 +16,10 @@ public sealed partial class HomeMapViewModel
     private SimulationMode _simulationMode = SimulationMode.Manual;
     private SimulationRunState _simulationRunState = SimulationRunState.Idle;
     private bool _isRouteLoading;
-    private bool _isAutoClearingCompletedRoute;
     private int _simulationMapVersion;
 
-    private SimulationContextKind ActiveSimulationContextKind => _activeRoutePlan?.ContextKind ?? SimulationContextKind.None;
-    private string? ActiveSimulationContextId => _activeRoutePlan?.ContextId;
+    private SimulationContextKind ActiveSimulationContextKind => SimulationContextKind.None;
+    private string? ActiveSimulationContextId => null;
 
     public int SimulationMapVersion
     {
@@ -40,24 +39,21 @@ public sealed partial class HomeMapViewModel
         }
     }
 
-    public bool HasSimulationRoute => _activeRoutePlan is not null;
+    public bool HasSimulationRoute => false;
     public bool IsSimulationPanelVisible => false;
-    public bool IsSimulationAutoMode => _simulationMode == SimulationMode.Auto;
-    public bool IsSimulationManualMode => _simulationMode == SimulationMode.Manual;
-    public bool CanBuildRoute => SelectedPoi is not null && !IsRouteLoading;
-    public bool CanStartSimulation => HasSimulationRoute && !IsRouteLoading && _simulationRunState != SimulationRunState.Running;
-    public bool CanPauseSimulation => HasSimulationRoute && _simulationRunState == SimulationRunState.Running;
-    public bool CanStopSimulation => HasSimulationRoute && _simulationRunState != SimulationRunState.Idle;
+    public bool IsSimulationAutoMode => false;
+    public bool IsSimulationManualMode => true;
+    public bool CanBuildRoute => false;
+    public bool CanStartSimulation => false;
+    public bool CanPauseSimulation => false;
+    public bool CanStopSimulation => false;
     public bool CanResetSimulation => _userLocationSnapshot is not null;
-    public bool IsTourSimulationRouteActive => ActiveSimulationContextKind == SimulationContextKind.Tour && !string.IsNullOrWhiteSpace(ActiveSimulationContextId);
-    public bool IsSelectedPoiSimulationCardVisible => SelectedPoi is not null && !IsTourSimulationRouteActive;
-    public bool HasSelectedPoiSimulationRoute
-        => SelectedPoi is not null &&
-           ActiveSimulationContextKind == SimulationContextKind.Poi &&
-           string.Equals(ActiveSimulationContextId, SelectedPoi.Id, StringComparison.OrdinalIgnoreCase);
-    public bool CanStartSelectedPoiSimulation => SelectedPoi is not null && !IsRouteLoading && _simulationRunState != SimulationRunState.Running;
-    public bool CanPauseSelectedPoiSimulation => HasSelectedPoiSimulationRoute && _simulationRunState == SimulationRunState.Running;
-    public bool CanStopSelectedPoiSimulation => HasSelectedPoiSimulationRoute && _simulationRunState != SimulationRunState.Idle;
+    public bool IsTourSimulationRouteActive => false;
+    public bool IsSelectedPoiSimulationCardVisible => SelectedPoi is not null && IsAutoNarrationDevToolsVisible;
+    public bool HasSelectedPoiSimulationRoute => false;
+    public bool CanStartSelectedPoiSimulation => SelectedPoi is not null;
+    public bool CanPauseSelectedPoiSimulation => false;
+    public bool CanStopSelectedPoiSimulation => false;
 
     public string SimulationPanelTitleText => LanguageService.GetText("simulation_panel_title");
     public string SimulationModeManualText => LanguageService.GetText("simulation_mode_manual");
@@ -82,87 +78,16 @@ public sealed partial class HomeMapViewModel
         }
     }
 
-    public string SimulationStatusText => LanguageService.GetText(_simulationRunState switch
-    {
-        SimulationRunState.Ready => "simulation_status_ready",
-        SimulationRunState.Running => "simulation_status_running",
-        SimulationRunState.Paused => "simulation_status_paused",
-        SimulationRunState.Completed => "simulation_status_completed",
-        _ => "simulation_status_idle"
-    });
+    public string SimulationStatusText => LanguageService.GetText("poi_simulation_manual_hint");
 
-    public string SimulationDetailText
-    {
-        get
-        {
-            if (IsRouteLoading)
-            {
-                return LanguageService.GetText("simulation_route_loading");
-            }
-
-            if (_activeRoutePlan is null)
-            {
-                return SelectedPoi is null
-                    ? LanguageService.GetText("simulation_select_destination_hint")
-                    : string.Format(
-                        LanguageService.CurrentCulture,
-                        LanguageService.GetText("simulation_build_route_hint"),
-                        SelectedPoi.Title);
-            }
-
-            return string.Format(
-                LanguageService.CurrentCulture,
-                LanguageService.GetText("simulation_route_summary"),
-                FormatDistanceMeters(_activeRoutePlan.Route.DistanceMeters),
-                FormatDurationText(_activeRoutePlan.Route.DurationSeconds),
-                string.Format(
-                    LanguageService.CurrentCulture,
-                    LanguageService.GetText("simulation_valid_pois_count"),
-                    _activeRoutePlan.EligiblePois.Count));
-        }
-    }
+    public string SimulationDetailText => LanguageService.GetText("auto_narration_dev_description");
 
     public string SelectedPoiSimulationDescriptionText
-    {
-        get
-        {
-            if (SelectedPoi is null)
-            {
-                return LanguageService.GetText("simulation_select_destination_hint");
-            }
+        => SelectedPoi is null
+            ? LanguageService.GetText("simulation_select_destination_hint")
+            : LanguageService.GetText("auto_narration_dev_description");
 
-            if (IsRouteLoading)
-            {
-                return LanguageService.GetText("simulation_route_loading");
-            }
-
-            if (HasSelectedPoiSimulationRoute)
-            {
-                return SimulationDetailText;
-            }
-
-            if (HasSimulationRoute &&
-                ActiveSimulationContextKind == SimulationContextKind.Poi &&
-                !string.IsNullOrWhiteSpace(_activeRoutePlan?.ContextTitle))
-            {
-                return string.Format(
-                    LanguageService.CurrentCulture,
-                    LanguageService.GetText("poi_simulation_override_hint"),
-                    _activeRoutePlan.ContextTitle,
-                    SelectedPoi.Title);
-            }
-
-            return string.Format(
-                LanguageService.CurrentCulture,
-                LanguageService.GetText("simulation_build_route_hint"),
-                SelectedPoi.Title);
-        }
-    }
-
-    public string SelectedPoiSimulationStatusText
-        => HasSelectedPoiSimulationRoute
-            ? SimulationStatusText
-            : LanguageService.GetText("poi_simulation_manual_hint");
+    public string SelectedPoiSimulationStatusText => LanguageService.GetText("poi_simulation_manual_hint");
 
     public AsyncCommand StartSimulationCommand => new(StartSimulationAsync);
     public AsyncCommand PauseSimulationCommand => new(PauseSimulationAsync);
@@ -170,31 +95,11 @@ public sealed partial class HomeMapViewModel
     public AsyncCommand ResetSimulationCommand => new(ResetSimulationAsync);
     public AsyncCommand SwitchToManualSimulationCommand => new(SwitchToManualSimulationAsync);
     public AsyncCommand SwitchToAutoSimulationCommand => new(SwitchToAutoSimulationAsync);
-    public AsyncCommand StartSelectedPoiSimulationCommand => new(StartSelectedPoiSimulationAsync);
+    public AsyncCommand StartSelectedPoiSimulationCommand => new(SimulateNearSelectedPoiAsync);
     public AsyncCommand PauseSelectedPoiSimulationCommand => new(PauseSelectedPoiSimulationAsync);
     public AsyncCommand StopSelectedPoiSimulationCommand => new(StopSelectedPoiSimulationAsync);
 
-    public MapRouteSimulationState? GetMapRouteSimulationState()
-    {
-        if (_activeRoutePlan is null)
-        {
-            return null;
-        }
-
-        return new MapRouteSimulationState
-        {
-            ContextKind = _activeRoutePlan.ContextKind.ToString().ToLowerInvariant(),
-            ContextId = _activeRoutePlan.ContextId,
-            ContextTitle = _activeRoutePlan.ContextTitle,
-            DestinationPoiId = _activeRoutePlan.DestinationPoi.Id,
-            Mode = _simulationMode.ToString().ToLowerInvariant(),
-            RunState = _simulationRunState.ToString().ToLowerInvariant(),
-            SummaryText = SimulationDetailText,
-            ProviderText = _activeRoutePlan.Route.Provider,
-            Points = _activeRoutePlan.Route.Points.ToList(),
-            EligiblePoiIds = _activeRoutePlan.EligiblePois.Select(item => item.Poi.Id).ToList()
-        };
-    }
+    public MapRouteSimulationState? GetMapRouteSimulationState() => null;
 
     private async Task EnsureSimulationInitializedAsync()
     {
@@ -202,131 +107,21 @@ public sealed partial class HomeMapViewModel
         await SynchronizeSimulationStateAsync();
     }
 
-    private async Task BuildRouteAsync()
-    {
-        if (SelectedPoi is null)
-        {
-            return;
-        }
+    private Task BuildRouteAsync()
+        => Task.CompletedTask;
 
-        await BuildPoiRouteAsync(SelectedPoi);
-    }
+    private Task<bool> BuildPoiRouteAsync(PoiLocation destination)
+        => Task.FromResult(false);
 
-    private async Task<bool> BuildPoiRouteAsync(PoiLocation destination)
-    {
-        if (destination is null || IsRouteLoading)
-        {
-            return false;
-        }
+    private Task<bool> BuildTourRouteAsync(TourPlan? tour, bool startSimulation)
+        => Task.FromResult(false);
 
-        await EnsureSimulationInitializedAsync();
-        var currentLocation = _simulationService.CurrentLocation;
-        if (currentLocation is null)
-        {
-            return false;
-        }
-
-        IsRouteLoading = true;
-        try
-        {
-            var route = await _routeService.BuildRouteAsync(currentLocation, destination);
-            var eligiblePois = _routePoiFilterService.FilterEligiblePois(Pois.ToList(), route, destination.Id, 25d);
-            var routePlan = new RouteNarrationPlan
-            {
-                ContextKind = SimulationContextKind.Poi,
-                ContextId = destination.Id,
-                ContextTitle = destination.Title,
-                DestinationPoi = destination,
-                Route = route,
-                EligiblePois = eligiblePois,
-                ActivationRadiusMeters = 30d,
-                RouteSnapRadiusMeters = 25d
-            };
-
-            await ApplyRoutePlanAsync(routePlan);
-            return true;
-        }
-        finally
-        {
-            IsRouteLoading = false;
-            RefreshSimulationBindings();
-        }
-    }
-
-    private async Task<bool> BuildTourRouteAsync(TourPlan? tour, bool startSimulation)
-    {
-        if (tour is null || IsRouteLoading)
-        {
-            return false;
-        }
-
-        var orderedTourPois = GetOrderedTourPois(tour);
-        if (orderedTourPois.Count == 0)
-        {
-            return false;
-        }
-
-        await EnsureSimulationInitializedAsync();
-        var currentLocation = _simulationService.CurrentLocation;
-        if (currentLocation is null)
-        {
-            return false;
-        }
-
-        IsRouteLoading = true;
-        try
-        {
-            var route = await _routeService.BuildRouteAsync(currentLocation, orderedTourPois);
-            var destinationPoi = orderedTourPois[^1];
-            var eligiblePois = _routePoiFilterService.FilterEligiblePois(orderedTourPois, route, destinationPoi.Id, 25d);
-            var routePlan = new RouteNarrationPlan
-            {
-                ContextKind = SimulationContextKind.Tour,
-                ContextId = tour.Id,
-                ContextTitle = tour.Title,
-                DestinationPoi = destinationPoi,
-                Route = route,
-                EligiblePois = eligiblePois,
-                ActivationRadiusMeters = 30d,
-                RouteSnapRadiusMeters = 25d
-            };
-
-            await ApplyRoutePlanAsync(routePlan);
-        }
-        finally
-        {
-            IsRouteLoading = false;
-            RefreshSimulationBindings();
-        }
-
-        if (startSimulation)
-        {
-            await StartSimulationAsync();
-        }
-
-        return true;
-    }
-
-    private async Task ApplyRoutePlanAsync(RouteNarrationPlan routePlan)
-    {
-        _simulationDestinationPoi = routePlan.DestinationPoi;
-        _activeRoutePlan = routePlan;
-        await _simulationService.LoadRouteAsync(routePlan.Route);
-        await _autoNarrationService.ConfigureRouteAsync(routePlan);
-        await SynchronizeSimulationStateAsync();
-        await RefreshCurrentLocationAsync();
-        SimulationMapVersion++;
-    }
+    private Task ApplyRoutePlanAsync(RouteNarrationPlan routePlan)
+        => Task.CompletedTask;
 
     private async Task StartSimulationAsync()
     {
-        if (!HasSimulationRoute)
-        {
-            return;
-        }
-
-        await _simulationService.SetModeAsync(SimulationMode.Auto);
-        await _simulationService.StartAsync(TimeSpan.FromMilliseconds(450));
+        await _simulationService.SetModeAsync(SimulationMode.Manual);
         await SynchronizeSimulationStateAsync();
     }
 
@@ -338,12 +133,7 @@ public sealed partial class HomeMapViewModel
 
     private async Task StopSimulationAsync()
     {
-        if (!HasSimulationRoute)
-        {
-            return;
-        }
-
-        await ClearActiveRouteAsync(stopAudio: true);
+        await ClearActiveRouteAsync(stopAudio: false);
     }
 
     private async Task ResetSimulationAsync()
@@ -351,7 +141,7 @@ public sealed partial class HomeMapViewModel
         await _simulationService.ResetAsync();
         _activeRoutePlan = null;
         _simulationDestinationPoi = null;
-        await _autoNarrationService.ResetAsync();
+        await _autoNarrationService.ResetAsync(stopAudio: false);
         await SynchronizeSimulationStateAsync();
         await RefreshCurrentLocationAsync();
         SimulationMapVersion++;
@@ -365,87 +155,19 @@ public sealed partial class HomeMapViewModel
 
     private async Task SwitchToAutoSimulationAsync()
     {
-        await _simulationService.SetModeAsync(SimulationMode.Auto);
+        // Auto route playback is intentionally disabled. Keep the simulation in manual mode.
+        await _simulationService.SetModeAsync(SimulationMode.Manual);
         await SynchronizeSimulationStateAsync();
     }
 
-    private async Task StartSelectedPoiSimulationAsync()
-    {
-        if (SelectedPoi is null || IsTourSimulationRouteActive)
-        {
-            return;
-        }
+    private Task PauseSelectedPoiSimulationAsync()
+        => Task.CompletedTask;
 
-        if (!HasSelectedPoiSimulationRoute)
-        {
-            var built = await BuildPoiRouteAsync(SelectedPoi);
-            if (!built)
-            {
-                return;
-            }
-        }
-
-        await StartSimulationAsync();
-    }
-
-    private async Task PauseSelectedPoiSimulationAsync()
-    {
-        if (!HasSelectedPoiSimulationRoute)
-        {
-            return;
-        }
-
-        await PauseSimulationAsync();
-    }
-
-    private async Task StopSelectedPoiSimulationAsync()
-    {
-        if (!HasSelectedPoiSimulationRoute)
-        {
-            return;
-        }
-
-        await StopSimulationAsync();
-    }
-
-    private IReadOnlyList<PoiLocation> GetOrderedTourPois(TourPlan tour)
-    {
-        var poiLookup = Pois.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
-        var checkpointIds = tour.Checkpoints.Count > 0
-            ? tour.Checkpoints
-                .OrderBy(item => item.Order)
-                .Where(item => !item.IsCompleted)
-                .Select(item => item.PoiId)
-                .ToList()
-            : new List<string>();
-
-        if (checkpointIds.Count == 0)
-        {
-            checkpointIds = tour.Checkpoints.Count > 0
-                ? tour.Checkpoints
-                    .OrderBy(item => item.Order)
-                    .Select(item => item.PoiId)
-                    .ToList()
-                : tour.Stops.Select(item => item.PoiId).ToList();
-        }
-
-        return checkpointIds
-            .Select(poiId => poiLookup.TryGetValue(poiId, out var poi) ? poi : null)
-            .Where(poi => poi is not null)
-            .Cast<PoiLocation>()
-            .ToList();
-    }
+    private Task StopSelectedPoiSimulationAsync()
+        => Task.CompletedTask;
 
     private bool IsCurrentRouteContext(SimulationContextKind contextKind, string? contextId = null)
-    {
-        if (_activeRoutePlan is null || _activeRoutePlan.ContextKind != contextKind)
-        {
-            return false;
-        }
-
-        return string.IsNullOrWhiteSpace(contextId) ||
-               string.Equals(_activeRoutePlan.ContextId, contextId, StringComparison.OrdinalIgnoreCase);
-    }
+        => false;
 
     private async Task ClearActiveRouteAsync(bool stopAudio = true)
     {
@@ -460,47 +182,10 @@ public sealed partial class HomeMapViewModel
 
     private void OnSimulationStateChanged(object? sender, SimulationStateChangedEventArgs e)
     {
-        var shouldAutoClearCompletedRoute =
-            e.RunState == SimulationRunState.Completed &&
-            _activeRoutePlan is not null &&
-            !_isAutoClearingCompletedRoute;
-
-        _simulationMode = e.Mode;
-        _simulationRunState = e.RunState;
+        _simulationMode = _simulationService.Mode;
+        _simulationRunState = _simulationService.RunState;
         UserLocationVersion++;
         RefreshSimulationBindings();
-
-        if (shouldAutoClearCompletedRoute)
-        {
-            MainThread.BeginInvokeOnMainThread(() => _ = AutoClearCompletedRouteAsync());
-        }
-    }
-
-    private async Task AutoClearCompletedRouteAsync()
-    {
-        if (_isAutoClearingCompletedRoute ||
-            _simulationRunState != SimulationRunState.Completed ||
-            _activeRoutePlan is null)
-        {
-            return;
-        }
-
-        _isAutoClearingCompletedRoute = true;
-        try
-        {
-            await Task.Delay(250);
-
-            if (_simulationRunState == SimulationRunState.Completed &&
-                _activeRoutePlan is not null)
-            {
-                await ClearActiveRouteAsync(stopAudio: false);
-            }
-        }
-        finally
-        {
-            _isAutoClearingCompletedRoute = false;
-            RefreshSimulationBindings();
-        }
     }
 
     private async Task SynchronizeSimulationStateAsync()
@@ -542,23 +227,5 @@ public sealed partial class HomeMapViewModel
         OnPropertyChanged(nameof(PoiSimulationTitleText));
         OnPropertyChanged(nameof(SelectedPoiSimulationDescriptionText));
         OnPropertyChanged(nameof(SelectedPoiSimulationStatusText));
-    }
-
-    private string FormatDurationText(double durationSeconds)
-    {
-        var duration = TimeSpan.FromSeconds(Math.Max(0d, durationSeconds));
-        if (duration.TotalHours >= 1d)
-        {
-            return string.Format(
-                LanguageService.CurrentCulture,
-                LanguageService.GetText("simulation_duration_hours"),
-                (int)duration.TotalHours,
-                duration.Minutes);
-        }
-
-        return string.Format(
-            LanguageService.CurrentCulture,
-            LanguageService.GetText("simulation_duration_minutes"),
-            Math.Max(1, (int)Math.Round(duration.TotalMinutes)));
     }
 }

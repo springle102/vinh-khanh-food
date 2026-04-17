@@ -209,64 +209,16 @@
                                         </VerticalStackLayout>
                                     </Grid>
 
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-                                        <Button
-                                            BackgroundColor="#FFF2E3"
-                                            BorderColor="#F1D2AE"
-                                            BorderWidth="1"
-                                            Command="{Binding OpenDirectionsCommand}"
-                                            CornerRadius="14"
-                                            FontFamily="OpenSansSemibold"
-                                            FontSize="11"
-                                            IsEnabled="{Binding CanBuildRoute}"
-                                            Padding="12,10"
-                                            Text="{Binding DirectionsActionText}"
-                                            TextColor="#A85D10" />
-
-                                        <Button
-                                            Grid.Column="1"
-                                            BackgroundColor="{StaticResource BrandPrimary}"
-                                            Command="{Binding StartSelectedPoiSimulationCommand}"
-                                            CornerRadius="14"
-                                            FontFamily="OpenSansSemibold"
-                                            FontSize="11"
-                                            IsEnabled="{Binding CanStartSelectedPoiSimulation}"
-                                            Padding="12,10"
-                                            Text="{Binding StartSimulationText}"
-                                            TextColor="White" />
-                                    </Grid>
-
-                                    <Grid
-                                        ColumnDefinitions="*,*"
-                                        ColumnSpacing="10"
-                                        IsVisible="{Binding HasSelectedPoiSimulationRoute}">
-                                        <Button
-                                            BackgroundColor="#FAF6F0"
-                                            BorderColor="#E6D9CA"
-                                            BorderWidth="1"
-                                            Command="{Binding PauseSelectedPoiSimulationCommand}"
-                                            CornerRadius="14"
-                                            FontFamily="OpenSansSemibold"
-                                            FontSize="11"
-                                            IsEnabled="{Binding CanPauseSelectedPoiSimulation}"
-                                            Padding="12,10"
-                                            Text="{Binding PauseSimulationText}"
-                                            TextColor="{StaticResource BrandTextPrimary}" />
-
-                                        <Button
-                                            Grid.Column="1"
-                                            BackgroundColor="#FAF6F0"
-                                            BorderColor="#E6D9CA"
-                                            BorderWidth="1"
-                                            Command="{Binding StopSelectedPoiSimulationCommand}"
-                                            CornerRadius="14"
-                                            FontFamily="OpenSansSemibold"
-                                            FontSize="11"
-                                            IsEnabled="{Binding CanStopSelectedPoiSimulation}"
-                                            Padding="12,10"
-                                            Text="{Binding StopSimulationText}"
-                                            TextColor="{StaticResource BrandTextPrimary}" />
-                                    </Grid>
+                                    <Button
+                                        BackgroundColor="{StaticResource BrandPrimary}"
+                                        Command="{Binding SimulateNearSelectedPoiCommand}"
+                                        CornerRadius="14"
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="11"
+                                        IsEnabled="{Binding CanStartSelectedPoiSimulation}"
+                                        Padding="12,10"
+                                        Text="{Binding SimulateNearSelectedPoiText}"
+                                        TextColor="White" />
                                 </VerticalStackLayout>
                             </Border>
 

@@ -675,10 +675,10 @@ public sealed partial class AdminDataRepository
             """
             INSERT INTO dbo.Pois (
                 Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, IsActive, LockedBySuperAdmin,
-                District, Ward, PriceRange, OwnerUserId,
+                District, Ward, PriceRange, TriggerRadius, Priority, OwnerUserId,
                 ApprovedAt, RejectionReason, RejectedAt, UpdatedBy, CreatedAt, UpdatedAt
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             poiId,
             request.Slug,
@@ -693,6 +693,8 @@ public sealed partial class AdminDataRepository
             request.District,
             request.Ward,
             request.PriceRange,
+            request.TriggerRadius,
+            request.Priority,
             ownerUserId,
             approvedAt,
             rejectionReason,
@@ -735,6 +737,8 @@ public sealed partial class AdminDataRepository
                 District = ?,
                 Ward = ?,
                 PriceRange = ?,
+                TriggerRadius = ?,
+                Priority = ?,
                 OwnerUserId = ?,
                 ApprovedAt = ?,
                 RejectionReason = ?,
@@ -755,6 +759,8 @@ public sealed partial class AdminDataRepository
             request.District,
             request.Ward,
             request.PriceRange,
+            request.TriggerRadius,
+            request.Priority,
             ownerUserId,
             approvedAt,
             rejectionReason,
