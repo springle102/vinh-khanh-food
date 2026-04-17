@@ -6,15 +6,15 @@ namespace VinhKhanh.MobileApp.ViewModels;
 
 public sealed class AppBottomBarViewModel : ObservableObject
 {
-    private readonly IPoiNarrationService _poiNarrationService;
+    private readonly IPoiAudioPlaybackService _poiAudioPlaybackService;
     private readonly SemaphoreSlim _navigationLock = new(1, 1);
     private Shell? _attachedShell;
     private string _currentRoute = string.Empty;
     private AppBottomBarTab _selectedTab = AppBottomBarTab.None;
 
-    public AppBottomBarViewModel(IPoiNarrationService poiNarrationService)
+    public AppBottomBarViewModel(IPoiAudioPlaybackService poiAudioPlaybackService)
     {
-        _poiNarrationService = poiNarrationService;
+        _poiAudioPlaybackService = poiAudioPlaybackService;
         NavigateToPoiCommand = new(() => NavigateToAsync(AppRoutes.HomeMap));
         NavigateToQrCommand = new(() => NavigateToAsync(AppRoutes.QrScanner));
         NavigateToSettingsCommand = new(() => NavigateToAsync(AppRoutes.Settings));
@@ -86,7 +86,7 @@ public sealed class AppBottomBarViewModel : ObservableObject
                 return;
             }
 
-            await _poiNarrationService.StopAsync();
+            await _poiAudioPlaybackService.StopAsync();
             await shell.GoToAsync(AppRoutes.Root(route));
             ApplyRoute(shell.CurrentState?.Location?.OriginalString);
         }

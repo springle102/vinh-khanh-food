@@ -10,7 +10,7 @@ namespace VinhKhanh.MobileApp.ViewModels;
 public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 {
     private readonly IFoodStreetDataService _dataService;
-    private readonly IPoiNarrationService _poiNarrationService;
+    private readonly IPoiAudioPlaybackService _poiAudioPlaybackService;
     private readonly IAutoNarrationService _autoNarrationService;
     private readonly SemaphoreSlim _locationUpdateLock = new(1, 1);
     private readonly SemaphoreSlim _stateReloadLock = new(1, 1);
@@ -25,6 +25,8 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     private string? _currentActivePoiId;
     private string? _lastTriggeredPoiId;
     private bool _isAutoNarrationPlaying;
+    private string _narrationMessage = string.Empty;
+    private PoiAudioPlaybackSnapshot _playbackSnapshot = PoiAudioPlaybackSnapshot.Idle;
     private volatile bool _isNarrationContextActive = true;
     private int _mapDataVersion;
     private int _mapContentVersion;
@@ -35,7 +37,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     public HomeMapViewModel(
         IFoodStreetDataService dataService,
         IAppLanguageService languageService,
-        IPoiNarrationService poiNarrationService,
+        IPoiAudioPlaybackService poiAudioPlaybackService,
         IRouteService routeService,
         IRoutePoiFilterService routePoiFilterService,
         ISimulationService simulationService,
@@ -44,12 +46,15 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         : base(languageService)
     {
         _dataService = dataService;
-        _poiNarrationService = poiNarrationService;
+        _poiAudioPlaybackService = poiAudioPlaybackService;
         _routeService = routeService;
         _routePoiFilterService = routePoiFilterService;
         _simulationService = simulationService;
         _autoNarrationService = autoNarrationService;
         _tourStateService = tourStateService;
+        _poiAudioPlaybackService.PlaybackStateChanged += OnPlaybackStateChanged;
+        PlayNarrationCommand = new(PlayNarrationAsync, () => CanToggleNarration);
+        ApplyPlaybackSnapshot(_poiAudioPlaybackService.Snapshot);
         InitializeTourCommands();
     }
 
@@ -115,6 +120,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             if (SetProperty(ref _isPoiDetailLoading, value))
             {
                 OnPropertyChanged(nameof(HasDetailContent));
+                RefreshNarrationBindings();
             }
         }
     }
@@ -155,9 +161,22 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         private set => SetProperty(ref _isAutoNarrationPlaying, value);
     }
 
+    public string NarrationMessage
+    {
+        get => _narrationMessage;
+        private set
+        {
+            if (SetProperty(ref _narrationMessage, value))
+            {
+                OnPropertyChanged(nameof(HasNarrationMessage));
+            }
+        }
+    }
+
     public bool HasVisibleBottomSheet => IsBottomSheetVisible && (SelectedPoi is not null || SelectedPoiDetail is not null || IsPoiDetailLoading);
     public bool HasDetailContent => SelectedPoi is not null || SelectedPoiDetail is not null || IsPoiDetailLoading;
     public bool HasSelectedPoiDetail => SelectedPoiDetail is not null;
+    public bool HasNarrationMessage => !string.IsNullOrWhiteSpace(NarrationMessage);
     public bool IsFeaturedPoi => SelectedPoiDetail?.IsFeatured ?? SelectedPoi?.IsFeatured ?? false;
     public bool HasSelectedPoiPriceRange => !string.IsNullOrWhiteSpace(SelectedPoiPriceRange);
     public bool HasSelectedPoiOpeningHours => !string.IsNullOrWhiteSpace(SelectedPoiOpeningHours);
@@ -185,7 +204,18 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     public string PoiChipText => LanguageService.GetText("home_poi_chip");
     public string PoiActionText => LanguageService.GetText("bottom_poi");
     public string TourEntryActionText => LanguageService.GetText("tour_map_entry_action");
-    public string ListenActionText => LanguageService.GetText("poi_detail_listen");
+    public string ListenActionText
+        => IsSelectedPoiNarrationLoading
+            ? LanguageService.GetText("poi_detail_narration_loading")
+            : IsSelectedPoiNarrationPlaying
+                ? LanguageService.GetText("poi_detail_stop_narration")
+                : LanguageService.GetText("poi_detail_listen");
+    public string ListenActionIconText
+        => IsSelectedPoiNarrationLoading
+            ? "..."
+            : IsSelectedPoiNarrationPlaying
+                ? "||"
+                : ">";
     public string DirectionsActionText => LanguageService.GetText("poi_detail_directions");
     public string DetailLoadingText => LanguageService.GetText("poi_detail_loading");
     public string FeaturedBadgeText => LanguageService.GetText("poi_detail_featured");
@@ -201,6 +231,10 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     public string AutoNarrationDevTitleText => LanguageService.GetText("auto_narration_dev_title");
     public string AutoNarrationDevDescriptionText => LanguageService.GetText("auto_narration_dev_description");
     public string SimulateNearSelectedPoiText => LanguageService.GetText("auto_narration_dev_action");
+    public bool IsSelectedPoiNarrationLoading => MatchesSelectedPoiNarration(_playbackSnapshot, PoiAudioPlaybackStatus.Loading);
+    public bool IsSelectedPoiNarrationPlaying => MatchesSelectedPoiNarration(_playbackSnapshot, PoiAudioPlaybackStatus.Playing);
+    public bool CanToggleNarration => SelectedPoiDetail is not null && _isNarrationContextActive && !IsPoiDetailLoading && !IsSelectedPoiNarrationLoading;
+    public double NarrationButtonOpacity => CanToggleNarration ? 1d : 0.72d;
 
     public string SelectedPoiTitle
         => FirstNonEmpty(
@@ -320,23 +354,27 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     public AsyncCommand SelectNextPoiCommand => new(SelectNextPoiAsync);
     public AsyncCommand SimulateNearSelectedPoiCommand => new(SimulateNearSelectedPoiAsync);
     public AsyncCommand CloseBottomSheetCommand => new(CloseBottomSheetAsync);
-    public AsyncCommand PlayNarrationCommand => new(PlayNarrationAsync);
+    public AsyncCommand PlayNarrationCommand { get; }
     public AsyncCommand OpenDirectionsCommand => new(BuildRouteAsync);
 
     public void ActivateNarrationContext()
-        => _isNarrationContextActive = true;
+    {
+        _isNarrationContextActive = true;
+        RefreshNarrationBindings();
+    }
 
     public async Task SuspendNarrationAsync()
     {
         _isNarrationContextActive = false;
         IsAutoNarrationPlaying = false;
-        await _poiNarrationService.StopAsync();
+        RefreshNarrationBindings();
+        await _poiAudioPlaybackService.StopAsync();
     }
 
     public async Task StopNarrationAsync()
     {
         IsAutoNarrationPlaying = false;
-        await _poiNarrationService.StopAsync();
+        await _poiAudioPlaybackService.StopAsync();
     }
 
     public Task LoadAsync()
@@ -550,8 +588,9 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         string usageSource = "map")
     {
         var requestVersion = Interlocked.Increment(ref _detailRequestVersion);
-        await StopNarrationAsync();
+        await StopNarrationIfSelectingDifferentPoiAsync(poi.Id);
 
+        NarrationMessage = string.Empty;
         SelectedPoi = poi;
         IsBottomSheetVisible = showBottomSheet;
         IsPoiDetailLoading = true;
@@ -574,6 +613,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             }
 
             SelectedPoiDetail = detail;
+            _ = _poiAudioPlaybackService.PreloadAsync(detail, LanguageService.CurrentLanguage);
             await MarkActiveTourPoiVisitedAsync(poi.Id);
 
             try
@@ -775,17 +815,19 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         IsBottomSheetVisible = false;
         SelectedPoi = null;
         SelectedPoiDetail = null;
+        NarrationMessage = string.Empty;
         await StopNarrationAsync();
     }
 
     private async Task PlayNarrationAsync()
     {
-        if (SelectedPoiDetail is null || !_isNarrationContextActive)
+        if (SelectedPoiDetail is null || !_isNarrationContextActive || !CanToggleNarration)
         {
             return;
         }
 
-        await _poiNarrationService.PlayAsync(SelectedPoiDetail, LanguageService.CurrentLanguage);
+        NarrationMessage = string.Empty;
+        await _poiAudioPlaybackService.ToggleAsync(SelectedPoiDetail, LanguageService.CurrentLanguage);
     }
 
     private string ResolveAutoNarrationUsageSource()
@@ -852,7 +894,14 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
         try
         {
-            await _poiNarrationService.PlayAsync(detail, LanguageService.CurrentLanguage);
+            var snapshot = _poiAudioPlaybackService.Snapshot;
+            if (snapshot.Status is PoiAudioPlaybackStatus.Loading or PoiAudioPlaybackStatus.Playing &&
+                snapshot.Matches(detail.Id, LanguageService.CurrentLanguage))
+            {
+                return;
+            }
+
+            await _poiAudioPlaybackService.PlayAsync(detail, LanguageService.CurrentLanguage);
         }
         catch
         {
@@ -882,13 +931,24 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     }
 
     private void RefreshLocalizedTexts()
-        => RefreshLocalizedBindings();
+    {
+        SyncNarrationMessage();
+        RefreshLocalizedBindings();
+        RefreshNarrationBindings();
+    }
 
     private void RefreshSelectedPoiBindings()
-        => RefreshLocalizedBindings();
+    {
+        RefreshLocalizedBindings();
+        RefreshNarrationBindings();
+    }
 
     private void RefreshDetailBindings()
-        => RefreshLocalizedBindings();
+    {
+        SyncNarrationMessage();
+        RefreshLocalizedBindings();
+        RefreshNarrationBindings();
+    }
 
     private PoiExperienceDetail CreateInlineFallbackDetail(PoiLocation poi)
     {
@@ -955,6 +1015,56 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
+    private async Task StopNarrationIfSelectingDifferentPoiAsync(string nextPoiId)
+    {
+        var snapshot = _poiAudioPlaybackService.Snapshot;
+        if (snapshot.Status is not (PoiAudioPlaybackStatus.Loading or PoiAudioPlaybackStatus.Playing) ||
+            string.IsNullOrWhiteSpace(snapshot.PoiId) ||
+            string.Equals(snapshot.PoiId, nextPoiId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await StopNarrationAsync();
+    }
+
+    private void OnPlaybackStateChanged(object? sender, PoiAudioPlaybackSnapshot snapshot)
+        => MainThread.BeginInvokeOnMainThread(() => ApplyPlaybackSnapshot(snapshot));
+
+    private void ApplyPlaybackSnapshot(PoiAudioPlaybackSnapshot snapshot)
+    {
+        _playbackSnapshot = snapshot;
+        IsAutoNarrationPlaying = snapshot.Status == PoiAudioPlaybackStatus.Playing;
+        SyncNarrationMessage();
+        RefreshNarrationBindings();
+    }
+
+    private void SyncNarrationMessage()
+    {
+        NarrationMessage =
+            SelectedPoiDetail is not null &&
+            _playbackSnapshot.Status == PoiAudioPlaybackStatus.Error &&
+            _playbackSnapshot.Matches(SelectedPoiDetail.Id, LanguageService.CurrentLanguage)
+                ? LanguageService.GetText("poi_detail_narration_error")
+                : string.Empty;
+    }
+
+    private void RefreshNarrationBindings()
+    {
+        OnPropertyChanged(nameof(ListenActionText));
+        OnPropertyChanged(nameof(ListenActionIconText));
+        OnPropertyChanged(nameof(IsSelectedPoiNarrationLoading));
+        OnPropertyChanged(nameof(IsSelectedPoiNarrationPlaying));
+        OnPropertyChanged(nameof(CanToggleNarration));
+        OnPropertyChanged(nameof(NarrationButtonOpacity));
+        PlayNarrationCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool MatchesSelectedPoiNarration(PoiAudioPlaybackSnapshot snapshot, PoiAudioPlaybackStatus status)
+        => snapshot.Status == status &&
+           SelectedPoiDetail is not null &&
+           snapshot.Matches(SelectedPoiDetail.Id, LanguageService.CurrentLanguage);
 
     protected override async Task ReloadLocalizedStateAsync()
     {

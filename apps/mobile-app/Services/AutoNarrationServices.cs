@@ -38,7 +38,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly IFoodStreetDataService _dataService;
     private readonly IPoiProximityService _poiProximityService;
-    private readonly IAudioPlayerService _audioPlayerService;
+    private readonly IPoiAudioPlaybackService _audioPlaybackService;
     private readonly IAppLanguageService _languageService;
     private readonly HashSet<string> _recentlyPlayedPoiIds = new(StringComparer.OrdinalIgnoreCase);
 
@@ -60,12 +60,12 @@ public sealed class AutoNarrationService : IAutoNarrationService
     public AutoNarrationService(
         IFoodStreetDataService dataService,
         IPoiProximityService poiProximityService,
-        IAudioPlayerService audioPlayerService,
+        IPoiAudioPlaybackService audioPlaybackService,
         IAppLanguageService languageService)
     {
         _dataService = dataService;
         _poiProximityService = poiProximityService;
-        _audioPlayerService = audioPlayerService;
+        _audioPlaybackService = audioPlaybackService;
         _languageService = languageService;
         IsEnabled = Preferences.Default.Get(AppPreferenceKeys.AutoNarrationEnabled, true);
     }
@@ -98,7 +98,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
             _stateLock.Release();
         }
 
-        await _audioPlayerService.StopAsync();
+        await _audioPlaybackService.StopAsync();
     }
 
     public async Task ResetAsync(bool stopAudio = true, CancellationToken cancellationToken = default)
@@ -116,7 +116,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
 
         if (stopAudio)
         {
-            await _audioPlayerService.StopAsync();
+            await _audioPlaybackService.StopAsync();
         }
     }
 
@@ -284,7 +284,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
             return CreateResult(snapshot, poi, null, AutoNarrationDecision.None, isMockLocation: true);
         }
 
-        await _audioPlayerService.StopAsync();
+        await _audioPlaybackService.StopAsync();
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
@@ -398,7 +398,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
 
     private bool CanStartPlaybackLocked()
         => !_isPlaybackDispatching &&
-           !_audioPlayerService.IsPlaying;
+           !_audioPlaybackService.IsBusy;
 
     private bool IsInCooldownLocked()
         => DateTimeOffset.UtcNow - _lastPlayedTime < PlaybackGap;
@@ -469,7 +469,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
     {
         try
         {
-            await _audioPlayerService.PlayPoiNarrationAsync(detail, languageCode);
+            await _audioPlaybackService.PlayAsync(detail, languageCode);
         }
         catch
         {

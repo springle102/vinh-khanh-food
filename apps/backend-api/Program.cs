@@ -28,6 +28,7 @@ builder.Services.AddScoped<BootstrapLocalizationService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<PoiNarrationService>();
+builder.Services.AddScoped<PoiNarrationAudioService>();
 builder.Services.AddOptions<TextToSpeechOptions>()
     .Configure<IConfiguration>((options, configuration) => TextToSpeechOptions.ApplyConfiguration(options, configuration));
 builder.Services.AddHttpClient<GeocodingProxyService>(client =>

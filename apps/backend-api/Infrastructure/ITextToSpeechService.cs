@@ -24,7 +24,10 @@ public sealed record TextToSpeechResult(
     string Provider,
     string VoiceId,
     string ModelId,
-    string OutputFormat);
+    string OutputFormat,
+    int TextLength,
+    int SegmentCount,
+    double EstimatedDurationSeconds);
 
 public sealed class TextToSpeechConfigurationException(string message) : InvalidOperationException(message);
 

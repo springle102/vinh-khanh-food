@@ -509,6 +509,7 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
         timeoutSource.CancelAfter(timeout);
         var requestCancellationToken = timeoutSource.Token;
 
+        // ✓ HttpCompletionOption.ResponseHeadersRead để đọc stream từng phần
         using var response = await _mediaClient.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
@@ -527,9 +528,27 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
         }
 
         var contentType = response.Content.Headers.ContentType?.ToString();
+
+        // ✓ Đọc stream đầy đủ - KHÔNG dispose stream sớm
         await using var networkStream = await response.Content.ReadAsStreamAsync(requestCancellationToken);
         await using var buffer = new MemoryStream();
-        await networkStream.CopyToAsync(buffer, requestCancellationToken);
+
+        // ✓ CopyToAsync đảm bảo đọc đầy đủ stream
+        try
+        {
+            await networkStream.CopyToAsync(buffer, requestCancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to read narration audio stream. request={Request}; contentType={ContentType}; bufferPosition={BufferPosition}",
+                requestDescription,
+                contentType,
+                buffer.Position);
+            return null;
+        }
+
         var content = buffer.ToArray();
 
         if (LooksLikeTextPayload(contentType, content))
@@ -554,12 +573,14 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
             return null;
         }
 
+        // ✓ Chi tiết log - include audio size
         _logger.LogInformation(
-            "Narration audio downloaded. request={Request}; statusCode={StatusCode}; contentType={ContentType}; audioBytes={AudioBytes}",
+            "Narration audio downloaded successfully. request={Request}; statusCode={StatusCode}; contentType={ContentType}; audioBytes={AudioBytes}; estimatedDurationMs={EstimatedDurationMs}",
             requestDescription,
             (int)response.StatusCode,
             string.IsNullOrWhiteSpace(contentType) ? "unknown" : contentType,
-            content.Length);
+            content.Length,
+            EstimateAudioDurationMs(contentType, content.Length));
 
         return new DownloadedAudioPayload(content, contentType);
     }
@@ -570,6 +591,16 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
         string source,
         CancellationToken cancellationToken)
     {
+        // ✓ Validate audio bytes trước khi phát
+        if (audioBytes.Length == 0)
+        {
+            _logger.LogError(
+                "Attempting to play empty audio buffer. source={Source}; playbackId={PlaybackId}",
+                source,
+                playbackId);
+            throw new InvalidOperationException("Audio buffer is empty.");
+        }
+
         var buffer = new MemoryStream(audioBytes, writable: false);
         AsyncAudioPlayer player;
         double durationSeconds;
@@ -588,6 +619,25 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
             _audioPlayer = _audioManager.CreateAsyncPlayer(_audioBuffer);
             player = _audioPlayer;
             durationSeconds = player.Duration;
+
+            // ✓ Log info khi tạo player thành công
+            _logger.LogDebug(
+                "Audio player created. source={Source}; playbackId={PlaybackId}; audioBytes={AudioBytes}; reportedDurationSeconds={DurationSeconds}",
+                source,
+                playbackId,
+                audioBytes.Length,
+                durationSeconds.ToString("0.00"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to create audio player. source={Source}; playbackId={PlaybackId}; audioBytes={AudioBytes}",
+                source,
+                playbackId,
+                audioBytes.Length);
+            buffer.Dispose();
+            throw;
         }
         finally
         {
@@ -603,13 +653,33 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
 
         try
         {
+            // ✓ Phát audio và chờ completion
             await player.PlayAsync(cancellationToken);
+
             _logger.LogInformation(
-                "Narration playback completed. source={Source}; playbackId={PlaybackId}; durationSeconds={DurationSeconds}",
+                "Narration playback completed successfully. source={Source}; playbackId={PlaybackId}; durationSeconds={DurationSeconds}",
                 source,
                 playbackId,
                 durationSeconds.ToString("0.00"));
             return durationSeconds > 0 ? durationSeconds : null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation(
+                "Narration playback cancelled. source={Source}; playbackId={PlaybackId}",
+                source,
+                playbackId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Narration playback failed. source={Source}; playbackId={PlaybackId}; audioBytes={AudioBytes}",
+                source,
+                playbackId,
+                audioBytes.Length);
+            throw;
         }
         finally
         {
@@ -719,6 +789,33 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
         => content.Length == 0
             ? string.Empty
             : System.Text.Encoding.UTF8.GetString(content).Trim();
+
+    // ✓ Ước tính thời lượng audio dựa vào format và kích thước
+    private static long EstimateAudioDurationMs(string? contentType, int audioBytes)
+    {
+        if (audioBytes <= 0)
+        {
+            return 0;
+        }
+
+        // Heuristic estimate dựa trên bitrate
+        // MP3 @ 128kbps = 16KB/s → audioBytes / 16000 * 1000
+        // WAV @ 16bit 16kHz mono = 32KB/s → audioBytes / 32000 * 1000
+        if (contentType?.Contains("audio/mpeg", StringComparison.OrdinalIgnoreCase) ?? false)
+        {
+            // MP3 average bitrate ~128kbps
+            return (long)(audioBytes * 8d / 128000d * 1000d);
+        }
+
+        if (contentType?.Contains("audio/wav", StringComparison.OrdinalIgnoreCase) ?? false)
+        {
+            // WAV typical 16-bit mono @ 16kHz
+            return (long)(audioBytes / 32000d * 1000d);
+        }
+
+        // Default estimate
+        return (long)(audioBytes / 20000d * 1000d);
+    }
 
     private static string SanitizeNarrationText(string? text)
     {

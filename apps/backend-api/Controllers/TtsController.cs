@@ -71,6 +71,9 @@ public sealed class TtsController(
             Response.Headers["X-TTS-Voice-Id"] = audio.VoiceId;
             Response.Headers["X-TTS-Model-Id"] = audio.ModelId;
             Response.Headers["X-TTS-Output-Format"] = audio.OutputFormat;
+            Response.Headers["X-TTS-Text-Length"] = audio.TextLength.ToString();
+            Response.Headers["X-TTS-Segment-Count"] = audio.SegmentCount.ToString();
+            Response.Headers["X-TTS-Duration-Seconds"] = audio.EstimatedDurationSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
             Response.Headers.CacheControl = "public, max-age=3600";
             Response.Headers.Remove("Pragma");
             Response.Headers.Remove("Expires");

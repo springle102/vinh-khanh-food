@@ -11,6 +11,7 @@ public sealed class PoisController(
     AdminDataRepository repository,
     AdminRequestContextResolver adminRequestContextResolver,
     PoiNarrationService poiNarrationService,
+    PoiNarrationAudioService poiNarrationAudioService,
     ILogger<PoisController> logger) : ControllerBase
 {
     [HttpGet]
@@ -142,6 +143,69 @@ public sealed class PoisController(
         return narration is null
             ? NotFound(ApiResponse<PoiNarrationResponse>.Fail("POI was not found."))
             : Ok(ApiResponse<PoiNarrationResponse>.Ok(narration));
+    }
+
+    [HttpGet("{id}/audio")]
+    public async Task<IActionResult> GetPoiNarrationAudio(
+        string id,
+        [FromQuery] string? languageCode,
+        [FromQuery] string? customerUserId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(languageCode))
+        {
+            return BadRequest(ApiResponse<string>.Fail("LanguageCode is required."));
+        }
+
+        try
+        {
+            var actor = adminRequestContextResolver.TryGetCurrentAdmin();
+            var audio = await poiNarrationAudioService.GetAudioAsync(
+                id,
+                languageCode,
+                actor,
+                cancellationToken);
+            if (audio is null)
+            {
+                return NotFound(ApiResponse<string>.Fail("POI was not found."));
+            }
+
+            Response.Headers["X-Ui-Playback-Key"] = audio.UiPlaybackKey;
+            Response.Headers["X-Audio-Cache-Key"] = audio.AudioCacheKey;
+            Response.Headers["X-Audio-Source"] = audio.Source;
+            Response.Headers["X-Effective-Language-Code"] = audio.EffectiveLanguageCode;
+            Response.Headers["X-TTS-Locale"] = audio.TtsLocale;
+            Response.Headers["X-Narration-Text-Length"] = audio.TextLength.ToString();
+            Response.Headers["X-TTS-Segment-Count"] = audio.SegmentCount.ToString();
+            Response.Headers["X-Audio-Duration-Seconds"] = audio.EstimatedDurationSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+            Response.Headers.CacheControl = "public, max-age=3600";
+            Response.Headers.Remove("Pragma");
+            Response.Headers.Remove("Expires");
+            return File(audio.Content, audio.ContentType);
+        }
+        catch (PoiNarrationAudioUnavailableException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "POI narration audio is unavailable. PoiId={PoiId}; languageCode={LanguageCode}",
+                id,
+                languageCode);
+            return NotFound(ApiResponse<string>.Fail(exception.Message));
+        }
+        catch (Exception exception) when (
+            exception is HttpRequestException ||
+            exception is TaskCanceledException ||
+            exception is InvalidOperationException)
+        {
+            logger.LogWarning(
+                exception,
+                "Unable to resolve POI narration audio. PoiId={PoiId}; languageCode={LanguageCode}",
+                id,
+                languageCode);
+            return StatusCode(
+                StatusCodes.Status502BadGateway,
+                ApiResponse<string>.Fail("Unable to generate audio at this time."));
+        }
     }
 
     [HttpPost]

@@ -474,15 +474,40 @@
                         </VerticalStackLayout>
                     </ScrollView>
 
-                    <Grid Grid.Row="3" Padding="18,16,18,18" ColumnDefinitions="*">
+                    <Grid Grid.Row="3" Padding="18,12,18,18" RowDefinitions="Auto,Auto">
+                        <Label
+                            Grid.Row="0"
+                            FontSize="12"
+                            HorizontalTextAlignment="Center"
+                            IsVisible="{Binding HasNarrationMessage}"
+                            Margin="0,0,0,8"
+                            Text="{Binding NarrationMessage}"
+                            TextColor="#B42318" />
+
                         <Border
+                            Grid.Row="1"
                             BackgroundColor="{StaticResource BrandPrimary}"
                             Margin="0"
+                            Opacity="{Binding NarrationButtonOpacity}"
                             Padding="10,12"
                             StrokeThickness="0"
                             StrokeShape="RoundRectangle 18">
                             <VerticalStackLayout HorizontalOptions="Center" Spacing="4">
-                                <Label FontSize="17" HorizontalTextAlignment="Center" Text=">" TextColor="White" />
+                                <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="8" HorizontalOptions="Center">
+                                    <ActivityIndicator
+                                        Color="White"
+                                        HeightRequest="16"
+                                        IsRunning="{Binding IsSelectedPoiNarrationLoading}"
+                                        IsVisible="{Binding IsSelectedPoiNarrationLoading}"
+                                        VerticalOptions="Center"
+                                        WidthRequest="16" />
+                                    <Label
+                                        Grid.Column="1"
+                                        FontSize="17"
+                                        HorizontalTextAlignment="Center"
+                                        Text="{Binding ListenActionIconText}"
+                                        TextColor="White" />
+                                </Grid>
                                 <Label FontFamily="OpenSansSemibold" FontSize="11" HorizontalTextAlignment="Center" Text="{Binding ListenActionText}" TextColor="White" />
                             </VerticalStackLayout>
                             <Border.GestureRecognizers>

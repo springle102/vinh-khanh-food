@@ -16,7 +16,6 @@ public static class AppLanguage
         new("zh-CN", "\u4E2D\u6587", "\uD83C\uDDE8\uD83C\uDDF3", "zh-CN"),
         new("ko", "\uD55C\uAD6D\uC5B4", "\uD83C\uDDF0\uD83C\uDDF7", "ko-KR"),
         new("ja", "\u65E5\u672C\u8A9E", "\uD83C\uDDEF\uD83C\uDDF5", "ja-JP"),
-        new("fr", "Fran\u00E7ais", "\uD83C\uDDEB\uD83C\uDDF7", "fr-FR")
     ];
 
     public static IReadOnlyList<AppLanguageDefinition> SupportedLanguages => Definitions;
@@ -33,7 +32,6 @@ public static class AppLanguage
             "vi-VN" => "vi",
             "zh" => "zh-CN",
             "zh-Hans" => "zh-CN",
-            "fr-FR" => "fr",
             "en-US" => "en",
             "ja-JP" => "ja",
             "ko-KR" => "ko",
@@ -72,9 +70,6 @@ public static class AppLanguage
                 break;
             case "ko":
                 AddCandidate(candidates, "ko-KR");
-                break;
-            case "fr":
-                AddCandidate(candidates, "fr-FR");
                 break;
         }
 
