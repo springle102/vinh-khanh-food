@@ -65,10 +65,25 @@ public sealed class BootstrapLocalizationService(
             .Where(item => item.ShouldMaterialize)
             .Select(item => item.ToTranslation(targetLanguageCode))
             .ToList();
+        var incomplete = workItems
+            .Where(item => item.HasContent && !item.ShouldMaterialize)
+            .ToList();
         var nextTranslations = translations
             .Where(item => !replacementKeys.Contains(CreateTranslationKey(item.EntityType, item.EntityId, item.LanguageCode)))
             .Concat(generated)
             .ToList();
+
+        foreach (var workItem in incomplete)
+        {
+            logger.LogWarning(
+                "Skipping incomplete bootstrap translation. entityType={EntityType}; entityId={EntityId}; requestedLanguage={RequestedLanguage}; sourceHash={SourceHash}; titlePresent={HasTitle}; bodyPresent={HasBody}",
+                workItem.EntityType,
+                workItem.EntityId,
+                targetLanguageCode,
+                workItem.SourceHash,
+                !string.IsNullOrWhiteSpace(workItem.Title),
+                workItem.HasNarrationBody);
+        }
 
         foreach (var workItem in workItems)
         {
@@ -284,7 +299,13 @@ public sealed class BootstrapLocalizationService(
             !string.IsNullOrWhiteSpace(ShortText) ||
             !string.IsNullOrWhiteSpace(FullText);
 
-        public bool ShouldMaterialize => HasContent;
+        public bool HasNarrationBody =>
+            !string.IsNullOrWhiteSpace(FullText) ||
+            !string.IsNullOrWhiteSpace(ShortText);
+
+        public bool ShouldMaterialize =>
+            HasContent &&
+            (!RequiresNarrationBody || HasNarrationBody);
 
         public static BootstrapTranslationWorkItem? Create(
             string entityType,
@@ -361,6 +382,8 @@ public sealed class BootstrapLocalizationService(
 
         private static string CleanTargetValue(string? value, string targetLanguageCode)
             => LocalizationContentPolicy.CleanForLanguage(value, targetLanguageCode) ?? string.Empty;
+
+        private bool RequiresNarrationBody => !string.IsNullOrWhiteSpace(_sourceSnapshot.Body);
     }
 
     private sealed class BootstrapTranslationSegment(

@@ -5,6 +5,10 @@ namespace VinhKhanh.MobileApp.Helpers;
 
 public static class LocalizationFallbackPolicy
 {
+    private const int StrongRomanizedMarkerThreshold = 3;
+    private const int ShortTextRomanizedMarkerThreshold = 2;
+    private const int ShortTextWordThreshold = 12;
+
     private static readonly string[] VietnameseMojibakeMarkers =
     [
         "\u00c3\u00a1\u00c2\u00ba",
@@ -96,9 +100,19 @@ public static class LocalizationFallbackPolicy
         }
 
         var romanized = RemoveDiacritics(normalized).ToLowerInvariant();
-        var padded = $" {string.Join(' ', romanized.Split([' ', '\r', '\n', '\t', '.', ',', ';', ':', '-', '_', '/', '\\', '(', ')', '[', ']'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))} ";
-        return VietnameseRomanizedMarkers.Any(marker =>
+        var words = romanized
+            .Split([' ', '\r', '\n', '\t', '.', ',', ';', ':', '-', '_', '/', '\\', '(', ')', '[', ']'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (words.Length == 0)
+        {
+            return false;
+        }
+
+        var padded = $" {string.Join(' ', words)} ";
+        var markerHitCount = VietnameseRomanizedMarkers.Count(marker =>
             padded.Contains($" {marker} ", StringComparison.OrdinalIgnoreCase));
+
+        return markerHitCount >= StrongRomanizedMarkerThreshold ||
+               (markerHitCount >= ShortTextRomanizedMarkerThreshold && words.Length <= ShortTextWordThreshold);
     }
 
     private static string RemoveDiacritics(string value)

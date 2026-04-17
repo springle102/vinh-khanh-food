@@ -274,13 +274,14 @@ public sealed class PoiNarrationService(
     {
         var segments = new List<string>();
         var hasTitle = !string.IsNullOrWhiteSpace(sourceTitle);
+        var bodySegments = SplitTranslationSegments(sourceBody);
 
         if (hasTitle)
         {
             segments.Add(sourceTitle!);
         }
 
-        segments.Add(sourceBody);
+        segments.AddRange(bodySegments);
 
         var translated = await translationProxyService.TranslateAsync(
             new TextTranslationRequest(targetLanguageCode, sourceLanguageCode, segments),
@@ -289,7 +290,20 @@ public sealed class PoiNarrationService(
         var translatedTitle = hasTitle
             ? CleanNullableForLanguage(translated.Texts.ElementAtOrDefault(0), targetLanguageCode)
             : null;
-        var translatedBody = CleanNullableForLanguage(translated.Texts.ElementAtOrDefault(hasTitle ? 1 : 0), targetLanguageCode);
+        var translatedBodyParts = translated.Texts
+            .Skip(hasTitle ? 1 : 0)
+            .Take(bodySegments.Count)
+            .Select(part => CleanNullableForLanguage(part, targetLanguageCode))
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .ToList();
+        var translatedBody = translatedBodyParts.Count == 0
+            ? null
+            : string.Join("\n\n", translatedBodyParts);
+
+        if (HasNarrationContent(sourceBody) && !HasNarrationContent(translatedBody))
+        {
+            throw new InvalidOperationException("The translated narration body was empty or unusable.");
+        }
 
         return (translatedTitle, translatedBody);
     }
@@ -402,6 +416,80 @@ public sealed class PoiNarrationService(
             (value ?? string.Empty)
                 .Split(default(string[]), StringSplitOptions.RemoveEmptyEntries))
             .Trim();
+
+    private static IReadOnlyList<string> SplitTranslationSegments(string value, int maxLength = 700, int minTrailingLength = 180)
+    {
+        var cleaned = NarrationTextSanitizer.Clean(value);
+        if (string.IsNullOrWhiteSpace(cleaned))
+        {
+            return [];
+        }
+
+        var segments = new List<string>();
+        var paragraphs = cleaned
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .ToList();
+
+        if (paragraphs.Count == 0)
+        {
+            paragraphs.Add(cleaned);
+        }
+
+        foreach (var paragraph in paragraphs)
+        {
+            AppendTranslationSegments(segments, paragraph, maxLength, minTrailingLength);
+        }
+
+        return segments.Count == 0 ? [cleaned] : segments;
+    }
+
+    private static void AppendTranslationSegments(
+        ICollection<string> segments,
+        string text,
+        int maxLength,
+        int minTrailingLength)
+    {
+        var remaining = text.Trim();
+        while (remaining.Length > maxLength)
+        {
+            var splitIndex = FindSegmentSplitIndex(remaining, maxLength, minTrailingLength);
+            var segment = remaining[..splitIndex].Trim();
+            if (segment.Length == 0)
+            {
+                break;
+            }
+
+            segments.Add(segment);
+            remaining = remaining[splitIndex..].Trim();
+        }
+
+        if (remaining.Length > 0)
+        {
+            segments.Add(remaining);
+        }
+    }
+
+    private static int FindSegmentSplitIndex(string value, int maxLength, int minTrailingLength)
+    {
+        var lowerBound = Math.Max(maxLength - minTrailingLength, maxLength / 2);
+
+        for (var index = Math.Min(maxLength, value.Length - 1); index >= lowerBound; index -= 1)
+        {
+            var current = value[index];
+            if (current is '.' or '!' or '?' or ';' or ':' or ',' or '\n')
+            {
+                return index + 1;
+            }
+
+            if (char.IsWhiteSpace(current))
+            {
+                return index;
+            }
+        }
+
+        return Math.Min(maxLength, value.Length);
+    }
 
     private static void AddPreferredLanguage(ICollection<string> languages, string? languageCode)
     {

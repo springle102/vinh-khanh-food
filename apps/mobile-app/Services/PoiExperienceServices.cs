@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Media;
 using Microsoft.Maui.Storage;
@@ -25,9 +26,8 @@ public interface IPoiTourStoreService
 public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerService
 {
     private const string AppSettingsFileName = "appsettings.json";
-    private const int TextToSpeechProxyMaxChars = 180;
-    private const string TextToSpeechProxyModelId = "eleven_flash_v2_5";
-    private static readonly TimeSpan TextToSpeechProxySegmentTimeout = TimeSpan.FromSeconds(12);
+    private static readonly TimeSpan RemoteAudioRequestTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan TextToSpeechProxyRequestTimeout = TimeSpan.FromSeconds(60);
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
@@ -36,6 +36,7 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
     };
     private readonly IAudioManager _audioManager;
     private readonly IFoodStreetDataService _dataService;
+    private readonly ILogger<PoiNarrationService> _logger;
     private readonly HttpClient _mediaClient;
     private HttpClient? _apiClient;
     private string? _resolvedBaseUrl;
@@ -48,16 +49,18 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
 
     public PoiNarrationService(
         IAudioManager audioManager,
-        IFoodStreetDataService dataService)
+        IFoodStreetDataService dataService,
+        ILogger<PoiNarrationService> logger)
     {
         _audioManager = audioManager;
         _dataService = dataService;
+        _logger = logger;
         _mediaClient = new HttpClient(new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
         })
         {
-            Timeout = TimeSpan.FromSeconds(20)
+            Timeout = Timeout.InfiniteTimeSpan
         };
         _mediaClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Linux; Android 12; VinhKhanhMobile)");
     }
@@ -85,6 +88,7 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
                 resolvedNarration?.TtsInputText,
                 GetRequestedLocalizedText(detail.Description, requestedLanguageCode),
                 GetRequestedLocalizedText(detail.Summary, requestedLanguageCode));
+            var sanitizedNarrationText = SanitizeNarrationText(narrationText);
 
             var audioUrl = FirstNonEmpty(
                 CanUseResolvedAudioGuide(resolvedNarration)
@@ -96,31 +100,45 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
                 audioUrl = string.Empty;
             }
 
-            var textToSpeechBaseUrl = await GetTextToSpeechBaseUrlAsync();
-            var playbackUrls = !string.IsNullOrWhiteSpace(audioUrl)
-                ? new[] { audioUrl }
-                : BuildTextToSpeechAudioUrls(
-                    narrationText,
-                    effectiveLanguageCode,
-                    textToSpeechBaseUrl);
-
-            if (playbackUrls.Count > 0)
+            if (!string.IsNullOrWhiteSpace(audioUrl))
             {
-                var playedAudio = await TryPlayRemoteAudioSequenceAsync(playbackUrls, session.PlaybackId, session.Token);
-                if (playedAudio)
+                var remotePlayback = await TryPlayRemoteAudioAsync(audioUrl, session.PlaybackId, session.Token);
+                if (remotePlayback.Success)
                 {
-                    await _dataService.TrackAudioPlayAsync(detail.Id, effectiveLanguageCode, "remote_audio");
+                    await _dataService.TrackAudioPlayAsync(
+                        detail.Id,
+                        effectiveLanguageCode,
+                        "remote_audio",
+                        ToTelemetryDurationSeconds(remotePlayback.DurationSeconds));
                     return;
                 }
             }
 
-            if (string.IsNullOrWhiteSpace(narrationText))
+            if (!string.IsNullOrWhiteSpace(sanitizedNarrationText))
+            {
+                var backendTtsPlayback = await TryPlayBackendTextToSpeechAsync(
+                    sanitizedNarrationText,
+                    effectiveLanguageCode,
+                    session.PlaybackId,
+                    session.Token);
+                if (backendTtsPlayback.Success)
+                {
+                    await _dataService.TrackAudioPlayAsync(
+                        detail.Id,
+                        effectiveLanguageCode,
+                        "backend_tts",
+                        ToTelemetryDurationSeconds(backendTtsPlayback.DurationSeconds));
+                    return;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(sanitizedNarrationText))
             {
                 return;
             }
 
             await SpeakWithDeviceTextToSpeechAsync(
-                narrationText,
+                sanitizedNarrationText,
                 resolvedNarration?.TtsLocale,
                 session.Token);
             await _dataService.TrackAudioPlayAsync(detail.Id, effectiveLanguageCode, "device_tts");
@@ -200,94 +218,111 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
         }
     }
 
-    private async Task<bool> TryPlayRemoteAudioSequenceAsync(
-        IReadOnlyList<string> audioUrls,
+    private async Task<AudioPlaybackResult> TryPlayRemoteAudioAsync(
+        string audioUrl,
         long playbackId,
         CancellationToken cancellationToken)
     {
-        if (audioUrls.Count == 0)
+        if (!Uri.TryCreate(audioUrl, UriKind.Absolute, out var audioUri))
         {
-            return false;
+            return new AudioPlaybackResult(false, null);
         }
 
         try
         {
-            foreach (var audioUrl in audioUrls)
+            using var request = new HttpRequestMessage(HttpMethod.Get, audioUri);
+            var audioPayload = await DownloadAudioPayloadAsync(
+                request,
+                audioUri.ToString(),
+                RemoteAudioRequestTimeout,
+                cancellationToken);
+            if (audioPayload is null)
             {
-                if (!Uri.TryCreate(audioUrl, UriKind.Absolute, out _))
-                {
-                    return false;
-                }
-
-                await PlayRemoteAudioSegmentAsync(audioUrl, playbackId, cancellationToken);
+                return new AudioPlaybackResult(false, null);
             }
 
-            return true;
+            var durationSeconds = await PlayAudioBufferAsync(
+                audioPayload.Content,
+                playbackId,
+                "remote_audio",
+                cancellationToken);
+            return new AudioPlaybackResult(true, durationSeconds);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return false;
+            return new AudioPlaybackResult(false, null);
         }
-        catch
+        catch (Exception exception)
         {
-            return false;
+            _logger.LogWarning(
+                exception,
+                "Unable to play remote narration audio. audioUrl={AudioUrl}",
+                audioUrl);
+            return new AudioPlaybackResult(false, null);
         }
     }
 
-    private async Task PlayRemoteAudioSegmentAsync(string audioUrl, long playbackId, CancellationToken cancellationToken)
+    private async Task<AudioPlaybackResult> TryPlayBackendTextToSpeechAsync(
+        string narrationText,
+        string languageCode,
+        long playbackId,
+        CancellationToken cancellationToken)
     {
-        using var timeoutSource = IsTextToSpeechProxyUrl(audioUrl)
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-            : null;
-        timeoutSource?.CancelAfter(TextToSpeechProxySegmentTimeout);
-        var requestCancellationToken = timeoutSource?.Token ?? cancellationToken;
-
-        using var response = await _mediaClient.GetAsync(audioUrl, HttpCompletionOption.ResponseHeadersRead, requestCancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        await using var networkStream = await response.Content.ReadAsStreamAsync(requestCancellationToken);
-        var buffer = new MemoryStream();
-        await networkStream.CopyToAsync(buffer, requestCancellationToken);
-        buffer.Position = 0;
-
-        AsyncAudioPlayer player;
-        await _stateLock.WaitAsync(cancellationToken);
-        try
+        var apiBaseUrl = await GetTextToSpeechBaseUrlAsync();
+        if (string.IsNullOrWhiteSpace(apiBaseUrl) ||
+            string.IsNullOrWhiteSpace(narrationText) ||
+            string.IsNullOrWhiteSpace(languageCode))
         {
-            if (playbackId != _playbackId || cancellationToken.IsCancellationRequested)
-            {
-                buffer.Dispose();
-                throw new OperationCanceledException(cancellationToken);
-            }
-
-            DisposeCurrentAudioResourcesLocked();
-            _audioBuffer = buffer;
-            _audioPlayer = _audioManager.CreateAsyncPlayer(_audioBuffer);
-            player = _audioPlayer;
-        }
-        finally
-        {
-            _stateLock.Release();
+            return new AudioPlaybackResult(false, null);
         }
 
         try
         {
-            await player.PlayAsync(cancellationToken);
-        }
-        finally
-        {
-            await _stateLock.WaitAsync();
-            try
+            var requestUri = new Uri(new Uri(apiBaseUrl, UriKind.Absolute), "api/v1/tts");
+            using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
             {
-                if (ReferenceEquals(_audioPlayer, player))
+                Content = JsonContent.Create(new TextToSpeechProxyRequestDto
                 {
-                    DisposeCurrentAudioResourcesLocked();
-                }
-            }
-            finally
+                    Text = narrationText,
+                    LanguageCode = AppLanguage.NormalizeCode(languageCode)
+                })
+            };
+
+            _logger.LogInformation(
+                "Requesting backend TTS audio. endpoint={Endpoint}; languageCode={LanguageCode}; textLength={TextLength}",
+                requestUri,
+                languageCode,
+                narrationText.Length);
+
+            var audioPayload = await DownloadAudioPayloadAsync(
+                request,
+                requestUri.ToString(),
+                TextToSpeechProxyRequestTimeout,
+                cancellationToken);
+            if (audioPayload is null)
             {
-                _stateLock.Release();
+                return new AudioPlaybackResult(false, null);
             }
+
+            var durationSeconds = await PlayAudioBufferAsync(
+                audioPayload.Content,
+                playbackId,
+                "backend_tts",
+                cancellationToken);
+            return new AudioPlaybackResult(true, durationSeconds);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new AudioPlaybackResult(false, null);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Unable to play backend TTS narration. languageCode={LanguageCode}; textLength={TextLength}",
+                languageCode,
+                narrationText.Length);
+            return new AudioPlaybackResult(false, null);
         }
     }
 
@@ -464,6 +499,135 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
         return parsed.AbsolutePath.EndsWith("/api/v1/tts", StringComparison.OrdinalIgnoreCase);
     }
 
+    private async Task<DownloadedAudioPayload?> DownloadAudioPayloadAsync(
+        HttpRequestMessage request,
+        string requestDescription,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(timeout);
+        var requestCancellationToken = timeoutSource.Token;
+
+        using var response = await _mediaClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            requestCancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var responseBody = await SafeReadBodyAsync(response, requestCancellationToken);
+            _logger.LogWarning(
+                "Narration audio request failed. request={Request}; statusCode={StatusCode}; contentType={ContentType}; responseBody={ResponseBody}",
+                requestDescription,
+                (int)response.StatusCode,
+                response.Content.Headers.ContentType?.ToString(),
+                responseBody);
+            return null;
+        }
+
+        var contentType = response.Content.Headers.ContentType?.ToString();
+        await using var networkStream = await response.Content.ReadAsStreamAsync(requestCancellationToken);
+        await using var buffer = new MemoryStream();
+        await networkStream.CopyToAsync(buffer, requestCancellationToken);
+        var content = buffer.ToArray();
+
+        if (LooksLikeTextPayload(contentType, content))
+        {
+            var responseBody = DecodeTextPayload(content);
+            _logger.LogWarning(
+                "Narration audio request returned a non-audio payload. request={Request}; statusCode={StatusCode}; contentType={ContentType}; responseBody={ResponseBody}",
+                requestDescription,
+                (int)response.StatusCode,
+                contentType,
+                responseBody);
+            return null;
+        }
+
+        if (content.Length == 0)
+        {
+            _logger.LogWarning(
+                "Narration audio request returned 0 bytes. request={Request}; statusCode={StatusCode}; contentType={ContentType}",
+                requestDescription,
+                (int)response.StatusCode,
+                contentType);
+            return null;
+        }
+
+        _logger.LogInformation(
+            "Narration audio downloaded. request={Request}; statusCode={StatusCode}; contentType={ContentType}; audioBytes={AudioBytes}",
+            requestDescription,
+            (int)response.StatusCode,
+            string.IsNullOrWhiteSpace(contentType) ? "unknown" : contentType,
+            content.Length);
+
+        return new DownloadedAudioPayload(content, contentType);
+    }
+
+    private async Task<double?> PlayAudioBufferAsync(
+        byte[] audioBytes,
+        long playbackId,
+        string source,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new MemoryStream(audioBytes, writable: false);
+        AsyncAudioPlayer player;
+        double durationSeconds;
+
+        await _stateLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (playbackId != _playbackId || cancellationToken.IsCancellationRequested)
+            {
+                buffer.Dispose();
+                throw new OperationCanceledException(cancellationToken);
+            }
+
+            DisposeCurrentAudioResourcesLocked();
+            _audioBuffer = buffer;
+            _audioPlayer = _audioManager.CreateAsyncPlayer(_audioBuffer);
+            player = _audioPlayer;
+            durationSeconds = player.Duration;
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+
+        _logger.LogInformation(
+            "Starting narration playback. source={Source}; playbackId={PlaybackId}; audioBytes={AudioBytes}; durationSeconds={DurationSeconds}",
+            source,
+            playbackId,
+            audioBytes.Length,
+            durationSeconds.ToString("0.00"));
+
+        try
+        {
+            await player.PlayAsync(cancellationToken);
+            _logger.LogInformation(
+                "Narration playback completed. source={Source}; playbackId={PlaybackId}; durationSeconds={DurationSeconds}",
+                source,
+                playbackId,
+                durationSeconds.ToString("0.00"));
+            return durationSeconds > 0 ? durationSeconds : null;
+        }
+        finally
+        {
+            await _stateLock.WaitAsync();
+            try
+            {
+                if (ReferenceEquals(_audioPlayer, player))
+                {
+                    DisposeCurrentAudioResourcesLocked();
+                }
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+        }
+    }
+
     private static async Task SpeakWithDeviceTextToSpeechAsync(
         string narrationText,
         string? preferredLocale,
@@ -506,86 +670,85 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
             };
     }
 
-    private static IReadOnlyList<string> BuildTextToSpeechAudioUrls(
-        string text,
-        string languageCode,
-        string? apiBaseUrl)
+    private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(text) ||
-            string.IsNullOrWhiteSpace(languageCode) ||
-            string.IsNullOrWhiteSpace(apiBaseUrl))
+        try
         {
-            return Array.Empty<string>();
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            return string.IsNullOrWhiteSpace(content)
+                ? string.Empty
+                : content.Trim();
         }
-
-        var normalizedLanguageCode = AppLanguage.NormalizeCode(languageCode);
-        var chunks = SplitNarrationIntoChunks(text.Trim(), TextToSpeechProxyMaxChars);
-        if (chunks.Count == 0)
+        catch
         {
-            return Array.Empty<string>();
+            return string.Empty;
         }
-
-        var baseUri = new Uri(apiBaseUrl, UriKind.Absolute);
-        return chunks
-            .Select((chunk, index) =>
-            {
-                var query = new Dictionary<string, string>
-                {
-                    ["languageCode"] = normalizedLanguageCode,
-                    ["text"] = chunk,
-                    ["total"] = chunks.Count.ToString(),
-                    ["idx"] = index.ToString(),
-                    ["model_id"] = TextToSpeechProxyModelId
-                };
-
-                var relativePath =
-                    "api/v1/tts?" +
-                    string.Join("&", query.Select(item => $"{item.Key}={Uri.EscapeDataString(item.Value)}"));
-
-                return new Uri(baseUri, relativePath).ToString();
-            })
-            .ToArray();
     }
 
-    private static IReadOnlyList<string> SplitNarrationIntoChunks(string text, int maxLength)
+    private static bool LooksLikeTextPayload(string? contentType, byte[] content)
+    {
+        if (!string.IsNullOrWhiteSpace(contentType))
+        {
+            if (contentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) ||
+                contentType.StartsWith("application/octet-stream", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (contentType.Contains("json", StringComparison.OrdinalIgnoreCase) ||
+                contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase) ||
+                contentType.Contains("xml", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        if (content.Length == 0)
+        {
+            return false;
+        }
+
+        var previewLength = Math.Min(content.Length, 64);
+        var preview = System.Text.Encoding.UTF8.GetString(content, 0, previewLength).TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+        return preview.StartsWith("{", StringComparison.Ordinal) ||
+               preview.StartsWith("[", StringComparison.Ordinal) ||
+               preview.StartsWith("<", StringComparison.Ordinal);
+    }
+
+    private static string DecodeTextPayload(byte[] content)
+        => content.Length == 0
+            ? string.Empty
+            : System.Text.Encoding.UTF8.GetString(content).Trim();
+
+    private static string SanitizeNarrationText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            return Array.Empty<string>();
+            return string.Empty;
         }
 
-        var chunks = new List<string>();
-        var start = 0;
+        var sanitized = text
+            .Replace("\0", string.Empty, StringComparison.Ordinal)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Trim();
+        return string.IsNullOrWhiteSpace(sanitized)
+            ? string.Empty
+            : sanitized.Normalize();
+    }
 
-        while (start < text.Length)
+    private static int? ToTelemetryDurationSeconds(double? durationSeconds)
+    {
+        if (!durationSeconds.HasValue || durationSeconds.Value <= 0)
         {
-            var end = Math.Min(start + maxLength, text.Length);
-            if (end < text.Length)
-            {
-                var searchStart = start + (int)(maxLength * 0.6);
-                for (var index = end; index > searchStart; index -= 1)
-                {
-                    if (char.IsWhiteSpace(text[index - 1]) || ".!?,;:".Contains(text[index - 1]))
-                    {
-                        end = index;
-                        break;
-                    }
-                }
-            }
-
-            var chunk = text[start..end].Trim();
-            if (!string.IsNullOrWhiteSpace(chunk))
-            {
-                chunks.Add(chunk);
-            }
-
-            start = end;
+            return null;
         }
 
-        return chunks;
+        return (int)Math.Ceiling(durationSeconds.Value);
     }
 
     private sealed record PlaybackSession(long PlaybackId, CancellationToken Token);
+    private sealed record AudioPlaybackResult(bool Success, double? DurationSeconds);
+    private sealed record DownloadedAudioPayload(byte[] Content, string? ContentType);
 
     private sealed class MobileRuntimeAppSettings
     {
@@ -598,6 +761,12 @@ public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerServ
         public bool Success { get; set; }
         public T? Data { get; set; }
         public string? Message { get; set; }
+    }
+
+    private sealed class TextToSpeechProxyRequestDto
+    {
+        public string Text { get; set; } = string.Empty;
+        public string LanguageCode { get; set; } = AppLanguage.FallbackLanguage;
     }
 
     private sealed class PoiNarrationResponseDto

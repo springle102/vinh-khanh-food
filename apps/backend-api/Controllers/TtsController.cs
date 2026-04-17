@@ -11,7 +11,7 @@ public sealed class TtsController(
     ILogger<TtsController> logger) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GenerateAudio(
+    public Task<IActionResult> GenerateAudio(
         [FromQuery] string text,
         [FromQuery] string languageCode,
         [FromQuery] string? customerUserId,
@@ -21,29 +21,51 @@ public sealed class TtsController(
         [FromQuery(Name = "model_id")] string? modelId,
         [FromQuery(Name = "output_format")] string? outputFormat,
         CancellationToken cancellationToken)
+        => GenerateAudioCoreAsync(
+            new TextToSpeechRequest(
+                text,
+                languageCode,
+                voiceId,
+                modelId,
+                outputFormat,
+                SegmentIndex: idx,
+                TotalSegments: total),
+            cancellationToken);
+
+    [HttpPost]
+    public Task<IActionResult> GenerateAudio(
+        [FromBody] TextToSpeechBodyRequest body,
+        CancellationToken cancellationToken)
+        => GenerateAudioCoreAsync(
+            new TextToSpeechRequest(
+                body.Text,
+                body.LanguageCode,
+                body.VoiceId,
+                body.ModelId,
+                body.OutputFormat,
+                body.PreviousText,
+                body.NextText,
+                body.SegmentIndex,
+                body.TotalSegments),
+            cancellationToken);
+
+    private async Task<IActionResult> GenerateAudioCoreAsync(
+        TextToSpeechRequest request,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(request.Text))
         {
             return BadRequest(ApiResponse<string>.Fail("Text is required."));
         }
 
-        if (string.IsNullOrWhiteSpace(languageCode))
+        if (string.IsNullOrWhiteSpace(request.LanguageCode))
         {
             return BadRequest(ApiResponse<string>.Fail("LanguageCode is required."));
         }
 
         try
         {
-            var audio = await textToSpeechService.GenerateAudioAsync(
-                new TextToSpeechRequest(
-                    text,
-                    languageCode,
-                    voiceId,
-                    modelId,
-                    outputFormat,
-                    SegmentIndex: idx,
-                    TotalSegments: total),
-                cancellationToken);
+            var audio = await textToSpeechService.GenerateAudioAsync(request, cancellationToken);
 
             Response.Headers["X-TTS-Provider"] = audio.Provider;
             Response.Headers["X-TTS-Voice-Id"] = audio.VoiceId;
@@ -59,9 +81,9 @@ public sealed class TtsController(
             logger.LogError(
                 exception,
                 "ElevenLabs Text-to-Speech is not configured. language={LanguageCode}; segment={SegmentIndex}/{TotalSegments}",
-                languageCode,
-                idx,
-                total);
+                request.LanguageCode,
+                request.SegmentIndex,
+                request.TotalSegments);
             return StatusCode(
                 StatusCodes.Status503ServiceUnavailable,
                 ApiResponse<string>.Fail(exception.Message));
@@ -74,12 +96,25 @@ public sealed class TtsController(
             logger.LogWarning(
                 exception,
                 "Unable to generate ElevenLabs TTS audio. language={LanguageCode}; segment={SegmentIndex}/{TotalSegments}",
-                languageCode,
-                idx,
-                total);
+                request.LanguageCode,
+                request.SegmentIndex,
+                request.TotalSegments);
             return StatusCode(
                 StatusCodes.Status502BadGateway,
                 ApiResponse<string>.Fail("Unable to generate audio at this time."));
         }
+    }
+
+    public sealed class TextToSpeechBodyRequest
+    {
+        public string Text { get; set; } = string.Empty;
+        public string LanguageCode { get; set; } = string.Empty;
+        public string? VoiceId { get; set; }
+        public string? ModelId { get; set; }
+        public string? OutputFormat { get; set; }
+        public string? PreviousText { get; set; }
+        public string? NextText { get; set; }
+        public int? SegmentIndex { get; set; }
+        public int? TotalSegments { get; set; }
     }
 }

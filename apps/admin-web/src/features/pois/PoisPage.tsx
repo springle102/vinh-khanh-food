@@ -534,8 +534,8 @@ export const PoisPage = () => {
       : "";
   const selectedNarrationDisplayTitle = selectedNarration?.displayTitle?.trim() || "";
   const selectedDisplayTitle =
-    selectedExactTitle ||
     selectedNarrationDisplayTitle ||
+    selectedExactTitle ||
     selectedPoi?.slug ||
     "";
   const selectedDisplayText =

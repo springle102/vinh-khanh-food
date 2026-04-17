@@ -61,12 +61,37 @@ var callCountAfterSecondRequest = handler.CallCount;
 var third = await service.GenerateAudioAsync(
     new TextToSpeechRequest("Hello from Korea", "ko"),
     CancellationToken.None);
+var callCountAfterThirdRequest = handler.CallCount;
+var longText = string.Join(
+    ' ',
+    Enumerable.Repeat(
+        "This is a long multilingual narration block designed to force the backend service to split the request into multiple ElevenLabs segments without losing any words.",
+        18));
+var callCountBeforeLongRequest = handler.CallCount;
+var longResult = await service.GenerateAudioAsync(
+    new TextToSpeechRequest(longText, "en-US"),
+    CancellationToken.None);
+var callCountAfterLongRequest = handler.CallCount;
 
 AssertEqual("first call returns audio content type", first.ContentType, "audio/mpeg");
 AssertEqual("second identical call uses backend TTS cache", callCountAfterSecondRequest, 1);
-AssertEqual("different language/text bypasses backend TTS cache", handler.CallCount, 2);
+AssertEqual("different language/text bypasses backend TTS cache", callCountAfterThirdRequest, 2);
 AssertEqual("cached response keeps content", Convert.ToHexString(second.Content), Convert.ToHexString(first.Content));
 AssertEqual("new response has different test bytes", Convert.ToHexString(third.Content) == Convert.ToHexString(first.Content), false);
+AssertEqual("long request is split into multiple provider calls", callCountAfterLongRequest > callCountBeforeLongRequest, true);
+
+var expectedLongBytes = Enumerable
+    .Range(callCountBeforeLongRequest + 1, callCountAfterLongRequest - callCountBeforeLongRequest)
+    .SelectMany(index => new byte[] { 1, 2, 3, (byte)index })
+    .ToArray();
+AssertEqual("long request concatenates every audio chunk in order", Convert.ToHexString(longResult.Content), Convert.ToHexString(expectedLongBytes));
+
+foreach (var payloadJson in handler.Payloads.Skip(callCountBeforeLongRequest))
+{
+    using var payload = JsonDocument.Parse(payloadJson);
+    var payloadText = payload.RootElement.GetProperty("text").GetString() ?? string.Empty;
+    AssertEqual("long request chunk text length stays under provider limit", payloadText.Length <= 900, true);
+}
 
 using (var payload = JsonDocument.Parse(handler.Payloads[0]))
 {
@@ -135,13 +160,21 @@ AssertContains(
     adminNarrationSource,
     "model_id: TTS_PROXY_MODEL_ID");
 AssertContains(
-    "mobile TTS URLs request the low latency model",
+    "mobile narration requests backend TTS through POST",
+    mobileNarrationSource,
+    "new HttpRequestMessage(HttpMethod.Post, requestUri)");
+AssertContains(
+    "mobile backend TTS has a bounded wait before falling back",
+    mobileNarrationSource,
+    "TextToSpeechProxyRequestTimeout");
+AssertDoesNotContain(
+    "mobile narration must not split TTS text on the client anymore",
+    mobileNarrationSource,
+    "SplitNarrationIntoChunks(");
+AssertDoesNotContain(
+    "mobile narration must not override the backend model_id anymore",
     mobileNarrationSource,
     "[\"model_id\"] = TextToSpeechProxyModelId");
-AssertContains(
-    "mobile remote TTS has a bounded wait before falling back",
-    mobileNarrationSource,
-    "TextToSpeechProxySegmentTimeout");
 
 if (failures.Count > 0)
 {
