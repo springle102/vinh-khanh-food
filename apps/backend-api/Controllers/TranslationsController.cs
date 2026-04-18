@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Infrastructure;
 using VinhKhanh.BackendApi.Models;
@@ -11,6 +12,8 @@ public sealed class TranslationsController(
     AdminDataRepository repository,
     AdminRequestContextResolver adminRequestContextResolver,
     TranslationProxyService translationProxyService,
+    PoiPregeneratedAudioService poiPregeneratedAudioService,
+    IOptions<TextToSpeechOptions> textToSpeechOptions,
     ILogger<TranslationsController> logger) : ControllerBase
 {
     [HttpGet]
@@ -42,7 +45,7 @@ public sealed class TranslationsController(
     }
 
     [HttpPost]
-    public ActionResult<ApiResponse<Translation>> CreateTranslation([FromBody] TranslationUpsertRequest request)
+    public async Task<ActionResult<ApiResponse<Translation>>> CreateTranslation([FromBody] TranslationUpsertRequest request, CancellationToken cancellationToken)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
         EnsureTourTranslationAccess(actor, entityType: request.EntityType);
@@ -67,11 +70,12 @@ public sealed class TranslationsController(
         }
 
         var saved = repository.SaveTranslation(null, request with { UpdatedBy = actor.Name }, actor);
+        await TryAutoRegeneratePoiAudioAsync(saved, actor, cancellationToken);
         return Ok(ApiResponse<Translation>.Ok(saved, "Tao noi dung thuyet minh thanh cong."));
     }
 
     [HttpPut("{id}")]
-    public ActionResult<ApiResponse<Translation>> UpdateTranslation(string id, [FromBody] TranslationUpsertRequest request)
+    public async Task<ActionResult<ApiResponse<Translation>>> UpdateTranslation(string id, [FromBody] TranslationUpsertRequest request, CancellationToken cancellationToken)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
         EnsureTourTranslationAccess(actor, entityType: request.EntityType, translationId: id);
@@ -93,6 +97,7 @@ public sealed class TranslationsController(
         }
 
         var saved = repository.SaveTranslation(id, request with { UpdatedBy = actor.Name }, actor);
+        await TryAutoRegeneratePoiAudioAsync(saved, actor, cancellationToken);
         return Ok(ApiResponse<Translation>.Ok(saved, "Cap nhat noi dung thuyet minh thanh cong."));
     }
 
@@ -178,4 +183,56 @@ public sealed class TranslationsController(
 
     private static bool IsRouteEntityType(string? entityType) =>
         string.Equals(entityType?.Trim(), "route", StringComparison.OrdinalIgnoreCase);
+
+    private async Task TryAutoRegeneratePoiAudioAsync(
+        Translation translation,
+        AdminRequestContext actor,
+        CancellationToken cancellationToken)
+    {
+        if (!textToSpeechOptions.Value.AutoRegenerateWhenTextChanges)
+        {
+            return;
+        }
+
+        if (!string.Equals(NormalizeEntityType(translation.EntityType), "poi", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (!CanManageEntity(actor, translation.EntityType, translation.EntityId))
+        {
+            return;
+        }
+
+        try
+        {
+            logger.LogInformation(
+                "Auto-regenerating POI audio after narration save. poiId={PoiId}; languageCode={LanguageCode}; actor={Actor}",
+                translation.EntityId,
+                translation.LanguageCode,
+                actor.UserId);
+
+            await poiPregeneratedAudioService.GeneratePoiLanguageAsync(
+                translation.EntityId,
+                new PoiAudioGenerationRequest(
+                    translation.LanguageCode,
+                    null,
+                    null,
+                    null,
+                    ForceRegenerate: true),
+                actor,
+                cancellationToken);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException ||
+            exception is HttpRequestException ||
+            exception is TaskCanceledException)
+        {
+            logger.LogWarning(
+                exception,
+                "Auto-regenerate POI audio failed after narration save. poiId={PoiId}; languageCode={LanguageCode}",
+                translation.EntityId,
+                translation.LanguageCode);
+        }
+    }
 }

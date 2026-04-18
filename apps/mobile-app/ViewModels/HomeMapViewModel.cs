@@ -10,6 +10,7 @@ namespace VinhKhanh.MobileApp.ViewModels;
 public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 {
     private readonly IFoodStreetDataService _dataService;
+    private readonly IOfflinePackageService _offlinePackageService;
     private readonly IPoiAudioPlaybackService _poiAudioPlaybackService;
     private readonly IAutoNarrationService _autoNarrationService;
     private readonly SemaphoreSlim _locationUpdateLock = new(1, 1);
@@ -36,6 +37,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
     public HomeMapViewModel(
         IFoodStreetDataService dataService,
+        IOfflinePackageService offlinePackageService,
         IAppLanguageService languageService,
         IPoiAudioPlaybackService poiAudioPlaybackService,
         IRouteService routeService,
@@ -46,13 +48,17 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         : base(languageService)
     {
         _dataService = dataService;
+        _offlinePackageService = offlinePackageService;
         _poiAudioPlaybackService = poiAudioPlaybackService;
         _routeService = routeService;
         _routePoiFilterService = routePoiFilterService;
         _simulationService = simulationService;
         _autoNarrationService = autoNarrationService;
         _tourStateService = tourStateService;
+        _offlineNoticePrimaryActionCommand = new(OpenOfflinePackageSettingsAsync);
+        _offlineNoticeSecondaryActionCommand = new(DismissOfflineNoticeAsync);
         _poiAudioPlaybackService.PlaybackStateChanged += OnPlaybackStateChanged;
+        _offlinePackageService.StateChanged += OnOfflinePackageStateChanged;
         PlayNarrationCommand = new(PlayNarrationAsync, () => CanToggleNarration);
         ApplyPlaybackSnapshot(_poiAudioPlaybackService.Snapshot);
         InitializeTourCommands();
@@ -382,6 +388,8 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
     public async Task LoadAsync(bool autoPlayNarrationForSelection)
     {
+        await RefreshOfflinePackageStateAsync();
+
         var hasVisibleState =
             Pois.Count > 0 ||
             AvailableTours.Count > 0 ||
@@ -1046,9 +1054,19 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             SelectedPoiDetail is not null &&
             _playbackSnapshot.Status == PoiAudioPlaybackStatus.Error &&
             _playbackSnapshot.Matches(SelectedPoiDetail.Id, LanguageService.CurrentLanguage)
-                ? LanguageService.GetText("poi_detail_narration_error")
+                ? ResolveNarrationErrorMessage(_playbackSnapshot.ErrorMessage)
                 : string.Empty;
     }
+
+    private string ResolveNarrationErrorMessage(string? errorMessage)
+        => errorMessage switch
+        {
+            "missing_pre_generated_audio" => LanguageService.GetText("poi_detail_narration_missing"),
+            "audio_playback_unavailable" => LanguageService.GetText("poi_detail_narration_error"),
+            _ => string.IsNullOrWhiteSpace(errorMessage)
+                ? LanguageService.GetText("poi_detail_narration_error")
+                : errorMessage
+        };
 
     private void RefreshNarrationBindings()
     {

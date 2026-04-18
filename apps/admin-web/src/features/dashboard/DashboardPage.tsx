@@ -78,7 +78,7 @@ export const DashboardPage = () => {
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, 4);
 
-  const deviceBreakdown = ["android", "web", "ios"].map((platform) => ({
+  const deviceBreakdown = ["android", "web"].map((platform) => ({
     label: platform.toUpperCase(),
     value: state.usageEvents.filter((item) => item.platform === platform).length,
   }));

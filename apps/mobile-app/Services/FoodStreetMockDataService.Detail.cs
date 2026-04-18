@@ -48,9 +48,7 @@ public sealed partial class FoodStreetApiDataService
         if (audioGuides is not null)
         {
             foreach (var audioGuide in audioGuides
-                         .Where(item =>
-                             string.Equals(item.SourceType, "uploaded", StringComparison.OrdinalIgnoreCase) &&
-                             !string.IsNullOrWhiteSpace(item.AudioUrl))
+                         .Where(item => IsPlayableAudioGuide(item))
                          .OrderByDescending(item => item.UpdatedAt))
             {
                 detail.AudioUrls.Set(audioGuide.LanguageCode, audioGuide.AudioUrl);

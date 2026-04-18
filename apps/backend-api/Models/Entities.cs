@@ -19,36 +19,6 @@ public sealed class AdminUser
     public DateTimeOffset? RegistrationReviewedAt { get; set; }
 }
 
-public sealed class CustomerUser
-{
-    public string Id { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string Phone { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;
-    public string PreferredLanguage { get; set; } = "vi";
-    public string? Username { get; set; }
-    public string Country { get; set; } = string.Empty;
-    public bool IsPremium { get; set; }
-    public List<string> FavoritePoiIds { get; set; } = [];
-    public DateTimeOffset CreatedAt { get; set; }
-    public DateTimeOffset? LastActiveAt { get; set; }
-}
-
-public sealed class EndUser
-{
-    public string Id { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string Phone { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;
-    public string? Username { get; set; }
-    public string DefaultLanguage { get; set; } = "vi";
-    public string Country { get; set; } = string.Empty;
-    public DateTimeOffset CreatedAt { get; set; }
-    public DateTimeOffset? LastActiveAt { get; set; }
-}
-
 public sealed class PoiCategory
 {
     public string Id { get; set; } = string.Empty;
@@ -62,6 +32,11 @@ public sealed class Poi
 {
     public string Id { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string ShortDescription { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string AudioScript { get; set; } = string.Empty;
+    public string SourceLanguageCode { get; set; } = "vi";
     public string Address { get; set; } = string.Empty;
     public double Lat { get; set; }
     public double Lng { get; set; }
@@ -96,8 +71,6 @@ public sealed class Translation
     public string FullText { get; set; } = string.Empty;
     public string SeoTitle { get; set; } = string.Empty;
     public string SeoDescription { get; set; } = string.Empty;
-    [Obsolete("Premium gating is deprecated for the public Android app.")]
-    public bool IsPremium { get; set; }
     public string? SourceLanguageCode { get; set; }
     public string? SourceHash { get; set; }
     public DateTimeOffset? SourceUpdatedAt { get; set; }
@@ -111,10 +84,25 @@ public sealed class AudioGuide
     public string EntityType { get; set; } = "poi";
     public string EntityId { get; set; } = string.Empty;
     public string LanguageCode { get; set; } = "vi";
+    public string TranscriptText { get; set; } = string.Empty;
     public string AudioUrl { get; set; } = string.Empty;
+    public string AudioFilePath { get; set; } = string.Empty;
+    public string AudioFileName { get; set; } = string.Empty;
     public string VoiceType { get; set; } = "standard";
-    public string SourceType { get; set; } = "uploaded";
-    public string Status { get; set; } = "ready";
+    public string SourceType { get; set; } = "generated";
+    public string Provider { get; set; } = "elevenlabs";
+    public string VoiceId { get; set; } = string.Empty;
+    public string ModelId { get; set; } = string.Empty;
+    public string OutputFormat { get; set; } = "mp3_44100_128";
+    public double? DurationInSeconds { get; set; }
+    public long? FileSizeBytes { get; set; }
+    public string TextHash { get; set; } = string.Empty;
+    public string ContentVersion { get; set; } = string.Empty;
+    public DateTimeOffset? GeneratedAt { get; set; }
+    public string GenerationStatus { get; set; } = "none";
+    public string? ErrorMessage { get; set; }
+    public bool IsOutdated { get; set; }
+    public string Status { get; set; } = "missing";
     public string UpdatedBy { get; set; } = string.Empty;
     public DateTimeOffset UpdatedAt { get; set; }
 }
@@ -230,23 +218,6 @@ public sealed class UserActivityLog
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-public sealed class PremiumPurchaseTransaction
-{
-    public string Id { get; set; } = string.Empty;
-    public string CustomerUserId { get; set; } = string.Empty;
-    public int AmountUsd { get; set; }
-    public string CurrencyCode { get; set; } = "USD";
-    public string PaymentProvider { get; set; } = "mock";
-    public string PaymentMethod { get; set; } = string.Empty;
-    public string? PaymentReference { get; set; }
-    public string? MaskedAccount { get; set; }
-    public string IdempotencyKey { get; set; } = string.Empty;
-    public string Status { get; set; } = "pending";
-    public string? FailureMessage { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
-    public DateTimeOffset? ProcessedAt { get; set; }
-}
-
 public sealed class RefreshSession
 {
     public string UserId { get; set; } = string.Empty;
@@ -263,12 +234,6 @@ public sealed class SystemSetting
     public string DefaultLanguage { get; set; } = "vi";
     public string FallbackLanguage { get; set; } = "en";
     public List<string> SupportedLanguages { get; set; } = [];
-    [Obsolete("Use SupportedLanguages instead.")]
-    public List<string> FreeLanguages { get; set; } = [];
-    [Obsolete("Premium language access is deprecated.")]
-    public List<string> PremiumLanguages { get; set; } = [];
-    [Obsolete("Premium pricing is deprecated.")]
-    public int PremiumUnlockPriceUsd { get; set; }
     public string MapProvider { get; set; } = "openstreetmap";
     public string StorageProvider { get; set; } = "cloudinary";
     public string TtsProvider { get; set; } = "elevenlabs";

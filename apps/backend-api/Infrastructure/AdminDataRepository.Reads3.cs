@@ -71,23 +71,6 @@ public sealed partial class AdminDataRepository
         };
     }
 
-    private static EndUser MapEndUser(SqlDataReader reader)
-    {
-        return new EndUser
-        {
-            Id = ReadString(reader, "Id"),
-            Name = ReadString(reader, "Name"),
-            Email = ReadString(reader, "Email"),
-            Phone = ReadString(reader, "Phone"),
-            Password = ReadString(reader, "Password"),
-            Username = ReadNullableString(reader, "Username"),
-            DefaultLanguage = ReadString(reader, "PreferredLanguage"),
-            Country = ReadString(reader, "Country"),
-            CreatedAt = ReadDateTimeOffset(reader, "CreatedAt"),
-            LastActiveAt = ReadNullableDateTimeOffset(reader, "LastActiveAt")
-        };
-    }
-
     private static Translation MapTranslation(SqlDataReader reader)
     {
         return new Translation
@@ -111,16 +94,41 @@ public sealed partial class AdminDataRepository
 
     private static AudioGuide MapAudioGuide(SqlDataReader reader)
     {
+        var audioUrl = ReadString(reader, "AudioUrl");
+        var sourceType = AudioGuideCatalog.NormalizeSourceType(ReadString(reader, "SourceType"));
+        var generationStatus = AudioGuideCatalog.NormalizeGenerationStatus(ReadNullableString(reader, "GenerationStatus"));
+        var isOutdated = ReadNullableBool(reader, "IsOutdated") ?? false;
+
+        var normalizedStatus = AudioGuideCatalog.ResolvePublicStatus(
+            generationStatus,
+            !string.IsNullOrWhiteSpace(audioUrl),
+            isOutdated);
+
         return new AudioGuide
         {
             Id = ReadString(reader, "Id"),
             EntityType = NormalizeStoredEntityType(ReadString(reader, "EntityType")),
             EntityId = ReadString(reader, "EntityId"),
             LanguageCode = ReadString(reader, "LanguageCode"),
-            AudioUrl = ReadString(reader, "AudioUrl"),
+            TranscriptText = ReadString(reader, "TranscriptText"),
+            AudioUrl = audioUrl,
+            AudioFilePath = ReadString(reader, "AudioFilePath"),
+            AudioFileName = ReadString(reader, "AudioFileName"),
             VoiceType = ReadString(reader, "VoiceType"),
-            SourceType = ReadString(reader, "SourceType"),
-            Status = ReadString(reader, "Status"),
+            SourceType = sourceType,
+            Provider = AudioGuideCatalog.NormalizeProvider(ReadNullableString(reader, "Provider")),
+            VoiceId = ReadString(reader, "VoiceId"),
+            ModelId = ReadString(reader, "ModelId"),
+            OutputFormat = ReadString(reader, "OutputFormat"),
+            DurationInSeconds = ReadNullableDouble(reader, "DurationInSeconds"),
+            FileSizeBytes = ReadNullableLong(reader, "FileSizeBytes"),
+            TextHash = ReadString(reader, "TextHash"),
+            ContentVersion = ReadString(reader, "ContentVersion"),
+            GeneratedAt = ReadNullableDateTimeOffset(reader, "GeneratedAt"),
+            GenerationStatus = generationStatus,
+            ErrorMessage = ReadNullableString(reader, "ErrorMessage"),
+            IsOutdated = isOutdated,
+            Status = normalizedStatus,
             UpdatedBy = ReadString(reader, "UpdatedBy"),
             UpdatedAt = ReadDateTimeOffset(reader, "UpdatedAt")
         };

@@ -22,16 +22,9 @@ public static class MauiProgram
             });
 
         builder.Services.AddSingleton<IAppLanguageService, AppLanguageService>();
-        // ✅ FIX: For now, only register IAppLanguageService
-        // TODO: Fix the Interfaces namespace issue and register ILocalizationService adapter
-        // builder.Services.AddSingleton<Interfaces.ILocalizationService>(sp =>
-        //     new LocalizationServiceAdapter(sp.GetRequiredService<IAppLanguageService>()));
 
-        // TODO: These services need to be implemented
-        // builder.Services.AddSingleton<IAppSettingsService, AppSettingsService>();
-        // builder.Services.AddSingleton<IOfflineCacheService, OfflineCacheService>();
-        // builder.Services.AddSingleton<IGuideApiService, GuideApiService>();
-
+        builder.Services.AddSingleton<IOfflineStorageService, OfflineStorageService>();
+        builder.Services.AddSingleton<IOfflinePackageService, OfflinePackageService>();
         builder.Services.AddSingleton<IFoodStreetDataService, FoodStreetApiDataService>();
         builder.Services.AddSingleton<PoiAudioPlaybackService>();
         builder.Services.AddSingleton<IPoiAudioPlaybackService>(sp => sp.GetRequiredService<PoiAudioPlaybackService>());

@@ -51,34 +51,6 @@ public sealed partial class AdminDataRepository
             .ToList();
     }
 
-    public IReadOnlyList<CustomerUser> GetCustomerUsers()
-    {
-        using var connection = OpenConnection();
-        return GetCustomerUsers(connection, null);
-    }
-
-    public IReadOnlyList<EndUser> GetEndUsers(AdminRequestContext actor)
-    {
-        if (!actor.IsSuperAdmin)
-        {
-            throw new ApiForbiddenException("Chủ quán không được phép xem danh sách người dùng cuối của toàn hệ thống.");
-        }
-
-        using var connection = OpenConnection();
-        return GetEndUsers(connection, null);
-    }
-
-    public EndUser? GetEndUserById(string id, AdminRequestContext actor)
-    {
-        if (!actor.IsSuperAdmin)
-        {
-            throw new ApiForbiddenException("Chủ quán không được phép xem chi tiết người dùng cuối.");
-        }
-
-        using var connection = OpenConnection();
-        return GetEndUserById(connection, null, id);
-    }
-
     public IReadOnlyList<PoiCategory> GetCategories()
     {
         using var connection = OpenConnection();
@@ -94,7 +66,6 @@ public sealed partial class AdminDataRepository
     public IReadOnlyList<Translation> GetTranslations(AdminRequestContext? actor = null)
     {
         using var connection = OpenConnection();
-        var items = GetTranslations(connection, null);
         var pois = actor is null
             ? GetPois(connection, null)
             : ApplyPoiScope(connection, null, GetPois(connection, null), actor);
@@ -108,13 +79,7 @@ public sealed partial class AdminDataRepository
             ? GetPromotions(connection, null)
             : ApplyPromotionScope(connection, null, GetPromotions(connection, null), actor);
 
-        if (actor is not null)
-        {
-            items = ApplyTranslationScope(connection, null, items, actor, pois, foodItems, routes, promotions);
-        }
-
-        items = FilterOutdatedEntityTranslations(items, pois, routes);
-        return CollapseTranslations(items);
+        return BuildSourceTranslations(GetSettings(connection, null), pois, foodItems, routes, promotions);
     }
 
     public IReadOnlyList<AudioGuide> GetAudioGuides(AdminRequestContext? actor = null)
@@ -245,16 +210,14 @@ public sealed partial class AdminDataRepository
     }
 
     public AdminBootstrapResponse GetBootstrap(
-        AdminRequestContext? admin = null,
-        string? customerUserId = null)
+        AdminRequestContext? admin = null)
     {
         using var connection = OpenConnection();
 
         var users = admin is null ? [] : GetUsers(connection, null);
-        var customerUsers = Array.Empty<CustomerUser>();
         var categories = GetCategories(connection, null);
         var pois = GetPois(connection, null);
-        var translations = GetTranslations(connection, null);
+        IReadOnlyList<Translation> translations = [];
         var audioGuides = GetAudioGuides(connection, null);
         var mediaAssets = GetMediaAssets(connection, null);
         var foodItems = GetFoodItems(connection, null);
@@ -278,7 +241,7 @@ public sealed partial class AdminDataRepository
             usageEvents = ApplyUsageEventScope(usageEvents, admin, pois);
             viewLogs = ApplyViewLogScope(connection, null, viewLogs, admin, pois);
             audioListenLogs = ApplyAudioListenLogScope(connection, null, audioListenLogs, admin, pois);
-            translations = ApplyTranslationScope(connection, null, translations, admin, pois, foodItems, routes, promotions);
+            translations = BuildSourceTranslations(settings, pois, foodItems, routes, promotions);
             audioGuides = ApplyAudioGuideScope(connection, null, audioGuides, admin, pois, foodItems, routes);
             mediaAssets = ApplyMediaAssetScope(connection, null, mediaAssets, admin, pois, foodItems, routes, promotions);
             auditLogs = ApplyAuditScope(connection, null, auditLogs, admin);
@@ -297,7 +260,7 @@ public sealed partial class AdminDataRepository
                 .ToList();
             viewLogs = viewLogs.Where(log => pois.Any(poi => poi.Id == log.PoiId)).ToList();
             audioListenLogs = audioListenLogs.Where(log => pois.Any(poi => poi.Id == log.PoiId)).ToList();
-            translations = ApplyPublicTranslationScope(translations, pois, foodItems, routes, promotions, allowedLanguages);
+            translations = BuildSourceTranslations(settings, pois, foodItems, routes, promotions);
             audioGuides = ApplyPublicAudioGuideScope(audioGuides, pois, foodItems, routes, allowedLanguages);
             mediaAssets = ApplyPublicMediaAssetScope(mediaAssets, pois, foodItems, routes, promotions);
             users = [];
@@ -312,7 +275,6 @@ public sealed partial class AdminDataRepository
 
         return new AdminBootstrapResponse(
             users,
-            customerUsers,
             categories,
             pois,
             translations,
@@ -327,6 +289,115 @@ public sealed partial class AdminDataRepository
             auditLogs,
             settings,
             syncState);
+    }
+
+    private static IReadOnlyList<Translation> BuildSourceTranslations(
+        SystemSetting settings,
+        IReadOnlyList<Poi> pois,
+        IReadOnlyList<FoodItem> foodItems,
+        IReadOnlyList<TourRoute> routes,
+        IReadOnlyList<Promotion> promotions)
+    {
+        var sourceLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(settings.DefaultLanguage);
+        if (string.IsNullOrWhiteSpace(sourceLanguageCode))
+        {
+            sourceLanguageCode = "vi";
+        }
+
+        var translations = new List<Translation>();
+
+        foreach (var poi in pois)
+        {
+            var title = string.IsNullOrWhiteSpace(poi.Title) ? poi.Slug : poi.Title;
+            var fullText = !string.IsNullOrWhiteSpace(poi.AudioScript)
+                ? poi.AudioScript
+                : poi.Description;
+            translations.Add(CreateSourceTranslation(
+                "poi",
+                poi.Id,
+                poi.SourceLanguageCode,
+                title,
+                poi.ShortDescription,
+                fullText,
+                poi.UpdatedBy,
+                poi.UpdatedAt));
+        }
+
+        foreach (var foodItem in foodItems)
+        {
+            translations.Add(CreateSourceTranslation(
+                "food_item",
+                foodItem.Id,
+                sourceLanguageCode,
+                foodItem.Name,
+                string.Empty,
+                foodItem.Description,
+                "source",
+                DateTimeOffset.MinValue));
+        }
+
+        foreach (var route in routes)
+        {
+            translations.Add(CreateSourceTranslation(
+                "route",
+                route.Id,
+                sourceLanguageCode,
+                route.Name,
+                route.Theme,
+                route.Description,
+                route.UpdatedBy,
+                route.UpdatedAt));
+        }
+
+        foreach (var promotion in promotions)
+        {
+            translations.Add(CreateSourceTranslation(
+                "promotion",
+                promotion.Id,
+                sourceLanguageCode,
+                promotion.Title,
+                string.Empty,
+                promotion.Description,
+                "source",
+                DateTimeOffset.MinValue));
+        }
+
+        return translations;
+    }
+
+    private static Translation CreateSourceTranslation(
+        string entityType,
+        string entityId,
+        string languageCode,
+        string title,
+        string shortText,
+        string fullText,
+        string updatedBy,
+        DateTimeOffset updatedAt)
+    {
+        var normalizedLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(languageCode);
+        if (string.IsNullOrWhiteSpace(normalizedLanguageCode))
+        {
+            normalizedLanguageCode = "vi";
+        }
+
+        return new Translation
+        {
+            Id = $"source-{entityType}-{entityId}-{normalizedLanguageCode}",
+            EntityType = entityType,
+            EntityId = entityId,
+            LanguageCode = normalizedLanguageCode,
+            Title = title,
+            ShortText = shortText,
+            FullText = fullText,
+            SeoTitle = title,
+            SeoDescription = string.IsNullOrWhiteSpace(shortText) ? fullText : shortText,
+            SourceLanguageCode = normalizedLanguageCode,
+            SourceHash = TranslationSourceVersioning.CreateSourceHashForRuntime(title, shortText, fullText, normalizedLanguageCode),
+            SourceUpdatedAt = updatedAt == DateTimeOffset.MinValue ? null : updatedAt,
+            UpdatedBy = string.IsNullOrWhiteSpace(updatedBy) ? "source" : updatedBy,
+            UpdatedAt = updatedAt == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : updatedAt
+        };
     }
 
     private static IReadOnlyList<Translation> CollapseTranslations(IReadOnlyList<Translation> translations)
@@ -401,36 +472,9 @@ public sealed partial class AdminDataRepository
         IReadOnlyList<Poi> pois,
         IReadOnlyList<TourRoute> routes)
     {
-        if (audioGuides.Count == 0)
-        {
-            return audioGuides;
-        }
-
-        var poiUpdatedAtById = pois
-            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
-            .ToDictionary(item => item.Id, item => item.UpdatedAt, StringComparer.OrdinalIgnoreCase);
-        var routeUpdatedAtById = routes
-            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
-            .ToDictionary(item => item.Id, item => item.UpdatedAt, StringComparer.OrdinalIgnoreCase);
-
-        return audioGuides
-            .Where(audioGuide =>
-            {
-                if (string.Equals(audioGuide.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                    poiUpdatedAtById.TryGetValue(audioGuide.EntityId, out var poiUpdatedAt))
-                {
-                    return audioGuide.UpdatedAt >= poiUpdatedAt;
-                }
-
-                if (string.Equals(audioGuide.EntityType, "route", StringComparison.OrdinalIgnoreCase) &&
-                    routeUpdatedAtById.TryGetValue(audioGuide.EntityId, out var routeUpdatedAt))
-                {
-                    return audioGuide.UpdatedAt >= routeUpdatedAt;
-                }
-
-                return true;
-            })
-            .ToList();
+        // Audio invalidation is tracked explicitly in AudioGuides via IsOutdated/GenerationStatus.
+        // Hiding rows by parent UpdatedAt makes admin troubleshooting unreliable after unrelated POI edits.
+        return audioGuides;
     }
 
     public DashboardSummaryResponse GetDashboardSummary(AdminRequestContext actor)
@@ -452,7 +496,7 @@ public sealed partial class AdminDataRepository
             usageEvents.Count(item => string.Equals(item.EventType, "audio_play", StringComparison.OrdinalIgnoreCase)),
             usageEvents.Count(item => string.Equals(item.EventType, "qr_scan", StringComparison.OrdinalIgnoreCase)),
             pois.Count(item => string.Equals(item.Status, "published", StringComparison.OrdinalIgnoreCase)),
-            audioGuides.Count(item => !string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase)));
+            CollapseAudioGuides(audioGuides).Count(item => !AudioGuideCatalog.IsReadyForPlayback(item)));
     }
 
     private static IReadOnlyCollection<string> GetSupportedLanguageCodeSet(SystemSetting settings)
@@ -495,6 +539,7 @@ public sealed partial class AdminDataRepository
             EnsureRuntimeCompatibilitySchema(verifiedConnection);
             NormalizePersistedPoiAddresses(verifiedConnection);
             NormalizeLegacyEntityTypes(verifiedConnection);
+            NormalizeLegacyUsagePlatforms(verifiedConnection);
             RepairModeratedPoiLocalizedAssetTimestamps(verifiedConnection);
 
             if (!_allowSchemaUpdates)
@@ -527,6 +572,7 @@ public sealed partial class AdminDataRepository
         EnsureAdminUsersRuntimeSchema(connection);
         EnsurePoiRuntimeSchema(connection);
         EnsureTranslationRuntimeSchema(connection);
+        EnsureAudioGuideRuntimeSchema(connection);
         EnsureRefreshSessionsTable(connection);
         EnsureSeparatedAuditLogSchema(connection);
         RemoveLegacyReviewData(connection);
@@ -633,6 +679,21 @@ public sealed partial class AdminDataRepository
             IF COL_LENGTH(N'dbo.Pois', N'OwnerUserId') IS NULL
                 ALTER TABLE dbo.Pois ADD OwnerUserId NVARCHAR(50) NULL;
 
+            IF COL_LENGTH(N'dbo.Pois', N'Title') IS NULL
+                ALTER TABLE dbo.Pois ADD Title NVARCHAR(200) NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'ShortDescription') IS NULL
+                ALTER TABLE dbo.Pois ADD ShortDescription NVARCHAR(MAX) NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'Description') IS NULL
+                ALTER TABLE dbo.Pois ADD [Description] NVARCHAR(MAX) NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'AudioScript') IS NULL
+                ALTER TABLE dbo.Pois ADD AudioScript NVARCHAR(MAX) NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'SourceLanguageCode') IS NULL
+                ALTER TABLE dbo.Pois ADD SourceLanguageCode NVARCHAR(20) NULL;
+
             IF COL_LENGTH(N'dbo.Pois', N'IsActive') IS NULL
                 ALTER TABLE dbo.Pois ADD IsActive BIT NULL;
 
@@ -653,6 +714,35 @@ public sealed partial class AdminDataRepository
 
             IF COL_LENGTH(N'dbo.Pois', N'Priority') IS NULL
                 ALTER TABLE dbo.Pois ADD Priority INT NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.PoiTranslations', N'U') IS NOT NULL
+            BEGIN
+                UPDATE poi
+                SET Title = COALESCE(NULLIF(LTRIM(RTRIM(poi.Title)), N''), NULLIF(LTRIM(RTRIM(source.Title)), N''), poi.Slug),
+                    ShortDescription = COALESCE(NULLIF(LTRIM(RTRIM(poi.ShortDescription)), N''), NULLIF(LTRIM(RTRIM(source.ShortText)), N''), N''),
+                    [Description] = COALESCE(NULLIF(LTRIM(RTRIM(poi.[Description])), N''), NULLIF(LTRIM(RTRIM(source.FullText)), N''), NULLIF(LTRIM(RTRIM(source.ShortText)), N''), N''),
+                    AudioScript = COALESCE(NULLIF(LTRIM(RTRIM(poi.AudioScript)), N''), NULLIF(LTRIM(RTRIM(source.FullText)), N''), NULLIF(LTRIM(RTRIM(source.ShortText)), N''), N''),
+                    SourceLanguageCode = COALESCE(NULLIF(LTRIM(RTRIM(poi.SourceLanguageCode)), N''), N'vi')
+                FROM dbo.Pois poi
+                OUTER APPLY (
+                    SELECT TOP 1 translation.Title, translation.ShortText, translation.FullText, translation.LanguageCode
+                    FROM dbo.PoiTranslations translation
+                    WHERE translation.EntityId = poi.Id
+                      AND translation.EntityType IN (N'poi', N'place')
+                    ORDER BY
+                        CASE
+                            WHEN LOWER(LTRIM(RTRIM(translation.LanguageCode))) = N'vi' THEN 0
+                            ELSE 1
+                        END,
+                        translation.UpdatedAt DESC,
+                        translation.Id DESC
+                ) source;
+            END;
             """);
 
         ExecuteNonQuery(
@@ -798,6 +888,11 @@ public sealed partial class AdminDataRepository
             UPDATE dbo.Pois
             SET IsActive = COALESCE(IsActive, 1),
                 LockedBySuperAdmin = COALESCE(LockedBySuperAdmin, 0),
+                Title = COALESCE(NULLIF(LTRIM(RTRIM(Title)), N''), Slug),
+                ShortDescription = COALESCE(ShortDescription, N''),
+                [Description] = COALESCE([Description], N''),
+                AudioScript = COALESCE(NULLIF(LTRIM(RTRIM(AudioScript)), N''), COALESCE([Description], N'')),
+                SourceLanguageCode = COALESCE(NULLIF(LTRIM(RTRIM(SourceLanguageCode)), N''), N'vi'),
                 ApprovedAt = CASE
                     WHEN LOWER(COALESCE(LTRIM(RTRIM([Status])), N'')) = N'published'
                         THEN COALESCE(ApprovedAt, UpdatedAt, CreatedAt)
@@ -819,6 +914,25 @@ public sealed partial class AdminDataRepository
                 END,
                 Priority = COALESCE(Priority, 0);
             """);
+
+        foreach (var column in new[] { "Title", "ShortDescription", "Description", "AudioScript", "SourceLanguageCode" })
+        {
+            ExecuteNonQuery(
+                connection,
+                null,
+                $"""
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N'dbo.Pois')
+                      AND name = N'{column}'
+                      AND is_nullable = 1
+                )
+                BEGIN
+                    ALTER TABLE dbo.Pois ALTER COLUMN {QuoteSqlIdentifier(column)} {(column == "Title" ? "NVARCHAR(200)" : column == "SourceLanguageCode" ? "NVARCHAR(20)" : "NVARCHAR(MAX)")} NOT NULL;
+                END;
+                """);
+        }
 
         ExecuteNonQuery(
             connection,
@@ -873,77 +987,294 @@ public sealed partial class AdminDataRepository
             """);
     }
 
-    private void EnsureCustomerUsersRuntimeSchema(SqlConnection connection)
+    private void EnsureAudioGuideRuntimeSchema(SqlConnection connection)
     {
         ExecuteNonQuery(
             connection,
             null,
             """
-            IF OBJECT_ID(N'dbo.CustomerUsers', N'U') IS NULL
+            IF OBJECT_ID(N'dbo.AudioGuides', N'U') IS NULL
             BEGIN
-                CREATE TABLE dbo.CustomerUsers (
+                CREATE TABLE dbo.AudioGuides (
                     Id NVARCHAR(50) NOT NULL PRIMARY KEY,
-                    Name NVARCHAR(120) NOT NULL,
-                    Email NVARCHAR(200) NOT NULL,
-                    Phone NVARCHAR(30) NOT NULL,
-                    [Password] NVARCHAR(200) NOT NULL,
-                    PreferredLanguage NVARCHAR(20) NOT NULL,
-                    IsPremium BIT NOT NULL,
-                    CreatedAt DATETIMEOFFSET(7) NOT NULL,
-                    LastActiveAt DATETIMEOFFSET(7) NULL,
-                    Username NVARCHAR(120) NULL,
-                    Country NVARCHAR(20) NOT NULL
+                    EntityType NVARCHAR(30) NOT NULL,
+                    EntityId NVARCHAR(50) NOT NULL,
+                    LanguageCode NVARCHAR(20) NOT NULL,
+                    TranscriptText NVARCHAR(MAX) NOT NULL,
+                    AudioUrl NVARCHAR(500) NOT NULL,
+                    AudioFilePath NVARCHAR(500) NOT NULL,
+                    AudioFileName NVARCHAR(260) NOT NULL,
+                    VoiceType NVARCHAR(30) NOT NULL,
+                    SourceType NVARCHAR(30) NOT NULL,
+                    Provider NVARCHAR(50) NOT NULL,
+                    VoiceId NVARCHAR(120) NOT NULL,
+                    ModelId NVARCHAR(120) NOT NULL,
+                    OutputFormat NVARCHAR(50) NOT NULL,
+                    DurationInSeconds FLOAT NULL,
+                    FileSizeBytes BIGINT NULL,
+                    TextHash NVARCHAR(128) NOT NULL,
+                    ContentVersion NVARCHAR(128) NOT NULL,
+                    GeneratedAt DATETIMEOFFSET(7) NULL,
+                    GenerationStatus NVARCHAR(30) NOT NULL,
+                    ErrorMessage NVARCHAR(2000) NULL,
+                    IsOutdated BIT NOT NULL,
+                    [Status] NVARCHAR(30) NOT NULL,
+                    UpdatedBy NVARCHAR(120) NOT NULL,
+                    UpdatedAt DATETIMEOFFSET(7) NOT NULL,
+                    CONSTRAINT UQ_AudioGuides UNIQUE (EntityType, EntityId, LanguageCode)
                 );
             END;
 
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'Username') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD Username NVARCHAR(120) NULL;
+            IF COL_LENGTH(N'dbo.AudioGuides', N'TranscriptText') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD TranscriptText NVARCHAR(MAX) NULL;
 
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'Password') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD [Password] NVARCHAR(200) NULL;
+            IF COL_LENGTH(N'dbo.AudioGuides', N'AudioFilePath') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD AudioFilePath NVARCHAR(500) NULL;
 
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'Country') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD Country NVARCHAR(20) NULL;
+            IF COL_LENGTH(N'dbo.AudioGuides', N'AudioFileName') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD AudioFileName NVARCHAR(260) NULL;
 
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'PreferredLanguage') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD PreferredLanguage NVARCHAR(20) NULL;
+            IF COL_LENGTH(N'dbo.AudioGuides', N'Provider') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD Provider NVARCHAR(50) NULL;
 
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'IsPremium') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD IsPremium BIT NULL;
+            IF COL_LENGTH(N'dbo.AudioGuides', N'VoiceId') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD VoiceId NVARCHAR(120) NULL;
 
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'LastActiveAt') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD LastActiveAt DATETIMEOFFSET(7) NULL;
+            IF COL_LENGTH(N'dbo.AudioGuides', N'ModelId') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD ModelId NVARCHAR(120) NULL;
 
-            UPDATE dbo.CustomerUsers
-            SET Username = COALESCE(
-                    NULLIF(LTRIM(RTRIM(Username)), N''),
+            IF COL_LENGTH(N'dbo.AudioGuides', N'OutputFormat') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD OutputFormat NVARCHAR(50) NULL;
+
+            IF COL_LENGTH(N'dbo.AudioGuides', N'DurationInSeconds') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD DurationInSeconds FLOAT NULL;
+
+            IF COL_LENGTH(N'dbo.AudioGuides', N'FileSizeBytes') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD FileSizeBytes BIGINT NULL;
+
+            IF COL_LENGTH(N'dbo.AudioGuides', N'TextHash') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD TextHash NVARCHAR(128) NULL;
+
+            IF COL_LENGTH(N'dbo.AudioGuides', N'ContentVersion') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD ContentVersion NVARCHAR(128) NULL;
+
+            IF COL_LENGTH(N'dbo.AudioGuides', N'GeneratedAt') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD GeneratedAt DATETIMEOFFSET(7) NULL;
+
+            IF COL_LENGTH(N'dbo.AudioGuides', N'GenerationStatus') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD GenerationStatus NVARCHAR(30) NULL;
+
+            IF COL_LENGTH(N'dbo.AudioGuides', N'ErrorMessage') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD ErrorMessage NVARCHAR(2000) NULL;
+
+            IF COL_LENGTH(N'dbo.AudioGuides', N'IsOutdated') IS NULL
+                ALTER TABLE dbo.AudioGuides ADD IsOutdated BIT NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE dbo.AudioGuides
+            SET TranscriptText = COALESCE(TranscriptText, N''),
+                AudioFilePath = COALESCE(AudioFilePath, N''),
+                AudioFileName = COALESCE(AudioFileName, N''),
+                VoiceType = COALESCE(NULLIF(LTRIM(RTRIM(VoiceType)), N''), N'standard'),
+                Provider = COALESCE(
+                    NULLIF(LTRIM(RTRIM(Provider)), N''),
                     CASE
-                        WHEN NULLIF(LTRIM(RTRIM(Email)), N'') IS NOT NULL AND CHARINDEX(N'@', Email) > 1
-                            THEN LEFT(Email, CHARINDEX(N'@', Email) - 1)
-                        ELSE NULL
-                    END,
-                    NULLIF(LTRIM(RTRIM(Name)), N''),
-                    Id),
-                [Password] = COALESCE(NULLIF(LTRIM(RTRIM([Password])), N''), N'Customer@123'),
-                Country = COALESCE(NULLIF(UPPER(LTRIM(RTRIM(Country))), N''), N'VN'),
-                IsPremium = COALESCE(IsPremium, CAST(0 AS bit)),
-                PreferredLanguage = COALESCE(NULLIF(LTRIM(RTRIM(PreferredLanguage)), N''), N'vi')
-            WHERE NULLIF(LTRIM(RTRIM(Username)), N'') IS NULL
-               OR NULLIF(LTRIM(RTRIM(Country)), N'') IS NULL
-               OR NULLIF(LTRIM(RTRIM(PreferredLanguage)), N'') IS NULL
-               OR NULLIF(LTRIM(RTRIM([Password])), N'') IS NULL
-               OR IsPremium IS NULL;
+                        WHEN LOWER(COALESCE(LTRIM(RTRIM(SourceType)), N'')) = N'uploaded' THEN N'uploaded'
+                        ELSE N'elevenlabs'
+                    END),
+                VoiceId = COALESCE(NULLIF(LTRIM(RTRIM(VoiceId)), N''), N''),
+                ModelId = COALESCE(NULLIF(LTRIM(RTRIM(ModelId)), N''), N''),
+                OutputFormat = COALESCE(NULLIF(LTRIM(RTRIM(OutputFormat)), N''), N'mp3_44100_128'),
+                TextHash = COALESCE(NULLIF(LTRIM(RTRIM(TextHash)), N''), N''),
+                ContentVersion = COALESCE(NULLIF(LTRIM(RTRIM(ContentVersion)), N''), COALESCE(NULLIF(LTRIM(RTRIM(TextHash)), N''), N'')),
+                UpdatedBy = COALESCE(NULLIF(LTRIM(RTRIM(UpdatedBy)), N''), N'system'),
+                IsOutdated = COALESCE(IsOutdated, CAST(0 AS bit))
+            WHERE TranscriptText IS NULL
+               OR AudioFilePath IS NULL
+               OR AudioFileName IS NULL
+               OR Provider IS NULL
+               OR VoiceId IS NULL
+               OR ModelId IS NULL
+               OR OutputFormat IS NULL
+               OR TextHash IS NULL
+               OR ContentVersion IS NULL
+               OR IsOutdated IS NULL
+               OR NULLIF(LTRIM(RTRIM(VoiceType)), N'') IS NULL
+               OR NULLIF(LTRIM(RTRIM(UpdatedBy)), N'') IS NULL;
+            """);
 
-            IF OBJECT_ID(N'dbo.CustomerFavoritePois', N'U') IS NULL
-            BEGIN
-                CREATE TABLE dbo.CustomerFavoritePois (
-                    CustomerUserId NVARCHAR(50) NOT NULL,
-                    PoiId NVARCHAR(50) NOT NULL,
-                    PRIMARY KEY (CustomerUserId, PoiId),
-                    CONSTRAINT FK_CustomerFavoritePois_CustomerUsers FOREIGN KEY (CustomerUserId) REFERENCES dbo.CustomerUsers(Id),
-                    CONSTRAINT FK_CustomerFavoritePois_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id)
-                );
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE dbo.AudioGuides
+            SET IsOutdated = CAST(1 AS bit),
+                GenerationStatus = N'outdated',
+                [Status] = N'missing'
+            WHERE LOWER(COALESCE(LTRIM(RTRIM(SourceType)), N'')) = N'tts'
+              AND NULLIF(LTRIM(RTRIM(AudioUrl)), N'') IS NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE dbo.AudioGuides
+            SET SourceType = CASE
+                WHEN LOWER(COALESCE(LTRIM(RTRIM(SourceType)), N'')) = N'uploaded' THEN N'uploaded'
+                WHEN LOWER(COALESCE(LTRIM(RTRIM(SourceType)), N'')) IN (N'generated', N'pregenerated', N'pre_generated', N'tts') THEN N'generated'
+                ELSE N'generated'
+            END
+            WHERE NULLIF(LTRIM(RTRIM(SourceType)), N'') IS NULL
+               OR LOWER(LTRIM(RTRIM(SourceType))) NOT IN (N'uploaded', N'generated');
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE dbo.AudioGuides
+            SET GenerationStatus = CASE
+                    WHEN COALESCE(IsOutdated, CAST(0 AS bit)) = CAST(1 AS bit) THEN N'outdated'
+                    WHEN LOWER(COALESCE(LTRIM(RTRIM(GenerationStatus)), N'')) IN (N'pending', N'success', N'failed', N'outdated')
+                        THEN LOWER(LTRIM(RTRIM(GenerationStatus)))
+                    WHEN LOWER(COALESCE(LTRIM(RTRIM([Status])), N'')) = N'processing' THEN N'pending'
+                    WHEN NULLIF(LTRIM(RTRIM(AudioUrl)), N'') IS NOT NULL
+                         OR NULLIF(LTRIM(RTRIM(AudioFilePath)), N'') IS NOT NULL THEN N'success'
+                    ELSE N'none'
+                END,
+                GeneratedAt = CASE
+                    WHEN GeneratedAt IS NOT NULL THEN GeneratedAt
+                    WHEN NULLIF(LTRIM(RTRIM(AudioUrl)), N'') IS NOT NULL
+                         OR NULLIF(LTRIM(RTRIM(AudioFilePath)), N'') IS NOT NULL THEN UpdatedAt
+                    ELSE NULL
+                END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE dbo.AudioGuides
+            SET [Status] = CASE
+                WHEN COALESCE(IsOutdated, CAST(0 AS bit)) = CAST(1 AS bit)
+                     OR LOWER(COALESCE(LTRIM(RTRIM(GenerationStatus)), N'')) = N'outdated' THEN N'missing'
+                WHEN LOWER(COALESCE(LTRIM(RTRIM(GenerationStatus)), N'')) = N'pending' THEN N'processing'
+                WHEN LOWER(COALESCE(LTRIM(RTRIM(GenerationStatus)), N'')) = N'success'
+                     AND (
+                        NULLIF(LTRIM(RTRIM(AudioUrl)), N'') IS NOT NULL
+                        OR NULLIF(LTRIM(RTRIM(AudioFilePath)), N'') IS NOT NULL
+                     ) THEN N'ready'
+                ELSE N'missing'
             END;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'TranscriptText'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN TranscriptText NVARCHAR(MAX) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'AudioFilePath'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN AudioFilePath NVARCHAR(500) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'AudioFileName'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN AudioFileName NVARCHAR(260) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'Provider'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN Provider NVARCHAR(50) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'VoiceId'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN VoiceId NVARCHAR(120) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'ModelId'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN ModelId NVARCHAR(120) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'OutputFormat'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN OutputFormat NVARCHAR(50) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'TextHash'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN TextHash NVARCHAR(128) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'ContentVersion'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN ContentVersion NVARCHAR(128) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'GenerationStatus'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN GenerationStatus NVARCHAR(30) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.AudioGuides')
+                  AND name = N'IsOutdated'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.AudioGuides ALTER COLUMN IsOutdated BIT NOT NULL;
             """);
     }
 
@@ -1129,7 +1460,7 @@ public sealed partial class AdminDataRepository
                         WHEN legacy.[Action] LIKE N'%tour%' THEN N'TOUR'
                         WHEN legacy.[Action] LIKE N'%ưu đãi%' THEN N'PROMOTION'
                         WHEN legacy.[Action] LIKE N'%tài khoản admin%' OR legacy.[Action] LIKE N'%chủ quán%' THEN N'ADMIN_USER'
-                        WHEN legacy.[Action] LIKE N'%cài đặt%' OR legacy.[Action] LIKE N'%ngôn ngữ premium%' THEN N'SETTINGS'
+                        WHEN legacy.[Action] LIKE N'%cài đặt%' THEN N'SETTINGS'
                         ELSE N'LEGACY'
                     END,
                     legacy.TargetValue,
@@ -1186,7 +1517,6 @@ public sealed partial class AdminDataRepository
                     SupportEmail NVARCHAR(200) NOT NULL,
                     DefaultLanguage NVARCHAR(20) NOT NULL,
                     FallbackLanguage NVARCHAR(20) NOT NULL,
-                    PremiumUnlockPriceUsd INT NOT NULL,
                     MapProvider NVARCHAR(50) NOT NULL,
                     StorageProvider NVARCHAR(50) NOT NULL,
                     TtsProvider NVARCHAR(50) NOT NULL,
@@ -1194,9 +1524,6 @@ public sealed partial class AdminDataRepository
                     AnalyticsRetentionDays INT NOT NULL
                 );
             END;
-
-            IF COL_LENGTH(N'dbo.SystemSettings', N'PremiumUnlockPriceUsd') IS NULL
-                ALTER TABLE dbo.SystemSettings ADD PremiumUnlockPriceUsd INT NULL;
 
             IF COL_LENGTH(N'dbo.SystemSettings', N'TtsProvider') IS NULL
                 ALTER TABLE dbo.SystemSettings ADD TtsProvider NVARCHAR(50) NULL;
@@ -1208,17 +1535,11 @@ public sealed partial class AdminDataRepository
         ExecuteNonQuery(
             connection,
             null,
-            $"""
+            """
             UPDATE dbo.SystemSettings
-            SET PremiumUnlockPriceUsd = CASE
-                    WHEN PremiumUnlockPriceUsd IS NULL OR PremiumUnlockPriceUsd <= 0 THEN {PremiumAccessCatalog.DefaultPremiumPriceUsd}
-                    ELSE PremiumUnlockPriceUsd
-                END,
-                TtsProvider = COALESCE(NULLIF(LTRIM(RTRIM(TtsProvider)), N''), N'elevenlabs'),
+            SET TtsProvider = COALESCE(NULLIF(LTRIM(RTRIM(TtsProvider)), N''), N'elevenlabs'),
                 AnalyticsRetentionDays = COALESCE(AnalyticsRetentionDays, 180)
-            WHERE PremiumUnlockPriceUsd IS NULL
-               OR PremiumUnlockPriceUsd <= 0
-               OR NULLIF(LTRIM(RTRIM(TtsProvider)), N'') IS NULL
+            WHERE NULLIF(LTRIM(RTRIM(TtsProvider)), N'') IS NULL
                OR AnalyticsRetentionDays IS NULL;
 
             IF COL_LENGTH(N'dbo.SystemSettings', N'GuestReviewEnabled') IS NOT NULL
@@ -1256,22 +1577,31 @@ public sealed partial class AdminDataRepository
                 SELECT 1
                 FROM sys.columns
                 WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
-                    AND name = N'PremiumUnlockPriceUsd'
-                    AND is_nullable = 1
-            )
-            BEGIN
-                ALTER TABLE dbo.SystemSettings ALTER COLUMN PremiumUnlockPriceUsd INT NOT NULL;
-            END;
-
-            IF EXISTS (
-                SELECT 1
-                FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
                     AND name = N'AnalyticsRetentionDays'
                     AND is_nullable = 1
             )
             BEGIN
                 ALTER TABLE dbo.SystemSettings ALTER COLUMN AnalyticsRetentionDays INT NOT NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'PremiumUnlockPriceUsd') IS NOT NULL
+            BEGIN
+                DECLARE @premiumUnlockConstraint sysname;
+
+                SELECT TOP 1 @premiumUnlockConstraint = defaultConstraint.name
+                FROM sys.default_constraints defaultConstraint
+                INNER JOIN sys.columns columnInfo
+                    ON columnInfo.object_id = defaultConstraint.parent_object_id
+                   AND columnInfo.column_id = defaultConstraint.parent_column_id
+                WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.SystemSettings')
+                  AND columnInfo.name = N'PremiumUnlockPriceUsd';
+
+                IF @premiumUnlockConstraint IS NOT NULL
+                BEGIN
+                    EXEC(N'ALTER TABLE dbo.SystemSettings DROP CONSTRAINT [' + @premiumUnlockConstraint + N']');
+                END;
+
+                ALTER TABLE dbo.SystemSettings DROP COLUMN PremiumUnlockPriceUsd;
             END;
             """);
 
@@ -1288,221 +1618,6 @@ public sealed partial class AdminDataRepository
                     PRIMARY KEY (SettingId, LanguageType, LanguageCode),
                     CONSTRAINT FK_SystemSettingLanguages_SystemSettings FOREIGN KEY (SettingId) REFERENCES dbo.SystemSettings(Id)
                 );
-            END;
-            """);
-    }
-
-    private void EnsureEndUserManagementSchema(SqlConnection connection)
-    {
-        ExecuteNonQuery(
-            connection,
-            null,
-            """
-            IF OBJECT_ID(N'dbo.CustomerUsers', N'U') IS NULL
-            BEGIN
-                CREATE TABLE dbo.CustomerUsers (
-                    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
-                    Name NVARCHAR(120) NOT NULL,
-                    Email NVARCHAR(200) NOT NULL,
-                    Phone NVARCHAR(30) NOT NULL,
-                    [Password] NVARCHAR(200) NOT NULL,
-                    PreferredLanguage NVARCHAR(20) NOT NULL,
-                    IsPremium BIT NOT NULL,
-                    CreatedAt DATETIMEOFFSET(7) NOT NULL,
-                    LastActiveAt DATETIMEOFFSET(7) NULL,
-                    Username NVARCHAR(120) NULL,
-                    Country NVARCHAR(20) NOT NULL
-                );
-            END;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'Username') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD Username NVARCHAR(120) NULL;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'Password') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD [Password] NVARCHAR(200) NULL;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'Country') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD Country NVARCHAR(20) NULL;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'PreferredLanguage') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD PreferredLanguage NVARCHAR(20) NULL;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'IsPremium') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD IsPremium BIT NULL;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'LastActiveAt') IS NULL
-                ALTER TABLE dbo.CustomerUsers ADD LastActiveAt DATETIMEOFFSET(7) NULL;
-            """);
-
-        ExecuteNonQuery(
-            connection,
-            null,
-            """
-            IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_DeviceType')
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT CK_CustomerUsers_DeviceType;
-            END;
-
-            IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_Status')
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT CK_CustomerUsers_Status;
-            END;
-
-            IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_Identity')
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT CK_CustomerUsers_Identity;
-            END;
-
-            DECLARE @constraintName sysname;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'Status') IS NOT NULL
-            BEGIN
-                SELECT TOP 1 @constraintName = dc.name
-                FROM sys.default_constraints dc
-                INNER JOIN sys.columns c
-                    ON c.default_object_id = dc.object_id
-                WHERE dc.parent_object_id = OBJECT_ID(N'dbo.CustomerUsers')
-                  AND c.name = N'Status';
-
-                IF @constraintName IS NOT NULL
-                    EXEC(N'ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT ' + QUOTENAME(@constraintName) + N';');
-
-                ALTER TABLE dbo.CustomerUsers DROP COLUMN [Status];
-                SET @constraintName = NULL;
-            END;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'IsActive') IS NOT NULL
-            BEGIN
-                SELECT TOP 1 @constraintName = dc.name
-                FROM sys.default_constraints dc
-                INNER JOIN sys.columns c
-                    ON c.default_object_id = dc.object_id
-                WHERE dc.parent_object_id = OBJECT_ID(N'dbo.CustomerUsers')
-                  AND c.name = N'IsActive';
-
-                IF @constraintName IS NOT NULL
-                    EXEC(N'ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT ' + QUOTENAME(@constraintName) + N';');
-
-                ALTER TABLE dbo.CustomerUsers DROP COLUMN IsActive;
-                SET @constraintName = NULL;
-            END;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'IsBanned') IS NOT NULL
-            BEGIN
-                SELECT TOP 1 @constraintName = dc.name
-                FROM sys.default_constraints dc
-                INNER JOIN sys.columns c
-                    ON c.default_object_id = dc.object_id
-                WHERE dc.parent_object_id = OBJECT_ID(N'dbo.CustomerUsers')
-                  AND c.name = N'IsBanned';
-
-                IF @constraintName IS NOT NULL
-                    EXEC(N'ALTER TABLE dbo.CustomerUsers DROP CONSTRAINT ' + QUOTENAME(@constraintName) + N';');
-
-                ALTER TABLE dbo.CustomerUsers DROP COLUMN IsBanned;
-                SET @constraintName = NULL;
-            END;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'DeviceId') IS NOT NULL
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers DROP COLUMN DeviceId;
-            END;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'DeviceType') IS NOT NULL
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers DROP COLUMN DeviceType;
-            END;
-
-            IF COL_LENGTH(N'dbo.CustomerUsers', N'TotalScans') IS NOT NULL
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers DROP COLUMN TotalScans;
-            END;
-
-            UPDATE dbo.CustomerUsers
-            SET Username = NULLIF(LTRIM(RTRIM(Username)), N''),
-                Email = NULLIF(LTRIM(RTRIM(Email)), N''),
-                Phone = NULLIF(LTRIM(RTRIM(Phone)), N''),
-                [Password] = NULLIF(LTRIM(RTRIM([Password])), N''),
-                Country = NULLIF(UPPER(LTRIM(RTRIM(Country))), N''),
-                PreferredLanguage = NULLIF(LTRIM(RTRIM(PreferredLanguage)), N'');
-
-            UPDATE dbo.CustomerUsers
-            SET Username = COALESCE(
-                    NULLIF(LTRIM(RTRIM(Username)), N''),
-                    CASE
-                        WHEN NULLIF(LTRIM(RTRIM(Email)), N'') IS NOT NULL AND CHARINDEX(N'@', Email) > 1
-                            THEN LEFT(Email, CHARINDEX(N'@', Email) - 1)
-                        ELSE NULL
-                    END,
-                    NULLIF(LTRIM(RTRIM(Name)), N''),
-                    Id),
-                [Password] = COALESCE(NULLIF(LTRIM(RTRIM([Password])), N''), N'Customer@123'),
-                Country = COALESCE(NULLIF(UPPER(LTRIM(RTRIM(Country))), N''), N'VN'),
-                IsPremium = COALESCE(IsPremium, CAST(0 AS bit)),
-                PreferredLanguage = COALESCE(NULLIF(LTRIM(RTRIM(PreferredLanguage)), N''), N'vi')
-            WHERE NULLIF(LTRIM(RTRIM(Username)), N'') IS NULL
-               OR NULLIF(LTRIM(RTRIM(Country)), N'') IS NULL
-               OR NULLIF(LTRIM(RTRIM(PreferredLanguage)), N'') IS NULL
-               OR NULLIF(LTRIM(RTRIM([Password])), N'') IS NULL
-               OR IsPremium IS NULL;
-
-            IF EXISTS (
-                SELECT 1
-                FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'dbo.CustomerUsers')
-                    AND name = N'IsPremium'
-                    AND is_nullable = 1
-            )
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers ALTER COLUMN IsPremium BIT NOT NULL;
-            END;
-
-            IF EXISTS (
-                SELECT 1
-                FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'dbo.CustomerUsers')
-                    AND name = N'Country'
-                    AND is_nullable = 1
-            )
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers ALTER COLUMN Country NVARCHAR(20) NOT NULL;
-            END;
-
-            IF EXISTS (
-                SELECT 1
-                FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'dbo.CustomerUsers')
-                    AND name = N'Password'
-                    AND is_nullable = 1
-            )
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers ALTER COLUMN [Password] NVARCHAR(200) NOT NULL;
-            END;
-
-            IF EXISTS (
-                SELECT 1
-                FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'dbo.CustomerUsers')
-                    AND name = N'PreferredLanguage'
-                    AND is_nullable = 1
-            )
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers ALTER COLUMN PreferredLanguage NVARCHAR(20) NOT NULL;
-            END;
-
-            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CustomerUsers_Identity')
-            BEGIN
-                ALTER TABLE dbo.CustomerUsers
-                ADD CONSTRAINT CK_CustomerUsers_Identity
-                CHECK (
-                    NULLIF(LTRIM(RTRIM(Username)), N'') IS NOT NULL OR
-                    NULLIF(LTRIM(RTRIM(Email)), N'') IS NOT NULL
-                );
-            END;
-
-            IF OBJECT_ID(N'dbo.UserPoiVisits', N'U') IS NOT NULL
-            BEGIN
-                DROP TABLE dbo.UserPoiVisits;
             END;
             """);
     }
@@ -1542,120 +1657,6 @@ public sealed partial class AdminDataRepository
             null,
             """
             ALTER TABLE dbo.Pois DROP COLUMN DefaultLanguageCode;
-            """);
-    }
-
-    private void EnsurePremiumPurchaseSchema(SqlConnection connection)
-    {
-        ExecuteNonQuery(
-            connection,
-            null,
-            """
-            IF OBJECT_ID(N'dbo.PremiumPurchaseTransactions', N'U') IS NULL
-            BEGIN
-                CREATE TABLE dbo.PremiumPurchaseTransactions (
-                    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
-                    CustomerUserId NVARCHAR(50) NOT NULL,
-                    AmountUsd INT NOT NULL,
-                    CurrencyCode NVARCHAR(10) NOT NULL,
-                    PaymentProvider NVARCHAR(30) NOT NULL,
-                    PaymentMethod NVARCHAR(30) NOT NULL,
-                    PaymentReference NVARCHAR(100) NULL,
-                    MaskedAccount NVARCHAR(60) NULL,
-                    IdempotencyKey NVARCHAR(100) NOT NULL,
-                    [Status] NVARCHAR(20) NOT NULL,
-                    FailureMessage NVARCHAR(300) NULL,
-                    CreatedAt DATETIMEOFFSET(7) NOT NULL,
-                    ProcessedAt DATETIMEOFFSET(7) NULL,
-                    CONSTRAINT FK_PremiumPurchaseTransactions_CustomerUsers
-                        FOREIGN KEY (CustomerUserId) REFERENCES dbo.CustomerUsers(Id)
-                );
-            END;
-
-            IF COL_LENGTH(N'dbo.PremiumPurchaseTransactions', N'PaymentReference') IS NULL
-                ALTER TABLE dbo.PremiumPurchaseTransactions ADD PaymentReference NVARCHAR(100) NULL;
-
-            IF COL_LENGTH(N'dbo.PremiumPurchaseTransactions', N'MaskedAccount') IS NULL
-                ALTER TABLE dbo.PremiumPurchaseTransactions ADD MaskedAccount NVARCHAR(60) NULL;
-
-            IF COL_LENGTH(N'dbo.PremiumPurchaseTransactions', N'IdempotencyKey') IS NULL
-                ALTER TABLE dbo.PremiumPurchaseTransactions ADD IdempotencyKey NVARCHAR(100) NULL;
-
-            IF COL_LENGTH(N'dbo.PremiumPurchaseTransactions', N'FailureMessage') IS NULL
-                ALTER TABLE dbo.PremiumPurchaseTransactions ADD FailureMessage NVARCHAR(300) NULL;
-
-            IF COL_LENGTH(N'dbo.PremiumPurchaseTransactions', N'ProcessedAt') IS NULL
-                ALTER TABLE dbo.PremiumPurchaseTransactions ADD ProcessedAt DATETIMEOFFSET(7) NULL;
-            """);
-
-        ExecuteNonQuery(
-            connection,
-            null,
-            """
-            UPDATE dbo.PremiumPurchaseTransactions
-            SET CurrencyCode = COALESCE(NULLIF(LTRIM(RTRIM(CurrencyCode)), N''), N'USD'),
-                PaymentProvider = COALESCE(NULLIF(LTRIM(RTRIM(PaymentProvider)), N''), N'mock'),
-                PaymentMethod = COALESCE(NULLIF(LTRIM(RTRIM(PaymentMethod)), N''), N'bank_card'),
-                [Status] = CASE
-                    WHEN LOWER(COALESCE([Status], N'')) IN (N'pending', N'succeeded', N'failed') THEN LOWER([Status])
-                    ELSE N'succeeded'
-                END,
-                IdempotencyKey = COALESCE(NULLIF(LTRIM(RTRIM(IdempotencyKey)), N''), CONCAT(N'legacy-', Id))
-            WHERE CurrencyCode IS NULL
-               OR NULLIF(LTRIM(RTRIM(CurrencyCode)), N'') IS NULL
-               OR PaymentProvider IS NULL
-               OR NULLIF(LTRIM(RTRIM(PaymentProvider)), N'') IS NULL
-               OR PaymentMethod IS NULL
-               OR NULLIF(LTRIM(RTRIM(PaymentMethod)), N'') IS NULL
-               OR [Status] IS NULL
-               OR LOWER(COALESCE([Status], N'')) NOT IN (N'pending', N'succeeded', N'failed')
-               OR IdempotencyKey IS NULL
-               OR NULLIF(LTRIM(RTRIM(IdempotencyKey)), N'') IS NULL;
-
-            IF EXISTS (
-                SELECT 1
-                FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'dbo.PremiumPurchaseTransactions')
-                    AND name = N'IdempotencyKey'
-                    AND is_nullable = 1
-            )
-            BEGIN
-                ALTER TABLE dbo.PremiumPurchaseTransactions ALTER COLUMN IdempotencyKey NVARCHAR(100) NOT NULL;
-            END;
-
-            IF NOT EXISTS (
-                SELECT 1
-                FROM sys.check_constraints
-                WHERE name = N'CK_PremiumPurchaseTransactions_Status'
-            )
-            BEGIN
-                ALTER TABLE dbo.PremiumPurchaseTransactions
-                ADD CONSTRAINT CK_PremiumPurchaseTransactions_Status
-                CHECK ([Status] IN (N'pending', N'succeeded', N'failed'));
-            END;
-
-            IF NOT EXISTS (
-                SELECT 1
-                FROM sys.indexes
-                WHERE name = N'UX_PremiumPurchaseTransactions_Customer_Idempotency'
-                    AND object_id = OBJECT_ID(N'dbo.PremiumPurchaseTransactions')
-            )
-            BEGIN
-                CREATE UNIQUE INDEX UX_PremiumPurchaseTransactions_Customer_Idempotency
-                ON dbo.PremiumPurchaseTransactions (CustomerUserId, IdempotencyKey);
-            END;
-
-            IF NOT EXISTS (
-                SELECT 1
-                FROM sys.indexes
-                WHERE name = N'UX_PremiumPurchaseTransactions_Customer_Pending'
-                    AND object_id = OBJECT_ID(N'dbo.PremiumPurchaseTransactions')
-            )
-            BEGIN
-                CREATE UNIQUE INDEX UX_PremiumPurchaseTransactions_Customer_Pending
-                ON dbo.PremiumPurchaseTransactions (CustomerUserId)
-                WHERE [Status] = N'pending';
-            END;
             """);
     }
 
@@ -2212,6 +2213,7 @@ public sealed partial class AdminDataRepository
 
         return audioGuides
             .Where(audioGuide =>
+                AudioGuideCatalog.IsReadyForPlayback(audioGuide) &&
                 allowedLanguages.Contains(PremiumAccessCatalog.NormalizeLanguageCode(audioGuide.LanguageCode)) &&
                 (
                     (string.Equals(audioGuide.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
@@ -2408,6 +2410,41 @@ public sealed partial class AdminDataRepository
                 migratedAudioGuides,
                 deletedDuplicateAudioGuides,
                 migratedMediaAssets);
+        }
+    }
+
+    private void NormalizeLegacyUsagePlatforms(SqlConnection connection)
+    {
+        var normalizedViewLogs = ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.ViewLogs', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.ViewLogs
+                SET DeviceType = N'android'
+                WHERE LOWER(LTRIM(RTRIM(COALESCE(DeviceType, N'')))) = N'ios';
+            END;
+            """);
+
+        var normalizedUsageEvents = ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.AppUsageEvents', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.AppUsageEvents
+                SET Platform = N'android'
+                WHERE LOWER(LTRIM(RTRIM(COALESCE(Platform, N'')))) = N'ios';
+            END;
+            """);
+
+        if (normalizedViewLogs > 0 || normalizedUsageEvents > 0)
+        {
+            _logger.LogInformation(
+                "Normalized legacy usage platforms. viewLogsUpdated={ViewLogsUpdated}, usageEventsUpdated={UsageEventsUpdated}",
+                normalizedViewLogs,
+                normalizedUsageEvents);
         }
     }
 

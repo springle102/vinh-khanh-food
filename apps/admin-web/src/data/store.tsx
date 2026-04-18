@@ -39,7 +39,6 @@ const normalizeSystemSetting = (settings: SystemSetting): SystemSetting => ({
 
 const EMPTY_ADMIN_STATE: AdminDataState = {
   users: [],
-  customerUsers: [],
   categories: [],
   pois: [],
   foodItems: [],
@@ -70,8 +69,6 @@ const toState = (payload: Partial<AdminDataState>): AdminDataState => ({
   ...EMPTY_ADMIN_STATE,
   ...payload,
   users: payload.users ?? [],
-  // Customer-account data is deprecated and disconnected from the active admin flow.
-  customerUsers: [],
   categories: payload.categories ?? [],
   pois: payload.pois ?? [],
   foodItems: payload.foodItems ?? [],
@@ -101,6 +98,16 @@ type PoiDraft = Omit<Poi, "id" | "createdAt" | "updatedAt" | "updatedBy" | "appr
 type RouteDraft = Pick<TourRoute, "name" | "description" | "stopPoiIds" | "isFeatured" | "isActive"> & {
   id?: string;
 };
+
+type AudioGuideDraft = {
+  id?: string;
+  entityType: AudioGuide["entityType"];
+  entityId: string;
+  languageCode: AudioGuide["languageCode"];
+  audioUrl: string;
+  sourceType: AudioGuide["sourceType"];
+  status: AudioGuide["status"];
+} & Partial<Omit<AudioGuide, "id" | "entityType" | "entityId" | "languageCode" | "audioUrl" | "sourceType" | "status" | "updatedAt" | "updatedBy">>;
 
 type AdminDataContextValue = {
   state: AdminDataState;
@@ -137,7 +144,7 @@ type AdminDataContextValue = {
   ) => Promise<void>;
   deleteRoute: (routeId: string) => Promise<void>;
   saveAudioGuide: (
-    audioGuide: Omit<AudioGuide, "id" | "updatedAt" | "updatedBy"> & { id?: string },
+    audioGuide: AudioGuideDraft,
     actor: AdminUser,
   ) => Promise<void>;
   saveTranslation: (
@@ -391,7 +398,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
 
   const saveAudioGuide = useCallback(
     async (
-      audioGuide: Omit<AudioGuide, "id" | "updatedAt" | "updatedBy"> & { id?: string },
+      audioGuide: AudioGuideDraft,
       actor: AdminUser,
     ) => {
       await adminApi.saveAudioGuide({

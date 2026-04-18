@@ -120,7 +120,6 @@ export const ContentPage = () => {
           fullText: foodForm.description,
           seoTitle: foodForm.name,
           seoDescription: foodForm.description || foodForm.name,
-          isPremium: false,
         },
         user,
       );

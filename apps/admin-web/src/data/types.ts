@@ -5,11 +5,12 @@ export type UserStatus = "active" | "locked";
 export type ApprovalStatus = "pending" | "approved" | "rejected";
 export type ContentStatus = "draft" | "pending" | "published" | "rejected" | "archived" | "deleted";
 export type EntityType = "poi" | "food_item" | "route" | "promotion";
-export type AudioSourceType = "uploaded" | "tts";
+export type AudioSourceType = "uploaded" | "generated";
 export type AudioStatus = "ready" | "processing" | "missing";
+export type AudioGenerationStatus = "none" | "pending" | "success" | "failed" | "outdated";
 export type MediaType = "image" | "video";
 export type PromotionStatus = "upcoming" | "active" | "expired" | "hidden" | "deleted";
-export type DeviceType = "ios" | "android" | "web";
+export type DeviceType = "android" | "web";
 export type TtsProvider = "elevenlabs";
 export type UsageEventType = "poi_view" | "audio_play" | "qr_scan";
 
@@ -50,34 +51,6 @@ export interface PlaceOwnerRegistrationRecord {
   createdAt: string;
   registrationSubmittedAt: string | null;
   registrationReviewedAt: string | null;
-}
-
-export interface CustomerUser {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-  preferredLanguage: LanguageCode;
-  isPremium: boolean;
-  favoritePoiIds: string[];
-  createdAt: string;
-  lastActiveAt: string | null;
-  username?: string | null;
-  country?: string;
-}
-
-export interface EndUserProfile {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-  username: string | null;
-  defaultLanguage: LanguageCode;
-  country: string;
-  createdAt: string;
-  lastActiveAt: string | null;
 }
 
 export interface PoiCategory {
@@ -133,8 +106,6 @@ export interface Translation {
   fullText: string;
   seoTitle: string;
   seoDescription: string;
-  /** @deprecated Premium gating is no longer used by the public app. */
-  isPremium?: boolean;
   updatedBy: string;
   updatedAt: string;
 }
@@ -144,8 +115,24 @@ export interface AudioGuide {
   entityType: EntityType;
   entityId: string;
   languageCode: LanguageCode;
+  transcriptText: string;
   audioUrl: string;
+  audioFilePath: string;
+  audioFileName: string;
+  voiceType: string;
   sourceType: AudioSourceType;
+  provider: string;
+  voiceId: string;
+  modelId: string;
+  outputFormat: string;
+  durationInSeconds: number | null;
+  fileSizeBytes: number | null;
+  textHash: string;
+  contentVersion: string;
+  generatedAt: string | null;
+  generationStatus: AudioGenerationStatus;
+  errorMessage: string | null;
+  isOutdated: boolean;
   status: AudioStatus;
   updatedBy: string;
   updatedAt: string;
@@ -274,12 +261,6 @@ export interface SystemSetting {
   defaultLanguage: LanguageCode;
   fallbackLanguage: LanguageCode;
   supportedLanguages: LanguageCode[];
-  /** @deprecated Replaced by supportedLanguages. */
-  freeLanguages?: LanguageCode[];
-  /** @deprecated Replaced by supportedLanguages. */
-  premiumLanguages?: LanguageCode[];
-  /** @deprecated Premium unlock is no longer used by the public app. */
-  premiumUnlockPriceUsd?: number;
   mapProvider: "google" | "mapbox" | "openstreetmap";
   storageProvider: "cloudinary" | "s3";
   ttsProvider: TtsProvider;
@@ -295,8 +276,6 @@ export interface DataSyncState {
 
 export interface AdminDataState {
   users: AdminUser[];
-  /** @deprecated Customer accounts are no longer part of the active admin flow. */
-  customerUsers: CustomerUser[];
   categories: PoiCategory[];
   pois: Poi[];
   foodItems: FoodItem[];

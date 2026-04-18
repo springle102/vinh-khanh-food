@@ -1,14 +1,18 @@
-﻿using VinhKhanh.BackendApi.Contracts;
+using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
 
 namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed class PoiNarrationService(
     AdminDataRepository repository,
-    TranslationProxyService translationProxyService,
+    RuntimeTranslationService runtimeTranslationService,
     IHttpContextAccessor httpContextAccessor,
     ILogger<PoiNarrationService> logger)
 {
+    private const string StoredStatus = "stored";
+    private const string AutoTranslatedStatus = "auto_translated";
+    private const string FallbackSourceStatus = "fallback_source";
+
     private static readonly Dictionary<string, string> LanguageLocales = new(StringComparer.OrdinalIgnoreCase)
     {
         ["vi"] = "vi-VN",
@@ -17,16 +21,6 @@ public sealed class PoiNarrationService(
         ["zh-CN"] = "zh-CN",
         ["ko"] = "ko-KR",
         ["ja"] = "ja-JP"
-    };
-
-    private static readonly Dictionary<string, string> LanguageLabels = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["vi"] = "Vietnamese",
-        ["en"] = "English",
-        ["fr"] = "French",
-        ["zh-CN"] = "Chinese",
-        ["ko"] = "Korean",
-        ["ja"] = "Japanese"
     };
 
     public async Task<PoiNarrationResponse?> ResolveAsync(
@@ -47,171 +41,77 @@ public sealed class PoiNarrationService(
             requestedLanguageCode,
             settings.DefaultLanguage,
             settings.FallbackLanguage);
-        var translations = repository.GetTranslations()
-            .Where(item =>
-                string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(item.EntityId, poiId, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(item => item.UpdatedAt)
-            .ToList();
-        var audioGuides = repository.GetAudioGuides()
-            .Where(item =>
-                string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(item.EntityId, poiId, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(item => item.UpdatedAt)
-            .ToList();
-
-        var sourceSnapshot = TranslationSourceVersioning.ResolveCurrentSource(
-            "poi",
-            poiId,
-            translations,
+        var sourceLanguageCode = NormalizeLanguageCode(
+            poi.SourceLanguageCode,
             settings.DefaultLanguage,
-            settings.FallbackLanguage,
-            poi.Slug,
-            null,
-            null,
-            poi.UpdatedAt);
-        var exactTranslation = FindExactPoiTranslation(translations, normalizedRequestedLanguage);
-        var exactTranslationIsFresh = TranslationSourceVersioning.MatchesCurrentSource(exactTranslation, sourceSnapshot);
-        var exactTitle = exactTranslationIsFresh
-            ? CleanNullableForLanguage(exactTranslation?.Title, normalizedRequestedLanguage)
-            : null;
-        var exactBody = exactTranslationIsFresh
-            ? GetNarrationBodyForLanguage(exactTranslation, normalizedRequestedLanguage)
-            : string.Empty;
-        var exactText = BuildNarrationText(exactTitle, exactBody);
-        var sourceLanguageCode = sourceSnapshot?.LanguageCode;
-        var sourceTitle = sourceSnapshot?.Title;
-        var sourceBody = sourceSnapshot?.Body ?? string.Empty;
+            "vi");
+        var sourceTitle = CleanNullable(poi.Title) ?? poi.Slug;
+        var sourceBody = ResolveSourceNarrationBody(poi);
         var sourceText = BuildNarrationText(sourceTitle, sourceBody);
-        var hasExactNarration = HasNarrationContent(exactTitle) || HasNarrationContent(exactBody);
-        var hasSourceNarration = HasNarrationContent(sourceTitle) || HasNarrationContent(sourceBody);
-        var shouldAutoTranslateFromSource =
-            hasSourceNarration &&
+        var sourceHash = TranslationSourceVersioning.CreateSourceHashForRuntime(
+            sourceTitle,
+            poi.ShortDescription,
+            sourceBody,
+            sourceLanguageCode);
+
+        var titleResult = await runtimeTranslationService.TranslateTextAsync(
+            "poi",
+            poi.Id,
+            "title",
+            sourceTitle,
+            sourceLanguageCode,
+            normalizedRequestedLanguage,
+            cancellationToken);
+        var bodyResult = await runtimeTranslationService.TranslateTextAsync(
+            "poi",
+            poi.Id,
+            "audioScript",
+            sourceBody,
+            sourceLanguageCode,
+            normalizedRequestedLanguage,
+            cancellationToken);
+
+        var translationFailedForTarget =
             !string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) &&
-            (!exactTranslationIsFresh ||
-             !hasExactNarration ||
-             IsEquivalentNarration(exactBody, sourceBody));
+            (titleResult.UsedFallback || bodyResult.UsedFallback);
+        var translationStatus = string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase)
+            ? StoredStatus
+            : translationFailedForTarget
+                ? FallbackSourceStatus
+                : AutoTranslatedStatus;
+        var effectiveLanguageCode = translationFailedForTarget
+            ? sourceLanguageCode
+            : normalizedRequestedLanguage;
+        var displayTitle = translationFailedForTarget
+            ? sourceTitle
+            : CleanNullable(titleResult.Text) ?? sourceTitle;
+        var displayBody = translationFailedForTarget
+            ? sourceBody
+            : CleanNullable(bodyResult.Text) ?? string.Empty;
+        var displayText = BuildNarrationText(displayTitle, displayBody);
+        var translatedText = string.Equals(translationStatus, AutoTranslatedStatus, StringComparison.Ordinal)
+            ? displayText
+            : null;
+        var fallbackMessage = translationFailedForTarget
+            ? $"Unable to translate narration to {normalizedRequestedLanguage}. The response falls back to source content in {sourceLanguageCode}."
+            : null;
 
-        var displayTitle = exactTitle ??
-            (string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase)
-                ? sourceTitle
-                : null) ??
-            poi.Slug;
-        var displayText = hasExactNarration
-            ? exactText
-            : string.Empty;
-        var ttsInputText = displayText;
-        string? translatedText = null;
-        const string storedStatus = "stored";
-        const string autoTranslatedStatus = "auto_translated";
-        const string fallbackSourceStatus = "fallback_source";
-        var translationStatus = storedStatus;
-        var effectiveLanguageCode = normalizedRequestedLanguage;
-        string? fallbackMessage = null;
-        var sourceHash = sourceSnapshot?.Hash ?? string.Empty;
-        var translationCacheStatus = sourceSnapshot is null
-            ? "no_source"
-            : exactTranslationIsFresh
-                ? "hit"
-                : "miss";
-
-        if (shouldAutoTranslateFromSource)
-        {
-            try
-            {
-                var translatedFragments = await TranslateNarrationAsync(
-                    sourceTitle,
-                    sourceBody,
-                    sourceLanguageCode!,
-                    normalizedRequestedLanguage,
-                    cancellationToken);
-
-                displayTitle = translatedFragments.Title ?? displayTitle;
-                displayText = BuildNarrationText(translatedFragments.Title, translatedFragments.Body);
-                ttsInputText = displayText;
-                translatedText = displayText;
-                translationStatus = autoTranslatedStatus;
-                translationCacheStatus = "miss";
-
-                if (!HasNarrationContent(displayText))
-                {
-                    throw new InvalidOperationException("The translated narration was empty.");
-                }
-            }
-            catch (Exception exception) when (
-                !cancellationToken.IsCancellationRequested &&
-                (exception is InvalidOperationException ||
-                exception is HttpRequestException ||
-                exception is TaskCanceledException))
-            {
-                logger.LogWarning(
-                    exception,
-                    "Failed to auto-translate narration for POI {PoiId} from {SourceLanguageCode} to {TargetLanguageCode}.",
-                    poiId,
-                    sourceLanguageCode,
-                    normalizedRequestedLanguage);
-
-                if (hasExactNarration && exactTranslationIsFresh && !IsEquivalentNarration(exactBody, sourceBody))
-                {
-                    displayTitle = exactTitle ?? poi.Slug;
-                    displayText = exactText;
-                    ttsInputText = exactText;
-                    translationStatus = storedStatus;
-                    fallbackMessage = BuildStoredTranslationFallbackMessage(
-                        exception,
-                        normalizedRequestedLanguage);
-                }
-                else
-                {
-                    var canUseSourceFallback =
-                        string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) ||
-                        (!IsSourceLanguage(sourceLanguageCode) && IsUsableTextForLanguage(sourceText, sourceLanguageCode));
-                    displayTitle = canUseSourceFallback
-                        ? sourceTitle ?? poi.Slug
-                        : exactTitle ?? poi.Slug;
-                    displayText = canUseSourceFallback ? sourceText : string.Empty;
-                    ttsInputText = displayText;
-                    effectiveLanguageCode = canUseSourceFallback
-                        ? sourceLanguageCode!
-                        : normalizedRequestedLanguage;
-                    translationStatus = canUseSourceFallback ? fallbackSourceStatus : storedStatus;
-                    fallbackMessage = BuildSourceFallbackMessage(
-                        exception,
-                        normalizedRequestedLanguage,
-                        sourceLanguageCode);
-                }
-            }
-        }
-        else if (!hasExactNarration && hasSourceNarration && sourceSnapshot is not null)
-        {
-            var canUseSourceFallback =
-                string.Equals(sourceLanguageCode, normalizedRequestedLanguage, StringComparison.OrdinalIgnoreCase) ||
-                (!IsSourceLanguage(sourceLanguageCode) && IsUsableTextForLanguage(sourceText, sourceLanguageCode));
-            displayTitle = canUseSourceFallback
-                ? sourceTitle ?? poi.Slug
-                : exactTitle ?? poi.Slug;
-            displayText = canUseSourceFallback ? sourceText : string.Empty;
-            ttsInputText = displayText;
-            effectiveLanguageCode = canUseSourceFallback
-                ? sourceLanguageCode ?? normalizedRequestedLanguage
-                : normalizedRequestedLanguage;
-        }
-
-        if (!HasNarrationContent(ttsInputText))
+        if (!HasNarrationContent(displayText))
         {
             displayText = string.Empty;
-            ttsInputText = string.Empty;
             effectiveLanguageCode = normalizedRequestedLanguage;
         }
 
-        AudioGuide? audioGuide = null;
-        if (!string.Equals(translationStatus, autoTranslatedStatus, StringComparison.Ordinal))
-        {
-            audioGuide = FindPoiAudioGuide(audioGuides, effectiveLanguageCode);
-        }
-
-        audioGuide = NormalizeAudioGuideForResponse(audioGuide);
-
+        var audioLanguageCode = translationFailedForTarget
+            ? sourceLanguageCode
+            : normalizedRequestedLanguage;
+        var audioGuide = NormalizeAudioGuideForResponse(
+            FindPoiAudioGuide(
+                repository.GetAudioGuides(actor)
+                    .Where(item =>
+                        string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(item.EntityId, poiId, StringComparison.OrdinalIgnoreCase)),
+                audioLanguageCode));
         var uiPlaybackKey = BuildUiPlaybackKey(poi.Id, normalizedRequestedLanguage);
         var audioCacheKey = BuildAudioCacheKey(
             uiPlaybackKey,
@@ -219,15 +119,9 @@ public sealed class PoiNarrationService(
             effectiveLanguageCode,
             sourceLanguageCode,
             sourceHash,
-            ttsInputText,
+            displayText,
             audioGuide);
-        var sourceTextForResponse =
-            string.Equals(translationStatus, autoTranslatedStatus, StringComparison.Ordinal) ||
-            string.Equals(translationStatus, fallbackSourceStatus, StringComparison.Ordinal)
-                ? sourceText
-                : HasNarrationContent(exactText)
-                    ? exactText
-                    : sourceText;
+
         var resolved = new PoiNarrationResponse(
             poi.Id,
             normalizedRequestedLanguage,
@@ -235,8 +129,8 @@ public sealed class PoiNarrationService(
             effectiveLanguageCode,
             displayTitle,
             displayText,
-            ttsInputText,
-            sourceTextForResponse,
+            displayText,
+            sourceText,
             translatedText,
             translationStatus,
             fallbackMessage,
@@ -245,106 +139,17 @@ public sealed class PoiNarrationService(
             audioCacheKey,
             GetLocale(effectiveLanguageCode));
 
-        logger.LogDebug(
-            "Resolved POI narration. PoiId={PoiId}; languageSelected={LanguageSelected}; dbSourceTitle={DbSourceTitle}; translatorInputTitle={TranslatorInputTitle}; translationCache={TranslationCache}; sourceHash={SourceHash}; sourceLanguage={SourceLanguage}; finalTitle={FinalTitle}; sourceText={SourceText}; translatedText={TranslatedText}; ttsInputText={TtsInputText}; cacheKey={CacheKey}; status={Status}; fallbackMessage={FallbackMessage}",
+        logger.LogInformation(
+            "Resolved POI narration through runtime translation. poiId={PoiId}; requestedLanguage={RequestedLanguage}; sourceLanguage={SourceLanguage}; effectiveLanguage={EffectiveLanguage}; status={Status}; fallback={Fallback}; audioGuideId={AudioGuideId}",
             poi.Id,
             normalizedRequestedLanguage,
-            sourceTitle,
-            shouldAutoTranslateFromSource ? sourceTitle : null,
-            translationCacheStatus,
-            sourceHash,
             sourceLanguageCode,
-            resolved.DisplayTitle,
-            resolved.SourceText,
-            resolved.TranslatedText,
-            resolved.TtsInputText,
-            resolved.AudioCacheKey,
-            resolved.TranslationStatus,
-            resolved.FallbackMessage);
+            effectiveLanguageCode,
+            translationStatus,
+            translationFailedForTarget,
+            audioGuide?.Id);
 
         return resolved;
-    }
-
-    private async Task<(string? Title, string? Body)> TranslateNarrationAsync(
-        string? sourceTitle,
-        string sourceBody,
-        string sourceLanguageCode,
-        string targetLanguageCode,
-        CancellationToken cancellationToken)
-    {
-        var segments = new List<string>();
-        var hasTitle = !string.IsNullOrWhiteSpace(sourceTitle);
-        var bodySegments = SplitTranslationSegments(sourceBody);
-
-        if (hasTitle)
-        {
-            segments.Add(sourceTitle!);
-        }
-
-        segments.AddRange(bodySegments);
-
-        var translated = await translationProxyService.TranslateAsync(
-            new TextTranslationRequest(targetLanguageCode, sourceLanguageCode, segments),
-            cancellationToken);
-
-        var translatedTitle = hasTitle
-            ? CleanNullableForLanguage(translated.Texts.ElementAtOrDefault(0), targetLanguageCode)
-            : null;
-        var translatedBodyParts = translated.Texts
-            .Skip(hasTitle ? 1 : 0)
-            .Take(bodySegments.Count)
-            .Select(part => CleanNullableForLanguage(part, targetLanguageCode))
-            .Where(part => !string.IsNullOrWhiteSpace(part))
-            .ToList();
-        var translatedBody = translatedBodyParts.Count == 0
-            ? null
-            : string.Join("\n\n", translatedBodyParts);
-
-        if (HasNarrationContent(sourceBody) && !HasNarrationContent(translatedBody))
-        {
-            throw new InvalidOperationException("The translated narration body was empty or unusable.");
-        }
-
-        return (translatedTitle, translatedBody);
-    }
-
-    private static Translation? FindExactPoiTranslation(
-        IEnumerable<Translation> translations,
-        string languageCode) =>
-        translations.FirstOrDefault(item =>
-            string.Equals(NormalizeLanguageCode(item.LanguageCode), NormalizeLanguageCode(languageCode), StringComparison.OrdinalIgnoreCase));
-
-    private static Translation? FindBestSourcePoiTranslation(
-        IReadOnlyList<Translation> translations,
-        string languageCode,
-        string defaultLanguageCode,
-        string fallbackLanguageCode)
-    {
-        var preferredLanguages = new List<string>();
-        if (string.Equals(languageCode, NormalizeLanguageCode(defaultLanguageCode), StringComparison.OrdinalIgnoreCase))
-        {
-            AddPreferredLanguage(preferredLanguages, defaultLanguageCode);
-            AddPreferredLanguage(preferredLanguages, fallbackLanguageCode);
-        }
-        else
-        {
-            AddPreferredLanguage(preferredLanguages, fallbackLanguageCode);
-            AddPreferredLanguage(preferredLanguages, defaultLanguageCode);
-        }
-
-        foreach (var currentLanguageCode in preferredLanguages)
-        {
-            var normalizedCurrentLanguageCode = NormalizeLanguageCode(currentLanguageCode);
-            var matched = translations.FirstOrDefault(item =>
-                string.Equals(NormalizeLanguageCode(item.LanguageCode), normalizedCurrentLanguageCode, StringComparison.OrdinalIgnoreCase) &&
-                HasNarrationContent(GetNarrationBodyForLanguage(item, normalizedCurrentLanguageCode)));
-            if (matched is not null)
-            {
-                return matched;
-            }
-        }
-
-        return null;
     }
 
     private static AudioGuide? FindPoiAudioGuide(
@@ -352,7 +157,11 @@ public sealed class PoiNarrationService(
         string languageCode)
     {
         var matchingGuides = audioGuides
-            .Where(item => string.Equals(item.LanguageCode, languageCode, StringComparison.OrdinalIgnoreCase))
+            .Where(item => string.Equals(
+                PremiumAccessCatalog.NormalizeLanguageCode(item.LanguageCode),
+                PremiumAccessCatalog.NormalizeLanguageCode(languageCode),
+                StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(item => item.UpdatedAt)
             .ToList();
 
         return
@@ -362,13 +171,14 @@ public sealed class PoiNarrationService(
     }
 
     private static bool IsPlayableAudioGuide(AudioGuide audioGuide) =>
-        string.Equals(audioGuide.Status, "ready", StringComparison.OrdinalIgnoreCase) &&
         HasUsablePreparedAudio(audioGuide) &&
         !IsPlaceholderAudioUrl(audioGuide.AudioUrl);
 
     private static bool HasUsablePreparedAudio(AudioGuide audioGuide) =>
-        string.Equals(audioGuide.SourceType, "uploaded", StringComparison.OrdinalIgnoreCase) &&
-        HasValidAudioUrl(audioGuide.AudioUrl);
+        !audioGuide.IsOutdated &&
+        string.Equals(AudioGuideCatalog.NormalizeGenerationStatus(audioGuide.GenerationStatus), AudioGuideCatalog.GenerationStatusSuccess, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(AudioGuideCatalog.NormalizePublicStatus(audioGuide.Status), AudioGuideCatalog.PublicStatusReady, StringComparison.OrdinalIgnoreCase) &&
+        (HasValidAudioUrl(audioGuide.AudioUrl) || !string.IsNullOrWhiteSpace(audioGuide.AudioFilePath));
 
     private static bool HasValidAudioUrl(string? value) =>
         !string.IsNullOrWhiteSpace(value);
@@ -384,120 +194,21 @@ public sealed class PoiNarrationService(
             parsed.Host.Contains("example.com", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string GetNarrationBodyForLanguage(Translation? translation, string languageCode)
+    private static string ResolveSourceNarrationBody(Poi poi)
     {
-        var fullText = CleanNullableForLanguage(translation?.FullText, languageCode);
-        if (!string.IsNullOrWhiteSpace(fullText))
+        var audioScript = CleanNullable(poi.AudioScript);
+        if (!string.IsNullOrWhiteSpace(audioScript))
         {
-            return fullText;
+            return audioScript;
         }
 
-        return CleanNullableForLanguage(translation?.ShortText, languageCode) ?? string.Empty;
-    }
-
-    private static bool ShouldRefreshAutoTranslation(
-        Translation? exactTranslation,
-        Translation sourceTranslation)
-    {
-        if (exactTranslation is null)
+        var description = CleanNullable(poi.Description);
+        if (!string.IsNullOrWhiteSpace(description))
         {
-            return true;
+            return description;
         }
 
-        return sourceTranslation.UpdatedAt > exactTranslation.UpdatedAt;
-    }
-
-    private static bool IsEquivalentNarration(string? left, string? right) =>
-        string.Equals(NormalizeNarration(left), NormalizeNarration(right), StringComparison.Ordinal);
-
-    private static string NormalizeNarration(string? value) =>
-        string.Join(
-            " ",
-            (value ?? string.Empty)
-                .Split(default(string[]), StringSplitOptions.RemoveEmptyEntries))
-            .Trim();
-
-    private static IReadOnlyList<string> SplitTranslationSegments(string value, int maxLength = 700, int minTrailingLength = 180)
-    {
-        var cleaned = NarrationTextSanitizer.Clean(value);
-        if (string.IsNullOrWhiteSpace(cleaned))
-        {
-            return [];
-        }
-
-        var segments = new List<string>();
-        var paragraphs = cleaned
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(part => !string.IsNullOrWhiteSpace(part))
-            .ToList();
-
-        if (paragraphs.Count == 0)
-        {
-            paragraphs.Add(cleaned);
-        }
-
-        foreach (var paragraph in paragraphs)
-        {
-            AppendTranslationSegments(segments, paragraph, maxLength, minTrailingLength);
-        }
-
-        return segments.Count == 0 ? [cleaned] : segments;
-    }
-
-    private static void AppendTranslationSegments(
-        ICollection<string> segments,
-        string text,
-        int maxLength,
-        int minTrailingLength)
-    {
-        var remaining = text.Trim();
-        while (remaining.Length > maxLength)
-        {
-            var splitIndex = FindSegmentSplitIndex(remaining, maxLength, minTrailingLength);
-            var segment = remaining[..splitIndex].Trim();
-            if (segment.Length == 0)
-            {
-                break;
-            }
-
-            segments.Add(segment);
-            remaining = remaining[splitIndex..].Trim();
-        }
-
-        if (remaining.Length > 0)
-        {
-            segments.Add(remaining);
-        }
-    }
-
-    private static int FindSegmentSplitIndex(string value, int maxLength, int minTrailingLength)
-    {
-        var lowerBound = Math.Max(maxLength - minTrailingLength, maxLength / 2);
-
-        for (var index = Math.Min(maxLength, value.Length - 1); index >= lowerBound; index -= 1)
-        {
-            var current = value[index];
-            if (current is '.' or '!' or '?' or ';' or ':' or ',' or '\n')
-            {
-                return index + 1;
-            }
-
-            if (char.IsWhiteSpace(current))
-            {
-                return index;
-            }
-        }
-
-        return Math.Min(maxLength, value.Length);
-    }
-
-    private static void AddPreferredLanguage(ICollection<string> languages, string? languageCode)
-    {
-        if (!string.IsNullOrWhiteSpace(languageCode) &&
-            !languages.Contains(languageCode.Trim(), StringComparer.OrdinalIgnoreCase))
-        {
-            languages.Add(languageCode.Trim());
-        }
+        return CleanNullable(poi.ShortDescription) ?? string.Empty;
     }
 
     private static string BuildNarrationText(string? title, string? body)
@@ -510,8 +221,6 @@ public sealed class PoiNarrationService(
             return string.Empty;
         }
 
-        // Keep the title separate from the narration body so the UI and TTS
-        // reflect the exact description text entered by the admin.
         return HasNarrationContent(normalizedBody)
             ? normalizedBody!
             : normalizedTitle ?? string.Empty;
@@ -538,7 +247,7 @@ public sealed class PoiNarrationService(
             $"text={CreateHash(ttsInputText)}",
             $"guide={audioGuide?.Id ?? "none"}",
             $"guideUpdated={audioGuide?.UpdatedAt.ToString("O") ?? "none"}",
-            $"guideUrl={CreateHash(audioGuide?.AudioUrl?.Trim() ?? string.Empty)}");
+            $"guideUrl={CreateHash((audioGuide?.AudioUrl ?? audioGuide?.AudioFilePath ?? string.Empty).Trim())}");
 
     private static string CreateHash(string value)
     {
@@ -556,17 +265,10 @@ public sealed class PoiNarrationService(
     {
         foreach (var candidate in new[] { primary }.Concat(fallbacks))
         {
-            if (!string.IsNullOrWhiteSpace(candidate))
+            var normalized = PremiumAccessCatalog.NormalizeLanguageCode(candidate);
+            if (!string.IsNullOrWhiteSpace(normalized))
             {
-                return candidate.Trim() switch
-                {
-                    "zh" => "zh-CN",
-                    "fr-FR" => "fr",
-                    "en-US" => "en",
-                    "ja-JP" => "ja",
-                    "ko-KR" => "ko",
-                    _ => candidate.Trim()
-                };
+                return normalized;
             }
         }
 
@@ -578,36 +280,6 @@ public sealed class PoiNarrationService(
             ? locale
             : "en-US";
 
-    private static string GetLanguageLabel(string? languageCode)
-    {
-        if (!string.IsNullOrWhiteSpace(languageCode) &&
-            LanguageLabels.TryGetValue(languageCode, out var label))
-        {
-            return label;
-        }
-
-        return languageCode?.Trim() ?? "the selected language";
-    }
-
-    private static string BuildStoredTranslationFallbackMessage(
-        Exception exception,
-        string requestedLanguageCode) =>
-        IsTranslationServiceUnavailable(exception)
-            ? $"The translation service is unavailable for {GetLanguageLabel(requestedLanguageCode)}. Using the stored translation."
-            : $"Unable to refresh the {GetLanguageLabel(requestedLanguageCode)} translation. Using the stored translation.";
-
-    private static string BuildSourceFallbackMessage(
-        Exception exception,
-        string requestedLanguageCode,
-        string? sourceLanguageCode) =>
-        IsTranslationServiceUnavailable(exception)
-            ? $"The translation service is unavailable for {GetLanguageLabel(requestedLanguageCode)}. Source content in {GetLanguageLabel(sourceLanguageCode)} is not used for playback."
-            : $"No stored translation is available for {GetLanguageLabel(requestedLanguageCode)}. Source content in {GetLanguageLabel(sourceLanguageCode)} is not used for playback.";
-
-    private static bool IsTranslationServiceUnavailable(Exception exception) =>
-        exception is HttpRequestException ||
-        exception.InnerException is HttpRequestException;
-
     private AudioGuide? NormalizeAudioGuideForResponse(AudioGuide? audioGuide)
     {
         if (audioGuide is null)
@@ -615,7 +287,7 @@ public sealed class PoiNarrationService(
             return audioGuide;
         }
 
-        if (!string.Equals(audioGuide.SourceType, "uploaded", StringComparison.OrdinalIgnoreCase))
+        if (!HasUsablePreparedAudio(audioGuide))
         {
             return new AudioGuide
             {
@@ -623,21 +295,34 @@ public sealed class PoiNarrationService(
                 EntityType = audioGuide.EntityType,
                 EntityId = audioGuide.EntityId,
                 LanguageCode = audioGuide.LanguageCode,
+                TranscriptText = audioGuide.TranscriptText,
                 AudioUrl = string.Empty,
+                AudioFilePath = audioGuide.AudioFilePath,
+                AudioFileName = audioGuide.AudioFileName,
                 VoiceType = audioGuide.VoiceType,
                 SourceType = audioGuide.SourceType,
+                Provider = audioGuide.Provider,
+                VoiceId = audioGuide.VoiceId,
+                ModelId = audioGuide.ModelId,
+                OutputFormat = audioGuide.OutputFormat,
+                DurationInSeconds = audioGuide.DurationInSeconds,
+                FileSizeBytes = audioGuide.FileSizeBytes,
+                TextHash = audioGuide.TextHash,
+                ContentVersion = audioGuide.ContentVersion,
+                GeneratedAt = audioGuide.GeneratedAt,
+                GenerationStatus = audioGuide.GenerationStatus,
+                ErrorMessage = audioGuide.ErrorMessage,
+                IsOutdated = audioGuide.IsOutdated,
                 Status = audioGuide.Status,
                 UpdatedBy = audioGuide.UpdatedBy,
                 UpdatedAt = audioGuide.UpdatedAt
             };
         }
 
-        if (!HasValidAudioUrl(audioGuide.AudioUrl))
-        {
-            return audioGuide;
-        }
-
-        var absoluteUrl = BuildAbsoluteUrl(audioGuide.AudioUrl);
+        var audioUrl = HasValidAudioUrl(audioGuide.AudioUrl)
+            ? audioGuide.AudioUrl
+            : audioGuide.AudioFilePath;
+        var absoluteUrl = BuildAbsoluteUrl(audioUrl);
         if (string.Equals(absoluteUrl, audioGuide.AudioUrl, StringComparison.Ordinal))
         {
             return audioGuide;
@@ -649,9 +334,24 @@ public sealed class PoiNarrationService(
             EntityType = audioGuide.EntityType,
             EntityId = audioGuide.EntityId,
             LanguageCode = audioGuide.LanguageCode,
+            TranscriptText = audioGuide.TranscriptText,
             AudioUrl = absoluteUrl,
+            AudioFilePath = audioGuide.AudioFilePath,
+            AudioFileName = audioGuide.AudioFileName,
             VoiceType = audioGuide.VoiceType,
             SourceType = audioGuide.SourceType,
+            Provider = audioGuide.Provider,
+            VoiceId = audioGuide.VoiceId,
+            ModelId = audioGuide.ModelId,
+            OutputFormat = audioGuide.OutputFormat,
+            DurationInSeconds = audioGuide.DurationInSeconds,
+            FileSizeBytes = audioGuide.FileSizeBytes,
+            TextHash = audioGuide.TextHash,
+            ContentVersion = audioGuide.ContentVersion,
+            GeneratedAt = audioGuide.GeneratedAt,
+            GenerationStatus = audioGuide.GenerationStatus,
+            ErrorMessage = audioGuide.ErrorMessage,
+            IsOutdated = audioGuide.IsOutdated,
             Status = audioGuide.Status,
             UpdatedBy = audioGuide.UpdatedBy,
             UpdatedAt = audioGuide.UpdatedAt
@@ -677,15 +377,6 @@ public sealed class PoiNarrationService(
 
     private static bool HasNarrationContent(string? value) =>
         !string.IsNullOrWhiteSpace(value);
-
-    private static bool IsSourceLanguage(string? languageCode)
-        => LocalizationContentPolicy.IsSourceLanguage(languageCode);
-
-    private static bool IsUsableTextForLanguage(string? value, string? languageCode)
-        => LocalizationContentPolicy.IsUsableTextForLanguage(value, languageCode);
-
-    private static string? CleanNullableForLanguage(string? value, string? languageCode)
-        => LocalizationContentPolicy.CleanForLanguage(value, languageCode);
 
     private static string? CleanNullable(string? value)
     {

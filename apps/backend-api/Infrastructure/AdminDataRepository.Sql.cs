@@ -116,9 +116,27 @@ public sealed partial class AdminDataRepository
         return value is DBNull ? null : Convert.ToInt32(value, CultureInfo.InvariantCulture);
     }
 
+    private static bool? ReadNullableBool(SqlDataReader reader, string columnName)
+    {
+        var value = reader[columnName];
+        return value is DBNull ? null : Convert.ToBoolean(value, CultureInfo.InvariantCulture);
+    }
+
+    private static long? ReadNullableLong(SqlDataReader reader, string columnName)
+    {
+        var value = reader[columnName];
+        return value is DBNull ? null : Convert.ToInt64(value, CultureInfo.InvariantCulture);
+    }
+
     private static double ReadDouble(SqlDataReader reader, string columnName)
     {
         return Convert.ToDouble(reader[columnName], CultureInfo.InvariantCulture);
+    }
+
+    private static double? ReadNullableDouble(SqlDataReader reader, string columnName)
+    {
+        var value = reader[columnName];
+        return value is DBNull ? null : Convert.ToDouble(value, CultureInfo.InvariantCulture);
     }
 
     private static DateTimeOffset ReadDateTimeOffset(SqlDataReader reader, string columnName)

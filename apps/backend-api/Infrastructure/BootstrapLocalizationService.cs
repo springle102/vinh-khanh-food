@@ -4,7 +4,7 @@ using VinhKhanh.BackendApi.Models;
 namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed class BootstrapLocalizationService(
-    ITextTranslationClient translationClient,
+    RuntimeTranslationService runtimeTranslationService,
     ILogger<BootstrapLocalizationService> logger)
 {
     public async Task<AdminBootstrapResponse> ApplyAutoTranslationsAsync(
@@ -12,110 +12,385 @@ public sealed class BootstrapLocalizationService(
         string? requestedLanguageCode,
         CancellationToken cancellationToken)
     {
-        var targetLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(requestedLanguageCode);
-        if (!CanAutoTranslateRequestedLanguage(bootstrap.Settings, targetLanguageCode))
-        {
-            return bootstrap;
-        }
-
-        var translations = bootstrap.Translations.ToList();
-        var workItems = BuildWorkItems(bootstrap, translations, targetLanguageCode).ToList();
-        if (workItems.Count == 0)
-        {
-            return bootstrap;
-        }
-
-        var segments = workItems
-            .SelectMany(item => item.GetSegments())
-            .ToList();
-
-        if (segments.Count > 0)
-        {
-            try
-            {
-                var translated = await translationClient.TranslateAsync(
-                    new TextTranslationRequest(
-                        targetLanguageCode,
-                        null,
-                        segments.Select(item => item.SourceText).ToList()),
-                    cancellationToken);
-
-                for (var index = 0; index < segments.Count; index += 1)
-                {
-                    var translatedText = translated.Texts.ElementAtOrDefault(index);
-                    segments[index].Apply(translatedText, targetLanguageCode);
-                }
-            }
-            catch (Exception exception) when (
-                exception is HttpRequestException ||
-                exception is InvalidOperationException ||
-                exception is TaskCanceledException)
-            {
-                logger.LogWarning(
-                    exception,
-                    "Unable to auto-translate bootstrap content to {LanguageCode}. Stale target translations will be omitted from the response.",
-                    targetLanguageCode);
-            }
-        }
-
-        var replacementKeys = workItems
-            .Select(item => item.Key)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var generated = workItems
-            .Where(item => item.ShouldMaterialize)
-            .Select(item => item.ToTranslation(targetLanguageCode))
-            .ToList();
-        var incomplete = workItems
-            .Where(item => item.HasContent && !item.ShouldMaterialize)
-            .ToList();
-        var nextTranslations = translations
-            .Where(item => !replacementKeys.Contains(CreateTranslationKey(item.EntityType, item.EntityId, item.LanguageCode)))
-            .Concat(generated)
-            .ToList();
-
-        foreach (var workItem in incomplete)
+        var targetLanguageCode = ResolveRequestedLanguage(bootstrap.Settings, requestedLanguageCode);
+        if (!CanServeRequestedLanguage(bootstrap.Settings, targetLanguageCode))
         {
             logger.LogWarning(
-                "Skipping incomplete bootstrap translation. entityType={EntityType}; entityId={EntityId}; requestedLanguage={RequestedLanguage}; sourceHash={SourceHash}; titlePresent={HasTitle}; bodyPresent={HasBody}",
-                workItem.EntityType,
-                workItem.EntityId,
-                targetLanguageCode,
-                workItem.SourceHash,
-                !string.IsNullOrWhiteSpace(workItem.Title),
-                workItem.HasNarrationBody);
+                "Bootstrap localization skipped because requested language is not supported. requestedLanguage={RequestedLanguage}",
+                targetLanguageCode);
+            return bootstrap;
         }
 
-        foreach (var workItem in workItems)
-        {
-            logger.LogDebug(
-                "Bootstrap localization resolved. entityType={EntityType}; entityId={EntityId}; requestedLanguage={RequestedLanguage}; dbSourceTitle={DbSourceTitle}; translatorInputTitle={TranslatorInputTitle}; translationCache={TranslationCache}; sourceHash={SourceHash}; finalTitle={FinalTitle}",
-                workItem.EntityType,
-                workItem.EntityId,
-                targetLanguageCode,
-                workItem.SourceTitle,
-                workItem.TranslatorInputTitle,
-                workItem.TranslationCacheStatus,
-                workItem.SourceHash,
-                workItem.Title);
-        }
+        var fields = BuildTranslationFields(bootstrap, targetLanguageCode).ToList();
+        var translatedFields = await runtimeTranslationService.TranslateFieldsAsync(
+            fields,
+            targetLanguageCode,
+            cancellationToken);
+        var textByKey = translatedFields.ToDictionary(CreateResultKey, StringComparer.OrdinalIgnoreCase);
+
+        var categories = bootstrap.Categories
+            .Select(category => CopyCategory(category, textByKey))
+            .ToList();
+        var pois = bootstrap.Pois
+            .Select(poi => CopyPoi(poi, textByKey))
+            .ToList();
+        var foodItems = bootstrap.FoodItems
+            .Select(foodItem => CopyFoodItem(foodItem, textByKey))
+            .ToList();
+        var routes = bootstrap.Routes
+            .Select(route => CopyRoute(route, textByKey))
+            .ToList();
+        var promotions = bootstrap.Promotions
+            .Select(promotion => CopyPromotion(promotion, textByKey))
+            .ToList();
+        var translations = BuildRuntimeTranslations(
+            bootstrap.Settings,
+            bootstrap.Pois,
+            bootstrap.FoodItems,
+            bootstrap.Routes,
+            bootstrap.Promotions,
+            textByKey,
+            targetLanguageCode);
 
         logger.LogInformation(
-            "Refreshed bootstrap localization for {LanguageCode}. workItems={WorkItemCount}, segments={SegmentCount}, translationsReturned={TranslationCount}",
+            "Bootstrap runtime localization completed. requestedLanguage={RequestedLanguage}; fieldCount={FieldCount}; fallbackCount={FallbackCount}; translationsReturned={TranslationCount}",
             targetLanguageCode,
-            workItems.Count,
-            segments.Count,
-            generated.Count);
+            translatedFields.Count,
+            translatedFields.Count(item => item.UsedFallback),
+            translations.Count);
 
-        return bootstrap with { Translations = nextTranslations };
+        return bootstrap with
+        {
+            Categories = categories,
+            Pois = pois,
+            FoodItems = foodItems,
+            Routes = routes,
+            Promotions = promotions,
+            Translations = translations
+        };
     }
 
-    private static bool CanAutoTranslateRequestedLanguage(SystemSetting settings, string targetLanguageCode)
+    private static IEnumerable<RuntimeTranslationField> BuildTranslationFields(
+        AdminBootstrapResponse bootstrap,
+        string targetLanguageCode)
     {
-        if (LocalizationContentPolicy.IsSourceLanguage(targetLanguageCode))
+        var defaultSourceLanguageCode = ResolveSourceLanguage(bootstrap.Settings.DefaultLanguage);
+
+        foreach (var category in bootstrap.Categories)
         {
-            return false;
+            yield return Field("category", category.Id, "name", category.Name, defaultSourceLanguageCode);
         }
 
+        foreach (var poi in bootstrap.Pois)
+        {
+            var sourceLanguageCode = ResolveSourceLanguage(poi.SourceLanguageCode, defaultSourceLanguageCode);
+            yield return Field("poi", poi.Id, "title", string.IsNullOrWhiteSpace(poi.Title) ? poi.Slug : poi.Title, sourceLanguageCode);
+            yield return Field("poi", poi.Id, "shortDescription", poi.ShortDescription, sourceLanguageCode);
+            yield return Field("poi", poi.Id, "description", poi.Description, sourceLanguageCode);
+            yield return Field("poi", poi.Id, "audioScript", poi.AudioScript, sourceLanguageCode);
+        }
+
+        foreach (var foodItem in bootstrap.FoodItems)
+        {
+            yield return Field("food_item", foodItem.Id, "name", foodItem.Name, defaultSourceLanguageCode);
+            yield return Field("food_item", foodItem.Id, "description", foodItem.Description, defaultSourceLanguageCode);
+        }
+
+        foreach (var route in bootstrap.Routes)
+        {
+            yield return Field("route", route.Id, "name", route.Name, defaultSourceLanguageCode);
+            yield return Field("route", route.Id, "theme", route.Theme, defaultSourceLanguageCode);
+            yield return Field("route", route.Id, "description", route.Description, defaultSourceLanguageCode);
+        }
+
+        foreach (var promotion in bootstrap.Promotions)
+        {
+            yield return Field("promotion", promotion.Id, "title", promotion.Title, defaultSourceLanguageCode);
+            yield return Field("promotion", promotion.Id, "description", promotion.Description, defaultSourceLanguageCode);
+        }
+
+        _ = targetLanguageCode;
+    }
+
+    private static IReadOnlyList<Translation> BuildRuntimeTranslations(
+        SystemSetting settings,
+        IReadOnlyList<Poi> sourcePois,
+        IReadOnlyList<FoodItem> sourceFoodItems,
+        IReadOnlyList<TourRoute> sourceRoutes,
+        IReadOnlyList<Promotion> sourcePromotions,
+        IReadOnlyDictionary<string, RuntimeTranslationResult> textByKey,
+        string targetLanguageCode)
+    {
+        var defaultSourceLanguageCode = ResolveSourceLanguage(settings.DefaultLanguage);
+        var translations = new List<Translation>();
+
+        foreach (var poi in sourcePois)
+        {
+            var sourceLanguageCode = ResolveSourceLanguage(poi.SourceLanguageCode, defaultSourceLanguageCode);
+            var sourceTitle = string.IsNullOrWhiteSpace(poi.Title) ? poi.Slug : poi.Title;
+            var sourceFullText = !string.IsNullOrWhiteSpace(poi.AudioScript)
+                ? poi.AudioScript
+                : poi.Description;
+            var title = GetText(textByKey, "poi", poi.Id, "title", sourceTitle);
+            var shortText = GetText(textByKey, "poi", poi.Id, "shortDescription", poi.ShortDescription);
+            var description = GetText(textByKey, "poi", poi.Id, "description", poi.Description);
+            var audioScript = GetText(textByKey, "poi", poi.Id, "audioScript", poi.AudioScript);
+            translations.Add(CreateRuntimeTranslation(
+                "poi",
+                poi.Id,
+                targetLanguageCode,
+                sourceLanguageCode,
+                sourceTitle,
+                poi.ShortDescription,
+                sourceFullText,
+                title,
+                shortText,
+                string.IsNullOrWhiteSpace(audioScript) ? description : audioScript,
+                poi.UpdatedBy,
+                poi.UpdatedAt));
+        }
+
+        foreach (var foodItem in sourceFoodItems)
+        {
+            translations.Add(CreateRuntimeTranslation(
+                "food_item",
+                foodItem.Id,
+                targetLanguageCode,
+                defaultSourceLanguageCode,
+                foodItem.Name,
+                string.Empty,
+                foodItem.Description,
+                GetText(textByKey, "food_item", foodItem.Id, "name", foodItem.Name),
+                string.Empty,
+                GetText(textByKey, "food_item", foodItem.Id, "description", foodItem.Description),
+                "runtime-translation",
+                DateTimeOffset.UtcNow));
+        }
+
+        foreach (var route in sourceRoutes)
+        {
+            translations.Add(CreateRuntimeTranslation(
+                "route",
+                route.Id,
+                targetLanguageCode,
+                defaultSourceLanguageCode,
+                route.Name,
+                route.Theme,
+                route.Description,
+                GetText(textByKey, "route", route.Id, "name", route.Name),
+                GetText(textByKey, "route", route.Id, "theme", route.Theme),
+                GetText(textByKey, "route", route.Id, "description", route.Description),
+                route.UpdatedBy,
+                route.UpdatedAt));
+        }
+
+        foreach (var promotion in sourcePromotions)
+        {
+            translations.Add(CreateRuntimeTranslation(
+                "promotion",
+                promotion.Id,
+                targetLanguageCode,
+                defaultSourceLanguageCode,
+                promotion.Title,
+                string.Empty,
+                promotion.Description,
+                GetText(textByKey, "promotion", promotion.Id, "title", promotion.Title),
+                string.Empty,
+                GetText(textByKey, "promotion", promotion.Id, "description", promotion.Description),
+                "runtime-translation",
+                DateTimeOffset.UtcNow));
+        }
+
+        return translations;
+    }
+
+    private static Translation CreateRuntimeTranslation(
+        string entityType,
+        string entityId,
+        string targetLanguageCode,
+        string sourceLanguageCode,
+        string sourceTitle,
+        string sourceShortText,
+        string sourceFullText,
+        string title,
+        string shortText,
+        string fullText,
+        string updatedBy,
+        DateTimeOffset updatedAt)
+        => new()
+        {
+            Id = $"runtime-{entityType}-{entityId}-{targetLanguageCode}",
+            EntityType = entityType,
+            EntityId = entityId,
+            LanguageCode = targetLanguageCode,
+            Title = title,
+            ShortText = shortText,
+            FullText = fullText,
+            SeoTitle = title,
+            SeoDescription = string.IsNullOrWhiteSpace(shortText) ? fullText : shortText,
+            SourceLanguageCode = sourceLanguageCode,
+            SourceHash = TranslationSourceVersioning.CreateSourceHashForRuntime(
+                sourceTitle,
+                sourceShortText,
+                sourceFullText,
+                sourceLanguageCode),
+            SourceUpdatedAt = updatedAt == DateTimeOffset.MinValue ? null : updatedAt,
+            UpdatedBy = string.IsNullOrWhiteSpace(updatedBy) ? "runtime-translation" : updatedBy,
+            UpdatedAt = updatedAt == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : updatedAt
+        };
+
+    private static PoiCategory CopyCategory(
+        PoiCategory category,
+        IReadOnlyDictionary<string, RuntimeTranslationResult> textByKey)
+        => new()
+        {
+            Id = category.Id,
+            Name = GetText(textByKey, "category", category.Id, "name", category.Name),
+            Slug = category.Slug,
+            Icon = category.Icon,
+            Color = category.Color
+        };
+
+    private static Poi CopyPoi(
+        Poi poi,
+        IReadOnlyDictionary<string, RuntimeTranslationResult> textByKey)
+        => new()
+        {
+            Id = poi.Id,
+            Slug = poi.Slug,
+            Title = GetText(textByKey, "poi", poi.Id, "title", string.IsNullOrWhiteSpace(poi.Title) ? poi.Slug : poi.Title),
+            ShortDescription = GetText(textByKey, "poi", poi.Id, "shortDescription", poi.ShortDescription),
+            Description = GetText(textByKey, "poi", poi.Id, "description", poi.Description),
+            AudioScript = GetText(textByKey, "poi", poi.Id, "audioScript", poi.AudioScript),
+            SourceLanguageCode = poi.SourceLanguageCode,
+            Address = poi.Address,
+            Lat = poi.Lat,
+            Lng = poi.Lng,
+            CategoryId = poi.CategoryId,
+            Status = poi.Status,
+            Featured = poi.Featured,
+            IsActive = poi.IsActive,
+            LockedBySuperAdmin = poi.LockedBySuperAdmin,
+            District = poi.District,
+            Ward = poi.Ward,
+            PriceRange = poi.PriceRange,
+            TriggerRadius = poi.TriggerRadius,
+            Priority = poi.Priority,
+            Tags = [.. poi.Tags],
+            OwnerUserId = poi.OwnerUserId,
+            UpdatedBy = poi.UpdatedBy,
+            CreatedAt = poi.CreatedAt,
+            UpdatedAt = poi.UpdatedAt,
+            ApprovedAt = poi.ApprovedAt,
+            RejectionReason = poi.RejectionReason,
+            RejectedAt = poi.RejectedAt
+        };
+
+    private static FoodItem CopyFoodItem(
+        FoodItem foodItem,
+        IReadOnlyDictionary<string, RuntimeTranslationResult> textByKey)
+        => new()
+        {
+            Id = foodItem.Id,
+            PoiId = foodItem.PoiId,
+            Name = GetText(textByKey, "food_item", foodItem.Id, "name", foodItem.Name),
+            Description = GetText(textByKey, "food_item", foodItem.Id, "description", foodItem.Description),
+            PriceRange = foodItem.PriceRange,
+            ImageUrl = foodItem.ImageUrl,
+            SpicyLevel = foodItem.SpicyLevel
+        };
+
+    private static TourRoute CopyRoute(
+        TourRoute route,
+        IReadOnlyDictionary<string, RuntimeTranslationResult> textByKey)
+        => new()
+        {
+            Id = route.Id,
+            Name = GetText(textByKey, "route", route.Id, "name", route.Name),
+            Theme = GetText(textByKey, "route", route.Id, "theme", route.Theme),
+            Description = GetText(textByKey, "route", route.Id, "description", route.Description),
+            DurationMinutes = route.DurationMinutes,
+            Difficulty = route.Difficulty,
+            CoverImageUrl = route.CoverImageUrl,
+            IsFeatured = route.IsFeatured,
+            StopPoiIds = [.. route.StopPoiIds],
+            IsActive = route.IsActive,
+            IsSystemRoute = route.IsSystemRoute,
+            OwnerUserId = route.OwnerUserId,
+            UpdatedBy = route.UpdatedBy,
+            UpdatedAt = route.UpdatedAt
+        };
+
+    private static Promotion CopyPromotion(
+        Promotion promotion,
+        IReadOnlyDictionary<string, RuntimeTranslationResult> textByKey)
+        => new()
+        {
+            Id = promotion.Id,
+            PoiId = promotion.PoiId,
+            Title = GetText(textByKey, "promotion", promotion.Id, "title", promotion.Title),
+            Description = GetText(textByKey, "promotion", promotion.Id, "description", promotion.Description),
+            StartAt = promotion.StartAt,
+            EndAt = promotion.EndAt,
+            Status = promotion.Status
+        };
+
+    private static RuntimeTranslationField Field(
+        string entityType,
+        string entityId,
+        string fieldName,
+        string? sourceText,
+        string sourceLanguageCode)
+        => new(
+            entityType,
+            entityId,
+            fieldName,
+            sourceText ?? string.Empty,
+            sourceLanguageCode);
+
+    private static string GetText(
+        IReadOnlyDictionary<string, RuntimeTranslationResult> textByKey,
+        string entityType,
+        string entityId,
+        string fieldName,
+        string? fallback)
+        => textByKey.TryGetValue(CreateFieldKey(entityType, entityId, fieldName), out var result)
+            ? result.Text
+            : fallback ?? string.Empty;
+
+    private static string CreateResultKey(RuntimeTranslationResult result)
+        => CreateFieldKey(result.EntityType, result.EntityId, result.FieldName);
+
+    private static string CreateFieldKey(string entityType, string entityId, string fieldName)
+        => $"{entityType.Trim().ToLowerInvariant()}:{entityId.Trim().ToLowerInvariant()}:{fieldName.Trim().ToLowerInvariant()}";
+
+    private static string ResolveRequestedLanguage(SystemSetting settings, string? requestedLanguageCode)
+    {
+        var normalized = PremiumAccessCatalog.NormalizeLanguageCode(requestedLanguageCode);
+        if (!string.IsNullOrWhiteSpace(normalized))
+        {
+            return normalized;
+        }
+
+        return ResolveSourceLanguage(settings.DefaultLanguage);
+    }
+
+    private static string ResolveSourceLanguage(params string?[] languageCodes)
+    {
+        foreach (var languageCode in languageCodes)
+        {
+            var normalized = PremiumAccessCatalog.NormalizeLanguageCode(languageCode);
+            if (!string.IsNullOrWhiteSpace(normalized))
+            {
+                return normalized;
+            }
+        }
+
+        return "vi";
+    }
+
+    private static bool CanServeRequestedLanguage(SystemSetting settings, string targetLanguageCode)
+    {
         var supportedLanguages = settings.SupportedLanguages
             .Select(PremiumAccessCatalog.NormalizeLanguageCode)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -127,278 +402,7 @@ public sealed class BootstrapLocalizationService(
 
         supportedLanguages.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.DefaultLanguage));
         supportedLanguages.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.FallbackLanguage));
+        supportedLanguages.Add("vi");
         return supportedLanguages.Contains(targetLanguageCode);
-    }
-
-    private static IEnumerable<BootstrapTranslationWorkItem> BuildWorkItems(
-        AdminBootstrapResponse bootstrap,
-        IReadOnlyList<Translation> translations,
-        string targetLanguageCode)
-    {
-        foreach (var poi in bootstrap.Pois)
-        {
-            var workItem = BootstrapTranslationWorkItem.Create(
-                "poi",
-                poi.Id,
-                FindTranslation(translations, "poi", poi.Id, targetLanguageCode),
-                TranslationSourceVersioning.ResolveCurrentSource(
-                    "poi",
-                    poi.Id,
-                    translations,
-                    bootstrap.Settings.DefaultLanguage,
-                    bootstrap.Settings.FallbackLanguage,
-                    poi.Slug,
-                    null,
-                    null,
-                    poi.UpdatedAt),
-                targetLanguageCode);
-            if (workItem is not null)
-            {
-                yield return workItem;
-            }
-        }
-
-        foreach (var foodItem in bootstrap.FoodItems)
-        {
-            var workItem = BootstrapTranslationWorkItem.Create(
-                "food_item",
-                foodItem.Id,
-                FindTranslation(translations, "food_item", foodItem.Id, targetLanguageCode),
-                TranslationSourceVersioning.ResolveCurrentSource(
-                    "food_item",
-                    foodItem.Id,
-                    translations,
-                    bootstrap.Settings.DefaultLanguage,
-                    bootstrap.Settings.FallbackLanguage,
-                    foodItem.Name,
-                    null,
-                    foodItem.Description,
-                    DateTimeOffset.MinValue),
-                targetLanguageCode);
-            if (workItem is not null)
-            {
-                yield return workItem;
-            }
-        }
-
-        foreach (var promotion in bootstrap.Promotions)
-        {
-            var workItem = BootstrapTranslationWorkItem.Create(
-                "promotion",
-                promotion.Id,
-                FindTranslation(translations, "promotion", promotion.Id, targetLanguageCode),
-                TranslationSourceVersioning.ResolveCurrentSource(
-                    "promotion",
-                    promotion.Id,
-                    translations,
-                    bootstrap.Settings.DefaultLanguage,
-                    bootstrap.Settings.FallbackLanguage,
-                    promotion.Title,
-                    null,
-                    promotion.Description,
-                    DateTimeOffset.MinValue),
-                targetLanguageCode);
-            if (workItem is not null)
-            {
-                yield return workItem;
-            }
-        }
-
-        foreach (var route in bootstrap.Routes)
-        {
-            var workItem = BootstrapTranslationWorkItem.Create(
-                "route",
-                route.Id,
-                FindTranslation(translations, "route", route.Id, targetLanguageCode),
-                TranslationSourceVersioning.ResolveCurrentSource(
-                    "route",
-                    route.Id,
-                    translations,
-                    bootstrap.Settings.DefaultLanguage,
-                    bootstrap.Settings.FallbackLanguage,
-                    route.Name,
-                    route.Theme,
-                    route.Description,
-                    route.UpdatedAt),
-                targetLanguageCode);
-            if (workItem is not null)
-            {
-                yield return workItem;
-            }
-        }
-    }
-
-    private static Translation? FindTranslation(
-        IEnumerable<Translation> translations,
-        string entityType,
-        string entityId,
-        string languageCode)
-        => translations.FirstOrDefault(item =>
-            string.Equals(item.EntityType, entityType, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(item.EntityId, entityId, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(PremiumAccessCatalog.NormalizeLanguageCode(item.LanguageCode), languageCode, StringComparison.OrdinalIgnoreCase));
-
-    private static string CreateTranslationKey(string entityType, string entityId, string languageCode)
-        => $"{entityType.Trim().ToLowerInvariant()}:{entityId.Trim().ToLowerInvariant()}:{PremiumAccessCatalog.NormalizeLanguageCode(languageCode).ToLowerInvariant()}";
-
-    private sealed class BootstrapTranslationWorkItem
-    {
-        private readonly Translation? _existing;
-        private readonly TranslationSourceSnapshot _sourceSnapshot;
-        private readonly List<BootstrapTranslationSegment> _segments = [];
-        private readonly string _targetLanguageCode;
-        private readonly bool _canReuseExisting;
-        private bool _titleQueued;
-
-        private BootstrapTranslationWorkItem(
-            string entityType,
-            string entityId,
-            Translation? existing,
-            TranslationSourceSnapshot sourceSnapshot,
-            string targetLanguageCode,
-            bool canReuseExisting,
-            string title,
-            string shortText,
-            string fullText)
-        {
-            EntityType = entityType;
-            EntityId = entityId;
-            _existing = existing;
-            _sourceSnapshot = sourceSnapshot;
-            _targetLanguageCode = targetLanguageCode;
-            _canReuseExisting = canReuseExisting;
-            Title = title;
-            ShortText = shortText;
-            FullText = fullText;
-        }
-
-        public string EntityType { get; }
-
-        public string EntityId { get; }
-
-        public string Key => CreateTranslationKey(EntityType, EntityId, _targetLanguageCode);
-
-        public string SourceLanguageCode => _sourceSnapshot.LanguageCode;
-
-        public string SourceHash => _sourceSnapshot.Hash;
-
-        public string? SourceTitle => string.IsNullOrWhiteSpace(_sourceSnapshot.Title) ? null : _sourceSnapshot.Title;
-
-        public string? TranslatorInputTitle => _titleQueued ? _sourceSnapshot.Title : null;
-
-        public string TranslationCacheStatus => _canReuseExisting ? "hit" : "miss";
-
-        public string Title { get; private set; }
-
-        public string ShortText { get; private set; }
-
-        public string FullText { get; private set; }
-
-        public bool HasContent =>
-            !string.IsNullOrWhiteSpace(Title) ||
-            !string.IsNullOrWhiteSpace(ShortText) ||
-            !string.IsNullOrWhiteSpace(FullText);
-
-        public bool HasNarrationBody =>
-            !string.IsNullOrWhiteSpace(FullText) ||
-            !string.IsNullOrWhiteSpace(ShortText);
-
-        public bool ShouldMaterialize =>
-            HasContent &&
-            (!RequiresNarrationBody || HasNarrationBody);
-
-        public static BootstrapTranslationWorkItem? Create(
-            string entityType,
-            string entityId,
-            Translation? existing,
-            TranslationSourceSnapshot? sourceSnapshot,
-            string targetLanguageCode)
-        {
-            if (sourceSnapshot is null)
-            {
-                return null;
-            }
-
-            var canReuseExisting = TranslationSourceVersioning.MatchesCurrentSource(existing, sourceSnapshot);
-            var item = new BootstrapTranslationWorkItem(
-                entityType,
-                entityId,
-                existing,
-                sourceSnapshot,
-                targetLanguageCode,
-                canReuseExisting,
-                canReuseExisting ? CleanTargetValue(existing?.Title, targetLanguageCode) : string.Empty,
-                canReuseExisting ? CleanTargetValue(existing?.ShortText, targetLanguageCode) : string.Empty,
-                canReuseExisting ? CleanTargetValue(existing?.FullText, targetLanguageCode) : string.Empty);
-
-            item.QueueMissingSegments();
-            return item.HasContent || item._segments.Count > 0 || existing is not null ? item : null;
-        }
-
-        public IReadOnlyList<BootstrapTranslationSegment> GetSegments()
-            => _segments;
-
-        public Translation ToTranslation(string targetLanguageCode)
-            => new()
-            {
-                Id = string.IsNullOrWhiteSpace(_existing?.Id)
-                    ? $"auto-{EntityType}-{EntityId}-{targetLanguageCode}"
-                    : _existing.Id,
-                EntityType = EntityType,
-                EntityId = EntityId,
-                LanguageCode = targetLanguageCode,
-                Title = Title,
-                ShortText = ShortText,
-                FullText = FullText,
-                SeoTitle = CleanTargetValue(_existing?.SeoTitle, targetLanguageCode),
-                SeoDescription = CleanTargetValue(_existing?.SeoDescription, targetLanguageCode),
-                SourceLanguageCode = _sourceSnapshot.LanguageCode,
-                SourceHash = _sourceSnapshot.Hash,
-                SourceUpdatedAt = _sourceSnapshot.UpdatedAt,
-                UpdatedBy = string.IsNullOrWhiteSpace(_existing?.UpdatedBy) ? "auto-translation" : _existing.UpdatedBy,
-                UpdatedAt = _sourceSnapshot.UpdatedAt == DateTimeOffset.MinValue
-                    ? _existing?.UpdatedAt ?? DateTimeOffset.UtcNow
-                    : _sourceSnapshot.UpdatedAt
-            };
-
-        private void QueueMissingSegments()
-        {
-            if (string.IsNullOrWhiteSpace(Title) && !string.IsNullOrWhiteSpace(_sourceSnapshot.Title))
-            {
-                _titleQueued = true;
-                _segments.Add(new BootstrapTranslationSegment(_sourceSnapshot.Title, value => Title = value));
-            }
-
-            if (string.IsNullOrWhiteSpace(ShortText) && !string.IsNullOrWhiteSpace(_sourceSnapshot.ShortText))
-            {
-                _segments.Add(new BootstrapTranslationSegment(_sourceSnapshot.ShortText, value => ShortText = value));
-            }
-
-            if (string.IsNullOrWhiteSpace(FullText) && !string.IsNullOrWhiteSpace(_sourceSnapshot.FullText))
-            {
-                _segments.Add(new BootstrapTranslationSegment(_sourceSnapshot.FullText, value => FullText = value));
-            }
-        }
-
-        private static string CleanTargetValue(string? value, string targetLanguageCode)
-            => LocalizationContentPolicy.CleanForLanguage(value, targetLanguageCode) ?? string.Empty;
-
-        private bool RequiresNarrationBody => !string.IsNullOrWhiteSpace(_sourceSnapshot.Body);
-    }
-
-    private sealed class BootstrapTranslationSegment(
-        string sourceText,
-        Action<string> applyTranslatedText)
-    {
-        public string SourceText { get; } = sourceText;
-
-        public void Apply(string? translatedText, string targetLanguageCode)
-        {
-            var cleaned = LocalizationContentPolicy.CleanForLanguage(translatedText, targetLanguageCode);
-            if (!string.IsNullOrWhiteSpace(cleaned))
-            {
-                applyTranslatedText(cleaned);
-            }
-        }
     }
 }

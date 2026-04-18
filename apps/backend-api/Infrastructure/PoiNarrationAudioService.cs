@@ -8,7 +8,6 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed class PoiNarrationAudioService(
     PoiNarrationService poiNarrationService,
-    ITextToSpeechService textToSpeechService,
     IMemoryCache cache,
     IWebHostEnvironment environment,
     IHttpClientFactory httpClientFactory,
@@ -37,7 +36,7 @@ public sealed class PoiNarrationAudioService(
             cachedAudio is not null)
         {
             logger.LogInformation(
-                "POI narration audio cache hit. PoiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; source={Source}; cacheKey={CacheKey}; audioBytes={AudioBytes}; durationSeconds={DurationSeconds}",
+                "POI narration audio cache hit. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; source={Source}; cacheKey={CacheKey}; audioBytes={AudioBytes}; durationSeconds={DurationSeconds}",
                 narration.PoiId,
                 narration.RequestedLanguageCode,
                 cachedAudio.EffectiveLanguageCode,
@@ -48,35 +47,18 @@ public sealed class PoiNarrationAudioService(
             return cachedAudio;
         }
 
-        PoiNarrationAudioResult resolvedAudio;
-        if (CanUsePreparedAudio(narration.AudioGuide))
+        if (!CanUsePreparedAudio(narration.AudioGuide))
         {
-            try
-            {
-                resolvedAudio = await LoadPreparedAudioAsync(narration, cancellationToken);
-            }
-            catch (Exception exception) when (
-                !cancellationToken.IsCancellationRequested &&
-                HasNarrationText(narration.TtsInputText))
-            {
-                logger.LogWarning(
-                    exception,
-                    "Prepared narration audio was unavailable. Falling back to TTS. PoiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; cacheKey={CacheKey}",
-                    narration.PoiId,
-                    narration.RequestedLanguageCode,
-                    narration.EffectiveLanguageCode,
-                    narration.AudioCacheKey);
-                resolvedAudio = await GenerateTtsAudioAsync(narration, cancellationToken);
-            }
+            logger.LogWarning(
+                "POI narration audio is missing a ready pre-generated file. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; cacheKey={CacheKey}",
+                narration.PoiId,
+                narration.RequestedLanguageCode,
+                narration.EffectiveLanguageCode,
+                narration.AudioCacheKey);
+            throw new PoiNarrationAudioUnavailableException("Chua co audio pre-generated cho POI/ngon ngu nay.");
         }
-        else if (HasNarrationText(narration.TtsInputText))
-        {
-            resolvedAudio = await GenerateTtsAudioAsync(narration, cancellationToken);
-        }
-        else
-        {
-            throw new PoiNarrationAudioUnavailableException("Chưa có audio hoặc nội dung thuyết minh khả dụng cho POI này.");
-        }
+
+        var resolvedAudio = await LoadPreparedAudioAsync(narration, cancellationToken);
 
         cache.Set(
             narration.AudioCacheKey,
@@ -95,22 +77,22 @@ public sealed class PoiNarrationAudioService(
         CancellationToken cancellationToken)
     {
         var audioGuide = narration.AudioGuide
-            ?? throw new PoiNarrationAudioUnavailableException("POI này không có audio guide sẵn sàng phát.");
-        var audioUrl = audioGuide.AudioUrl?.Trim();
-        if (string.IsNullOrWhiteSpace(audioUrl))
+            ?? throw new PoiNarrationAudioUnavailableException("POI nay khong co audio guide san sang phat.");
+        var audioLocation = ResolveAudioLocation(audioGuide);
+        if (string.IsNullOrWhiteSpace(audioLocation))
         {
-            throw new PoiNarrationAudioUnavailableException("Audio guide không có đường dẫn phát hợp lệ.");
+            throw new PoiNarrationAudioUnavailableException("Audio guide khong co duong dan phat hop le.");
         }
 
         byte[] content;
         string contentType;
         string storageReference;
 
-        if (TryResolveLocalStoragePath(audioUrl, out var localPath))
+        if (TryResolveLocalStoragePath(audioLocation, out var localPath))
         {
             if (!File.Exists(localPath))
             {
-                throw new FileNotFoundException("Không tìm thấy file audio guide trên backend.", localPath);
+                throw new FileNotFoundException("Khong tim thay file audio guide tren backend.", localPath);
             }
 
             content = await File.ReadAllBytesAsync(localPath, cancellationToken);
@@ -123,7 +105,7 @@ public sealed class PoiNarrationAudioService(
             timeoutSource.CancelAfter(PreparedAudioProxyTimeout);
 
             using var client = httpClientFactory.CreateClient();
-            using var request = new HttpRequestMessage(HttpMethod.Get, audioUrl);
+            using var request = new HttpRequestMessage(HttpMethod.Get, audioLocation);
             using var response = await client.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
@@ -133,29 +115,29 @@ public sealed class PoiNarrationAudioService(
             {
                 var responseBody = await ReadResponseBodyAsync(response, timeoutSource.Token);
                 throw new InvalidOperationException(
-                    $"Backend không thể tải prepared audio từ '{audioUrl}'. HTTP {(int)response.StatusCode}. Body={responseBody}");
+                    $"Backend khong the tai prepared audio tu '{audioLocation}'. HTTP {(int)response.StatusCode}. Body={responseBody}");
             }
 
-            contentType = response.Content.Headers.ContentType?.ToString() ?? InferContentType(audioUrl);
+            contentType = response.Content.Headers.ContentType?.ToString() ?? InferContentType(audioLocation);
             content = await ReadAudioBytesAsync(response, timeoutSource.Token);
 
             if (LooksLikeTextPayload(contentType, content))
             {
                 throw new InvalidOperationException(
-                    $"Prepared audio trả về payload không phải audio. Url={audioUrl}; Body={DecodeTextPayload(content)}");
+                    $"Prepared audio tra ve payload khong phai audio. Url={audioLocation}; Body={DecodeTextPayload(content)}");
             }
 
-            storageReference = audioUrl;
+            storageReference = audioLocation;
         }
 
         if (content.Length == 0)
         {
-            throw new InvalidOperationException("Prepared audio trả về 0 byte.");
+            throw new InvalidOperationException("Prepared audio tra ve 0 byte.");
         }
 
         var durationSeconds = EstimateAudioDurationSeconds(contentType, content.Length);
         logger.LogInformation(
-            "Prepared POI narration audio ready. PoiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioGuideId={AudioGuideId}; audioBytes={AudioBytes}; durationSeconds={DurationSeconds}; storage={StorageReference}; cacheKey={CacheKey}",
+            "Prepared POI narration audio ready. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioGuideId={AudioGuideId}; audioBytes={AudioBytes}; durationSeconds={DurationSeconds}; storage={StorageReference}; cacheKey={CacheKey}",
             narration.PoiId,
             narration.RequestedLanguageCode,
             narration.EffectiveLanguageCode,
@@ -176,40 +158,6 @@ public sealed class PoiNarrationAudioService(
             narration.TtsInputText.Length,
             1,
             durationSeconds);
-    }
-
-    private async Task<PoiNarrationAudioResult> GenerateTtsAudioAsync(
-        PoiNarrationResponse narration,
-        CancellationToken cancellationToken)
-    {
-        var audio = await textToSpeechService.GenerateAudioAsync(
-            new TextToSpeechRequest(
-                narration.TtsInputText,
-                narration.EffectiveLanguageCode),
-            cancellationToken);
-
-        logger.LogInformation(
-            "Generated POI narration TTS audio. PoiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; textLength={TextLength}; segmentCount={SegmentCount}; audioBytes={AudioBytes}; durationSeconds={DurationSeconds}; cacheKey={CacheKey}",
-            narration.PoiId,
-            narration.RequestedLanguageCode,
-            narration.EffectiveLanguageCode,
-            audio.TextLength,
-            audio.SegmentCount,
-            audio.Content.Length,
-            audio.EstimatedDurationSeconds.ToString("0.00"),
-            narration.AudioCacheKey);
-
-        return new PoiNarrationAudioResult(
-            audio.Content,
-            audio.ContentType,
-            "generated_tts",
-            narration.UiPlaybackKey,
-            narration.AudioCacheKey,
-            narration.EffectiveLanguageCode,
-            narration.TtsLocale,
-            audio.TextLength,
-            audio.SegmentCount,
-            audio.EstimatedDurationSeconds);
     }
 
     private bool TryResolveLocalStoragePath(string audioUrl, out string localPath)
@@ -255,12 +203,17 @@ public sealed class PoiNarrationAudioService(
 
     private static bool CanUsePreparedAudio(AudioGuide? audioGuide) =>
         audioGuide is not null &&
-        string.Equals(audioGuide.SourceType, "uploaded", StringComparison.OrdinalIgnoreCase) &&
-        string.Equals(audioGuide.Status, "ready", StringComparison.OrdinalIgnoreCase) &&
-        !string.IsNullOrWhiteSpace(audioGuide.AudioUrl);
+        !audioGuide.IsOutdated &&
+        string.Equals(AudioGuideCatalog.NormalizeGenerationStatus(audioGuide.GenerationStatus), AudioGuideCatalog.GenerationStatusSuccess, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(AudioGuideCatalog.NormalizePublicStatus(audioGuide.Status), AudioGuideCatalog.PublicStatusReady, StringComparison.OrdinalIgnoreCase) &&
+        (!string.IsNullOrWhiteSpace(audioGuide.AudioUrl) || !string.IsNullOrWhiteSpace(audioGuide.AudioFilePath));
 
-    private static bool HasNarrationText(string? value)
-        => !string.IsNullOrWhiteSpace(value);
+    private static string? ResolveAudioLocation(AudioGuide audioGuide)
+        => !string.IsNullOrWhiteSpace(audioGuide.AudioUrl)
+            ? audioGuide.AudioUrl.Trim()
+            : string.IsNullOrWhiteSpace(audioGuide.AudioFilePath)
+                ? null
+                : audioGuide.AudioFilePath.Trim();
 
     private static string InferContentType(string value)
     {

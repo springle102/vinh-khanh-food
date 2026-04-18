@@ -18,13 +18,6 @@ public interface IFoodStreetDataService
     Task<PoiExperienceDetail?> GetPoiDetailAsync(string poiId);
     Task<IReadOnlyList<TourCatalogItem>> GetPublishedToursAsync();
     Task<TourPlan> GetTourPlanAsync(string? tourId = null, IReadOnlyCollection<string>? completedPoiIds = null);
-    Task<UserProfileCard> GetUserProfileAsync();
-    Task<UserProfileCard?> LoginCustomerAsync(string identifier, string password);
-    Task<UserProfileCard?> SelectUserProfileAsync(string identifier);
-    Task<UserProfileCard> RegisterUserProfileAsync(CustomerRegistrationRequest request);
-    Task<UserProfileCard> UpdateUserProfileAsync(UserProfileUpdateRequest request);
-    Task<PremiumPurchaseOffer> GetPremiumOfferAsync();
-    Task<PremiumPurchaseResult> PurchasePremiumAsync(PremiumCheckoutRequest request);
     Task<string> EnsureAllowedLanguageSelectionAsync();
     // ✅ NEW: Explicitly restore to allowed language when needed
     Task<string> RestoreToAllowedLanguageAsync();
@@ -41,7 +34,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private const string BootstrapEndpoint = "api/v1/bootstrap";
     private const string SyncStateEndpoint = "api/v1/sync-state";
     private const string AppUsageEventsEndpoint = "api/v1/app-usage-events";
-    private const string DefaultBackdropImageUrl = "https://images.unsplash.com/photo-1520201163981-8cc95007dd2e?auto=format&fit=crop&w=1200&q=80";
+    private const string DefaultBackdropImageUrl = "coverdefault.svg";
     private const int DefaultPremiumPriceUsd = 10;
     private static readonly TimeSpan SyncCheckInterval = TimeSpan.FromSeconds(5);
 
@@ -53,9 +46,9 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private static readonly IReadOnlyDictionary<string, string> FallbackPoiImages =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["poi-snail-signature"] = "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1200&q=80",
-            ["poi-bbq-night"] = "https://images.unsplash.com/photo-1520201163981-8cc95007dd2e?auto=format&fit=crop&w=1200&q=80",
-            ["poi-sweet-lane"] = "https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&fit=crop&w=1200&q=80"
+            ["poi-snail-signature"] = DefaultBackdropImageUrl,
+            ["poi-bbq-night"] = DefaultBackdropImageUrl,
+            ["poi-sweet-lane"] = DefaultBackdropImageUrl
         };
 
 #if false
@@ -145,6 +138,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private readonly SemaphoreSlim _bootstrapLock = new(1, 1);
     private readonly AsyncLocal<string?> _languageOverride = new();
     private readonly IAppLanguageService _languageService;
+    private readonly IOfflineStorageService _offlineStorageService;
     private readonly ILogger<FoodStreetApiDataService> _logger;
     private AdminBootstrapDto? _bootstrapSource;
     private BootstrapSnapshot? _bootstrapSnapshot;
@@ -155,13 +149,18 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private HttpClient? _httpClient;
     private string? _resolvedBaseUrl;
     private readonly string _sessionId = Guid.NewGuid().ToString("N");
+    private bool _offlinePackageLoadAttempted;
 
     public FoodStreetApiDataService(
         IAppLanguageService languageService,
+        IOfflineStorageService offlineStorageService,
+        IOfflinePackageService offlinePackageService,
         ILogger<FoodStreetApiDataService> logger)
     {
         _languageService = languageService;
+        _offlineStorageService = offlineStorageService;
         _logger = logger;
+        offlinePackageService.StateChanged += OnOfflinePackageStateChanged;
     }
 
     public async Task<IReadOnlyList<LanguageOption>> GetLanguagesAsync()
@@ -179,8 +178,8 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
                 Code = normalizedCode,
                 Flag = language.Flag?.Trim() ?? string.Empty,
                 DisplayName = language.DisplayName?.Trim() ?? normalizedCode,
-                IsPremium = language.IsPremium,
-                IsLocked = language.IsLocked,
+                IsPremium = false,
+                IsLocked = false,
                 IsSelected = string.Equals(normalizedCode, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase)
             };
         }).ToList();
@@ -194,7 +193,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             return snapshot.Pois;
         }
 
-        return [];
+        return BuildLocalizedFallbackPois();
     }
 
     public async Task<IReadOnlyList<MapHeatPoint>> GetHeatPointsAsync()
@@ -205,7 +204,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             return snapshot.HeatPoints;
         }
 
-        return [];
+        return FallbackHeatPoints;
     }
 
     public async Task<PoiExperienceDetail?> GetPoiDetailAsync(string poiId)
@@ -221,13 +220,18 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             return detail;
         }
 
-        return null;
+        return BuildFallbackPoiDetail(poiId);
     }
 
     public async Task<IReadOnlyList<TourCatalogItem>> GetPublishedToursAsync()
     {
         var snapshot = await GetBootstrapSnapshotAsync();
-        if (snapshot is null || snapshot.Routes.Count == 0)
+        if (snapshot is null || (snapshot.Routes.Count == 0 && snapshot.Pois.Count == 0))
+        {
+            return BuildFallbackPublishedTours();
+        }
+
+        if (snapshot.Routes.Count == 0)
         {
             return [];
         }
@@ -246,6 +250,11 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         if (routePlan is not null)
         {
             return routePlan;
+        }
+
+        if (snapshot is null || snapshot.Pois.Count == 0)
+        {
+            return BuildFallbackTourPlan(tourId, completedPoiIds) ?? CreateEmptyTourPlan();
         }
 
         return CreateEmptyTourPlan();
@@ -274,32 +283,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         };
 
     public async Task<UserProfileCard> GetUserProfileAsync()
-    {
-        var customer = await GetResolvedCurrentCustomerAsync();
-        if (customer is not null)
-        {
-            return MapUserProfile(customer);
-        }
-
-        var snapshot = await GetBootstrapSnapshotAsync();
-        if (snapshot?.UserProfile.HasResolvedAccount == true)
-        {
-            return snapshot.UserProfile;
-        }
-
-        return new UserProfileCard();
-        /*
-
-                return new UserProfileCard
-                {
-                    FullName = "Nguyễn Bảo Vy",
-                    Email = "baovy@gmail.com",
-                    Phone = "0911 000 111",
-                    AvatarInitials = "BV",
-                    MetaLine = $"ID customer-1 • android • {_languageService.CurrentLanguage}"
-
-        */
-    }
+        => await Task.FromResult(new UserProfileCard());
 #if false
     public Task<IReadOnlyList<SettingsMenuItem>> GetSettingsMenuLegacyAsync()
         => Task.FromResult<IReadOnlyList<SettingsMenuItem>>(
@@ -419,6 +403,7 @@ public sealed partial class FoodStreetApiDataService
         try
         {
             var currentLanguageCode = SelectedLanguageCode;
+            await TryLoadOfflinePackageAsync(currentLanguageCode);
             if ((_bootstrapSnapshot is null ||
                  !string.Equals(_bootstrapSnapshotLanguageCode, currentLanguageCode, StringComparison.OrdinalIgnoreCase)) &&
                 TryRebuildBootstrapSnapshotFromCache(currentLanguageCode, "language-change"))
@@ -596,8 +581,20 @@ public sealed partial class FoodStreetApiDataService
         }
 
         using var _ = BeginLanguageScope(requestedLanguageCode);
-        _bootstrapSource = envelope.Data;
-        var snapshot = CreateSnapshot(envelope.Data);
+        var nextBootstrapSource = envelope.Data;
+        var snapshot = CreateSnapshot(nextBootstrapSource);
+
+        if (_bootstrapSnapshot is not null &&
+            _bootstrapSnapshot.Pois.Count > 0 &&
+            snapshot.Pois.Count == 0 &&
+            snapshot.Routes.Count == 0)
+        {
+            _logger.LogWarning(
+                "Ignoring empty bootstrap payload ({Reason}) because cached data is already available. Requested={RequestedLanguage}",
+                reason,
+                requestedLanguageCode);
+            return _bootstrapSnapshot;
+        }
 
         if (!IsSelectedLanguage(requestedLanguageCode))
         {
@@ -609,9 +606,10 @@ public sealed partial class FoodStreetApiDataService
             return _bootstrapSnapshot;
         }
 
+        _bootstrapSource = nextBootstrapSource;
         _bootstrapSnapshot = snapshot;
         _bootstrapSnapshotLanguageCode = AppLanguage.NormalizeCode(requestedLanguageCode);
-        _syncState = envelope.Data.SyncState ?? remoteSyncState;
+        _syncState = nextBootstrapSource.SyncState ?? remoteSyncState;
         _lastSyncCheckAt = DateTimeOffset.UtcNow;
 
         _logger.LogInformation(
@@ -857,8 +855,7 @@ public sealed partial class FoodStreetApiDataService
         var audioGuidesByPoiId = accessibleAudioGuides
             .Where(item =>
                 string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(item.SourceType, "uploaded", StringComparison.OrdinalIgnoreCase) &&
+                IsPlayableAudioGuide(item) &&
                 !string.IsNullOrWhiteSpace(item.AudioUrl))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
@@ -1098,16 +1095,7 @@ public sealed partial class FoodStreetApiDataService
     }
 
     private CustomerUserDto? ResolveCurrentCustomerForAccess(IReadOnlyList<CustomerUserDto> customerUsers)
-    {
-        var currentCustomerId = ReadCurrentCustomerId();
-        if (string.IsNullOrWhiteSpace(currentCustomerId))
-        {
-            return null;
-        }
-
-        return customerUsers.FirstOrDefault(item =>
-            string.Equals(item.Id, currentCustomerId, StringComparison.OrdinalIgnoreCase));
-    }
+        => null;
 
     private IReadOnlyList<RouteSnapshot> BuildRouteSnapshots(
         IReadOnlyList<RouteDto> routes,
@@ -1229,12 +1217,12 @@ public sealed partial class FoodStreetApiDataService
 
     private string FormatTourStopCountText(int stopCount)
         => SelectLocalizedText(CreateLocalizedMap(
-            $"{stopCount} Ä‘iá»ƒm dá»«ng",
+            $"{stopCount} điểm dừng",
             $"{stopCount} stops",
-            $"{stopCount} ä¸ªç«™ç‚¹",
-            $"{stopCount}ê³³ ì •ì°¨",
-            $"{stopCount}ã‹æ‰€ã®ç«‹ã¡å¯„ã‚Š",
-            $"{stopCount} Ã©tapes"));
+            $"{stopCount} 个站点",
+            $"{stopCount}개 정차",
+            $"{stopCount} か所の立ち寄り先",
+            $"{stopCount} étapes"));
 
     private static IReadOnlyList<MapHeatPoint> BuildHeatPoints(
         IReadOnlyList<PoiDto> pois,
@@ -1331,43 +1319,7 @@ public sealed partial class FoodStreetApiDataService
     }
 
     private UserProfileCard ResolveUserProfile(IReadOnlyList<CustomerUserDto> customerUsers)
-    {
-        var currentCustomerId = ReadCurrentCustomerId();
-        if (string.IsNullOrWhiteSpace(currentCustomerId))
-        {
-            return new UserProfileCard();
-        }
-
-        var customer = customerUsers.FirstOrDefault(item =>
-            string.Equals(item.Id, currentCustomerId, StringComparison.OrdinalIgnoreCase));
-
-        if (customer is null)
-        {
-            return new UserProfileCard();
-            /*
-
-                        return new UserProfileCard
-                        {
-                            FullName = "Nguyễn Bảo Vy",
-                            Email = "baovy@gmail.com",
-                            Phone = "0911 000 111",
-                            AvatarInitials = "BV",
-                            MetaLine = $"ID customer-1 • android • {_languageService.CurrentLanguage}"
-
-            */
-        }
-        return new UserProfileCard
-        {
-            CustomerId = customer.Id,
-            FullName = FirstNonEmpty(customer.Name, customer.Username, customer.Email, customer.Id),
-            Username = FirstNonEmpty(customer.Username, customer.Email, customer.Id),
-            Email = customer.Email,
-            Phone = customer.Phone,
-            AvatarInitials = BuildInitials(customer.Name, customer.Username, customer.Email),
-            IsPremium = customer.IsPremium,
-            MetaLine = $"ID {customer.Id} • {(customer.IsPremium ? "Premium" : "Free")} • {customer.PreferredLanguage.ToUpperInvariant()}"
-        };
-    }
+        => new UserProfileCard();
 
     private static string ResolveBackdropImageUrl(
         IReadOnlyList<PoiLocation> pois,
@@ -1483,6 +1435,31 @@ public sealed partial class FoodStreetApiDataService
             AppLanguage.NormalizeCode(requestedLanguage));
     }
 
+    private static bool IsPlayableAudioGuide(AudioGuideDto audioGuide)
+    {
+        if (audioGuide is null ||
+            string.IsNullOrWhiteSpace(audioGuide.AudioUrl) ||
+            !string.Equals(audioGuide.Status, "ready", StringComparison.OrdinalIgnoreCase) ||
+            audioGuide.IsOutdated)
+        {
+            return false;
+        }
+
+        var generationStatus = NormalizeGenerationStatus(audioGuide.GenerationStatus);
+        if (generationStatus is "failed" or "outdated" or "pending")
+        {
+            return false;
+        }
+
+        return !string.Equals(audioGuide.SourceType, "generated", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(generationStatus, "success", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeGenerationStatus(string? generationStatus)
+        => string.IsNullOrWhiteSpace(generationStatus)
+            ? "none"
+            : generationStatus.Trim().ToLowerInvariant();
+
     private static string ResolveApiBaseUrl(MobileRuntimeAppSettings runtimeSettings)
         => MobileApiEndpointHelper.ResolveBaseUrl(runtimeSettings.ApiBaseUrl, runtimeSettings.PlatformApiBaseUrls);
 
@@ -1540,9 +1517,7 @@ public sealed partial class FoodStreetApiDataService
         => !double.IsNaN(value) && !double.IsInfinity(value);
 
     private static string ResolvePlatformCode()
-        => DeviceInfo.Current.Platform == DevicePlatform.Android
-            ? "android"
-            : DeviceInfo.Current.Platform.ToString().Trim().ToLowerInvariant();
+        => "android";
 
     private sealed record BootstrapSnapshot(
         IReadOnlyList<PoiLocation> Pois,
@@ -1701,6 +1676,8 @@ public sealed partial class FoodStreetApiDataService
         public string AudioUrl { get; set; } = string.Empty;
         public string SourceType { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+        public string GenerationStatus { get; set; } = string.Empty;
+        public bool IsOutdated { get; set; }
         public DateTimeOffset UpdatedAt { get; set; }
     }
 

@@ -16,12 +16,11 @@ public sealed class BootstrapController(
 {
     [HttpGet("bootstrap")]
     public async Task<ActionResult<ApiResponse<AdminBootstrapResponse>>> GetBootstrap(
-        [FromQuery] string? customerUserId,
         [FromQuery] string? languageCode,
         CancellationToken cancellationToken)
     {
         var admin = adminRequestContextResolver.TryGetCurrentAdmin();
-        var bootstrap = repository.GetBootstrap(admin, customerUserId);
+        var bootstrap = repository.GetBootstrap(admin);
         if (admin is null)
         {
             bootstrap = await bootstrapLocalizationService.ApplyAutoTranslationsAsync(
@@ -37,10 +36,9 @@ public sealed class BootstrapController(
         }
 
         logger.LogDebug(
-            "Bootstrap served for adminUserId={AdminUserId}, role={Role}, deprecatedCustomerUserId={CustomerUserId}, languageCode={LanguageCode}, version={Version}",
+            "Bootstrap served for adminUserId={AdminUserId}, role={Role}, languageCode={LanguageCode}, version={Version}",
             admin?.UserId,
             admin?.Role,
-            customerUserId,
             languageCode,
             bootstrap.SyncState?.Version);
 
@@ -63,10 +61,6 @@ public sealed class BootstrapController(
     [HttpGet("categories")]
     public ActionResult<ApiResponse<IReadOnlyList<PoiCategory>>> GetCategories()
         => Ok(ApiResponse<IReadOnlyList<PoiCategory>>.Ok(repository.GetCategories()));
-
-    [HttpGet("customer-users")]
-    public ActionResult<ApiResponse<string>> GetCustomerUsers()
-        => StatusCode(StatusCodes.Status410Gone, ApiResponse<string>.Fail("Customer account management has been deprecated from the public Android app."));
 
     [HttpGet("analytics/usage-events")]
     public ActionResult<ApiResponse<IReadOnlyList<AppUsageEvent>>> GetUsageEvents()

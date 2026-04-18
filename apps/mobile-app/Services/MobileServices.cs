@@ -435,7 +435,6 @@ namespace VinhKhanh.MobileApp.Services
 
         public async Task PlayAsync(PoiDetailModel detail, string languageCode)
         {
-            var settings = await settingsService.GetAsync();
             var narration = detail.Narrations.FirstOrDefault(item => item.LanguageCode == languageCode)
                 ?? detail.Narrations.FirstOrDefault(item => item.LanguageCode == "en")
                 ?? detail.Narrations.FirstOrDefault();
@@ -445,17 +444,19 @@ namespace VinhKhanh.MobileApp.Services
                 return;
             }
 
-            if (settings.PreferPreparedAudio && !string.IsNullOrWhiteSpace(narration.AudioUrl))
+            if (string.IsNullOrWhiteSpace(narration.AudioUrl))
             {
-                await StopAsync();
-                _audioStream = await _audioClient.GetStreamAsync(narration.AudioUrl);
-                _player = audioManager.CreatePlayer(_audioStream);
-                _player.Play();
+                logger.LogWarning(
+                    "No pre-generated narration audio is available for POI {PoiId} and language {LanguageCode}. Runtime TTS is disabled.",
+                    detail.Id,
+                    languageCode);
+                return;
             }
-            else
-            {
-                await TextToSpeech.Default.SpeakAsync(narration.NarrationText);
-            }
+
+            await StopAsync();
+            _audioStream = await _audioClient.GetStreamAsync(narration.AudioUrl);
+            _player = audioManager.CreatePlayer(_audioStream);
+            _player.Play();
 
             await guideApiService.TrackAudioAsync(detail.Id, new TrackAudioRequest
             {

@@ -41,15 +41,14 @@ type NarrationForm = {
   fullText: string;
   seoTitle: string;
   seoDescription: string;
-  isPremium: boolean;
 };
 
 const defaultAudioForm: AudioForm = {
   entityId: "",
   languageCode: "vi",
   audioUrl: "",
-  sourceType: "tts",
-  status: "ready",
+  sourceType: "generated",
+  status: "missing",
 };
 
 const defaultMediaAssetForm: MediaAssetForm = {
@@ -73,7 +72,6 @@ const defaultNarrationForm: NarrationForm = {
   fullText: "",
   seoTitle: "",
   seoDescription: "",
-  isPremium: false,
 };
 
 const createBlankNarrationForm = (): NarrationForm => ({
@@ -177,7 +175,6 @@ export const MediaPage = () => {
         fullText: existing.fullText,
         seoTitle: existing.seoTitle,
         seoDescription: existing.seoDescription,
-        isPremium: false,
       };
     }
 
@@ -314,7 +311,6 @@ export const MediaPage = () => {
           fullText: narrationForm.fullText,
           seoTitle: narrationForm.seoTitle,
           seoDescription: narrationForm.seoDescription,
-          isPremium: false,
         },
         user,
       );
@@ -384,8 +380,24 @@ export const MediaPage = () => {
     entityType: "poi",
     entityId: audioForm.entityId,
     languageCode: audioForm.languageCode,
+    transcriptText: previewNarrationText,
     audioUrl: audioForm.audioUrl,
+    audioFilePath: "",
+    audioFileName: "",
+    voiceType: "standard",
     sourceType: audioForm.sourceType,
+    provider: audioForm.sourceType === "uploaded" ? "uploaded" : "elevenlabs",
+    voiceId: "",
+    modelId: "",
+    outputFormat: "mp3_44100_128",
+    durationInSeconds: null,
+    fileSizeBytes: null,
+    textHash: "",
+    contentVersion: "",
+    generatedAt: null,
+    generationStatus: audioForm.audioUrl ? "success" : "none",
+    errorMessage: null,
+    isOutdated: false,
     status: audioForm.status,
     updatedBy: user?.name ?? "Preview",
     updatedAt: new Date().toISOString(),
@@ -448,7 +460,7 @@ export const MediaPage = () => {
       render: (item) => (
         <div>
           <p className="font-medium text-ink-800">
-            {item.sourceType === "tts" ? "Text-to-speech" : "Upload audio"}
+            {item.sourceType === "generated" ? "Pre-generated audio" : "Uploaded audio"}
           </p>
           <p className="mt-1 truncate text-xs text-ink-500">
             {item.audioUrl || "Chưa có file audio"}
@@ -698,7 +710,7 @@ export const MediaPage = () => {
                     }
                   >
                     <option value="uploaded">Uploaded</option>
-                    <option value="tts">Text-to-speech</option>
+                    <option value="generated">Pre-generated</option>
                   </Select>
                 </div>
               </div>
@@ -733,7 +745,7 @@ export const MediaPage = () => {
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-sand-200 bg-sand-50 px-4 py-3 text-sm text-ink-500">
-                  Chế độ Text-to-Speech không cần tải file MP3 từ thiết bị.
+                  Audio generate trước được tạo ở backend. Nếu chưa có file, hãy dùng màn POI để generate hoặc regenerate audio theo ngôn ngữ.
                 </div>
               )}
 
@@ -753,21 +765,6 @@ export const MediaPage = () => {
                     <option value="processing">Processing</option>
                     <option value="missing">Missing</option>
                   </Select>
-                </div>
-                <div className="hidden">
-                  <label className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-medium text-ink-700">
-                    <input
-                      type="checkbox"
-                      checked={narrationForm.isPremium}
-                      onChange={(event) =>
-                        setNarrationForm((current) => ({
-                          ...current,
-                          isPremium: event.target.checked,
-                        }))
-                      }
-                    />
-                    Nội dung thuộc gói premium
-                  </label>
                 </div>
               </div>
 
@@ -822,7 +819,7 @@ export const MediaPage = () => {
                     >
                       {isDraftPreviewActive
                         ? "Dừng"
-                        : audioForm.sourceType === "tts" || !audioForm.audioUrl
+                        : audioForm.sourceType === "generated" || !audioForm.audioUrl
                           ? "Nghe thử"
                           : "Phát"}
                     </Button>

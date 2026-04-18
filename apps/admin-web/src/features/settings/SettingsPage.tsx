@@ -175,7 +175,7 @@ export const SettingsPage = () => {
           <Card>
             <h2 className="section-heading">Ngôn ngữ công khai</h2>
             <p className="mt-4 text-sm text-ink-500">
-              App Android công khai chỉ dùng tập ngôn ngữ hỗ trợ này. Không còn khóa premium theo tài khoản.
+              App Android công khai chỉ dùng tập ngôn ngữ hỗ trợ này. Hệ thống không còn khóa ngôn ngữ theo tài khoản người dùng.
             </p>
             <div className="mt-5 grid gap-3">
               {allLanguages.map((language) => (
@@ -234,7 +234,7 @@ export const SettingsPage = () => {
                 </Select>
               </div>
               <div>
-                <label className="field-label">TTS provider</label>
+                <label className="field-label">Audio generation provider</label>
                 <Select
                   value={form.ttsProvider}
                   onChange={(event) =>
@@ -245,7 +245,7 @@ export const SettingsPage = () => {
                   }
                   disabled={!canManageSettings}
                 >
-                  <option value="elevenlabs">ElevenLabs TTS</option>
+                  <option value="elevenlabs">ElevenLabs audio generation</option>
                 </Select>
               </div>
             </div>

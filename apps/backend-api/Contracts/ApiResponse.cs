@@ -105,39 +105,6 @@ public sealed record PlaceOwnerRegistrationResponse(
     DateTimeOffset? RegistrationSubmittedAt,
     DateTimeOffset? RegistrationReviewedAt);
 
-public sealed record CustomerProfileUpdateRequest(
-    string Name,
-    string Username,
-    string Email,
-    string Phone);
-
-public sealed record CustomerRegistrationRequest(
-    string Name,
-    string Username,
-    string Email,
-    string Phone,
-    string Password,
-    string? PreferredLanguage,
-    string? Country);
-
-public sealed record CustomerLoginRequest(
-    string Identifier,
-    string Password);
-
-public sealed record PremiumPurchaseRequest(
-    string PaymentProvider,
-    string PaymentMethod,
-    string ClientRequestId,
-    int? ExpectedPriceUsd,
-    string? CardholderName,
-    string? CardNumber,
-    string? ExpiryMonth,
-    string? ExpiryYear,
-    string? Cvv,
-    string? WalletProvider,
-    string? WalletAccount,
-    string? WalletPin);
-
 public sealed record GeocodingLocationResponse(
     string Address,
     string District,
@@ -176,7 +143,6 @@ public sealed record TranslationUpsertRequest(
     string FullText,
     string SeoTitle,
     string SeoDescription,
-    bool IsPremium,
     string UpdatedBy);
 
 public sealed record AudioGuideUpsertRequest(
@@ -186,7 +152,48 @@ public sealed record AudioGuideUpsertRequest(
     string AudioUrl,
     string SourceType,
     string Status,
-    string UpdatedBy);
+    string UpdatedBy,
+    string? TranscriptText = null,
+    string? AudioFilePath = null,
+    string? AudioFileName = null,
+    string? Provider = null,
+    string? VoiceId = null,
+    string? ModelId = null,
+    string? OutputFormat = null,
+    double? DurationInSeconds = null,
+    long? FileSizeBytes = null,
+    string? TextHash = null,
+    string? ContentVersion = null,
+    DateTimeOffset? GeneratedAt = null,
+    string? GenerationStatus = null,
+    string? ErrorMessage = null,
+    bool? IsOutdated = null,
+    string? VoiceType = null);
+
+public sealed record PoiAudioGenerationRequest(
+    string LanguageCode,
+    string? VoiceId,
+    string? ModelId,
+    string? OutputFormat,
+    bool ForceRegenerate = false);
+
+public sealed record PoiAudioBulkGenerationRequest(
+    bool ForceRegenerate = false,
+    bool IncludeMissing = true,
+    bool IncludeFailed = true,
+    bool IncludeOutdated = true);
+
+public sealed record PoiAudioGenerationResult(
+    string PoiId,
+    string RequestedLanguageCode,
+    string EffectiveLanguageCode,
+    bool Success,
+    bool Skipped,
+    bool Regenerated,
+    string Message,
+    string TranscriptText,
+    string TextHash,
+    Models.AudioGuide? AudioGuide);
 
 public sealed record MediaAssetUpsertRequest(
     string EntityType,
@@ -233,9 +240,6 @@ public sealed record SystemSettingUpsertRequest(
     string DefaultLanguage,
     string FallbackLanguage,
     List<string> SupportedLanguages,
-    List<string> FreeLanguages,
-    List<string> PremiumLanguages,
-    int PremiumUnlockPriceUsd,
     string MapProvider,
     string StorageProvider,
     string TtsProvider,
@@ -243,15 +247,6 @@ public sealed record SystemSettingUpsertRequest(
     int AnalyticsRetentionDays,
     string ActorName,
     string ActorRole);
-
-public sealed record PremiumPurchaseResponse(
-    Models.CustomerUser Customer,
-    int ChargedAmountUsd,
-    string CurrencyCode,
-    string PaymentProvider,
-    string PaymentMethod,
-    string TransactionId,
-    DateTimeOffset PurchasedAt);
 
 public sealed record DashboardSummaryResponse(
     int TotalViews,
@@ -267,7 +262,6 @@ public sealed record DataSyncState(
 
 public sealed record AdminBootstrapResponse(
     IReadOnlyList<Models.AdminUser> Users,
-    IReadOnlyList<Models.CustomerUser> CustomerUsers,
     IReadOnlyList<Models.PoiCategory> Categories,
     IReadOnlyList<Models.Poi> Pois,
     IReadOnlyList<Models.Translation> Translations,

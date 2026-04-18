@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Infrastructure;
 using VinhKhanh.BackendApi.Models;
@@ -12,6 +13,8 @@ public sealed class PoisController(
     AdminRequestContextResolver adminRequestContextResolver,
     PoiNarrationService poiNarrationService,
     PoiNarrationAudioService poiNarrationAudioService,
+    PoiPregeneratedAudioService poiPregeneratedAudioService,
+    IOptions<TextToSpeechOptions> textToSpeechOptions,
     ILogger<PoisController> logger) : ControllerBase
 {
     [HttpGet]
@@ -204,12 +207,12 @@ public sealed class PoisController(
                 languageCode);
             return StatusCode(
                 StatusCodes.Status502BadGateway,
-                ApiResponse<string>.Fail("Unable to generate audio at this time."));
+                ApiResponse<string>.Fail("Unable to load pre-generated audio at this time."));
         }
     }
 
     [HttpPost]
-    public ActionResult<ApiResponse<Poi>> CreatePoi([FromBody] PoiUpsertRequest request)
+    public async Task<ActionResult<ApiResponse<Poi>>> CreatePoi([FromBody] PoiUpsertRequest request, CancellationToken cancellationToken)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
         if (actor.IsSuperAdmin)
@@ -240,11 +243,12 @@ public sealed class PoisController(
         };
 
         var saved = repository.SavePoi(null, sanitizedRequest, actor);
+        await TryAutoGeneratePoiAudioAsync(saved, actor, cancellationToken);
         return CreatedAtAction(nameof(GetPoiById), new { id = saved.Id }, ApiResponse<Poi>.Ok(saved, "Tao POI thanh cong."));
     }
 
     [HttpPut("{id}")]
-    public ActionResult<ApiResponse<Poi>> UpdatePoi(string id, [FromBody] PoiUpsertRequest request)
+    public async Task<ActionResult<ApiResponse<Poi>>> UpdatePoi(string id, [FromBody] PoiUpsertRequest request, CancellationToken cancellationToken)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
         if (actor.IsSuperAdmin)
@@ -277,6 +281,7 @@ public sealed class PoisController(
         };
 
         var saved = repository.SavePoi(id, sanitizedRequest, actor);
+        await TryAutoGeneratePoiAudioAsync(saved, actor, cancellationToken);
         return Ok(ApiResponse<Poi>.Ok(saved, "Cap nhat POI thanh cong."));
     }
 
@@ -318,5 +323,45 @@ public sealed class PoisController(
         return deleted
             ? Ok(ApiResponse<string>.Ok(id, "Xoa POI thanh cong."))
             : NotFound(ApiResponse<string>.Fail("Khong tim thay POI."));
+    }
+
+    private async Task TryAutoGeneratePoiAudioAsync(
+        Poi poi,
+        AdminRequestContext actor,
+        CancellationToken cancellationToken)
+    {
+        if (!textToSpeechOptions.Value.AutoGenerateWhenPoiSaved)
+        {
+            return;
+        }
+
+        if (!repository.GetPois(actor).Any(item => string.Equals(item.Id, poi.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        try
+        {
+            logger.LogInformation(
+                "Auto-generating POI audio after POI save. poiId={PoiId}; actor={Actor}",
+                poi.Id,
+                actor.UserId);
+
+            await poiPregeneratedAudioService.GeneratePoiAllLanguagesAsync(
+                poi.Id,
+                new PoiAudioBulkGenerationRequest(ForceRegenerate: false),
+                actor,
+                cancellationToken);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException ||
+            exception is HttpRequestException ||
+            exception is TaskCanceledException)
+        {
+            logger.LogWarning(
+                exception,
+                "Auto-generate POI audio failed after POI save. poiId={PoiId}",
+                poi.Id);
+        }
     }
 }

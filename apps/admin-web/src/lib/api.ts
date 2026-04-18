@@ -2,7 +2,6 @@ import type {
   AdminDataState,
   AdminUser,
   AudioGuide,
-  EndUserProfile,
   FoodItem,
   GeocodingLocation,
   LanguageCode,
@@ -56,6 +55,34 @@ export type TextTranslationResponse = {
   sourceLanguageCode: string | null;
   texts: string[];
   provider: string;
+};
+
+export type PoiAudioGenerationRequest = {
+  languageCode: LanguageCode;
+  voiceId?: string | null;
+  modelId?: string | null;
+  outputFormat?: string | null;
+  forceRegenerate?: boolean;
+};
+
+export type PoiAudioBulkGenerationRequest = {
+  forceRegenerate?: boolean;
+  includeMissing?: boolean;
+  includeFailed?: boolean;
+  includeOutdated?: boolean;
+};
+
+export type PoiAudioGenerationResult = {
+  poiId: string;
+  requestedLanguageCode: LanguageCode;
+  effectiveLanguageCode: LanguageCode;
+  success: boolean;
+  skipped: boolean;
+  regenerated: boolean;
+  message: string;
+  transcriptText: string;
+  textHash: string;
+  audioGuide: AudioGuide | null;
 };
 
 export class ApiError extends Error {
@@ -483,6 +510,22 @@ export const adminApi = {
       signal,
     });
   },
+  getPoiAudioStatus: (poiId: string, signal?: AbortSignal) =>
+    request<AudioGuide[]>(`/api/v1/audio-guides/poi/${poiId}/status`, { signal }),
+  generatePoiAudio: (
+    poiId: string,
+    payload: PoiAudioGenerationRequest,
+  ) => jsonRequest<PoiAudioGenerationResult>(`/api/v1/audio-guides/poi/${poiId}/generate`, "POST", payload),
+  regeneratePoiAudio: (
+    poiId: string,
+    payload: PoiAudioGenerationRequest,
+  ) => jsonRequest<PoiAudioGenerationResult>(`/api/v1/audio-guides/poi/${poiId}/regenerate`, "POST", payload),
+  generatePoiAllLanguagesAudio: (
+    poiId: string,
+    payload: PoiAudioBulkGenerationRequest = {},
+  ) => jsonRequest<PoiAudioGenerationResult[]>(`/api/v1/audio-guides/poi/${poiId}/generate-all`, "POST", payload),
+  generateBulkPoiAudio: (payload: PoiAudioBulkGenerationRequest = {}) =>
+    jsonRequest<PoiAudioGenerationResult[]>(`/api/v1/audio-guides/bulk/generate`, "POST", payload),
   savePoi: (poi: {
     id?: string;
     requestedId?: string;
@@ -524,8 +567,6 @@ export const adminApi = {
     ),
   saveUserStatus: (userId: string, status: AdminUser["status"]) =>
     jsonRequest<AdminUser>(`/api/v1/admin-users/${userId}/status`, "PATCH", { status }),
-  getEndUser: (userId: string) =>
-    request<EndUserProfile>(`/api/v1/users/${userId}`),
   savePromotion: (promotion: {
     id?: string;
     poiId: string;
@@ -573,6 +614,22 @@ export const adminApi = {
     sourceType: AudioGuide["sourceType"];
     status: AudioGuide["status"];
     updatedBy: string;
+    transcriptText?: string | null;
+    audioFilePath?: string | null;
+    audioFileName?: string | null;
+    provider?: string | null;
+    voiceId?: string | null;
+    modelId?: string | null;
+    outputFormat?: string | null;
+    durationInSeconds?: number | null;
+    fileSizeBytes?: number | null;
+    textHash?: string | null;
+    contentVersion?: string | null;
+    generatedAt?: string | null;
+    generationStatus?: AudioGuide["generationStatus"] | null;
+    errorMessage?: string | null;
+    isOutdated?: boolean | null;
+    voiceType?: string | null;
   }) =>
     jsonRequest<AudioGuide>(
       audioGuide.id ? `/api/v1/audio-guides/${audioGuide.id}` : "/api/v1/audio-guides",
@@ -589,13 +646,12 @@ export const adminApi = {
     fullText: string;
     seoTitle: string;
     seoDescription: string;
-    isPremium?: boolean;
     updatedBy: string;
   }) =>
     jsonRequest<Translation>(
       translation.id ? `/api/v1/translations/${translation.id}` : "/api/v1/translations",
       translation.id ? "PUT" : "POST",
-      { ...translation, isPremium: translation.isPremium ?? false },
+      translation,
     ),
   translateTexts: (
     payload: {

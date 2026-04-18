@@ -674,14 +674,20 @@ public sealed partial class AdminDataRepository
             transaction,
             """
             INSERT INTO dbo.Pois (
-                Id, Slug, AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, IsActive, LockedBySuperAdmin,
+                Id, Slug, Title, ShortDescription, [Description], AudioScript, SourceLanguageCode,
+                AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, IsActive, LockedBySuperAdmin,
                 District, Ward, PriceRange, TriggerRadius, Priority, OwnerUserId,
                 ApprovedAt, RejectionReason, RejectedAt, UpdatedBy, CreatedAt, UpdatedAt
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             poiId,
             request.Slug,
+            request.Slug,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            "vi",
             request.Address,
             request.Lat,
             request.Lng,
@@ -812,6 +818,25 @@ public sealed partial class AdminDataRepository
             existing.CreatedAt,
             updatedAt);
 
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.Pois
+            SET Title = ?,
+                ShortDescription = ?,
+                [Description] = ?,
+                AudioScript = ?,
+                SourceLanguageCode = ?
+            WHERE Id = ?;
+            """,
+            existing.Title,
+            existing.ShortDescription,
+            existing.Description,
+            existing.AudioScript,
+            existing.SourceLanguageCode,
+            nextPoiId);
+
         UpdatePoiReferenceIds(connection, transaction, existing.Id, nextPoiId);
         ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.Pois WHERE Id = ?;", existing.Id);
     }
@@ -822,7 +847,6 @@ public sealed partial class AdminDataRepository
         string currentPoiId,
         string nextPoiId)
     {
-        ExecuteNonQuery(connection, transaction, "UPDATE dbo.CustomerFavoritePois SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.PoiTags SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.FoodItems SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.RouteStops SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
@@ -831,12 +855,6 @@ public sealed partial class AdminDataRepository
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.AudioListenLogs SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.AppUsageEvents SET PoiId = ? WHERE PoiId = ?;", nextPoiId, currentPoiId);
         ExecuteNonQuery(connection, transaction, "UPDATE dbo.AdminUsers SET ManagedPoiId = ? WHERE ManagedPoiId = ?;", nextPoiId, currentPoiId);
-        ExecuteNonQuery(
-            connection,
-            transaction,
-            "UPDATE dbo.PoiTranslations SET EntityId = ? WHERE EntityType IN (N'poi', N'place') AND EntityId = ?;",
-            nextPoiId,
-            currentPoiId);
         ExecuteNonQuery(
             connection,
             transaction,
@@ -915,163 +933,108 @@ public bool DeletePoi(string id, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
-        EnsureActorCanManagePoiContentEntity(connection, transaction, actor, request.EntityType, request.EntityId, "chỉnh sửa nội dung POI");
+        var saved = SaveTranslationSourceContentOnly(
+            connection,
+            transaction,
+            request,
+            actor);
+
+        transaction.Commit();
+        return saved;
+
+    }
+
+    public bool DeleteTranslation(string id, AdminRequestContext actor)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var existing = GetTranslationById(connection, transaction, id);
+        if (existing is null && (id.StartsWith("source-", StringComparison.OrdinalIgnoreCase) || id.StartsWith("runtime-", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ApiBadRequestException("Noi dung goc va ban dich runtime khong the xoa qua endpoint translation.");
+        }
+
+        EnsureActorCanManagePoiContentEntity(connection, transaction, actor, existing?.EntityType, existing?.EntityId, "xóa nội dung POI");
+        var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTranslations WHERE Id = ?;", id) > 0;
+        if (deleted)
+        {
+            AppendAdminAuditLog(
+                connection,
+                transaction,
+                actor,
+                "Xoa ban dich cu da deprecated",
+                "TRANSLATION",
+                existing?.EntityId ?? id,
+                $"{existing?.EntityType ?? "unknown"}:{existing?.LanguageCode ?? "unknown"}:{existing?.EntityId ?? id}");
+        }
+
+        transaction.Commit();
+        return deleted;
+    }
+
+    private Translation SaveTranslationSourceContentOnly(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        TranslationUpsertRequest request,
+        AdminRequestContext actor)
+    {
+        EnsureActorCanManagePoiContentEntity(connection, transaction, actor, request.EntityType, request.EntityId, "chỉnh sửa nội dung gốc");
 
         var now = DateTimeOffset.UtcNow;
         var settings = GetSettings(connection, transaction);
         var normalizedEntityType = NormalizeEntityType(request.EntityType);
         var normalizedLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(request.LanguageCode);
-        var existing = !string.IsNullOrWhiteSpace(id)
-            ? GetTranslationById(connection, transaction, id)
-            : null;
-
-        existing ??= GetTranslationByKey(connection, transaction, normalizedEntityType, request.EntityId, request.LanguageCode);
-
-        var isNew = existing is null;
-        var translationId = existing?.Id ?? id ?? CreateId("trans");
-        var pendingTranslation = new Translation
+        var sourceLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(settings.DefaultLanguage);
+        if (string.IsNullOrWhiteSpace(sourceLanguageCode))
         {
-            Id = translationId,
-            EntityType = normalizedEntityType,
-            EntityId = request.EntityId,
-            LanguageCode = request.LanguageCode,
-            Title = request.Title,
-            ShortText = request.ShortText,
-            FullText = request.FullText,
-            SeoTitle = request.SeoTitle,
-            SeoDescription = request.SeoDescription,
-            SourceLanguageCode = existing?.SourceLanguageCode,
-            SourceHash = existing?.SourceHash,
-            SourceUpdatedAt = existing?.SourceUpdatedAt,
-            UpdatedBy = actor.Name,
-            UpdatedAt = now
-        };
-        var sourceSnapshot = ResolveTranslationSourceSnapshot(
-            connection,
-            transaction,
-            normalizedEntityType,
-            request.EntityId,
-            settings.DefaultLanguage,
-            settings.FallbackLanguage,
-            pendingTranslation);
-        var isSourceTranslation = sourceSnapshot is not null &&
-            string.Equals(normalizedLanguageCode, sourceSnapshot.LanguageCode, StringComparison.OrdinalIgnoreCase);
+            sourceLanguageCode = "vi";
+        }
+
+        if (!string.Equals(normalizedLanguageCode, sourceLanguageCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ApiBadRequestException(
+                $"Khong luu ban dich {normalizedLanguageCode} vao database. Backend chi luu noi dung goc {sourceLanguageCode} va dich runtime theo languageCode cua client.");
+        }
+
+        var title = (request.Title ?? string.Empty).Trim();
+        var shortText = (request.ShortText ?? string.Empty).Trim();
+        var fullText = (request.FullText ?? string.Empty).Trim();
 
         _logger.LogInformation(
-            "SaveTranslation request received. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, title={Title}, shortTextLength={ShortTextLength}, fullTextLength={FullTextLength}, isNew={IsNew}, sourceLanguageCode={SourceLanguageCode}, sourceHash={SourceHash}",
-            translationId,
+            "Saving source-only content. entityType={EntityType}; entityId={EntityId}; sourceLanguage={SourceLanguage}; titleLength={TitleLength}; shortLength={ShortLength}; fullLength={FullLength}",
             normalizedEntityType,
             request.EntityId,
-            request.LanguageCode,
-            request.Title,
-            request.ShortText?.Length ?? 0,
-            request.FullText?.Length ?? 0,
-            isNew,
-            sourceSnapshot?.LanguageCode,
-            sourceSnapshot?.Hash);
+            sourceLanguageCode,
+            title.Length,
+            shortText.Length,
+            fullText.Length);
 
-        if (isNew)
+        var saved = normalizedEntityType switch
         {
-            _logger.LogDebug(
-                "Executing translation insert. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}",
-                translationId,
-                normalizedEntityType,
-                request.EntityId,
-                request.LanguageCode);
-            ExecuteNonQuery(
+            "poi" => SavePoiSourceContent(connection, transaction, request.EntityId, sourceLanguageCode, title, shortText, fullText, actor.Name, now),
+            "food_item" => SaveFoodItemSourceContent(connection, transaction, request.EntityId, sourceLanguageCode, title, shortText, fullText, actor.Name, now),
+            "promotion" => SavePromotionSourceContent(connection, transaction, request.EntityId, sourceLanguageCode, title, shortText, fullText, actor.Name, now),
+            "route" => SaveRouteSourceContent(connection, transaction, request.EntityId, sourceLanguageCode, title, shortText, fullText, actor.Name, now),
+            _ => throw new ApiBadRequestException("Loai noi dung khong ho tro cap nhat source translation.")
+        };
+
+        if (string.Equals(normalizedEntityType, "poi", StringComparison.OrdinalIgnoreCase))
+        {
+            MarkPoiAudioGuidesOutdated(
                 connection,
                 transaction,
-                """
-                INSERT INTO dbo.PoiTranslations (
-                    Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium,
-                    SourceLanguageCode, SourceHash, SourceUpdatedAt, UpdatedBy, UpdatedAt
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                translationId,
-                normalizedEntityType,
                 request.EntityId,
-                request.LanguageCode,
-                request.Title,
-                request.ShortText,
-                request.FullText,
-                request.SeoTitle,
-                request.SeoDescription,
-                request.IsPremium,
-                sourceSnapshot?.LanguageCode,
-                sourceSnapshot?.Hash,
-                sourceSnapshot?.UpdatedAt,
-                actor.Name,
-                now);
-        }
-        else
-        {
-            _logger.LogDebug(
-                "Executing translation update. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, updatedBy={UpdatedBy}",
-                translationId,
-                normalizedEntityType,
-                request.EntityId,
-                request.LanguageCode,
-                actor.Name);
-            ExecuteNonQuery(
-                connection,
-                transaction,
-                """
-                UPDATE dbo.PoiTranslations
-                SET EntityType = ?,
-                    EntityId = ?,
-                    LanguageCode = ?,
-                    Title = ?,
-                    ShortText = ?,
-                    FullText = ?,
-                    SeoTitle = ?,
-                    SeoDescription = ?,
-                    IsPremium = ?,
-                    SourceLanguageCode = ?,
-                    SourceHash = ?,
-                    SourceUpdatedAt = ?,
-                    UpdatedBy = ?,
-                    UpdatedAt = ?
-                WHERE Id = ?;
-                """,
-                normalizedEntityType,
-                request.EntityId,
-                request.LanguageCode,
-                request.Title,
-                request.ShortText,
-                request.FullText,
-                request.SeoTitle,
-                request.SeoDescription,
-                request.IsPremium,
-                sourceSnapshot?.LanguageCode,
-                sourceSnapshot?.Hash,
-                sourceSnapshot?.UpdatedAt,
-                actor.Name,
                 now,
-                translationId);
-        }
-
-        if (isSourceTranslation)
-        {
-            InvalidateDependentTranslations(
-                connection,
-                transaction,
-                normalizedEntityType,
-                request.EntityId,
-                request.LanguageCode);
-
-            _logger.LogDebug(
-                "Invalidated dependent translations after source translation change. entityType={EntityType}, entityId={EntityId}, sourceLanguageCode={SourceLanguageCode}",
-                normalizedEntityType,
-                request.EntityId,
-                request.LanguageCode);
+                actor.Name,
+                $"Source narration updated for {sourceLanguageCode}; generated audio must be refreshed.");
         }
 
         TouchRelatedPoisForContentEntityChange(
             connection,
             transaction,
-            existing?.EntityType,
-            existing?.EntityId,
+            null,
+            null,
             normalizedEntityType,
             request.EntityId,
             now);
@@ -1080,77 +1043,189 @@ public bool DeletePoi(string id, AdminRequestContext actor)
             connection,
             transaction,
             actor,
-            isNew ? "Tao noi dung thuyet minh" : "Cap nhat noi dung thuyet minh",
+            "Cap nhat noi dung goc",
             "TRANSLATION",
             request.EntityId,
-            $"{normalizedEntityType}:{request.LanguageCode}:{request.EntityId}");
+            $"{normalizedEntityType}:{sourceLanguageCode}:{request.EntityId}");
 
-        var saved = GetTranslationById(connection, transaction, translationId)
-            ?? throw new InvalidOperationException("Không thể đọc lại nội dung thuyết minh sau khi lưu.");
-
-        _logger.LogInformation(
-            "SaveTranslation completed. translationId={TranslationId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, updatedAt={UpdatedAt}",
-            saved.Id,
-            saved.EntityType,
-            saved.EntityId,
-            saved.LanguageCode,
-            saved.UpdatedAt);
-
-        transaction.Commit();
         return saved;
     }
 
-    public bool DeleteTranslation(string id, AdminRequestContext actor)
+    private Translation SavePoiSourceContent(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string poiId,
+        string sourceLanguageCode,
+        string title,
+        string shortText,
+        string fullText,
+        string updatedBy,
+        DateTimeOffset updatedAt)
     {
-        using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
+        var poi = GetPoiById(connection, transaction, poiId)
+            ?? throw new ApiNotFoundException("Khong tim thay POI de cap nhat noi dung goc.");
+        var nextTitle = string.IsNullOrWhiteSpace(title) ? poi.Slug : title;
 
-        var now = DateTimeOffset.UtcNow;
-        var settings = GetSettings(connection, transaction);
-        var existing = GetTranslationById(connection, transaction, id);
-        var normalizedExistingLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(existing?.LanguageCode);
-        var invalidatesDependents =
-            !string.IsNullOrWhiteSpace(existing?.EntityType) &&
-            !string.IsNullOrWhiteSpace(existing?.EntityId) &&
-            (
-                string.Equals(normalizedExistingLanguageCode, PremiumAccessCatalog.NormalizeLanguageCode(settings.DefaultLanguage), StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(normalizedExistingLanguageCode, PremiumAccessCatalog.NormalizeLanguageCode(settings.FallbackLanguage), StringComparison.OrdinalIgnoreCase)
-            );
-        EnsureActorCanManagePoiContentEntity(connection, transaction, actor, existing?.EntityType, existing?.EntityId, "xóa nội dung POI");
-        var deleted = ExecuteNonQuery(connection, transaction, "DELETE FROM dbo.PoiTranslations WHERE Id = ?;", id) > 0;
-        if (deleted)
-        {
-            if (invalidatesDependents)
-            {
-                InvalidateDependentTranslations(
-                    connection,
-                    transaction,
-                    NormalizeEntityType(existing!.EntityType),
-                    existing.EntityId,
-                    existing.LanguageCode);
-            }
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.Pois
+            SET Title = ?,
+                ShortDescription = ?,
+                [Description] = ?,
+                AudioScript = ?,
+                SourceLanguageCode = ?,
+                UpdatedBy = ?,
+                UpdatedAt = ?
+            WHERE Id = ?;
+            """,
+            nextTitle,
+            shortText,
+            fullText,
+            fullText,
+            sourceLanguageCode,
+            updatedBy,
+            updatedAt,
+            poiId);
 
-            TouchRelatedPoisForContentEntityChange(
-                connection,
-                transaction,
-                existing?.EntityType,
-                existing?.EntityId,
-                null,
-                null,
-                now);
+        var saved = GetPoiById(connection, transaction, poiId)
+            ?? throw new InvalidOperationException("Khong the doc lai POI sau khi cap nhat noi dung goc.");
+        return CreateSourceTranslation(
+            "poi",
+            saved.Id,
+            saved.SourceLanguageCode,
+            string.IsNullOrWhiteSpace(saved.Title) ? saved.Slug : saved.Title,
+            saved.ShortDescription,
+            string.IsNullOrWhiteSpace(saved.AudioScript) ? saved.Description : saved.AudioScript,
+            saved.UpdatedBy,
+            saved.UpdatedAt);
+    }
 
-            AppendAdminAuditLog(
-                connection,
-                transaction,
-                actor,
-                "Xoa noi dung thuyet minh",
-                "TRANSLATION",
-                existing?.EntityId ?? id,
-                $"{existing?.EntityType ?? "unknown"}:{existing?.LanguageCode ?? "unknown"}:{existing?.EntityId ?? id}");
-        }
+    private Translation SaveFoodItemSourceContent(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string foodItemId,
+        string sourceLanguageCode,
+        string title,
+        string shortText,
+        string fullText,
+        string updatedBy,
+        DateTimeOffset updatedAt)
+    {
+        var foodItem = GetFoodItemById(connection, transaction, foodItemId)
+            ?? throw new ApiNotFoundException("Khong tim thay mon an de cap nhat noi dung goc.");
 
-        transaction.Commit();
-        return deleted;
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.FoodItems
+            SET Name = ?,
+                [Description] = ?
+            WHERE Id = ?;
+            """,
+            string.IsNullOrWhiteSpace(title) ? foodItem.Name : title,
+            string.IsNullOrWhiteSpace(fullText) ? shortText : fullText,
+            foodItemId);
+
+        var saved = GetFoodItemById(connection, transaction, foodItemId)
+            ?? throw new InvalidOperationException("Khong the doc lai mon an sau khi cap nhat noi dung goc.");
+        return CreateSourceTranslation(
+            "food_item",
+            saved.Id,
+            sourceLanguageCode,
+            saved.Name,
+            string.Empty,
+            saved.Description,
+            updatedBy,
+            updatedAt);
+    }
+
+    private Translation SavePromotionSourceContent(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string promotionId,
+        string sourceLanguageCode,
+        string title,
+        string shortText,
+        string fullText,
+        string updatedBy,
+        DateTimeOffset updatedAt)
+    {
+        var promotion = GetPromotionById(connection, transaction, promotionId)
+            ?? throw new ApiNotFoundException("Khong tim thay uu dai de cap nhat noi dung goc.");
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.Promotions
+            SET Title = ?,
+                [Description] = ?
+            WHERE Id = ?;
+            """,
+            string.IsNullOrWhiteSpace(title) ? promotion.Title : title,
+            string.IsNullOrWhiteSpace(fullText) ? shortText : fullText,
+            promotionId);
+
+        var saved = GetPromotionById(connection, transaction, promotionId)
+            ?? throw new InvalidOperationException("Khong the doc lai uu dai sau khi cap nhat noi dung goc.");
+        return CreateSourceTranslation(
+            "promotion",
+            saved.Id,
+            sourceLanguageCode,
+            saved.Title,
+            string.Empty,
+            saved.Description,
+            updatedBy,
+            updatedAt);
+    }
+
+    private Translation SaveRouteSourceContent(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string routeId,
+        string sourceLanguageCode,
+        string title,
+        string shortText,
+        string fullText,
+        string updatedBy,
+        DateTimeOffset updatedAt)
+    {
+        var route = GetRouteById(connection, transaction, routeId)
+            ?? throw new ApiNotFoundException("Khong tim thay tour de cap nhat noi dung goc.");
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.Routes
+            SET Name = ?,
+                Theme = ?,
+                [Description] = ?,
+                UpdatedBy = ?,
+                UpdatedAt = ?
+            WHERE Id = ?;
+            """,
+            string.IsNullOrWhiteSpace(title) ? route.Name : title,
+            string.IsNullOrWhiteSpace(shortText) ? route.Theme : shortText,
+            fullText,
+            updatedBy,
+            updatedAt,
+            routeId);
+
+        var saved = GetRouteById(connection, transaction, routeId)
+            ?? throw new InvalidOperationException("Khong the doc lai tour sau khi cap nhat noi dung goc.");
+        return CreateSourceTranslation(
+            "route",
+            saved.Id,
+            sourceLanguageCode,
+            saved.Name,
+            saved.Theme,
+            saved.Description,
+            saved.UpdatedBy,
+            saved.UpdatedAt);
     }
 
     public AudioGuide SaveAudioGuide(string? id, AudioGuideUpsertRequest request, AdminRequestContext actor)
@@ -1161,30 +1236,62 @@ public bool DeletePoi(string id, AdminRequestContext actor)
 
         var now = DateTimeOffset.UtcNow;
         var normalizedEntityType = NormalizeEntityType(request.EntityType);
-        var normalizedSourceType = string.Equals(request.SourceType?.Trim(), "uploaded", StringComparison.OrdinalIgnoreCase)
-            ? "uploaded"
-            : "tts";
-        const string normalizedVoiceType = "standard";
-        var normalizedAudioUrl = normalizedSourceType == "uploaded"
-            ? (request.AudioUrl ?? string.Empty).Trim()
-            : string.Empty;
+        var normalizedLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(request.LanguageCode);
         var existing = !string.IsNullOrWhiteSpace(id)
             ? GetAudioGuideById(connection, transaction, id)
             : null;
 
-        existing ??= GetAudioGuideByKey(connection, transaction, normalizedEntityType, request.EntityId, request.LanguageCode);
+        existing ??= GetAudioGuideByKey(connection, transaction, normalizedEntityType, request.EntityId, normalizedLanguageCode);
 
         var isNew = existing is null;
         var audioId = existing?.Id ?? id ?? CreateId("audio");
+        var normalizedSourceType = AudioGuideCatalog.NormalizeSourceType(request.SourceType);
+        var normalizedAudioUrl = (request.AudioUrl ?? string.Empty).Trim();
+        var normalizedVoiceType = NormalizeAudioGuideVoiceType(request.VoiceType, existing);
+        var transcriptText = NormalizeAudioGuideOptionalString(request.TranscriptText, existing?.TranscriptText);
+        var audioFilePath = NormalizeAudioGuideOptionalString(request.AudioFilePath, existing?.AudioFilePath);
+        var audioFileName = ResolveAudioGuideFileName(request.AudioFileName, audioFilePath, normalizedAudioUrl, existing);
+        var provider = ResolveAudioGuideProvider(request.Provider, existing?.Provider, normalizedSourceType);
+        var voiceId = NormalizeAudioGuideOptionalString(request.VoiceId, existing?.VoiceId);
+        var modelId = NormalizeAudioGuideOptionalString(request.ModelId, existing?.ModelId);
+        var outputFormat = ResolveAudioGuideOutputFormat(request.OutputFormat, existing?.OutputFormat, audioFileName, normalizedAudioUrl);
+        var durationInSeconds = request.DurationInSeconds ?? existing?.DurationInSeconds;
+        var fileSizeBytes = request.FileSizeBytes ?? existing?.FileSizeBytes;
+        var textHash = NormalizeAudioGuideOptionalString(request.TextHash, existing?.TextHash);
+        var contentVersion = NormalizeAudioGuideOptionalString(
+            request.ContentVersion,
+            !string.IsNullOrWhiteSpace(textHash) ? textHash : existing?.ContentVersion);
+        var errorMessage = NormalizeAudioGuideNullableString(request.ErrorMessage);
+        var isOutdated = ResolveAudioGuideOutdatedFlag(request.IsOutdated, existing, request.GenerationStatus, errorMessage);
+        var generationStatus = ResolveAudioGuideGenerationStatus(
+            request.GenerationStatus,
+            request.Status,
+            request.SourceType,
+            normalizedAudioUrl,
+            audioFilePath,
+            isOutdated,
+            errorMessage,
+            existing);
+        var normalizedStatus = AudioGuideCatalog.ResolvePublicStatus(
+            generationStatus,
+            HasAudioGuidePlaybackAsset(normalizedAudioUrl, audioFilePath),
+            isOutdated);
+        var generatedAt = ResolveAudioGuideGeneratedAt(
+            request.GeneratedAt,
+            existing?.GeneratedAt,
+            generationStatus,
+            normalizedStatus,
+            now);
 
         _logger.LogInformation(
-            "SaveAudioGuide request received. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, sourceType={SourceType}, status={Status}, isNew={IsNew}",
+            "SaveAudioGuide request received. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, sourceType={SourceType}, generationStatus={GenerationStatus}, status={Status}, isNew={IsNew}",
             audioId,
             normalizedEntityType,
             request.EntityId,
-            request.LanguageCode,
+            normalizedLanguageCode,
             normalizedSourceType,
-            request.Status,
+            generationStatus,
+            normalizedStatus,
             isNew);
 
         if (isNew)
@@ -1194,36 +1301,54 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                 audioId,
                 normalizedEntityType,
                 request.EntityId,
-                request.LanguageCode);
+                normalizedLanguageCode);
             ExecuteNonQuery(
                 connection,
                 transaction,
                 """
                 INSERT INTO dbo.AudioGuides (
-                    Id, EntityType, EntityId, LanguageCode, AudioUrl, VoiceType, SourceType, [Status], UpdatedBy, UpdatedAt
+                    Id, EntityType, EntityId, LanguageCode, TranscriptText, AudioUrl, AudioFilePath, AudioFileName,
+                    VoiceType, SourceType, Provider, VoiceId, ModelId, OutputFormat, DurationInSeconds, FileSizeBytes,
+                    TextHash, ContentVersion, GeneratedAt, GenerationStatus, ErrorMessage, IsOutdated, [Status], UpdatedBy, UpdatedAt
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 audioId,
                 normalizedEntityType,
                 request.EntityId,
-                request.LanguageCode,
+                normalizedLanguageCode,
+                transcriptText,
                 normalizedAudioUrl,
+                audioFilePath,
+                audioFileName,
                 normalizedVoiceType,
                 normalizedSourceType,
-                request.Status,
+                provider,
+                voiceId,
+                modelId,
+                outputFormat,
+                durationInSeconds,
+                fileSizeBytes,
+                textHash,
+                contentVersion,
+                generatedAt,
+                generationStatus,
+                errorMessage,
+                isOutdated,
+                normalizedStatus,
                 actor.Name,
                 now);
         }
         else
         {
             _logger.LogDebug(
-                "Executing audio guide update. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, status={Status}",
+                "Executing audio guide update. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, generationStatus={GenerationStatus}, status={Status}",
                 audioId,
                 normalizedEntityType,
                 request.EntityId,
-                request.LanguageCode,
-                request.Status);
+                normalizedLanguageCode,
+                generationStatus,
+                normalizedStatus);
             ExecuteNonQuery(
                 connection,
                 transaction,
@@ -1232,9 +1357,24 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                 SET EntityType = ?,
                     EntityId = ?,
                     LanguageCode = ?,
+                    TranscriptText = ?,
                     AudioUrl = ?,
+                    AudioFilePath = ?,
+                    AudioFileName = ?,
                     VoiceType = ?,
                     SourceType = ?,
+                    Provider = ?,
+                    VoiceId = ?,
+                    ModelId = ?,
+                    OutputFormat = ?,
+                    DurationInSeconds = ?,
+                    FileSizeBytes = ?,
+                    TextHash = ?,
+                    ContentVersion = ?,
+                    GeneratedAt = ?,
+                    GenerationStatus = ?,
+                    ErrorMessage = ?,
+                    IsOutdated = ?,
                     [Status] = ?,
                     UpdatedBy = ?,
                     UpdatedAt = ?
@@ -1242,11 +1382,26 @@ public bool DeletePoi(string id, AdminRequestContext actor)
                 """,
                 normalizedEntityType,
                 request.EntityId,
-                request.LanguageCode,
+                normalizedLanguageCode,
+                transcriptText,
                 normalizedAudioUrl,
+                audioFilePath,
+                audioFileName,
                 normalizedVoiceType,
                 normalizedSourceType,
-                request.Status,
+                provider,
+                voiceId,
+                modelId,
+                outputFormat,
+                durationInSeconds,
+                fileSizeBytes,
+                textHash,
+                contentVersion,
+                generatedAt,
+                generationStatus,
+                errorMessage,
+                isOutdated,
+                normalizedStatus,
                 actor.Name,
                 now,
                 audioId);
@@ -1268,22 +1423,273 @@ public bool DeletePoi(string id, AdminRequestContext actor)
             isNew ? "Tao audio guide" : "Cap nhat audio guide",
             "AUDIO_GUIDE",
             request.EntityId,
-            $"{normalizedEntityType}:{request.LanguageCode}:{request.EntityId}");
+            $"{normalizedEntityType}:{normalizedLanguageCode}:{request.EntityId}");
 
         var saved = GetAudioGuideById(connection, transaction, audioId)
             ?? throw new InvalidOperationException("Không thể đọc lại audio guide sau khi lưu.");
 
         _logger.LogInformation(
-            "SaveAudioGuide completed. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, updatedAt={UpdatedAt}",
+            "SaveAudioGuide completed. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, generationStatus={GenerationStatus}, status={Status}, updatedAt={UpdatedAt}",
             saved.Id,
             saved.EntityType,
             saved.EntityId,
             saved.LanguageCode,
+            saved.GenerationStatus,
+            saved.Status,
             saved.UpdatedAt);
 
         transaction.Commit();
         return saved;
     }
+
+    private void MarkPoiAudioGuidesOutdated(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string poiId,
+        DateTimeOffset updatedAt,
+        string updatedBy,
+        string reason)
+    {
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.AudioGuides
+            SET IsOutdated = CAST(1 AS bit),
+                GenerationStatus = N'outdated',
+                [Status] = N'missing',
+                UpdatedBy = ?,
+                UpdatedAt = ?,
+                ErrorMessage = CASE
+                    WHEN NULLIF(LTRIM(RTRIM(?)), N'') IS NULL THEN ErrorMessage
+                    ELSE LEFT(?, 2000)
+                END
+            WHERE EntityType = N'poi'
+              AND EntityId = ?
+              AND (
+                    COALESCE(IsOutdated, CAST(0 AS bit)) = CAST(0 AS bit)
+                    OR LOWER(COALESCE(LTRIM(RTRIM(GenerationStatus)), N'')) <> N'outdated'
+                    OR LOWER(COALESCE(LTRIM(RTRIM([Status])), N'')) <> N'missing'
+                  );
+            """,
+            updatedBy,
+            updatedAt,
+            reason,
+            reason,
+            poiId);
+    }
+
+    private static string NormalizeAudioGuideVoiceType(string? requestedValue, AudioGuide? existing)
+        => NormalizeAudioGuideOptionalString(requestedValue, existing?.VoiceType, "standard");
+
+    private static string ResolveAudioGuideProvider(string? requestedValue, string? existingValue, string sourceType)
+    {
+        var provided = NormalizeAudioGuideNullableString(requestedValue);
+        if (!string.IsNullOrWhiteSpace(provided))
+        {
+            return AudioGuideCatalog.NormalizeProvider(provided);
+        }
+
+        var existing = NormalizeAudioGuideNullableString(existingValue);
+        if (!string.IsNullOrWhiteSpace(existing))
+        {
+            return AudioGuideCatalog.NormalizeProvider(existing);
+        }
+
+        return string.Equals(sourceType, AudioGuideCatalog.SourceTypeUploaded, StringComparison.OrdinalIgnoreCase)
+            ? "uploaded"
+            : AudioGuideCatalog.ProviderElevenLabs;
+    }
+
+    private static string ResolveAudioGuideOutputFormat(
+        string? requestedValue,
+        string? existingValue,
+        string? audioFileName,
+        string? audioUrl)
+    {
+        var explicitValue = NormalizeAudioGuideNullableString(requestedValue);
+        if (!string.IsNullOrWhiteSpace(explicitValue))
+        {
+            return explicitValue;
+        }
+
+        var existing = NormalizeAudioGuideNullableString(existingValue);
+        if (!string.IsNullOrWhiteSpace(existing))
+        {
+            return existing;
+        }
+
+        var fileName = !string.IsNullOrWhiteSpace(audioFileName)
+            ? audioFileName
+            : NormalizeAudioGuideNullableString(audioUrl);
+        var extension = Path.GetExtension(fileName ?? string.Empty)?.ToLowerInvariant();
+        return extension switch
+        {
+            ".wav" => "wav",
+            ".ogg" => "ogg",
+            ".opus" => "opus",
+            _ => "mp3_44100_128"
+        };
+    }
+
+    private static string ResolveAudioGuideFileName(
+        string? requestedValue,
+        string? audioFilePath,
+        string? audioUrl,
+        AudioGuide? existing)
+    {
+        var explicitValue = NormalizeAudioGuideNullableString(requestedValue);
+        if (!string.IsNullOrWhiteSpace(explicitValue))
+        {
+            return explicitValue;
+        }
+
+        var fromPath = Path.GetFileName(NormalizeAudioGuideNullableString(audioFilePath) ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(fromPath))
+        {
+            return fromPath;
+        }
+
+        var urlPath = NormalizeAudioGuideNullableString(audioUrl);
+        if (!string.IsNullOrWhiteSpace(urlPath))
+        {
+            var withoutQuery = urlPath.Split('?', '#')[0];
+            var fromUrl = Path.GetFileName(withoutQuery.Replace('/', Path.DirectorySeparatorChar));
+            if (!string.IsNullOrWhiteSpace(fromUrl))
+            {
+                return fromUrl;
+            }
+        }
+
+        return NormalizeAudioGuideOptionalString(null, existing?.AudioFileName);
+    }
+
+    private static bool ResolveAudioGuideOutdatedFlag(
+        bool? requestedValue,
+        AudioGuide? existing,
+        string? requestedGenerationStatus,
+        string? errorMessage)
+    {
+        if (requestedValue.HasValue)
+        {
+            return requestedValue.Value;
+        }
+
+        var generationStatus = AudioGuideCatalog.NormalizeGenerationStatus(requestedGenerationStatus);
+        if (string.Equals(generationStatus, AudioGuideCatalog.GenerationStatusOutdated, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            return false;
+        }
+
+        return existing?.IsOutdated ?? false;
+    }
+
+    private static string ResolveAudioGuideGenerationStatus(
+        string? requestedGenerationStatus,
+        string? requestedStatus,
+        string? requestedSourceType,
+        string audioUrl,
+        string audioFilePath,
+        bool isOutdated,
+        string? errorMessage,
+        AudioGuide? existing)
+    {
+        if (isOutdated)
+        {
+            return AudioGuideCatalog.GenerationStatusOutdated;
+        }
+
+        var explicitGenerationStatus = NormalizeAudioGuideNullableString(requestedGenerationStatus);
+        if (!string.IsNullOrWhiteSpace(explicitGenerationStatus))
+        {
+            return AudioGuideCatalog.NormalizeGenerationStatus(explicitGenerationStatus);
+        }
+
+        var hasPlaybackAsset = HasAudioGuidePlaybackAsset(audioUrl, audioFilePath);
+        if (AudioGuideCatalog.NormalizePublicStatus(requestedStatus) == AudioGuideCatalog.PublicStatusProcessing)
+        {
+            return AudioGuideCatalog.GenerationStatusPending;
+        }
+
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            return AudioGuideCatalog.GenerationStatusFailed;
+        }
+
+        if (hasPlaybackAsset)
+        {
+            return AudioGuideCatalog.GenerationStatusSuccess;
+        }
+
+        if (string.Equals(requestedSourceType?.Trim(), AudioGuideCatalog.SourceTypeLegacyTts, StringComparison.OrdinalIgnoreCase))
+        {
+            return AudioGuideCatalog.GenerationStatusOutdated;
+        }
+
+        if (existing is not null &&
+            string.IsNullOrWhiteSpace(audioUrl) &&
+            string.IsNullOrWhiteSpace(audioFilePath))
+        {
+            return AudioGuideCatalog.NormalizeGenerationStatus(existing.GenerationStatus);
+        }
+
+        return AudioGuideCatalog.GenerationStatusNone;
+    }
+
+    private static DateTimeOffset? ResolveAudioGuideGeneratedAt(
+        DateTimeOffset? requestedValue,
+        DateTimeOffset? existingValue,
+        string generationStatus,
+        string publicStatus,
+        DateTimeOffset now)
+    {
+        if (requestedValue.HasValue)
+        {
+            return requestedValue;
+        }
+
+        if (string.Equals(generationStatus, AudioGuideCatalog.GenerationStatusSuccess, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(publicStatus, AudioGuideCatalog.PublicStatusReady, StringComparison.OrdinalIgnoreCase))
+        {
+            return existingValue ?? now;
+        }
+
+        return existingValue;
+    }
+
+    private static string NormalizeAudioGuideOptionalString(string? requestedValue, string? existingValue, string fallback = "")
+    {
+        if (requestedValue is not null)
+        {
+            return requestedValue.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(existingValue))
+        {
+            return existingValue.Trim();
+        }
+
+        return fallback;
+    }
+
+    private static string? NormalizeAudioGuideNullableString(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? string.Empty : trimmed;
+    }
+
+    private static bool HasAudioGuidePlaybackAsset(string? audioUrl, string? audioFilePath)
+        => !string.IsNullOrWhiteSpace(audioUrl) || !string.IsNullOrWhiteSpace(audioFilePath);
 
     public bool DeleteAudioGuide(string id, AdminRequestContext actor)
     {

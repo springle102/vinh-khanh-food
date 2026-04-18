@@ -88,8 +88,8 @@ const createDefaultForm = (status: Poi["status"] = "draft"): PoiFormState => ({
   shortText: "",
   fullText: "",
   audioUrl: "",
-  audioSourceType: "tts",
-  audioStatus: "ready",
+  audioSourceType: "generated",
+  audioStatus: "missing",
 });
 
 const createDefaultPoiImageForm = (): PoiRepresentativeImageFormState => ({
@@ -202,20 +202,25 @@ const findPoiAudioGuide = (
   audioGuides: AudioGuide[],
   poiId?: string,
   languageCode?: AudioGuide["languageCode"],
-) =>
-  audioGuides.find(
+) => {
+  const matches = audioGuides.filter(
     (item) =>
       isPoiEntityType(item.entityType) &&
       item.entityId === poiId &&
       item.languageCode === languageCode,
-  ) ??
-  audioGuides.find(
-    (item) =>
-      isPoiEntityType(item.entityType) &&
-      item.entityId === poiId &&
-      item.languageCode === languageCode,
-  ) ??
-  null;
+  );
+
+  return (
+    matches.find(
+      (item) =>
+        item.status === "ready" &&
+        item.generationStatus === "success" &&
+        !item.isOutdated,
+    ) ??
+    matches[0] ??
+    null
+  );
+};
 
 const findPoiTranslationForLanguage = (
   translations: Translation[],
@@ -406,8 +411,10 @@ export const PoisPage = () => {
   const [isRejectModalOpen, setRejectModalOpen] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [isUploadingAudio, setUploadingAudio] = useState(false);
+  const [isGeneratingAudio, setGeneratingAudio] = useState(false);
   const [formError, setFormError] = useState("");
   const [pageAlert, setPageAlert] = useState("");
+  const [audioActionMessage, setAudioActionMessage] = useState("");
   const [rejectReason, setRejectReason] = useState("");
   const [rejectError, setRejectError] = useState("");
   const [addressSearchVersion, setAddressSearchVersion] = useState(0);
@@ -551,6 +558,32 @@ export const PoisPage = () => {
     ? buildPlaybackKey(selectedPoi.id, selectedNarrationLanguage)
     : null;
   const selectedAudio = selectedNarration?.audioGuide ?? null;
+  const currentFormPoiId = form.id || form.poiId.trim();
+  const currentFormAudioGuide = useMemo(() => {
+    if (!currentFormPoiId) {
+      return null;
+    }
+
+    const scopedAudioGuides =
+      selectedPoiDetail?.poi.id === currentFormPoiId
+        ? selectedPoiDetail.audioGuides
+        : state.audioGuides.filter(
+            (item) => isPoiEntityType(item.entityType) && item.entityId === currentFormPoiId,
+          );
+
+    return findPoiAudioGuide(scopedAudioGuides, currentFormPoiId, form.contentLanguageCode);
+  }, [currentFormPoiId, form.contentLanguageCode, selectedPoiDetail, state.audioGuides]);
+  const currentFormAudioStatusLabel = currentFormAudioGuide
+    ? currentFormAudioGuide.isOutdated || currentFormAudioGuide.generationStatus === "outdated"
+      ? "Outdated"
+      : currentFormAudioGuide.generationStatus === "failed"
+        ? "Lỗi"
+        : currentFormAudioGuide.generationStatus === "pending" || currentFormAudioGuide.status === "processing"
+          ? "Đang chờ generate"
+          : currentFormAudioGuide.generationStatus === "success" && currentFormAudioGuide.status === "ready"
+            ? "Thành công"
+            : "Chưa có"
+    : "Chưa có";
   const isSelectedPoiNarrationPlaying =
     selectedPlaybackKey === playbackState.playbackKey &&
     playbackState.status === "playing";
@@ -720,6 +753,7 @@ export const PoisPage = () => {
     stopCurrentAudio();
     setHasSlugBeenManuallyEdited(false);
     setFormError("");
+    setAudioActionMessage("");
     setPageAlert("");
     setAddressSearchVersion(0);
     setPoiFormLoadState({ mode: "create", dataLoaded: true });
@@ -737,6 +771,7 @@ export const PoisPage = () => {
   const closePoiModal = () => {
     poiFormLoadRequestRef.current += 1;
     poiEditorInitialContentSnapshotRef.current = null;
+    setAudioActionMessage("");
     setModalOpen(false);
   };
 
@@ -863,9 +898,9 @@ export const PoisPage = () => {
         ownerUserId: isOwner ? user?.id ?? "" : loadedPoi.ownerUserId ?? "",
         shortText: translationFields.shortText,
         fullText: translationFields.fullText,
-        audioUrl: audioGuide?.sourceType === "uploaded" ? audioGuide.audioUrl : "",
-        audioSourceType: audioGuide?.sourceType ?? "tts",
-        audioStatus: audioGuide?.status ?? "ready",
+        audioUrl: audioGuide?.audioUrl ?? "",
+        audioSourceType: audioGuide?.sourceType ?? "generated",
+        audioStatus: audioGuide?.status ?? "missing",
       } satisfies PoiFormState;
 
       setSelectedPoiId(loadedPoi.id);
@@ -981,9 +1016,9 @@ export const PoisPage = () => {
           title: translationFields.title,
           shortText: translationFields.shortText,
           fullText: translationFields.fullText,
-          audioUrl: audioGuide?.sourceType === "uploaded" ? audioGuide.audioUrl : "",
-          audioSourceType: audioGuide?.sourceType ?? "tts",
-          audioStatus: audioGuide?.status ?? "ready",
+          audioUrl: audioGuide?.audioUrl ?? "",
+          audioSourceType: audioGuide?.sourceType ?? "generated",
+          audioStatus: audioGuide?.status ?? "missing",
         };
       });
     },
@@ -1211,6 +1246,80 @@ export const PoisPage = () => {
       setUploadingAudio(false);
     }
   };
+
+  const refreshPoiAudioStatus = useCallback(
+    async (poiId: string) => {
+      const latestDetail = await adminApi.getPoiDetail(poiId);
+      poiDetailCacheRef.current.set(poiId, latestDetail);
+
+      if (selectedPoiDetail?.poi.id === poiId || selectedPoiId === poiId) {
+        setSelectedPoiDetail(latestDetail);
+      }
+
+      setForm((current) => {
+        const activePoiId = current.id || current.poiId.trim();
+        if (activePoiId !== poiId) {
+          return current;
+        }
+
+        const refreshedAudioGuide = findPoiAudioGuide(
+          latestDetail.audioGuides,
+          poiId,
+          current.contentLanguageCode,
+        );
+
+        return {
+          ...current,
+          audioUrl: refreshedAudioGuide?.audioUrl ?? current.audioUrl,
+          audioSourceType: refreshedAudioGuide?.sourceType ?? current.audioSourceType,
+          audioStatus: refreshedAudioGuide?.status ?? "missing",
+        };
+      });
+    },
+    [selectedPoiDetail, selectedPoiId],
+  );
+
+  const runPoiAudioAction = useCallback(
+    async (mode: "generate" | "regenerate" | "generateAll") => {
+      if (!currentFormPoiId) {
+        setFormError("Hãy lưu POI trước khi generate audio.");
+        return;
+      }
+
+      setGeneratingAudio(true);
+      setAudioActionMessage("");
+      setFormError("");
+
+      try {
+        if (mode === "generate") {
+          const result = await adminApi.generatePoiAudio(currentFormPoiId, {
+            languageCode: form.contentLanguageCode,
+          });
+          setAudioActionMessage(result.message);
+        } else if (mode === "regenerate") {
+          const result = await adminApi.regeneratePoiAudio(currentFormPoiId, {
+            languageCode: form.contentLanguageCode,
+            forceRegenerate: true,
+          });
+          setAudioActionMessage(result.message);
+        } else {
+          const results = await adminApi.generatePoiAllLanguagesAudio(currentFormPoiId, {
+            forceRegenerate: false,
+          });
+          const succeeded = results.filter((item) => item.success).length;
+          setAudioActionMessage(`Đã xử lý generate audio cho ${results.length} ngôn ngữ, thành công ${succeeded}.`);
+        }
+
+        await refreshData();
+        await refreshPoiAudioStatus(currentFormPoiId);
+      } catch (error) {
+        setFormError(getErrorMessage(error));
+      } finally {
+        setGeneratingAudio(false);
+      }
+    },
+    [currentFormPoiId, form.contentLanguageCode, refreshData, refreshPoiAudioStatus],
+  );
 
   const updatePoiFoodItemForm = useCallback((
     clientId: string,
@@ -1473,14 +1582,13 @@ export const PoisPage = () => {
             fullText: foodItemDraft.description,
             seoTitle: foodItemDraft.name,
             seoDescription: foodItemDraft.description || foodItemDraft.name,
-            isPremium: false,
           },
           user,
         );
       }
 
       let optimisticAudioGuide: AudioGuide | null = null;
-      if (form.audioUrl || form.audioSourceType === "tts") {
+      if (form.audioSourceType === "uploaded" && form.audioUrl) {
         await saveAudioGuide(
           {
             id: findPoiAudioGuide(state.audioGuides, form.id, form.contentLanguageCode)?.id,
@@ -1488,8 +1596,24 @@ export const PoisPage = () => {
             entityId: savedPoi.id,
             languageCode: form.contentLanguageCode,
             audioUrl: form.audioUrl,
-            sourceType: form.audioUrl ? form.audioSourceType : "tts",
-            status: form.audioStatus,
+            sourceType: "uploaded",
+            status: "ready",
+            transcriptText: form.fullText,
+            audioFilePath: "",
+            audioFileName: form.audioUrl.split("/").pop()?.split("?")[0] ?? "",
+            provider: "uploaded",
+            voiceId: "",
+            modelId: "",
+            outputFormat: "mp3_44100_128",
+            durationInSeconds: null,
+            fileSizeBytes: null,
+            textHash: "",
+            contentVersion: "",
+            generatedAt: new Date().toISOString(),
+            generationStatus: "success",
+            errorMessage: null,
+            isOutdated: false,
+            voiceType: "standard",
           },
           user,
         );
@@ -1511,9 +1635,25 @@ export const PoisPage = () => {
           entityType: "poi",
           entityId: savedPoi.id,
           languageCode: form.contentLanguageCode,
+          transcriptText: form.fullText,
           audioUrl: form.audioUrl,
-          sourceType: form.audioUrl ? form.audioSourceType : "tts",
-          status: form.audioStatus,
+          audioFilePath: "",
+          audioFileName: form.audioUrl.split("/").pop()?.split("?")[0] ?? "",
+          voiceType: "standard",
+          sourceType: "uploaded",
+          provider: "uploaded",
+          voiceId: "",
+          modelId: "",
+          outputFormat: "mp3_44100_128",
+          durationInSeconds: null,
+          fileSizeBytes: null,
+          textHash: "",
+          contentVersion: "",
+          generatedAt: new Date().toISOString(),
+          generationStatus: "success",
+          errorMessage: null,
+          isOutdated: false,
+          status: "ready",
           updatedBy: user.name,
           updatedAt: savedPoi.updatedAt,
         };
@@ -1542,7 +1682,6 @@ export const PoisPage = () => {
         fullText: form.fullText,
         seoTitle: form.title,
         seoDescription: form.shortText || form.title,
-        isPremium: false,
         updatedBy: user.name,
         updatedAt: savedPoi.updatedAt,
       };
@@ -1962,18 +2101,18 @@ export const PoisPage = () => {
                   {selectedDisplayText || "Chưa có bài thuyết minh cho POI này."}
                 </p>
                 <p className="mt-3 text-xs text-ink-500">
-                  Audio: {selectedAudio ? `${selectedAudio.sourceType} / ${selectedAudio.status}` : "Chưa có"}
+                  Audio: {selectedAudio ? `${selectedAudio.sourceType} / ${selectedAudio.generationStatus} / ${selectedAudio.status}` : "Chưa có"}
                 </p>
                 {selectedNarration?.fallbackMessage ? (
                   <p className="mt-2 text-xs text-amber-700">{selectedNarration.fallbackMessage}</p>
                 ) : null}
                 <p className="mt-2 text-xs text-ink-500">
                   {isResolvingNarration
-                    ? "Đang đồng bộ nội dung và TTS theo ngôn ngữ đã chọn..."
-                    : `Nội dung TTS: ${selectedNarration?.ttsInputText ? "sẵn sàng" : "chưa có"}`}
+                    ? "Đang đồng bộ nội dung và audio theo ngôn ngữ đã chọn..."
+                    : `Transcript để generate audio: ${selectedNarration?.ttsInputText ? "sẵn sàng" : "chưa có"}`}
                 </p>
                 <p className="mt-2 text-xs text-ink-500">
-                  Locale TTS: {selectedNarration?.ttsLocale ?? languageLocales[selectedNarrationLanguage]}
+                  Ngôn ngữ phát: {selectedNarration?.ttsLocale ?? languageLocales[selectedNarrationLanguage]}
                 </p>
                 <p
                   className={`mt-3 text-xs ${
@@ -2509,19 +2648,82 @@ export const PoisPage = () => {
                 <div>
                   <label className="field-label">Nguồn audio</label>
                   <Select disabled={isPoiModalViewOnly} value={form.audioSourceType} onChange={(event) => setForm((current) => ({ ...current, audioSourceType: event.target.value as AudioGuide["sourceType"] }))}>
-                    <option value="tts">Text-to-Speech</option>
+                    <option value="generated">Pre-generated từ backend</option>
                     <option value="uploaded">Uploaded MP3</option>
                   </Select>
                 </div>
                 <div>
                   <label className="field-label">Trạng thái audio</label>
-                  <Select disabled={isPoiModalViewOnly} value={form.audioStatus} onChange={(event) => setForm((current) => ({ ...current, audioStatus: event.target.value as AudioGuide["status"] }))}>
-                    <option value="ready">Ready</option>
-                    <option value="processing">Processing</option>
-                    <option value="missing">Missing</option>
-                  </Select>
+                  <div className="field-input flex min-h-[3rem] items-center bg-sand-50 text-sm text-ink-700">
+                    {currentFormAudioStatusLabel}
+                  </div>
                 </div>
               </div>
+
+              {form.audioSourceType === "generated" ? (
+                <div className="space-y-3 rounded-3xl border border-sand-200 bg-sand-50 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={isPoiModalViewOnly || !currentFormPoiId || isGeneratingAudio}
+                      onClick={() => {
+                        void runPoiAudioAction("generate");
+                      }}
+                    >
+                      Generate audio ngôn ngữ này
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={isPoiModalViewOnly || !currentFormPoiId || isGeneratingAudio}
+                      onClick={() => {
+                        void runPoiAudioAction("regenerate");
+                      }}
+                    >
+                      Regenerate audio
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={isPoiModalViewOnly || !currentFormPoiId || isGeneratingAudio}
+                      onClick={() => {
+                        void runPoiAudioAction("generateAll");
+                      }}
+                    >
+                      Generate tất cả ngôn ngữ
+                    </Button>
+                  </div>
+                  <p className="text-xs text-ink-500">
+                    Khi bạn sửa nội dung thuyết minh, audio hiện tại sẽ được đánh dấu cũ và backend có thể generate lại theo cấu hình.
+                  </p>
+                  {isGeneratingAudio ? (
+                    <p className="text-sm text-ink-600">Đang generate audio pre-generated...</p>
+                  ) : null}
+                  {audioActionMessage ? (
+                    <p className="text-sm text-emerald-700">{audioActionMessage}</p>
+                  ) : null}
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink-600">
+                      <p><span className="font-semibold text-ink-900">Audio URL:</span> {currentFormAudioGuide?.audioUrl || "Chưa có"}</p>
+                      <p className="mt-2"><span className="font-semibold text-ink-900">File path:</span> {currentFormAudioGuide?.audioFilePath || "Chưa có"}</p>
+                      <p className="mt-2"><span className="font-semibold text-ink-900">GeneratedAt:</span> {currentFormAudioGuide?.generatedAt ? formatDateTime(currentFormAudioGuide.generatedAt) : "Chưa có"}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink-600">
+                      <p><span className="font-semibold text-ink-900">Voice / Model:</span> {currentFormAudioGuide ? `${currentFormAudioGuide.voiceId || "default"} / ${currentFormAudioGuide.modelId || "default"}` : "Chưa có"}</p>
+                      <p className="mt-2"><span className="font-semibold text-ink-900">Output:</span> {currentFormAudioGuide?.outputFormat || "mp3_44100_128"}</p>
+                      <p className="mt-2"><span className="font-semibold text-ink-900">Lỗi gần nhất:</span> {currentFormAudioGuide?.errorMessage || "Không có"}</p>
+                    </div>
+                  </div>
+                  {currentFormAudioGuide?.audioUrl ? (
+                    <audio controls src={currentFormAudioGuide.audioUrl} className="w-full" />
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-sand-200 bg-white px-4 py-3 text-sm text-ink-500">
+                      Chưa có file audio pre-generated cho ngôn ngữ này.
+                    </div>
+                  )}
+                </div>
+              ) : null}
 
               {form.audioSourceType === "uploaded" ? (
                 <div className="space-y-3">

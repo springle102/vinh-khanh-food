@@ -6,25 +6,17 @@ import type {
   Poi,
 } from "../../data/types";
 import {
-  buildTtsAudioUrls,
   buildUiPlaybackKey,
-  canUseBrowserSpeechSynthesis,
-  createTtsPlaybackQueue,
   findPoiAudioGuide,
   hasValidAudioUrl,
   isPlaceholderAudioUrl,
-  languageLocales,
-  loadBrowserSpeechVoices,
   logNarrationDebug,
   resolvePoiNarration,
-  selectSpeechVoice,
-  type NarrationResolutionStatus,
   type ResolvedPoiNarration,
-  type TtsPlaybackQueue,
 } from "../../lib/narration";
 import { languageLabels } from "../../lib/utils";
 
-type PlaybackKind = "audio" | "tts" | null;
+type PlaybackKind = "audio" | null;
 type PlaybackStatus = "idle" | "loading" | "playing" | "paused" | "error";
 
 export type PoiNarrationPlaybackState = {
@@ -46,26 +38,16 @@ type AudioPreviewCandidate = Pick<
   previewText?: string;
 };
 
-type PoiAudioSourceBase = {
+type PoiAudioSource = {
+  kind: "audio";
   uiPlaybackKey: string;
   audioCacheKey: string;
   poiId: string;
   audioGuideId: string | null;
   requestedLanguageCode: LanguageCode;
   effectiveLanguageCode: LanguageCode;
-  ttsLocale: string;
-  translationStatus: NarrationResolutionStatus;
   fallbackMessage: string | null;
-  displayText: string;
-  ttsInputText: string;
-};
-
-type PoiAudioSource = PoiAudioSourceBase & {
-  kind: "audio";
-  audioUrls: string[];
-  fallbackText?: string;
-  generatedFromTts?: boolean;
-  usesTtsFallback?: boolean;
+  audioUrl: string;
 };
 
 type PlayPoiNarrationOptions = {
@@ -88,34 +70,21 @@ const DEFAULT_PLAYBACK_STATE: PoiNarrationPlaybackState = {
 const SILENT_AUDIO_DATA_URI =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 
+const isPlayablePreparedAudioGuide = (audioGuide: AudioGuide | null | undefined) =>
+  Boolean(
+    audioGuide &&
+      audioGuide.status === "ready" &&
+      !audioGuide.isOutdated &&
+      hasValidAudioUrl(audioGuide.audioUrl) &&
+      !isPlaceholderAudioUrl(audioGuide.audioUrl) &&
+      (audioGuide.sourceType === "uploaded" || audioGuide.generationStatus === "success"),
+  );
+
 const createAudioSourceFromResolvedNarration = (
   narration: ResolvedPoiNarration,
 ): PoiAudioSource => {
-  if (
-    narration.translationStatus !== "auto_translated" &&
-    narration.audioGuide &&
-    narration.audioGuide.sourceType === "uploaded" &&
-    hasValidAudioUrl(narration.audioGuide.audioUrl) &&
-    !isPlaceholderAudioUrl(narration.audioGuide.audioUrl)
-  ) {
-    return {
-      kind: "audio",
-      uiPlaybackKey: narration.uiPlaybackKey,
-      audioCacheKey: narration.audioCacheKey,
-      poiId: narration.poiId,
-      audioGuideId: narration.audioGuide.id,
-      audioUrls: [narration.audioGuide.audioUrl.trim()],
-      fallbackText: narration.ttsInputText || undefined,
-      requestedLanguageCode: narration.requestedLanguageCode,
-      effectiveLanguageCode: narration.effectiveLanguageCode,
-      ttsLocale: narration.ttsLocale,
-      translationStatus: narration.translationStatus,
-      fallbackMessage: narration.fallbackMessage,
-      displayText: narration.displayText,
-      ttsInputText: narration.ttsInputText,
-      generatedFromTts: false,
-      usesTtsFallback: false,
-    };
+  if (!isPlayablePreparedAudioGuide(narration.audioGuide)) {
+    throw new Error("NO_PREGENERATED_AUDIO");
   }
 
   return {
@@ -124,44 +93,42 @@ const createAudioSourceFromResolvedNarration = (
     audioCacheKey: narration.audioCacheKey,
     poiId: narration.poiId,
     audioGuideId: narration.audioGuide?.id ?? null,
-    audioUrls: buildTtsAudioUrls(
-      narration.ttsInputText,
-      narration.effectiveLanguageCode,
-    ),
-    fallbackText: narration.ttsInputText,
+    audioUrl: narration.audioGuide?.audioUrl.trim() ?? "",
     requestedLanguageCode: narration.requestedLanguageCode,
     effectiveLanguageCode: narration.effectiveLanguageCode,
-    ttsLocale: narration.ttsLocale,
-    translationStatus: narration.translationStatus,
     fallbackMessage: narration.fallbackMessage,
-    displayText: narration.displayText,
-    ttsInputText: narration.ttsInputText,
-    generatedFromTts: true,
-    usesTtsFallback: true,
   };
 };
 
-const createTtsAudioSource = (audioSource: PoiAudioSource): PoiAudioSource => ({
-  kind: "audio",
-  uiPlaybackKey: audioSource.uiPlaybackKey,
-  audioCacheKey: `${audioSource.audioCacheKey}|elevenlabs-tts`,
-  poiId: audioSource.poiId,
-  audioGuideId: audioSource.audioGuideId,
-  audioUrls: buildTtsAudioUrls(
-    audioSource.ttsInputText,
-    audioSource.effectiveLanguageCode,
-  ),
-  fallbackText: audioSource.ttsInputText,
-  generatedFromTts: true,
-  usesTtsFallback: true,
-  requestedLanguageCode: audioSource.requestedLanguageCode,
-  effectiveLanguageCode: audioSource.effectiveLanguageCode,
-  ttsLocale: audioSource.ttsLocale,
-  translationStatus: audioSource.translationStatus,
-  fallbackMessage: audioSource.fallbackMessage,
-  displayText: audioSource.displayText,
-  ttsInputText: audioSource.ttsInputText,
-});
+const createAudioSourceFromGuide = (
+  guide: AudioPreviewCandidate,
+  narration: ResolvedPoiNarration,
+  audioGuide: AudioGuide | null,
+): PoiAudioSource => {
+  const directAudioUrl = hasValidAudioUrl(guide.audioUrl) && !isPlaceholderAudioUrl(guide.audioUrl)
+    ? guide.audioUrl.trim()
+    : "";
+  const storedAudioUrl = isPlayablePreparedAudioGuide(audioGuide)
+    ? audioGuide?.audioUrl.trim() ?? ""
+    : "";
+  const audioUrl = directAudioUrl || storedAudioUrl;
+
+  if (!hasValidAudioUrl(audioUrl) || isPlaceholderAudioUrl(audioUrl)) {
+    throw new Error("NO_PREGENERATED_AUDIO");
+  }
+
+  return {
+    kind: "audio",
+    uiPlaybackKey: guide.id,
+    audioCacheKey: `${guide.id}:${guide.languageCode}`,
+    poiId: guide.entityId,
+    audioGuideId: guide.id,
+    audioUrl,
+    requestedLanguageCode: guide.languageCode,
+    effectiveLanguageCode: narration.effectiveLanguageCode,
+    fallbackMessage: narration.fallbackMessage,
+  };
+};
 
 const getPlaybackMessage = (
   audioSource: PoiAudioSource,
@@ -174,28 +141,22 @@ const getPlaybackMessage = (
     : "";
 
   if (mode === "loading") {
-    if (audioSource.generatedFromTts) {
-      return `Đang tạo TTS cho ${requestedLabel}.${fallbackSuffix}`;
-    }
-
-    return `Đang tải audio cho ${requestedLabel}.${fallbackSuffix}`;
+    return `Dang tai audio da generate cho ${requestedLabel}.${fallbackSuffix}`;
   }
 
   if (mode === "playing") {
-    return audioSource.generatedFromTts
-      ? `Đang phát audio TTS (${effectiveLabel}).${fallbackSuffix}`
-      : `Đang phát audio của POI (${effectiveLabel}).${fallbackSuffix}`;
+    return `Dang phat audio da generate (${effectiveLabel}).${fallbackSuffix}`;
   }
 
   if (mode === "paused") {
-    return "Đã tạm dừng bài thuyết minh.";
+    return "Da tam dung bai thuyet minh.";
   }
 
   if (mode === "finished") {
-    return "Đã phát xong bài thuyết minh.";
+    return "Da phat xong bai thuyet minh.";
   }
 
-  return "Không thể phát bài thuyết minh cho POI này.";
+  return "Khong the phat audio da generate cho POI nay.";
 };
 
 export const usePoiNarrationPlayback = (state: AdminDataState) => {
@@ -207,14 +168,11 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
   const audioCacheRef = useRef<Map<string, PoiAudioSource>>(new Map());
   const currentPlaybackKeyRef = useRef<string | null>(null);
   const currentPoiIdRef = useRef<string | null>(null);
-  const currentKindRef = useRef<PlaybackKind>(null);
   const currentAudioGuideIdRef = useRef<string | null>(null);
   const requestIdRef = useRef(0);
   const hasUnlockedPlaybackRef = useRef(false);
   const playbackStatusRef = useRef<PlaybackStatus>(DEFAULT_PLAYBACK_STATE.status);
   const resolveAbortRef = useRef<AbortController | null>(null);
-  const ttsPlaybackQueueRef = useRef<TtsPlaybackQueue | null>(null);
-  const browserSpeechCancelRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     playbackStatusRef.current = playbackState.status;
@@ -227,18 +185,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
   const resetPlaybackRefs = useCallback(() => {
     currentPlaybackKeyRef.current = null;
     currentPoiIdRef.current = null;
-    currentKindRef.current = null;
     currentAudioGuideIdRef.current = null;
-  }, []);
-
-  const disposeTtsPlaybackQueue = useCallback(() => {
-    ttsPlaybackQueueRef.current?.dispose();
-    ttsPlaybackQueueRef.current = null;
-  }, []);
-
-  const stopBrowserSpeech = useCallback(() => {
-    browserSpeechCancelRef.current?.();
-    browserSpeechCancelRef.current = null;
   }, []);
 
   const stopCurrentAudio = useCallback(
@@ -255,8 +202,6 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
 
       resolveAbortRef.current?.abort();
       resolveAbortRef.current = null;
-      disposeTtsPlaybackQueue();
-      stopBrowserSpeech();
 
       if (audioRef.current) {
         audioRef.current.onplay = null;
@@ -279,7 +224,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         });
       }
     },
-    [disposeTtsPlaybackQueue, resetPlaybackRefs, stopBrowserSpeech],
+    [resetPlaybackRefs],
   );
 
   useEffect(() => () => stopCurrentAudio(), [stopCurrentAudio]);
@@ -325,22 +270,13 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         language,
         signal,
       );
-      const hasPlayableAudioGuide =
-        narration.audioGuide &&
-        narration.audioGuide.sourceType === "uploaded" &&
-        hasValidAudioUrl(narration.audioGuide.audioUrl) &&
-        !isPlaceholderAudioUrl(narration.audioGuide.audioUrl);
-
-      if (!narration.ttsInputText.trim() && !hasPlayableAudioGuide) {
-        throw new Error("NO_POI_NARRATION_TEXT");
-      }
-
       const cached = audioCacheRef.current.get(narration.audioCacheKey);
       if (cached) {
         logNarrationDebug("audio-cache-hit", {
           poiId: poi.id,
           languageSelected: language,
           cacheKey: narration.audioCacheKey,
+          source: "prepared_audio_url",
         });
         return cached;
       }
@@ -352,195 +288,19 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
     [resolvePoiNarrationForSelection],
   );
 
-  const playBrowserSpeechFallback = useCallback(
-    async (
-      audioSource: PoiAudioSource,
-      requestId: number,
-      reason: string,
-    ) => {
-      const narrationText = audioSource.ttsInputText.trim() || audioSource.displayText.trim();
-      if (!narrationText || !canUseBrowserSpeechSynthesis()) {
-        return false;
-      }
-
-      setPlaybackState({
-        playbackKey: audioSource.uiPlaybackKey,
-        poiId: audioSource.poiId,
-        audioGuideId: audioSource.audioGuideId,
-        status: "loading",
-        kind: "tts",
-        message: `${reason} Đang dùng giọng đọc của trình duyệt.`,
-        isLoadingPOI: false,
-        isGeneratingTTS: false,
-        isPlayingAudio: false,
-      });
-
-      const voices = await loadBrowserSpeechVoices();
-      if (requestId !== requestIdRef.current) {
-        return true;
-      }
-
-      const speechSynthesis = window.speechSynthesis;
-      stopBrowserSpeech();
-
-      const utterance = new SpeechSynthesisUtterance(narrationText);
-      utterance.lang = languageLocales[audioSource.effectiveLanguageCode];
-      utterance.voice = selectSpeechVoice(voices, audioSource.effectiveLanguageCode);
-      utterance.rate = 1;
-      utterance.pitch = 1;
-
-      let cancelled = false;
-      browserSpeechCancelRef.current = () => {
-        cancelled = true;
-        speechSynthesis.cancel();
-      };
-
-      currentPlaybackKeyRef.current = audioSource.uiPlaybackKey;
-      currentPoiIdRef.current = audioSource.poiId;
-      currentKindRef.current = "tts";
-      currentAudioGuideIdRef.current = audioSource.audioGuideId;
-
-      utterance.onstart = () => {
-        if (requestId !== requestIdRef.current || cancelled) {
-          return;
-        }
-
-        setPlaybackState({
-          playbackKey: audioSource.uiPlaybackKey,
-          poiId: audioSource.poiId,
-          audioGuideId: audioSource.audioGuideId,
-          status: "playing",
-          kind: "tts",
-          message: `Đang phát thuyết minh bằng giọng đọc của trình duyệt (${languageLabels[audioSource.effectiveLanguageCode]}).`,
-          isLoadingPOI: false,
-          isGeneratingTTS: false,
-          isPlayingAudio: true,
-        });
-      };
-
-      utterance.onend = () => {
-        if (requestId !== requestIdRef.current || cancelled) {
-          return;
-        }
-
-        browserSpeechCancelRef.current = null;
-        resetPlaybackRefs();
-        setPlaybackState({
-          ...DEFAULT_PLAYBACK_STATE,
-          message: "Đã phát xong bài thuyết minh.",
-        });
-      };
-
-      utterance.onerror = () => {
-        if (requestId !== requestIdRef.current || cancelled) {
-          return;
-        }
-
-        browserSpeechCancelRef.current = null;
-        resetPlaybackRefs();
-        setPlaybackState({
-          playbackKey: audioSource.uiPlaybackKey,
-          poiId: audioSource.poiId,
-          audioGuideId: audioSource.audioGuideId,
-          status: "error",
-          kind: "tts",
-          message: "Không thể phát thuyết minh bằng ElevenLabs hoặc giọng đọc của trình duyệt.",
-          isLoadingPOI: false,
-          isGeneratingTTS: false,
-          isPlayingAudio: false,
-        });
-      };
-
-      speechSynthesis.cancel();
-      speechSynthesis.speak(utterance);
-      return true;
-    },
-    [resetPlaybackRefs, stopBrowserSpeech],
-  );
-
   const playPOIAudio = useCallback(
     async (audioSource: PoiAudioSource, requestId = requestIdRef.current) => {
       if (requestId !== requestIdRef.current) {
         return;
       }
 
-      const playbackUrls = audioSource.audioUrls;
-      const playbackQueue = audioSource.generatedFromTts && playbackUrls.length > 0
-        ? createTtsPlaybackQueue(playbackUrls)
-        : null;
-      if (playbackQueue) {
-        disposeTtsPlaybackQueue();
-        ttsPlaybackQueueRef.current = playbackQueue;
-      }
-
-      const releasePlaybackQueue = () => {
-        if (ttsPlaybackQueueRef.current === playbackQueue) {
-          ttsPlaybackQueueRef.current = null;
-        }
-
-        playbackQueue?.dispose();
-      };
-
       currentPlaybackKeyRef.current = audioSource.uiPlaybackKey;
       currentPoiIdRef.current = audioSource.poiId;
-      currentKindRef.current = audioSource.kind;
       currentAudioGuideIdRef.current = audioSource.audioGuideId;
-
-      const fallbackToTts = async () => {
-        if (
-          !audioSource.fallbackText ||
-          audioSource.usesTtsFallback ||
-          requestId !== requestIdRef.current
-        ) {
-          return false;
-        }
-
-        const ttsSource = createTtsAudioSource(audioSource);
-        if (ttsSource.audioUrls.length === 0) {
-          return false;
-        }
-
-        audioCacheRef.current.set(ttsSource.audioCacheKey, ttsSource);
-
-        setPlaybackState((current) => ({
-          ...current,
-          status: "loading",
-          kind: "audio",
-          message: `File audio không phát được. Đang chuyển sang ElevenLabs TTS cho ${languageLabels[ttsSource.effectiveLanguageCode]}.`,
-          isLoadingPOI: true,
-          isGeneratingTTS: true,
-          isPlayingAudio: false,
-        }));
-
-        await playPOIAudio(ttsSource, requestId);
-        return true;
-      };
 
       const nextAudio = new Audio();
       nextAudio.preload = "auto";
       audioRef.current = nextAudio;
-      let currentSegmentIndex = 0;
-
-      const playSegment = async (segmentIndex: number) => {
-        if (
-          segmentIndex >= playbackUrls.length ||
-          requestId !== requestIdRef.current
-        ) {
-          return;
-        }
-
-        currentSegmentIndex = segmentIndex;
-        const segmentUrl = playbackQueue
-          ? await playbackQueue.getSegmentUrl(segmentIndex)
-          : playbackUrls[segmentIndex];
-        if (requestId !== requestIdRef.current) {
-          releasePlaybackQueue();
-          return;
-        }
-
-        nextAudio.src = segmentUrl;
-        await nextAudio.play();
-      };
 
       nextAudio.onplay = () => {
         if (requestId !== requestIdRef.current) {
@@ -558,7 +318,6 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           isGeneratingTTS: false,
           isPlayingAudio: true,
         });
-        playbackQueue?.prefetch(currentSegmentIndex + 1);
       };
 
       nextAudio.onpause = () => {
@@ -586,15 +345,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           return;
         }
 
-        if (currentSegmentIndex + 1 < playbackUrls.length) {
-          void playSegment(currentSegmentIndex + 1).catch(() => {
-            nextAudio.onerror?.(new Event("error"));
-          });
-          return;
-        }
-
         audioRef.current = null;
-        releasePlaybackQueue();
         resetPlaybackRefs();
         setPlaybackState({
           ...DEFAULT_PLAYBACK_STATE,
@@ -608,63 +359,30 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         }
 
         audioRef.current = null;
-        releasePlaybackQueue();
         resetPlaybackRefs();
-        void (async () => {
-          const handled = await fallbackToTts();
-          if (handled || requestId !== requestIdRef.current) {
-            return;
-          }
-
-        const handledByBrowserSpeech = await playBrowserSpeechFallback(
-          audioSource,
-          requestId,
-          "ElevenLabs TTS không phát được.",
-        );
-          if (handledByBrowserSpeech || requestId !== requestIdRef.current) {
-            return;
-          }
-
-          setPlaybackState({
-            playbackKey: audioSource.uiPlaybackKey,
-            poiId: audioSource.poiId,
-            audioGuideId: audioSource.audioGuideId,
-            status: "error",
-            kind: "audio",
-            message: getPlaybackMessage(audioSource, "error"),
-            isLoadingPOI: false,
-            isGeneratingTTS: false,
-            isPlayingAudio: false,
-          });
-        })();
+        setPlaybackState({
+          playbackKey: audioSource.uiPlaybackKey,
+          poiId: audioSource.poiId,
+          audioGuideId: audioSource.audioGuideId,
+          status: "error",
+          kind: "audio",
+          message: getPlaybackMessage(audioSource, "error"),
+          isLoadingPOI: false,
+          isGeneratingTTS: false,
+          isPlayingAudio: false,
+        });
       };
 
       try {
-        await playSegment(0);
+        nextAudio.src = audioSource.audioUrl;
+        await nextAudio.play();
       } catch (error) {
         if (requestId !== requestIdRef.current) {
           return;
         }
 
         audioRef.current = null;
-        releasePlaybackQueue();
         resetPlaybackRefs();
-        const handled = await fallbackToTts();
-        if (handled || requestId !== requestIdRef.current) {
-          return;
-        }
-
-        const handledByBrowserSpeech = await playBrowserSpeechFallback(
-          audioSource,
-          requestId,
-          error instanceof DOMException && error.name === "NotAllowedError"
-            ? "Trình duyệt chặn audio ElevenLabs."
-            : "ElevenLabs TTS không phát được.",
-        );
-        if (handledByBrowserSpeech || requestId !== requestIdRef.current) {
-          return;
-        }
-
         setPlaybackState({
           playbackKey: audioSource.uiPlaybackKey,
           poiId: audioSource.poiId,
@@ -673,7 +391,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           kind: "audio",
           message:
             error instanceof DOMException && error.name === "NotAllowedError"
-              ? "Trình duyệt đã chặn tự động phát audio. Hãy bấm Phát lại để nghe thuyết minh."
+              ? "Trinh duyet da chan tu dong phat audio. Hay bam Phat lai de nghe thuyet minh."
               : getPlaybackMessage(audioSource, "error"),
           isLoadingPOI: false,
           isGeneratingTTS: false,
@@ -681,66 +399,40 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         });
       }
     },
-    [disposeTtsPlaybackQueue, playBrowserSpeechFallback, resetPlaybackRefs],
+    [resetPlaybackRefs],
   );
 
   const toggleCurrentAudio = useCallback(
     async (playbackKey: string) => {
-      if (currentPlaybackKeyRef.current !== playbackKey) {
+      if (currentPlaybackKeyRef.current !== playbackKey || !audioRef.current) {
         return false;
       }
 
       const playbackStatus = playbackStatusRef.current;
 
-      if (currentKindRef.current === "audio" && audioRef.current) {
-        if (playbackStatus === "playing") {
-          audioRef.current.pause();
-          setPlaybackState((current) => ({
-            ...current,
-            status: "paused",
-            message: "Đã tạm dừng bài thuyết minh.",
-            isPlayingAudio: false,
-          }));
-          return true;
-        }
-
-        if (playbackStatus === "paused") {
-          try {
-            await audioRef.current.play();
-            return true;
-          } catch {
-            setPlaybackState((current) => ({
-              ...current,
-              status: "error",
-              message: "Không thể tiếp tục phát bài thuyết minh.",
-              isLoadingPOI: false,
-              isGeneratingTTS: false,
-              isPlayingAudio: false,
-            }));
-            return true;
-          }
-        }
+      if (playbackStatus === "playing") {
+        audioRef.current.pause();
+        setPlaybackState((current) => ({
+          ...current,
+          status: "paused",
+          message: "Da tam dung bai thuyet minh.",
+          isPlayingAudio: false,
+        }));
+        return true;
       }
 
-      if (currentKindRef.current === "tts" && canUseBrowserSpeechSynthesis()) {
-        if (playbackStatus === "playing" && window.speechSynthesis.speaking) {
-          window.speechSynthesis.pause();
-          setPlaybackState((current) => ({
-            ...current,
-            status: "paused",
-            message: "Đã tạm dừng bài thuyết minh.",
-            isPlayingAudio: false,
-          }));
+      if (playbackStatus === "paused") {
+        try {
+          await audioRef.current.play();
           return true;
-        }
-
-        if (playbackStatus === "paused") {
-          window.speechSynthesis.resume();
+        } catch {
           setPlaybackState((current) => ({
             ...current,
-            status: "playing",
-            message: "Đang tiếp tục phát thuyết minh bằng giọng đọc của trình duyệt.",
-            isPlayingAudio: true,
+            status: "error",
+            message: "Khong the tiep tuc phat bai thuyet minh.",
+            isLoadingPOI: false,
+            isGeneratingTTS: false,
+            isPlayingAudio: false,
           }));
           return true;
         }
@@ -776,7 +468,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         audioGuideId: null,
         status: "loading",
         kind: null,
-        message: "Đang đồng bộ nội dung và audio theo ngôn ngữ hiện tại...",
+        message: "Dang dong bo metadata audio theo ngon ngu hien tai...",
         isLoadingPOI: true,
         isGeneratingTTS: false,
         isPlayingAudio: false,
@@ -796,7 +488,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         setPlaybackState((current) => ({
           ...current,
           audioGuideId: audioSource.audioGuideId,
-          isGeneratingTTS: Boolean(audioSource.generatedFromTts),
+          isGeneratingTTS: false,
           message: getPlaybackMessage(audioSource, "loading"),
         }));
 
@@ -818,9 +510,9 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           status: "error",
           kind: null,
           message:
-            error instanceof Error && error.message === "NO_POI_NARRATION_TEXT"
-              ? "POI này chưa có nội dung thuyết minh để phát."
-              : "Không thể phát bài thuyết minh cho POI này.",
+            error instanceof Error && error.message === "NO_PREGENERATED_AUDIO"
+              ? "POI nay chua co audio pre-generated cho ngon ngu da chon."
+              : "Khong the phat bai thuyet minh cho POI nay.",
           isLoadingPOI: false,
           isGeneratingTTS: false,
           isPlayingAudio: false,
@@ -837,27 +529,6 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         return;
       }
 
-      const hasPlayableAudioGuide =
-        narration.audioGuide &&
-        narration.audioGuide.sourceType === "uploaded" &&
-        hasValidAudioUrl(narration.audioGuide.audioUrl) &&
-        !isPlaceholderAudioUrl(narration.audioGuide.audioUrl);
-
-      if (!narration.ttsInputText.trim() && !hasPlayableAudioGuide) {
-        setPlaybackState({
-          playbackKey: narration.uiPlaybackKey,
-          poiId: narration.poiId,
-          audioGuideId: narration.audioGuide?.id ?? null,
-          status: "error",
-          kind: null,
-          message: "POI này chưa có nội dung thuyết minh để phát.",
-          isLoadingPOI: false,
-          isGeneratingTTS: false,
-          isPlayingAudio: false,
-        });
-        return;
-      }
-
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
       resolveAbortRef.current = null;
@@ -867,7 +538,24 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         keepState: true,
       });
 
-      const audioSource = createAudioSourceFromResolvedNarration(narration);
+      let audioSource: PoiAudioSource;
+      try {
+        audioSource = createAudioSourceFromResolvedNarration(narration);
+      } catch {
+        setPlaybackState({
+          playbackKey: narration.uiPlaybackKey,
+          poiId: narration.poiId,
+          audioGuideId: narration.audioGuide?.id ?? null,
+          status: "error",
+          kind: null,
+          message: "POI nay chua co audio pre-generated cho ngon ngu da chon.",
+          isLoadingPOI: false,
+          isGeneratingTTS: false,
+          isPlayingAudio: false,
+        });
+        return;
+      }
+
       audioCacheRef.current.set(narration.audioCacheKey, audioSource);
 
       setPlaybackState({
@@ -878,38 +566,13 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         kind: audioSource.kind,
         message: getPlaybackMessage(audioSource, "loading"),
         isLoadingPOI: true,
-        isGeneratingTTS: Boolean(audioSource.generatedFromTts),
+        isGeneratingTTS: false,
         isPlayingAudio: false,
       });
 
-      try {
-        await playPOIAudio(audioSource, requestId);
-      } catch (error) {
-        if (
-          requestId !== requestIdRef.current ||
-          (error instanceof DOMException && error.name === "AbortError")
-        ) {
-          return;
-        }
-
-        resetPlaybackRefs();
-        setPlaybackState({
-          playbackKey: narration.uiPlaybackKey,
-          poiId: narration.poiId,
-          audioGuideId: audioSource.audioGuideId,
-          status: "error",
-          kind: audioSource.kind,
-          message:
-            error instanceof DOMException && error.name === "NotAllowedError"
-              ? "Trình duyệt đã chặn tự động phát audio. Hãy bấm Phát lại một lần nữa."
-              : "Không thể phát bài thuyết minh cho POI này.",
-          isLoadingPOI: false,
-          isGeneratingTTS: false,
-          isPlayingAudio: false,
-        });
-      }
+      await playPOIAudio(audioSource, requestId);
     },
-    [playPOIAudio, resetPlaybackRefs, stopCurrentAudio, toggleCurrentAudio],
+    [playPOIAudio, stopCurrentAudio, toggleCurrentAudio],
   );
 
   const previewAudioGuide = useCallback(
@@ -927,8 +590,8 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           poiId: guide.entityId,
           audioGuideId: guide.id,
           status: "error",
-          kind: guide.sourceType === "uploaded" ? "audio" : "tts",
-          message: "Không tìm thấy POI cho audio này.",
+          kind: hasValidAudioUrl(guide.audioUrl) ? "audio" : null,
+          message: "Khong tim thay POI cho audio nay.",
           isLoadingPOI: false,
           isGeneratingTTS: false,
           isPlayingAudio: false,
@@ -948,47 +611,31 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
       resolveAbortRef.current = controller;
 
       try {
-        const narration = guide.previewText?.trim()
-          ? {
-              ...(await resolvePoiNarrationForSelection(
-                poi,
-                guide.languageCode,
-                controller.signal,
-              )),
-              displayText: guide.previewText,
-              ttsInputText: guide.previewText,
-              translatedText: guide.previewText,
-              translationStatus: "stored" as const,
-              fallbackMessage: null,
-            }
-          : await resolvePoiNarrationForSelection(
-              poi,
-              guide.languageCode,
-              controller.signal,
-            );
-        if (!narration.ttsInputText.trim() && !hasValidAudioUrl(guide.audioUrl)) {
-          throw new Error("NO_POI_NARRATION_TEXT");
-        }
+        const narration = await resolvePoiNarrationForSelection(
+          poi,
+          guide.languageCode,
+          controller.signal,
+        );
 
         const audioGuide =
           findPoiAudioGuide(state.audioGuides, guide.entityId, guide.languageCode) ??
-          (hasValidAudioUrl(guide.audioUrl)
-            ? ({
-                id: guide.id,
-                entityType: "poi",
-                entityId: guide.entityId,
-                languageCode: guide.languageCode,
-                audioUrl: guide.audioUrl,
-                sourceType: guide.sourceType,
-                status: "ready",
-                updatedAt: new Date().toISOString(),
-                updatedBy: "preview",
-              } satisfies AudioGuide)
-            : null);
+          null;
+        const audioSource = createAudioSourceFromGuide(guide, narration, audioGuide);
 
-        const audioSource = createAudioSourceFromResolvedNarration({
-          ...narration,
-          audioGuide,
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+
+        setPlaybackState({
+          playbackKey,
+          poiId: guide.entityId,
+          audioGuideId: guide.id,
+          status: "loading",
+          kind: "audio",
+          message: getPlaybackMessage(audioSource, "loading"),
+          isLoadingPOI: true,
+          isGeneratingTTS: false,
+          isPlayingAudio: false,
         });
 
         await playPOIAudio(audioSource, requestId);
@@ -1006,11 +653,11 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           poiId: guide.entityId,
           audioGuideId: guide.id,
           status: "error",
-          kind: guide.sourceType === "uploaded" ? "audio" : "tts",
+          kind: hasValidAudioUrl(guide.audioUrl) ? "audio" : null,
           message:
-            error instanceof Error && error.message === "NO_POI_NARRATION_TEXT"
-              ? "Chưa có nội dung để đọc TTS cho ngôn ngữ này."
-              : "Không thể phát thử audio này.",
+            error instanceof Error && error.message === "NO_PREGENERATED_AUDIO"
+              ? "Chua co audio pre-generated de nghe thu."
+              : "Khong the phat thu audio nay.",
           isLoadingPOI: false,
           isGeneratingTTS: false,
           isPlayingAudio: false,

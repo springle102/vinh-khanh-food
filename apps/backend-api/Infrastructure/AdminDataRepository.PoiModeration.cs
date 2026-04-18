@@ -254,19 +254,6 @@ public sealed partial class AdminDataRepository
         string poiId,
         DateTimeOffset updatedAt)
     {
-        // Status moderation should not make existing localized content look stale.
-        ExecuteNonQuery(
-            connection,
-            transaction,
-            """
-            UPDATE dbo.PoiTranslations
-            SET UpdatedAt = ?
-            WHERE EntityId = ?
-              AND EntityType IN (N'poi', N'place');
-            """,
-            updatedAt,
-            poiId);
-
         ExecuteNonQuery(
             connection,
             transaction,

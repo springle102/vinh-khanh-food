@@ -1,9 +1,0 @@
-C:\vinh-khanh-food\.codex-build\backend-verify-obj\Debug\net10.0\VinhKhanh.BackendApi.csproj.AssemblyReference.cache
-C:\vinh-khanh-food\.codex-build\backend-verify-obj\Debug\net10.0\spa.proxy.json
-C:\vinh-khanh-food\.codex-build\backend-verify-obj\Debug\net10.0\rpswa.dswa.cache.json
-C:\vinh-khanh-food\.codex-build\backend-verify-obj\Debug\net10.0\VinhKhanh.BackendApi.GeneratedMSBuildEditorConfig.editorconfig
-C:\vinh-khanh-food\.codex-build\backend-verify-obj\Debug\net10.0\VinhKhanh.BackendApi.AssemblyInfoInputs.cache
-C:\vinh-khanh-food\.codex-build\backend-verify-obj\Debug\net10.0\VinhKhanh.BackendApi.AssemblyInfo.cs
-C:\vinh-khanh-food\.codex-build\backend-verify-obj\Debug\net10.0\VinhKhanh.BackendApi.csproj.CoreCompileInputs.cache
-C:\vinh-khanh-food\.codex-build\backend-verify-obj\Debug\net10.0\VinhKhanh.BackendApi.MvcApplicationPartsAssemblyInfo.cs
-C:\vinh-khanh-food\.codex-build\backend-verify-obj\Debug\net10.0\VinhKhanh.BackendApi.MvcApplicationPartsAssemblyInfo.cache

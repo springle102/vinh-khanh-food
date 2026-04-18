@@ -108,7 +108,7 @@ public sealed partial class AdminDataRepository
                     EventType = ReadString(reader, "EventType"),
                     PoiId = ReadNullableString(reader, "PoiId"),
                     LanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(ReadString(reader, "LanguageCode")),
-                    Platform = ReadString(reader, "Platform"),
+                    Platform = NormalizeUsagePlatform(ReadString(reader, "Platform")),
                     SessionId = ReadString(reader, "SessionId"),
                     Source = ReadString(reader, "Source"),
                     Metadata = ReadString(reader, "Metadata"),
@@ -185,7 +185,6 @@ public sealed partial class AdminDataRepository
         return platform?.Trim().ToLowerInvariant() switch
         {
             "web" => "web",
-            "ios" => "ios",
             _ => "android"
         };
     }

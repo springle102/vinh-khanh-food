@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Microsoft.Maui.Media;
 using Microsoft.Maui.Storage;
 using Plugin.Maui.Audio;
 using VinhKhanh.MobileApp.Helpers;
@@ -68,6 +67,8 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
 {
     private const string AppSettingsFileName = "appsettings.json";
     private const string CacheIndexFileName = "poi-audio-cache-index.json";
+    private const string MissingAudioErrorCode = "missing_pre_generated_audio";
+    private const string UnavailableAudioErrorCode = "audio_playback_unavailable";
     private static readonly TimeSpan AudioRequestTimeout = TimeSpan.FromSeconds(45);
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
@@ -153,29 +154,31 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
 
         try
         {
-            var cachedAudio = await EnsureAudioAssetAsync(detail.Id, normalizedLanguageCode, cancellationToken);
+            var localAudio = TryResolvePackagedAudioAsset(detail, normalizedLanguageCode);
+            if (localAudio is not null)
+            {
+                _logger.LogInformation(
+                    "POI audio source selected. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; source={Source}; path={Path}",
+                    detail.Id,
+                    normalizedLanguageCode,
+                    localAudio.EffectiveLanguageCode,
+                    localAudio.PlaybackSource,
+                    localAudio.LocalFilePath);
+                await PlayCachedAudioAsync(localAudio, session);
+                return;
+            }
+
+            var cachedAudio = await EnsureAudioAssetAsync(detail, normalizedLanguageCode, cancellationToken);
             if (cachedAudio is not null)
             {
                 await PlayCachedAudioAsync(cachedAudio, session);
                 return;
             }
-
-            var narrationText = ResolveFallbackNarrationText(detail, normalizedLanguageCode);
-            if (string.IsNullOrWhiteSpace(narrationText))
-            {
-                await PublishErrorAsync(
-                    detail.Id,
-                    normalizedLanguageCode,
-                    "Chưa có nội dung thuyết minh cho địa điểm này.");
-                return;
-            }
-
-            await PlayDeviceTextToSpeechAsync(
+            _logger.LogInformation(
+                "POI audio source missing. poiId={PoiId}; requestedLanguage={RequestedLanguage}",
                 detail.Id,
-                normalizedLanguageCode,
-                uiPlaybackKey,
-                narrationText,
-                session);
+                normalizedLanguageCode);
+            await PublishErrorAsync(detail.Id, normalizedLanguageCode, MissingAudioErrorCode);
         }
         catch (OperationCanceledException) when (session.Token.IsCancellationRequested)
         {
@@ -203,7 +206,13 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
 
         try
         {
-            await EnsureAudioAssetAsync(detail.Id, AppLanguage.NormalizeCode(languageCode), cancellationToken);
+            var normalizedLanguageCode = AppLanguage.NormalizeCode(languageCode);
+            if (TryResolvePackagedAudioAsset(detail, normalizedLanguageCode) is not null)
+            {
+                return;
+            }
+
+            await EnsureAudioAssetAsync(detail, normalizedLanguageCode, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -247,20 +256,32 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
     }
 
     private async Task<CachedAudioAsset?> EnsureAudioAssetAsync(
-        string poiId,
+        PoiExperienceDetail detail,
         string languageCode,
         CancellationToken cancellationToken)
     {
-        var uiPlaybackKey = BuildUiPlaybackKey(poiId, languageCode);
+        var uiPlaybackKey = BuildUiPlaybackKey(detail.Id, languageCode);
         var cached = await TryGetCachedAudioAsync(uiPlaybackKey);
         if (cached is not null)
         {
+            _logger.LogInformation(
+                "POI audio source selected. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; source=local_cache; path={Path}",
+                detail.Id,
+                languageCode,
+                cached.EffectiveLanguageCode,
+                cached.LocalFilePath);
             return cached with { PlaybackSource = "local_cache" };
+        }
+
+        var remoteAudio = await ResolvePreparedRemoteAudioAsync(detail, languageCode);
+        if (remoteAudio is null)
+        {
+            return null;
         }
 
         var loadTask = _inflightLoads.GetOrAdd(
             uiPlaybackKey,
-            _ => LoadAndCacheAudioAsync(poiId, languageCode));
+            _ => LoadAndCacheAudioAsync(detail.Id, languageCode, remoteAudio));
 
         try
         {
@@ -275,9 +296,12 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
         }
     }
 
-    private async Task<CachedAudioAsset?> LoadAndCacheAudioAsync(string poiId, string languageCode)
+    private async Task<CachedAudioAsset?> LoadAndCacheAudioAsync(
+        string poiId,
+        string requestedLanguageCode,
+        ResolvedRemoteAudio remoteAudio)
     {
-        var downloadedAudio = await DownloadPoiAudioAsync(poiId, languageCode);
+        var downloadedAudio = await DownloadPreparedAudioAsync(poiId, requestedLanguageCode, remoteAudio);
         if (downloadedAudio is null || downloadedAudio.Content.Length == 0)
         {
             return null;
@@ -328,9 +352,17 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
         };
         await SaveCacheIndexEntryAsync(indexEntry);
 
+        _logger.LogInformation(
+            "POI audio cached for playback. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; source={Source}; cachePath={Path}",
+            poiId,
+            requestedLanguageCode,
+            downloadedAudio.EffectiveLanguageCode,
+            downloadedAudio.Source,
+            targetPath);
+
         return new CachedAudioAsset(
             poiId,
-            languageCode,
+            requestedLanguageCode,
             downloadedAudio.EffectiveLanguageCode,
             downloadedAudio.UiPlaybackKey,
             cacheKey,
@@ -342,19 +374,12 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
             downloadedAudio.Source);
     }
 
-    private async Task<DownloadedAudioPayload?> DownloadPoiAudioAsync(string poiId, string languageCode)
+    private async Task<DownloadedAudioPayload?> DownloadPreparedAudioAsync(
+        string poiId,
+        string requestedLanguageCode,
+        ResolvedRemoteAudio remoteAudio)
     {
-        var apiBaseUrl = await GetApiBaseUrlAsync();
-        if (string.IsNullOrWhiteSpace(apiBaseUrl))
-        {
-            return null;
-        }
-
-        var requestUri = new Uri(
-            new Uri(apiBaseUrl, UriKind.Absolute),
-            $"api/v1/pois/{Uri.EscapeDataString(poiId)}/audio?languageCode={Uri.EscapeDataString(languageCode)}");
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        using var request = new HttpRequestMessage(HttpMethod.Get, remoteAudio.AudioUri);
         using var timeoutSource = new CancellationTokenSource(AudioRequestTimeout);
         using var response = await _httpClient.SendAsync(
             request,
@@ -366,7 +391,7 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
             var responseBody = await SafeReadBodyAsync(response, timeoutSource.Token);
             _logger.LogWarning(
                 "POI narration audio request failed. request={Request}; statusCode={StatusCode}; responseBody={ResponseBody}",
-                requestUri,
+                remoteAudio.AudioUri,
                 (int)response.StatusCode,
                 responseBody);
             return null;
@@ -382,7 +407,7 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
         {
             _logger.LogWarning(
                 "POI narration audio request returned 0 bytes. request={Request}; contentType={ContentType}",
-                requestUri,
+                remoteAudio.AudioUri,
                 contentType);
             return null;
         }
@@ -391,29 +416,31 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
         {
             _logger.LogWarning(
                 "POI narration audio request returned a non-audio payload. request={Request}; contentType={ContentType}; responseBody={ResponseBody}",
-                requestUri,
+                remoteAudio.AudioUri,
                 contentType,
                 DecodeTextPayload(content));
             return null;
         }
 
-        var uiPlaybackKey = GetHeaderValue(response, "X-Ui-Playback-Key") ?? BuildUiPlaybackKey(poiId, languageCode);
+        var uiPlaybackKey = GetHeaderValue(response, "X-Ui-Playback-Key")
+                            ?? BuildUiPlaybackKey(poiId, requestedLanguageCode);
         var effectiveLanguageCode = AppLanguage.NormalizeCode(
-            GetHeaderValue(response, "X-Effective-Language-Code") ?? languageCode);
-        var audioCacheKey = GetHeaderValue(response, "X-Audio-Cache-Key") ?? uiPlaybackKey;
-        var source = GetHeaderValue(response, "X-Audio-Source") ?? "backend_audio";
-        var ttsLocale = GetHeaderValue(response, "X-TTS-Locale");
+            GetHeaderValue(response, "X-Effective-Language-Code") ?? remoteAudio.EffectiveLanguageCode);
+        var audioCacheKey = GetHeaderValue(response, "X-Audio-Cache-Key")
+                            ?? CreateCacheHash(remoteAudio.AudioUri.ToString());
+        var source = GetHeaderValue(response, "X-Audio-Source") ?? remoteAudio.Source;
         var estimatedDurationSeconds = TryParseDouble(
             GetHeaderValue(response, "X-Audio-Duration-Seconds"));
 
         _logger.LogInformation(
-            "POI narration audio downloaded. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; source={Source}; audioBytes={AudioBytes}; cacheKey={CacheKey}",
+            "POI pre-generated audio downloaded. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; source={Source}; audioBytes={AudioBytes}; cacheKey={CacheKey}; audioUrl={AudioUrl}",
             poiId,
-            languageCode,
+            requestedLanguageCode,
             effectiveLanguageCode,
             source,
             content.Length,
-            audioCacheKey);
+            audioCacheKey,
+            remoteAudio.AudioUri);
 
         return new DownloadedAudioPayload(
             content,
@@ -422,7 +449,7 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
             audioCacheKey,
             effectiveLanguageCode,
             source,
-            ttsLocale,
+            null,
             estimatedDurationSeconds);
     }
 
@@ -527,86 +554,6 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
         }
     }
 
-    private async Task PlayDeviceTextToSpeechAsync(
-        string poiId,
-        string languageCode,
-        string uiPlaybackKey,
-        string narrationText,
-        PlaybackSession session)
-    {
-        var snapshotToPublish = new PoiAudioPlaybackSnapshot(
-            PoiAudioPlaybackStatus.Playing,
-            poiId,
-            languageCode,
-            languageCode,
-            uiPlaybackKey,
-            null,
-            "device_tts",
-            null);
-
-        await _stateLock.WaitAsync(session.Token);
-        try
-        {
-            if (session.Id != _sessionId || session.Token.IsCancellationRequested)
-            {
-                return;
-            }
-
-            _snapshot = snapshotToPublish;
-        }
-        finally
-        {
-            _stateLock.Release();
-        }
-
-        PublishSnapshotChanged(snapshotToPublish);
-
-        try
-        {
-            await TextToSpeech.Default.SpeakAsync(narrationText, null, session.Token);
-
-            try
-            {
-                await _dataService.TrackAudioPlayAsync(poiId, languageCode, "device_tts");
-            }
-            catch
-            {
-            }
-        }
-        catch (OperationCanceledException) when (session.Token.IsCancellationRequested)
-        {
-        }
-        finally
-        {
-            PoiAudioPlaybackSnapshot? stoppedSnapshot = null;
-            await _stateLock.WaitAsync();
-            try
-            {
-                if (session.Id == _sessionId &&
-                    (_snapshot.Status == PoiAudioPlaybackStatus.Playing ||
-                     _snapshot.Status == PoiAudioPlaybackStatus.Loading))
-                {
-                    stoppedSnapshot = _snapshot with
-                    {
-                        Status = PoiAudioPlaybackStatus.Stopped,
-                        Source = null,
-                        ErrorMessage = null
-                    };
-                    _snapshot = stoppedSnapshot;
-                }
-            }
-            finally
-            {
-                _stateLock.Release();
-            }
-
-            if (stoppedSnapshot is not null)
-            {
-                PublishSnapshotChanged(stoppedSnapshot);
-            }
-        }
-    }
-
     private async Task<PlaybackSession> BeginPlaybackSessionAsync(
         string poiId,
         string languageCode,
@@ -645,6 +592,7 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
     private async Task PublishErrorAsync(string poiId, string languageCode, string message)
     {
         PoiAudioPlaybackSnapshot snapshotToPublish;
+        var normalizedMessage = NormalizePlaybackErrorMessage(message);
 
         await _stateLock.WaitAsync();
         try
@@ -657,7 +605,7 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
                 BuildUiPlaybackKey(poiId, languageCode),
                 _snapshot.AudioCacheKey,
                 null,
-                message);
+                normalizedMessage);
             _snapshot = snapshotToPublish;
         }
         finally
@@ -666,6 +614,22 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
         }
 
         PublishSnapshotChanged(snapshotToPublish);
+    }
+
+    private static string NormalizePlaybackErrorMessage(string message)
+    {
+        if (string.Equals(message, MissingAudioErrorCode, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(message, UnavailableAudioErrorCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return message;
+        }
+
+        if (message.StartsWith("Ch", StringComparison.OrdinalIgnoreCase))
+        {
+            return MissingAudioErrorCode;
+        }
+
+        return UnavailableAudioErrorCode;
     }
 
     private void CancelActiveSessionLocked()
@@ -772,6 +736,41 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
         await File.WriteAllTextAsync(indexPath, payload);
     }
 
+    private static CachedAudioAsset? TryResolvePackagedAudioAsset(PoiExperienceDetail detail, string languageCode)
+    {
+        foreach (var candidate in AppLanguage.GetCandidateCodes(languageCode))
+        {
+            if (!detail.AudioUrls.Values.TryGetValue(candidate, out var audioLocation) ||
+                string.IsNullOrWhiteSpace(audioLocation))
+            {
+                continue;
+            }
+
+            var localFilePath = TryResolveLocalFilePath(audioLocation);
+            if (string.IsNullOrWhiteSpace(localFilePath) || !File.Exists(localFilePath))
+            {
+                continue;
+            }
+
+            var normalizedCandidate = AppLanguage.NormalizeCode(candidate);
+            var uiPlaybackKey = BuildUiPlaybackKey(detail.Id, languageCode);
+            return new CachedAudioAsset(
+                detail.Id,
+                languageCode,
+                normalizedCandidate,
+                uiPlaybackKey,
+                $"offline:{detail.Id}:{normalizedCandidate}",
+                localFilePath,
+                GuessContentType(localFilePath),
+                "offline_package",
+                null,
+                null,
+                "offline_package");
+        }
+
+        return null;
+    }
+
     private async Task<string?> GetApiBaseUrlAsync()
     {
         var runtimeSettings = await LoadRuntimeSettingsAsync();
@@ -804,25 +803,96 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
         return _runtimeSettings;
     }
 
-    private static string ResolveFallbackNarrationText(PoiExperienceDetail detail, string languageCode)
+    private async Task<ResolvedRemoteAudio?> ResolvePreparedRemoteAudioAsync(
+        PoiExperienceDetail detail,
+        string requestedLanguageCode)
     {
-        foreach (var candidate in AppLanguage.GetCandidateCodes(languageCode))
+        var apiBaseUrl = await GetApiBaseUrlAsync();
+        foreach (var candidate in AppLanguage.GetCandidateCodes(requestedLanguageCode))
         {
-            if (detail.Description.Values.TryGetValue(candidate, out var description) &&
-                LocalizationFallbackPolicy.IsUsableTextForLanguage(description, candidate))
+            if (!detail.AudioUrls.Values.TryGetValue(candidate, out var audioLocation) ||
+                string.IsNullOrWhiteSpace(audioLocation))
             {
-                return description.Trim();
+                continue;
             }
 
-            if (detail.Summary.Values.TryGetValue(candidate, out var summary) &&
-                LocalizationFallbackPolicy.IsUsableTextForLanguage(summary, candidate))
+            var normalizedAudioLocation = audioLocation.Trim();
+            var localFilePath = TryResolveLocalFilePath(normalizedAudioLocation);
+            if (!string.IsNullOrWhiteSpace(localFilePath))
             {
-                return summary.Trim();
+                if (!File.Exists(localFilePath))
+                {
+                    _logger.LogDebug(
+                        "Skipping missing local POI audio asset. poiId={PoiId}; requestedLanguage={RequestedLanguage}; candidateLanguage={CandidateLanguage}; path={Path}",
+                        detail.Id,
+                        requestedLanguageCode,
+                        candidate,
+                        localFilePath);
+                }
+
+                continue;
             }
+
+            var preparedAudioUri = ResolvePreparedAudioUri(normalizedAudioLocation, apiBaseUrl);
+            if (preparedAudioUri is null)
+            {
+                continue;
+            }
+
+            var normalizedCandidate = AppLanguage.NormalizeCode(candidate);
+            _logger.LogInformation(
+                "POI audio source selected. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; source=remote_pre_generated; audioUrl={AudioUrl}",
+                detail.Id,
+                requestedLanguageCode,
+                normalizedCandidate,
+                preparedAudioUri);
+            return new ResolvedRemoteAudio(
+                normalizedCandidate,
+                preparedAudioUri,
+                "remote_pre_generated");
         }
 
-        return string.Empty;
+        return null;
     }
+
+    private static string? TryResolveLocalFilePath(string value)
+    {
+        var normalizedValue = value.Trim();
+        if (Path.IsPathRooted(normalizedValue))
+        {
+            return normalizedValue;
+        }
+
+        return Uri.TryCreate(normalizedValue, UriKind.Absolute, out var uri) && uri.IsFile
+            ? uri.LocalPath
+            : null;
+    }
+
+    private static Uri? ResolvePreparedAudioUri(string audioLocation, string? apiBaseUrl)
+    {
+        if (Uri.TryCreate(audioLocation, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri.IsFile ? null : absoluteUri;
+        }
+
+        if (string.IsNullOrWhiteSpace(apiBaseUrl))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(new Uri(apiBaseUrl, UriKind.Absolute), audioLocation, out var combinedUri)
+            ? combinedUri
+            : null;
+    }
+
+    private static string GuessContentType(string path)
+        => Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".wav" => "audio/wav",
+            ".ogg" => "audio/ogg",
+            ".opus" => "audio/opus",
+            _ => "audio/mpeg"
+        };
 
     private static string BuildUiPlaybackKey(string poiId, string languageCode)
         => $"{poiId}:{AppLanguage.NormalizeCode(languageCode)}";
@@ -951,6 +1021,11 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
         string? TtsLocale,
         double? EstimatedDurationSeconds);
 
+    private sealed record ResolvedRemoteAudio(
+        string EffectiveLanguageCode,
+        Uri AudioUri,
+        string Source);
+
     private sealed class MobileRuntimeAppSettings
     {
         public string? ApiBaseUrl { get; set; }
@@ -964,7 +1039,7 @@ public sealed class PoiAudioPlaybackService : IPoiAudioPlaybackService
         public string FileName { get; set; } = string.Empty;
         public string ContentType { get; set; } = "audio/mpeg";
         public string EffectiveLanguageCode { get; set; } = AppLanguage.FallbackLanguage;
-        public string Source { get; set; } = "backend_audio";
+        public string Source { get; set; } = "remote_pre_generated";
         public string? TtsLocale { get; set; }
         public double? EstimatedDurationSeconds { get; set; }
         public DateTimeOffset CachedAtUtc { get; set; } = DateTimeOffset.UtcNow;

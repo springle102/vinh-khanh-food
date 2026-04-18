@@ -46,15 +46,10 @@
                                                 <Setter Property="Stroke" Value="{StaticResource BrandPrimary}" />
                                                 <Setter Property="StrokeThickness" Value="1.6" />
                                             </DataTrigger>
-                                            <DataTrigger TargetType="Border" Binding="{Binding IsLocked}" Value="True">
-                                                <Setter Property="BackgroundColor" Value="#FFF8F1" />
-                                                <Setter Property="Stroke" Value="#E8D2A8" />
-                                            </DataTrigger>
                                         </Border.Triggers>
 
-                                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                                             <Label
-                                                Grid.RowSpan="2"
                                                 FontSize="28"
                                                 Text="{Binding Flag}"
                                                 VerticalOptions="Center" />
@@ -66,21 +61,6 @@
                                                 MaxLines="2"
                                                 Text="{Binding DisplayName}"
                                                 VerticalOptions="Center" />
-                                            <Border
-                                                Grid.Row="1"
-                                                Grid.Column="1"
-                                                Padding="10,4"
-                                                BackgroundColor="#FFF1D6"
-                                                HorizontalOptions="Start"
-                                                IsVisible="{Binding IsPremium}"
-                                                StrokeThickness="0"
-                                                StrokeShape="RoundRectangle 12">
-                                                <Label
-                                                    FontFamily="OpenSansSemibold"
-                                                    FontSize="10"
-                                                    Text="{Binding Source={x:Reference PageRoot}, Path=BindingContext.PremiumBadgeText}"
-                                                    TextColor="#9A5B12" />
-                                            </Border>
                                         </Grid>
 
                                         <Border.GestureRecognizers>
@@ -90,6 +70,210 @@
                                 </DataTemplate>
                             </BindableLayout.ItemTemplate>
                         </FlexLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Style="{StaticResource CardBorderStyle}">
+                    <VerticalStackLayout Spacing="16">
+                        <VerticalStackLayout Spacing="6">
+                            <Label FontFamily="OpenSansSemibold" FontSize="18" Text="{Binding OfflinePackageTitleText}" />
+                            <Label
+                                FontSize="13"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageDescriptionText}"
+                                TextColor="{StaticResource BrandTextSecondary}" />
+                        </VerticalStackLayout>
+
+                        <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+                            <Label
+                                FontFamily="OpenSansSemibold"
+                                FontSize="12"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageStatusCaptionText}"
+                                TextColor="{StaticResource BrandTextMuted}"
+                                VerticalTextAlignment="Start" />
+                            <Label
+                                Grid.Column="1"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="13"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageStatusText}"
+                                TextColor="{StaticResource BrandTextPrimary}"
+                                VerticalTextAlignment="Start" />
+
+                            <Label
+                                Grid.Row="1"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="12"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageSizeCaptionText}"
+                                TextColor="{StaticResource BrandTextMuted}"
+                                VerticalTextAlignment="Start" />
+                            <Label
+                                Grid.Row="1"
+                                Grid.Column="1"
+                                FontSize="13"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageSizeText}"
+                                TextColor="{StaticResource BrandTextPrimary}"
+                                VerticalTextAlignment="Start" />
+
+                            <Label
+                                Grid.Row="2"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="12"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageUpdatedCaptionText}"
+                                TextColor="{StaticResource BrandTextMuted}"
+                                VerticalTextAlignment="Start" />
+                            <Label
+                                Grid.Row="2"
+                                Grid.Column="1"
+                                FontSize="13"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageUpdatedText}"
+                                TextColor="{StaticResource BrandTextPrimary}"
+                                VerticalTextAlignment="Start" />
+
+                            <Label
+                                Grid.Row="3"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="12"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageVersionCaptionText}"
+                                TextColor="{StaticResource BrandTextMuted}"
+                                VerticalTextAlignment="Start" />
+                            <Label
+                                Grid.Row="3"
+                                Grid.Column="1"
+                                FontSize="13"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageVersionText}"
+                                TextColor="{StaticResource BrandTextPrimary}"
+                                VerticalTextAlignment="Start" />
+
+                            <Label
+                                Grid.Row="4"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="12"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageSpaceCaptionText}"
+                                TextColor="{StaticResource BrandTextMuted}"
+                                VerticalTextAlignment="Start" />
+                            <Label
+                                Grid.Row="4"
+                                Grid.Column="1"
+                                FontSize="13"
+                                LineBreakMode="WordWrap"
+                                Text="{Binding OfflinePackageSpaceText}"
+                                TextColor="{StaticResource BrandTextPrimary}"
+                                VerticalTextAlignment="Start" />
+                        </Grid>
+
+                        <VerticalStackLayout IsVisible="{Binding HasOfflinePackageProgress}" Spacing="8">
+                            <ProgressBar Progress="{Binding OfflinePackageProgressValue}" />
+                            <Label
+                                FontSize="12"
+                                HorizontalTextAlignment="Center"
+                                Text="{Binding OfflinePackageProgressText}"
+                                TextColor="{StaticResource BrandTextSecondary}" />
+                        </VerticalStackLayout>
+
+                        <Label
+                            FontSize="12"
+                            IsVisible="{Binding HasOfflinePackageUpdateHint}"
+                            Text="{Binding OfflinePackageUpdateHintText}"
+                            TextColor="#A85D10" />
+
+                        <Label
+                            FontSize="12"
+                            IsVisible="{Binding HasOfflinePackageError}"
+                            Text="{Binding OfflinePackageErrorText}"
+                            TextColor="#B42318" />
+
+                        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10">
+                            <Button
+                                BackgroundColor="{StaticResource BrandPrimary}"
+                                Command="{Binding DownloadOfflinePackageCommand}"
+                                CornerRadius="14"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="12"
+                                Grid.Column="0"
+                                IsVisible="{Binding ShowOfflinePackageDownloadButton}"
+                                Text="{Binding OfflinePackageDownloadButtonText}"
+                                TextColor="White" />
+
+                            <Button
+                                BackgroundColor="#FFF6EE"
+                                BorderColor="#F1D2AE"
+                                BorderWidth="1"
+                                Command="{Binding UpdateOfflinePackageCommand}"
+                                CornerRadius="14"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="12"
+                                Grid.Column="1"
+                                IsVisible="{Binding ShowOfflinePackageInstalledActions}"
+                                Text="{Binding OfflinePackageUpdateButtonText}"
+                                TextColor="#A85D10" />
+
+                            <Button
+                                BackgroundColor="#FAF6F0"
+                                BorderColor="#E6DCCE"
+                                BorderWidth="1"
+                                Command="{Binding DeleteOfflinePackageCommand}"
+                            CornerRadius="14"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="12"
+                                Grid.Row="1"
+                                Grid.Column="0"
+                                IsVisible="{Binding ShowOfflinePackageInstalledActions}"
+                                Text="{Binding OfflinePackageDeleteButtonText}"
+                                TextColor="{StaticResource BrandTextPrimary}" />
+
+                            <Button
+                                BackgroundColor="#FAF6F0"
+                                BorderColor="#E6DCCE"
+                                BorderWidth="1"
+                                Command="{Binding CancelOfflinePackageCommand}"
+                                CornerRadius="14"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="12"
+                                Grid.Row="1"
+                                Grid.Column="1"
+                                IsVisible="{Binding IsOfflinePackageBusy}"
+                                Text="{Binding OfflinePackageCancelButtonText}"
+                                TextColor="{StaticResource BrandTextPrimary}" />
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10">
+                            <Border BackgroundColor="#FBF8F3" Padding="12,10" Stroke="#EEE2D6" StrokeShape="RoundRectangle 18">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding OfflinePackagePoiCountCaptionText}" TextColor="{StaticResource BrandTextMuted}" />
+                                    <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding OfflinePackagePoiCount}" TextColor="{StaticResource BrandTextPrimary}" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <Border Grid.Column="1" BackgroundColor="#FBF8F3" Padding="12,10" Stroke="#EEE2D6" StrokeShape="RoundRectangle 18">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding OfflinePackageAudioCountCaptionText}" TextColor="{StaticResource BrandTextMuted}" />
+                                    <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding OfflinePackageAudioCount}" TextColor="{StaticResource BrandTextPrimary}" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <Border Grid.Row="1" BackgroundColor="#FBF8F3" Padding="12,10" Stroke="#EEE2D6" StrokeShape="RoundRectangle 18">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding OfflinePackageImageCountCaptionText}" TextColor="{StaticResource BrandTextMuted}" />
+                                    <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding OfflinePackageImageCount}" TextColor="{StaticResource BrandTextPrimary}" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <Border Grid.Row="1" Grid.Column="1" BackgroundColor="#FBF8F3" Padding="12,10" Stroke="#EEE2D6" StrokeShape="RoundRectangle 18">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding OfflinePackageTourCountCaptionText}" TextColor="{StaticResource BrandTextMuted}" />
+                                    <Label FontFamily="OpenSansSemibold" FontSize="16" Text="{Binding OfflinePackageTourCount}" TextColor="{StaticResource BrandTextPrimary}" />
+                                </VerticalStackLayout>
+                            </Border>
+                        </Grid>
                     </VerticalStackLayout>
                 </Border>
             </VerticalStackLayout>

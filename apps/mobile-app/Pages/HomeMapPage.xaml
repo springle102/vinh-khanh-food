@@ -52,66 +52,114 @@
                         </Grid>
                     </Border>
 
-                    <Border
-                        Grid.Row="1"
-                        Grid.ColumnSpan="2"
-                        BackgroundColor="#FFF4E8"
-                        IsVisible="{Binding HasVisibleTour}"
-                        Padding="12,10"
-                        Stroke="#F1D2AE"
-                        StrokeShape="RoundRectangle 18">
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                            <Border
-                                WidthRequest="28"
-                                HeightRequest="28"
-                                BackgroundColor="#F59E0B"
-                                StrokeThickness="0"
-                                StrokeShape="RoundRectangle 14"
-                                VerticalOptions="Center">
-                                <Label
-                                    FontFamily="OpenSansSemibold"
-                                    FontSize="12"
-                                    HorizontalTextAlignment="Center"
-                                    Text="T"
-                                    TextColor="White"
-                                    VerticalTextAlignment="Center" />
-                            </Border>
+                    <VerticalStackLayout Grid.Row="1" Grid.ColumnSpan="2" Spacing="10">
+                        <Border
+                            BackgroundColor="#FFF7ED"
+                            IsVisible="{Binding ShowOfflineNotice}"
+                            Padding="14,12"
+                            Stroke="#F1D2AE"
+                            StrokeShape="RoundRectangle 20">
+                            <VerticalStackLayout Spacing="10">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="14"
+                                        Text="{Binding OfflineNoticeTitleText}"
+                                        TextColor="{StaticResource BrandTextPrimary}" />
+                                    <Label
+                                        FontSize="12"
+                                        LineBreakMode="WordWrap"
+                                        Text="{Binding OfflineNoticeDescriptionText}"
+                                        TextColor="{StaticResource BrandTextSecondary}" />
+                                </VerticalStackLayout>
 
-                            <VerticalStackLayout Grid.Column="1" Spacing="2">
-                                <Label
-                                    FontFamily="OpenSansSemibold"
-                                    FontSize="13"
-                                    LineBreakMode="TailTruncation"
-                                    Text="{Binding TourBannerText}"
-                                    TextColor="{StaticResource BrandTextPrimary}" />
-                                <Label
-                                    FontSize="11"
-                                    LineBreakMode="TailTruncation"
-                                    Text="{Binding TourBannerMetaText}"
-                                    TextColor="{StaticResource BrandTextSecondary}" />
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                                    <Button
+                                        BackgroundColor="{StaticResource BrandPrimary}"
+                                        Command="{Binding OfflineNoticePrimaryActionCommand}"
+                                        CornerRadius="16"
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="12"
+                                        Padding="14,10"
+                                        Text="{Binding OfflineNoticePrimaryActionText}"
+                                        TextColor="White" />
+
+                                    <Button
+                                        Grid.Column="1"
+                                        BackgroundColor="#FAF6F0"
+                                        BorderColor="#E6DCCE"
+                                        BorderWidth="1"
+                                        Command="{Binding OfflineNoticeSecondaryActionCommand}"
+                                        CornerRadius="16"
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="12"
+                                        IsVisible="{Binding ShowOfflineNoticeSecondaryAction}"
+                                        Padding="14,10"
+                                        Text="{Binding OfflineNoticeSecondaryActionText}"
+                                        TextColor="{StaticResource BrandTextPrimary}" />
+                                </Grid>
                             </VerticalStackLayout>
+                        </Border>
 
-                            <Border
-                                Grid.Column="2"
-                                WidthRequest="28"
-                                HeightRequest="28"
-                                BackgroundColor="#FFFFFF"
-                                Stroke="#F1D2AE"
-                                StrokeShape="RoundRectangle 14"
-                                VerticalOptions="Center">
-                                <Border.GestureRecognizers>
-                                    <TapGestureRecognizer Command="{Binding ExitTourModeCommand}" />
-                                </Border.GestureRecognizers>
-                                <Label
-                                    FontFamily="OpenSansSemibold"
-                                    FontSize="12"
-                                    HorizontalTextAlignment="Center"
-                                    Text="X"
-                                    TextColor="#A85D10"
-                                    VerticalTextAlignment="Center" />
-                            </Border>
-                        </Grid>
-                    </Border>
+                        <Border
+                            BackgroundColor="#FFF4E8"
+                            IsVisible="{Binding HasVisibleTour}"
+                            Padding="12,10"
+                            Stroke="#F1D2AE"
+                            StrokeShape="RoundRectangle 18">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <Border
+                                    WidthRequest="28"
+                                    HeightRequest="28"
+                                    BackgroundColor="#F59E0B"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 14"
+                                    VerticalOptions="Center">
+                                    <Label
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="12"
+                                        HorizontalTextAlignment="Center"
+                                        Text="T"
+                                        TextColor="White"
+                                        VerticalTextAlignment="Center" />
+                                </Border>
+
+                                <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                    <Label
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="13"
+                                        LineBreakMode="TailTruncation"
+                                        Text="{Binding TourBannerText}"
+                                        TextColor="{StaticResource BrandTextPrimary}" />
+                                    <Label
+                                        FontSize="11"
+                                        LineBreakMode="TailTruncation"
+                                        Text="{Binding TourBannerMetaText}"
+                                        TextColor="{StaticResource BrandTextSecondary}" />
+                                </VerticalStackLayout>
+
+                                <Border
+                                    Grid.Column="2"
+                                    WidthRequest="28"
+                                    HeightRequest="28"
+                                    BackgroundColor="#FFFFFF"
+                                    Stroke="#F1D2AE"
+                                    StrokeShape="RoundRectangle 14"
+                                    VerticalOptions="Center">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding ExitTourModeCommand}" />
+                                    </Border.GestureRecognizers>
+                                    <Label
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="12"
+                                        HorizontalTextAlignment="Center"
+                                        Text="X"
+                                        TextColor="#A85D10"
+                                        VerticalTextAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </VerticalStackLayout>
 
                     <VerticalStackLayout
                         Grid.Row="2"

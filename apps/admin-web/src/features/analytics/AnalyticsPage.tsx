@@ -18,7 +18,7 @@ export const AnalyticsPage = () => {
   const audioEvents = state.usageEvents.filter((item) => item.eventType === "audio_play");
   const qrEvents = state.usageEvents.filter((item) => item.eventType === "qr_scan");
 
-  const deviceBreakdown = ["android", "web", "ios"].map((platform) => ({
+  const deviceBreakdown = ["android", "web"].map((platform) => ({
     label: platform.toUpperCase(),
     value: state.usageEvents.filter((item) => item.platform === platform).length,
   }));

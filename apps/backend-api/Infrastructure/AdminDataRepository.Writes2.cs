@@ -148,94 +148,6 @@ public sealed partial class AdminDataRepository
             : normalizedEntityType.ToLowerInvariant();
     }
 
-    public CustomerUser? LoginCustomer(string identifier, string password)
-    {
-        using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
-
-        var customer = GetCustomerUserByCredentials(connection, transaction, identifier, password);
-        if (customer is null)
-        {
-            transaction.Rollback();
-            return null;
-        }
-
-        ExecuteNonQuery(
-            connection,
-            transaction,
-            """
-            UPDATE dbo.CustomerUsers
-            SET LastActiveAt = ?
-            WHERE Id = ?;
-            """,
-            DateTimeOffset.UtcNow,
-            customer.Id);
-
-        AppendAuditLog(
-            connection,
-            transaction,
-            customer.Name,
-            "CUSTOMER",
-            "Dang nhap khach hang",
-            customer.Id);
-
-        var saved = GetCustomerUserById(connection, transaction, customer.Id) ?? customer;
-        transaction.Commit();
-        return saved;
-    }
-
-    public CustomerUser? UpdateCustomerProfile(string id, CustomerProfileUpdateRequest request)
-    {
-        using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
-
-        var existing = GetCustomerUserById(connection, transaction, id);
-        if (existing is null)
-        {
-            transaction.Rollback();
-            return null;
-        }
-
-        var normalizedName = NormalizeCustomerProfileValue(request.Name, "Tên", 120);
-        var normalizedEmail = NormalizeCustomerRegistrationEmail(request.Email);
-        var normalizedPhone = NormalizeCustomerProfileValue(request.Phone, "Số điện thoại", 30);
-
-        normalizedPhone = NormalizeCustomerRegistrationPhone(request.Phone);
-        var normalizedUsername = NormalizeCustomerUsername(request.Username);
-        var existingRows = GetCustomerIdentityRowsForRegistration(connection, transaction);
-        EnsureCustomerIdentityIsUnique(existingRows, normalizedEmail, normalizedPhone, normalizedUsername, id);
-
-        ExecuteNonQuery(
-            connection,
-            transaction,
-            """
-            UPDATE dbo.CustomerUsers
-            SET Name = ?,
-                Username = ?,
-                Email = ?,
-                Phone = ?
-            WHERE Id = ?;
-            """,
-            normalizedName,
-            normalizedUsername,
-            normalizedEmail,
-            normalizedPhone,
-            id);
-
-        AppendAuditLog(
-            connection,
-            transaction,
-            normalizedName,
-            "CUSTOMER",
-            "Cập nhật hồ sơ khách hàng",
-            id);
-
-        var saved = GetCustomerUserById(connection, transaction, id);
-
-        transaction.Commit();
-        return saved;
-    }
-
     public MediaAsset SaveMediaAsset(string? id, MediaAssetUpsertRequest request, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
@@ -765,10 +677,7 @@ public sealed partial class AdminDataRepository
                 .Select(PremiumAccessCatalog.NormalizeLanguageCode)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList(),
-            FreeLanguages = [],
-            PremiumLanguages = [],
-            TtsProvider = NormalizeTtsProvider(request.TtsProvider),
-            PremiumUnlockPriceUsd = 0
+            TtsProvider = NormalizeTtsProvider(request.TtsProvider)
         };
 
         if (normalizedRequest.SupportedLanguages.Count == 0)
@@ -795,7 +704,6 @@ public sealed partial class AdminDataRepository
                     SupportEmail = ?,
                     DefaultLanguage = ?,
                     FallbackLanguage = ?,
-                    PremiumUnlockPriceUsd = ?,
                     MapProvider = ?,
                     StorageProvider = ?,
                     TtsProvider = ?,
@@ -807,7 +715,6 @@ public sealed partial class AdminDataRepository
                 normalizedRequest.SupportEmail,
                 normalizedRequest.DefaultLanguage,
                 normalizedRequest.FallbackLanguage,
-                normalizedRequest.PremiumUnlockPriceUsd,
                 normalizedRequest.MapProvider,
                 normalizedRequest.StorageProvider,
                 normalizedRequest.TtsProvider,
@@ -821,16 +728,15 @@ public sealed partial class AdminDataRepository
                 transaction,
                 """
                 INSERT INTO dbo.SystemSettings (
-                    Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd,
+                    Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage,
                     MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, AnalyticsRetentionDays
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 normalizedRequest.AppName,
                 normalizedRequest.SupportEmail,
                 normalizedRequest.DefaultLanguage,
                 normalizedRequest.FallbackLanguage,
-                normalizedRequest.PremiumUnlockPriceUsd,
                 normalizedRequest.MapProvider,
                 normalizedRequest.StorageProvider,
                 normalizedRequest.TtsProvider,
@@ -839,8 +745,6 @@ public sealed partial class AdminDataRepository
         }
 
         ReplaceSettingLanguages(connection, transaction, "supported", normalizedRequest.SupportedLanguages);
-        ReplaceSettingLanguages(connection, transaction, "free", []);
-        ReplaceSettingLanguages(connection, transaction, "premium", []);
 
         AppendAdminAuditLog(connection, transaction, actor, "Cap nhat cai dat he thong", "SETTINGS", "system", request.AppName);
 
@@ -1210,19 +1114,7 @@ public sealed partial class AdminDataRepository
         string actorName,
         string targetValue)
     {
-        if (!string.IsNullOrWhiteSpace(targetValue))
-        {
-            var customer = GetCustomerUserById(connection, transaction, targetValue);
-            if (customer is not null)
-            {
-                return customer.Id;
-            }
-        }
-
-        var matchedCustomer = GetCustomerUsers(connection, transaction)
-            .FirstOrDefault(user => string.Equals(user.Name, actorName, StringComparison.OrdinalIgnoreCase));
-
-        return matchedCustomer?.Id ?? targetValue;
+        return string.IsNullOrWhiteSpace(targetValue) ? actorName : targetValue;
     }
 
     private static string GuessLegacyAuditModule(string action)

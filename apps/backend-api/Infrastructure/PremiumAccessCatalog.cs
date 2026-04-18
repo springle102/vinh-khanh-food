@@ -1,17 +1,14 @@
 namespace VinhKhanh.BackendApi.Infrastructure;
 
+// Kept as a compatibility language helper; premium language gating has been removed.
 public static class PremiumAccessCatalog
 {
-    public const int DefaultPremiumPriceUsd = 10;
+    private static readonly IReadOnlyList<string> SupportedLanguageList = ["vi", "en", "zh-CN", "ko", "ja"];
+    private static readonly HashSet<string> SupportedLanguageSet = new(SupportedLanguageList, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly IReadOnlyList<string> FreeLanguageList = ["vi", "en"];
-    private static readonly IReadOnlyList<string> PremiumLanguageList = ["zh-CN", "ko", "ja"];
-    private static readonly HashSet<string> FreeLanguageSet = new(FreeLanguageList, StringComparer.OrdinalIgnoreCase);
-    private static readonly HashSet<string> PremiumLanguageSet = new(PremiumLanguageList, StringComparer.OrdinalIgnoreCase);
+    public static IReadOnlyList<string> FreeLanguages => SupportedLanguageList;
 
-    public static IReadOnlyList<string> FreeLanguages => FreeLanguageList;
-
-    public static IReadOnlyList<string> PremiumLanguages => PremiumLanguageList;
+    public static IReadOnlyList<string> PremiumLanguages => [];
 
     public static string NormalizeLanguageCode(string? languageCode)
     {
@@ -32,24 +29,14 @@ public static class PremiumAccessCatalog
         };
     }
 
-    public static bool RequiresPremium(string? languageCode)
-        => PremiumLanguageSet.Contains(NormalizeLanguageCode(languageCode));
+    public static bool RequiresPremium(string? languageCode) => false;
 
     public static bool IsSupportedLanguage(string? languageCode)
-    {
-        var normalized = NormalizeLanguageCode(languageCode);
-        return FreeLanguageSet.Contains(normalized) || PremiumLanguageSet.Contains(normalized);
-    }
+        => SupportedLanguageSet.Contains(NormalizeLanguageCode(languageCode));
 
     public static bool CanUseLanguage(bool isPremiumUser, string? languageCode)
-    {
-        var normalized = NormalizeLanguageCode(languageCode);
-        return FreeLanguageSet.Contains(normalized) ||
-               (isPremiumUser && PremiumLanguageSet.Contains(normalized));
-    }
+        => IsSupportedLanguage(languageCode);
 
     public static IReadOnlyList<string> GetAllowedLanguages(bool isPremiumUser)
-        => isPremiumUser
-            ? [.. FreeLanguageList, .. PremiumLanguageList]
-            : [.. FreeLanguageList];
+        => SupportedLanguageList;
 }

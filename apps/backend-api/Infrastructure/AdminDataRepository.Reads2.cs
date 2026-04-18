@@ -108,7 +108,7 @@ public sealed partial class AdminDataRepository
                 Id = ReadString(reader, "Id"),
                 PoiId = ReadString(reader, "PoiId"),
                 LanguageCode = ReadString(reader, "LanguageCode"),
-                DeviceType = ReadString(reader, "DeviceType"),
+                DeviceType = NormalizeUsagePlatform(ReadString(reader, "DeviceType")),
                 ViewedAt = ReadDateTimeOffset(reader, "ViewedAt")
             });
         }
@@ -215,7 +215,7 @@ public sealed partial class AdminDataRepository
     private SystemSetting GetSettings(SqlConnection connection, SqlTransaction? transaction)
     {
         const string settingSql = """
-            SELECT Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, PremiumUnlockPriceUsd, MapProvider,
+            SELECT Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, MapProvider,
                    StorageProvider, TtsProvider, GeofenceRadiusMeters, AnalyticsRetentionDays
             FROM dbo.SystemSettings
             WHERE Id = 1;
@@ -346,58 +346,6 @@ public sealed partial class AdminDataRepository
             ReadNullableString(reader, "ManagedPoiId"));
     }
 
-    public CustomerUser? GetCustomerUserById(string id)
-    {
-        using var connection = OpenConnection();
-        return GetCustomerUserById(connection, null, id);
-    }
-
-    private CustomerUser? GetCustomerUserByCredentials(
-        SqlConnection connection,
-        SqlTransaction? transaction,
-        string identifier,
-        string password)
-    {
-        var normalizedIdentifier = identifier?.Trim() ?? string.Empty;
-        var normalizedPassword = password?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(normalizedIdentifier) || string.IsNullOrWhiteSpace(normalizedPassword))
-        {
-            return null;
-        }
-
-        var normalizedPhone = NormalizePhoneForComparison(normalizedIdentifier);
-
-        return GetCustomerUsers(connection, transaction)
-            .OrderByDescending(item => item.LastActiveAt ?? item.CreatedAt)
-            .FirstOrDefault(item =>
-                string.Equals(item.Password, normalizedPassword, StringComparison.Ordinal) &&
-                (
-                    string.Equals(item.Email, normalizedIdentifier, StringComparison.OrdinalIgnoreCase) ||
-                    (!string.IsNullOrWhiteSpace(item.Username) &&
-                     string.Equals(item.Username, normalizedIdentifier, StringComparison.OrdinalIgnoreCase)) ||
-                    (normalizedPhone.Length > 0 &&
-                     !string.IsNullOrWhiteSpace(item.Phone) &&
-                     string.Equals(NormalizePhoneForComparison(item.Phone), normalizedPhone, StringComparison.Ordinal))
-                ));
-    }
-
-    private CustomerUser? GetCustomerUserById(SqlConnection connection, SqlTransaction? transaction, string id)
-        => GetCustomerUsers(connection, transaction)
-            .FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
-
-    private EndUser? GetEndUserById(SqlConnection connection, SqlTransaction? transaction, string id)
-    {
-        const string sql = """
-            SELECT TOP 1 Id, Name, Email, Phone, [Password], Username, PreferredLanguage, Country, CreatedAt, LastActiveAt
-            FROM dbo.CustomerUsers
-            WHERE Id = ?;
-            """;
-
-        using var command = CreateCommand(connection, transaction, sql, id);
-        using var reader = command.ExecuteReader();
-        return reader.Read() ? MapEndUser(reader) : null;
-    }
-
     private RefreshSession? GetRefreshSession(
         SqlConnection connection,
         SqlTransaction? transaction,
@@ -436,7 +384,7 @@ public sealed partial class AdminDataRepository
     private Translation? GetTranslationById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium,
+            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription,
                    SourceLanguageCode, SourceHash, SourceUpdatedAt, UpdatedBy, UpdatedAt
             FROM dbo.PoiTranslations
             WHERE Id = ?;
@@ -447,34 +395,35 @@ public sealed partial class AdminDataRepository
         return reader.Read() ? MapTranslation(reader) : null;
     }
 
-    private Translation? GetTranslationByKey(
-        SqlConnection connection,
-        SqlTransaction? transaction,
-        string entityType,
-        string entityId,
-        string languageCode)
-    {
-        const string sql = """
-            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium,
-                   SourceLanguageCode, SourceHash, SourceUpdatedAt, UpdatedBy, UpdatedAt
-            FROM dbo.PoiTranslations
-            WHERE EntityId = ? AND LanguageCode = ?
-              AND (
-                    EntityType = ? OR
-                    (? = N'poi' AND EntityType = N'place')
-              )
-            ORDER BY CASE WHEN EntityType = ? THEN 0 ELSE 1 END, UpdatedAt DESC, Id DESC;
-            """;
-
-        using var command = CreateCommand(connection, transaction, sql, entityId, languageCode, entityType, entityType, entityType);
-        using var reader = command.ExecuteReader();
-        return reader.Read() ? MapTranslation(reader) : null;
-    }
-
     private AudioGuide? GetAudioGuideById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, AudioUrl, VoiceType, SourceType, [Status], UpdatedBy, UpdatedAt
+            SELECT TOP 1
+                Id,
+                EntityType,
+                EntityId,
+                LanguageCode,
+                TranscriptText,
+                AudioUrl,
+                AudioFilePath,
+                AudioFileName,
+                VoiceType,
+                SourceType,
+                Provider,
+                VoiceId,
+                ModelId,
+                OutputFormat,
+                DurationInSeconds,
+                FileSizeBytes,
+                TextHash,
+                ContentVersion,
+                GeneratedAt,
+                GenerationStatus,
+                ErrorMessage,
+                IsOutdated,
+                [Status],
+                UpdatedBy,
+                UpdatedAt
             FROM dbo.AudioGuides
             WHERE Id = ?;
             """;
@@ -492,7 +441,32 @@ public sealed partial class AdminDataRepository
         string languageCode)
     {
         const string sql = """
-            SELECT TOP 1 Id, EntityType, EntityId, LanguageCode, AudioUrl, VoiceType, SourceType, [Status], UpdatedBy, UpdatedAt
+            SELECT TOP 1
+                Id,
+                EntityType,
+                EntityId,
+                LanguageCode,
+                TranscriptText,
+                AudioUrl,
+                AudioFilePath,
+                AudioFileName,
+                VoiceType,
+                SourceType,
+                Provider,
+                VoiceId,
+                ModelId,
+                OutputFormat,
+                DurationInSeconds,
+                FileSizeBytes,
+                TextHash,
+                ContentVersion,
+                GeneratedAt,
+                GenerationStatus,
+                ErrorMessage,
+                IsOutdated,
+                [Status],
+                UpdatedBy,
+                UpdatedAt
             FROM dbo.AudioGuides
             WHERE EntityId = ? AND LanguageCode = ?
               AND (

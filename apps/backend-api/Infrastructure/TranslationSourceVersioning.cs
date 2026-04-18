@@ -19,6 +19,17 @@ internal sealed record TranslationSourceSnapshot(
 
 internal static class TranslationSourceVersioning
 {
+    public static string CreateSourceHashForRuntime(
+        string? title,
+        string? shortText,
+        string? fullText,
+        string? languageCode)
+        => CreateSourceHash(
+            title ?? string.Empty,
+            shortText ?? string.Empty,
+            fullText ?? string.Empty,
+            NormalizeLanguageCode(languageCode));
+
     public static TranslationSourceSnapshot? ResolveCurrentSource(
         string entityType,
         string entityId,

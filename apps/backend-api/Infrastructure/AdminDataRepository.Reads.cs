@@ -26,84 +26,6 @@ public sealed partial class AdminDataRepository
         return items;
     }
 
-    private IReadOnlyList<CustomerUser> GetCustomerUsers(SqlConnection connection, SqlTransaction? transaction)
-    {
-        const string usersSql = """
-            SELECT Id, Name, Email, Phone, [Password], PreferredLanguage, Username, Country, IsPremium, CreatedAt, LastActiveAt
-            FROM dbo.CustomerUsers
-            ORDER BY CreatedAt DESC, Id DESC;
-            """;
-        const string favoritesSql = """
-            SELECT CustomerUserId, PoiId
-            FROM dbo.CustomerFavoritePois
-            ORDER BY CustomerUserId, PoiId;
-            """;
-
-        var favoriteMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        using (var favoritesCommand = CreateCommand(connection, transaction, favoritesSql))
-        using (var favoritesReader = favoritesCommand.ExecuteReader())
-        {
-            while (favoritesReader.Read())
-            {
-                var customerUserId = ReadString(favoritesReader, "CustomerUserId");
-                if (!favoriteMap.TryGetValue(customerUserId, out var items))
-                {
-                    items = [];
-                    favoriteMap[customerUserId] = items;
-                }
-
-                items.Add(ReadString(favoritesReader, "PoiId"));
-            }
-        }
-
-        var customers = new List<CustomerUser>();
-        using (var usersCommand = CreateCommand(connection, transaction, usersSql))
-        using (var usersReader = usersCommand.ExecuteReader())
-        {
-            while (usersReader.Read())
-            {
-                var customerId = ReadString(usersReader, "Id");
-                customers.Add(new CustomerUser
-                {
-                    Id = customerId,
-                    Name = ReadString(usersReader, "Name"),
-                    Email = ReadString(usersReader, "Email"),
-                    Phone = ReadString(usersReader, "Phone"),
-                    Password = ReadString(usersReader, "Password"),
-                    PreferredLanguage = ReadString(usersReader, "PreferredLanguage"),
-                    Username = ReadNullableString(usersReader, "Username"),
-                    Country = ReadString(usersReader, "Country"),
-                    IsPremium = ReadBool(usersReader, "IsPremium"),
-                    FavoritePoiIds = favoriteMap.GetValueOrDefault(customerId, []),
-                    CreatedAt = ReadDateTimeOffset(usersReader, "CreatedAt"),
-                    LastActiveAt = ReadNullableDateTimeOffset(usersReader, "LastActiveAt")
-                });
-            }
-        }
-
-        return customers;
-    }
-
-    private IReadOnlyList<EndUser> GetEndUsers(SqlConnection connection, SqlTransaction? transaction)
-    {
-        const string sql = """
-            SELECT Id, Name, Email, Phone, [Password], Username, PreferredLanguage, Country, CreatedAt, LastActiveAt
-            FROM dbo.CustomerUsers
-            ORDER BY CreatedAt DESC, Id DESC;
-            """;
-
-        using var command = CreateCommand(connection, transaction, sql);
-        using var reader = command.ExecuteReader();
-
-        var items = new List<EndUser>();
-        while (reader.Read())
-        {
-            items.Add(MapEndUser(reader));
-        }
-
-        return items;
-    }
-
     private IReadOnlyList<PoiCategory> GetCategories(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
@@ -137,6 +59,11 @@ public sealed partial class AdminDataRepository
             SELECT
                 Id,
                 Slug,
+                Title,
+                ShortDescription,
+                [Description],
+                AudioScript,
+                SourceLanguageCode,
                 AddressLine,
                 Latitude,
                 Longitude,
@@ -194,6 +121,11 @@ public sealed partial class AdminDataRepository
                 {
                     Id = poiId,
                     Slug = ReadString(poisReader, "Slug"),
+                    Title = ReadString(poisReader, "Title"),
+                    ShortDescription = ReadString(poisReader, "ShortDescription"),
+                    Description = ReadString(poisReader, "Description"),
+                    AudioScript = ReadString(poisReader, "AudioScript"),
+                    SourceLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(ReadString(poisReader, "SourceLanguageCode")),
                     Address = ReadString(poisReader, "AddressLine"),
                     Lat = ReadDouble(poisReader, "Latitude"),
                     Lng = ReadDouble(poisReader, "Longitude"),
@@ -225,7 +157,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<Translation> GetTranslations(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription, IsPremium,
+            SELECT Id, EntityType, EntityId, LanguageCode, Title, ShortText, FullText, SeoTitle, SeoDescription,
                    SourceLanguageCode, SourceHash, SourceUpdatedAt, UpdatedBy, UpdatedAt
             FROM dbo.PoiTranslations
             ORDER BY UpdatedAt DESC, Id DESC;
@@ -246,7 +178,32 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<AudioGuide> GetAudioGuides(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, EntityType, EntityId, LanguageCode, AudioUrl, VoiceType, SourceType, [Status], UpdatedBy, UpdatedAt
+            SELECT
+                Id,
+                EntityType,
+                EntityId,
+                LanguageCode,
+                TranscriptText,
+                AudioUrl,
+                AudioFilePath,
+                AudioFileName,
+                VoiceType,
+                SourceType,
+                Provider,
+                VoiceId,
+                ModelId,
+                OutputFormat,
+                DurationInSeconds,
+                FileSizeBytes,
+                TextHash,
+                ContentVersion,
+                GeneratedAt,
+                GenerationStatus,
+                ErrorMessage,
+                IsOutdated,
+                [Status],
+                UpdatedBy,
+                UpdatedAt
             FROM dbo.AudioGuides
             ORDER BY UpdatedAt DESC, Id DESC;
             """;

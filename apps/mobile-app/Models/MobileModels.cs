@@ -238,7 +238,7 @@ public sealed class PoiDetailModel
 public sealed class TrackViewRequest
 {
     public string LanguageCode { get; set; } = "vi";
-    public string DeviceType { get; set; } = DeviceInfo.Current.Platform.ToString().ToLowerInvariant();
+    public string DeviceType { get; set; } = "android";
 }
 
 public sealed class TrackAudioRequest

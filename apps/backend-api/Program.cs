@@ -20,15 +20,15 @@ builder.Logging.AddDebug();
 
 builder.Services.AddSingleton<AdminDataRepository>();
 builder.Services.AddScoped<AdminRequestContextResolver>();
-builder.Services.AddSingleton<IPremiumPaymentProcessor, MockPremiumPaymentProcessor>();
-builder.Services.AddSingleton<PremiumPurchaseService>();
 builder.Services.AddSingleton<StorageService>();
+builder.Services.AddSingleton<GeneratedAudioStorageService>();
 builder.Services.AddSingleton<ResponseUrlNormalizer>();
 builder.Services.AddScoped<BootstrapLocalizationService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<PoiNarrationService>();
 builder.Services.AddScoped<PoiNarrationAudioService>();
+builder.Services.AddScoped<PoiPregeneratedAudioService>();
 builder.Services.AddOptions<TextToSpeechOptions>()
     .Configure<IConfiguration>((options, configuration) => TextToSpeechOptions.ApplyConfiguration(options, configuration));
 builder.Services.AddHttpClient<GeocodingProxyService>(client =>
@@ -44,6 +44,7 @@ builder.Services.AddHttpClient<TranslationProxyService>(client =>
     client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 });
 builder.Services.AddScoped<ITextTranslationClient>(provider => provider.GetRequiredService<TranslationProxyService>());
+builder.Services.AddScoped<RuntimeTranslationService>();
 builder.Services.AddHttpClient<ITextToSpeechService, ElevenLabsTextToSpeechService>(client =>
 {
     client.BaseAddress = new Uri("https://api.elevenlabs.io/");

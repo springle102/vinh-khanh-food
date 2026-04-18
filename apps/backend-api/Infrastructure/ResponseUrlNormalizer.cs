@@ -62,6 +62,44 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
         };
     }
 
+    public AudioGuide Normalize(AudioGuide audioGuide)
+    {
+        var absoluteUrl = ToAbsoluteUrl(audioGuide.AudioUrl);
+        if (string.Equals(absoluteUrl, audioGuide.AudioUrl, StringComparison.Ordinal))
+        {
+            return audioGuide;
+        }
+
+        return new AudioGuide
+        {
+            Id = audioGuide.Id,
+            EntityType = audioGuide.EntityType,
+            EntityId = audioGuide.EntityId,
+            LanguageCode = audioGuide.LanguageCode,
+            TranscriptText = audioGuide.TranscriptText,
+            AudioUrl = absoluteUrl,
+            AudioFilePath = audioGuide.AudioFilePath,
+            AudioFileName = audioGuide.AudioFileName,
+            VoiceType = audioGuide.VoiceType,
+            SourceType = audioGuide.SourceType,
+            Provider = audioGuide.Provider,
+            VoiceId = audioGuide.VoiceId,
+            ModelId = audioGuide.ModelId,
+            OutputFormat = audioGuide.OutputFormat,
+            DurationInSeconds = audioGuide.DurationInSeconds,
+            FileSizeBytes = audioGuide.FileSizeBytes,
+            TextHash = audioGuide.TextHash,
+            ContentVersion = audioGuide.ContentVersion,
+            GeneratedAt = audioGuide.GeneratedAt,
+            GenerationStatus = audioGuide.GenerationStatus,
+            ErrorMessage = audioGuide.ErrorMessage,
+            IsOutdated = audioGuide.IsOutdated,
+            Status = audioGuide.Status,
+            UpdatedBy = audioGuide.UpdatedBy,
+            UpdatedAt = audioGuide.UpdatedAt
+        };
+    }
+
     public FoodItem Normalize(FoodItem item)
     {
         var absoluteUrl = ToAbsoluteUrl(item.ImageUrl);
@@ -112,6 +150,7 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
     public AdminBootstrapResponse Normalize(AdminBootstrapResponse response)
         => response with
         {
+            AudioGuides = response.AudioGuides.Select(Normalize).ToList(),
             MediaAssets = response.MediaAssets.Select(Normalize).ToList(),
             FoodItems = response.FoodItems.Select(Normalize).ToList(),
             Routes = response.Routes.Select(Normalize).ToList()

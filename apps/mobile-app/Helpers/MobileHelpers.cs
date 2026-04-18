@@ -16,20 +16,17 @@ public static class ServiceHelper
 
 public static class AppPreferenceKeys
 {
-    public const string CurrentCustomerId = "vkfood.current.customer.id";
     public const string AutoNarrationEnabled = "vkfood.auto.narration.enabled";
 }
 
 public static class AppRoutes
 {
-    public const string Login = "LoginPage";
     public const string HomeMap = "HomeMapPage";
     public const string DiscoverTours = "DiscoverToursPage";
     public const string MyTour = "MyTourPage";
     public const string QrScanner = "QrScannerPage";
     public const string LanguageSelection = "LanguageSelectionPage";
     public const string Settings = "SettingsPage";
-    public const string PremiumCheckout = "PremiumCheckoutPage";
 
     public static string Root(string route) => route.StartsWith("//", StringComparison.Ordinal) ? route : $"//{route}";
 

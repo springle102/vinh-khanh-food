@@ -9,17 +9,30 @@ public sealed class TextToSpeechOptions
     public const string ModelIdConfigKey = "ELEVENLABS_MODEL_ID";
     public const string OutputFormatConfigKey = "ELEVENLABS_OUTPUT_FORMAT";
     public const string CacheDurationMinutesConfigKey = "ELEVENLABS_CACHE_DURATION_MINUTES";
+    public const string AudioStorageRootConfigKey = "AUDIO_STORAGE_ROOT";
+    public const string AudioPublicBasePathConfigKey = "AUDIO_PUBLIC_BASE_PATH";
+    public const string AudioPublicBaseUrlConfigKey = "AUDIO_PUBLIC_BASE_URL";
+    public const string AutoRegenerateWhenTextChangesConfigKey = "AUDIO_AUTO_REGENERATE_WHEN_TEXT_CHANGES";
+    public const string AutoGenerateWhenPoiSavedConfigKey = "AUDIO_AUTO_GENERATE_WHEN_POI_SAVED";
 
     public const string DefaultVoiceIdValue = "JBFqnCBsd6RMkjVDRZzb";
     public const string DefaultModelIdValue = "eleven_flash_v2_5";
     public const string DefaultOutputFormatValue = "mp3_44100_128";
     public const int DefaultCacheDurationMinutesValue = 120;
+    public const string DefaultAudioStorageRootValue = "storage/audio";
+    public const string DefaultAudioPublicBasePathValue = "/storage/audio";
 
     public string? ApiKey { get; set; }
     public string DefaultVoiceId { get; set; } = DefaultVoiceIdValue;
     public string ModelId { get; set; } = DefaultModelIdValue;
     public string OutputFormat { get; set; } = DefaultOutputFormatValue;
     public int CacheDurationMinutes { get; set; } = DefaultCacheDurationMinutesValue;
+    public string AudioStorageRoot { get; set; } = DefaultAudioStorageRootValue;
+    public string AudioPublicBasePath { get; set; } = DefaultAudioPublicBasePathValue;
+    public string? AudioPublicBaseUrl { get; set; }
+    public bool AutoRegenerateWhenTextChanges { get; set; } = true;
+    public bool AutoGenerateWhenPoiSaved { get; set; }
+    public Dictionary<string, string> VoiceIdsByLanguage { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public static void ApplyConfiguration(TextToSpeechOptions options, IConfiguration configuration)
     {
@@ -32,6 +45,56 @@ public sealed class TextToSpeechOptions
             CacheDurationMinutesConfigKey,
             options.CacheDurationMinutes,
             DefaultCacheDurationMinutesValue);
+        options.AudioStorageRoot = ResolveValue(
+            configuration,
+            AudioStorageRootConfigKey,
+            options.AudioStorageRoot,
+            DefaultAudioStorageRootValue)!;
+        options.AudioPublicBasePath = ResolveValue(
+            configuration,
+            AudioPublicBasePathConfigKey,
+            options.AudioPublicBasePath,
+            DefaultAudioPublicBasePathValue)!;
+        options.AudioPublicBaseUrl = ResolveValue(
+            configuration,
+            AudioPublicBaseUrlConfigKey,
+            options.AudioPublicBaseUrl,
+            null);
+        options.AutoRegenerateWhenTextChanges = ResolveBool(
+            configuration,
+            AutoRegenerateWhenTextChangesConfigKey,
+            options.AutoRegenerateWhenTextChanges,
+            true);
+        options.AutoGenerateWhenPoiSaved = ResolveBool(
+            configuration,
+            AutoGenerateWhenPoiSavedConfigKey,
+            options.AutoGenerateWhenPoiSaved,
+            false);
+
+        var configuredVoiceIds = configuration
+            .GetSection("ElevenLabs:VoiceIdsByLanguage")
+            .GetChildren()
+            .Where(section => !string.IsNullOrWhiteSpace(section.Key) && !string.IsNullOrWhiteSpace(section.Value))
+            .ToDictionary(
+                section => section.Key.Trim(),
+                section => section.Value!.Trim(),
+                StringComparer.OrdinalIgnoreCase);
+        if (configuredVoiceIds.Count > 0)
+        {
+            options.VoiceIdsByLanguage = new Dictionary<string, string>(configuredVoiceIds, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    public string ResolveVoiceId(string? languageCode)
+    {
+        if (!string.IsNullOrWhiteSpace(languageCode) &&
+            VoiceIdsByLanguage.TryGetValue(languageCode.Trim(), out var configuredVoiceId) &&
+            !string.IsNullOrWhiteSpace(configuredVoiceId))
+        {
+            return configuredVoiceId.Trim();
+        }
+
+        return DefaultVoiceId;
     }
 
     private static string? ResolveValue(
@@ -49,6 +112,9 @@ public sealed class TextToSpeechOptions
                 DefaultVoiceIdConfigKey => configuration["ElevenLabs:DefaultVoiceId"],
                 ModelIdConfigKey => configuration["ElevenLabs:ModelId"],
                 OutputFormatConfigKey => configuration["ElevenLabs:OutputFormat"],
+                AudioStorageRootConfigKey => configuration["AudioGeneration:StorageRoot"],
+                AudioPublicBasePathConfigKey => configuration["AudioGeneration:PublicBasePath"],
+                AudioPublicBaseUrlConfigKey => configuration["AudioGeneration:PublicBaseUrl"],
                 _ => null
             },
             currentValue,
@@ -80,6 +146,29 @@ public sealed class TextToSpeechOptions
             fallbackValue.ToString());
 
         return int.TryParse(rawValue, out var parsed) && parsed > 0
+            ? parsed
+            : fallbackValue;
+    }
+
+    private static bool ResolveBool(
+        IConfiguration configuration,
+        string configKey,
+        bool currentValue,
+        bool fallbackValue)
+    {
+        var rawValue = FirstNonEmpty(
+            Environment.GetEnvironmentVariable(configKey),
+            configuration[configKey],
+            configKey switch
+            {
+                AutoRegenerateWhenTextChangesConfigKey => configuration["AudioGeneration:AutoRegenerateWhenTextChanges"],
+                AutoGenerateWhenPoiSavedConfigKey => configuration["AudioGeneration:AutoGenerateWhenPoiSaved"],
+                _ => null
+            },
+            currentValue.ToString(),
+            fallbackValue.ToString());
+
+        return bool.TryParse(rawValue, out var parsed)
             ? parsed
             : fallbackValue;
     }
