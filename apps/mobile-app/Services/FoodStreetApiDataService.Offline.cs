@@ -120,8 +120,7 @@ public sealed partial class FoodStreetApiDataService
 
         foreach (var mediaAsset in bootstrap.MediaAssets)
         {
-            if (!string.IsNullOrWhiteSpace(mediaAsset.Url) &&
-                assetMap.TryGetValue(mediaAsset.Url, out var localPath))
+            if (OfflineAssetUrlHelper.TryResolveAssetPath(assetMap, mediaAsset.Url, out var localPath))
             {
                 mediaAsset.Url = localPath;
             }
@@ -129,8 +128,7 @@ public sealed partial class FoodStreetApiDataService
 
         foreach (var audioGuide in bootstrap.AudioGuides)
         {
-            if (!string.IsNullOrWhiteSpace(audioGuide.AudioUrl) &&
-                assetMap.TryGetValue(audioGuide.AudioUrl, out var localPath))
+            if (OfflineAssetUrlHelper.TryResolveAssetPath(assetMap, audioGuide.AudioUrl, out var localPath))
             {
                 audioGuide.AudioUrl = localPath;
             }
@@ -138,8 +136,7 @@ public sealed partial class FoodStreetApiDataService
 
         foreach (var foodItem in bootstrap.FoodItems)
         {
-            if (!string.IsNullOrWhiteSpace(foodItem.ImageUrl) &&
-                assetMap.TryGetValue(foodItem.ImageUrl, out var localPath))
+            if (OfflineAssetUrlHelper.TryResolveAssetPath(assetMap, foodItem.ImageUrl, out var localPath))
             {
                 foodItem.ImageUrl = localPath;
             }
@@ -147,11 +144,77 @@ public sealed partial class FoodStreetApiDataService
 
         foreach (var route in bootstrap.Routes)
         {
-            if (!string.IsNullOrWhiteSpace(route.CoverImageUrl) &&
-                assetMap.TryGetValue(route.CoverImageUrl, out var localPath))
+            if (OfflineAssetUrlHelper.TryResolveAssetPath(assetMap, route.CoverImageUrl, out var localPath))
             {
                 route.CoverImageUrl = localPath;
             }
+        }
+    }
+
+    private static void ApplyOfflineAssetMap(PoiDetailDto detail, IReadOnlyDictionary<string, string> assetMap)
+    {
+        if (assetMap.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var mediaAsset in detail.MediaAssets)
+        {
+            if (OfflineAssetUrlHelper.TryResolveAssetPath(assetMap, mediaAsset.Url, out var localPath))
+            {
+                mediaAsset.Url = localPath;
+            }
+        }
+
+        foreach (var audioGuide in detail.AudioGuides)
+        {
+            if (OfflineAssetUrlHelper.TryResolveAssetPath(assetMap, audioGuide.AudioUrl, out var localPath))
+            {
+                audioGuide.AudioUrl = localPath;
+            }
+        }
+
+        foreach (var foodItem in detail.FoodItems)
+        {
+            if (OfflineAssetUrlHelper.TryResolveAssetPath(assetMap, foodItem.ImageUrl, out var localPath))
+            {
+                foodItem.ImageUrl = localPath;
+            }
+        }
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>?> TryLoadOfflineAssetMapAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var installation = await _offlineStorageService.LoadInstallationAsync(cancellationToken)
+                               ?? await _bundledSeedService.EnsureInstalledAsync(cancellationToken);
+            return installation?.AssetMap.Count > 0
+                ? installation.AssetMap
+                : null;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogDebug(exception, "[OfflineAssets] Unable to load offline asset map.");
+            return null;
+        }
+    }
+
+    private async Task ApplyCurrentOfflineAssetMapAsync(AdminBootstrapDto bootstrap, CancellationToken cancellationToken)
+    {
+        var assetMap = await TryLoadOfflineAssetMapAsync(cancellationToken);
+        if (assetMap is not null)
+        {
+            ApplyOfflineAssetMap(bootstrap, assetMap);
+        }
+    }
+
+    private async Task ApplyCurrentOfflineAssetMapAsync(PoiDetailDto detail, CancellationToken cancellationToken)
+    {
+        var assetMap = await TryLoadOfflineAssetMapAsync(cancellationToken);
+        if (assetMap is not null)
+        {
+            ApplyOfflineAssetMap(detail, assetMap);
         }
     }
 

@@ -455,7 +455,7 @@ public sealed class ElevenLabsTextToSpeechService(
             parts.Add($"providerMessage={providerErrorMessage}");
         }
 
-        if (!string.IsNullOrWhiteSpace(responseBody))
+        if (!string.IsNullOrWhiteSpace(responseBody) && string.IsNullOrWhiteSpace(providerErrorMessage))
         {
             parts.Add($"responseBody={CreatePreview(responseBody, 1200)}");
         }

@@ -1,3 +1,5 @@
+using System.Net;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi.Models;
 using VinhKhanh.BackendApi.Contracts;
@@ -29,6 +31,17 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<PoiNarrationService>();
 builder.Services.AddScoped<PoiNarrationAudioService>();
 builder.Services.AddScoped<PoiPregeneratedAudioService>();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedHost |
+        ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+    options.KnownProxies.Add(IPAddress.Loopback);
+    options.KnownProxies.Add(IPAddress.IPv6Loopback);
+});
 builder.Services.AddOptions<TextToSpeechOptions>()
     .Configure<IConfiguration>((options, configuration) => TextToSpeechOptions.ApplyConfiguration(options, configuration));
 builder.Services.AddHttpClient<GeocodingProxyService>(client =>
@@ -88,6 +101,8 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 app.Use(async (context, next) =>
 {

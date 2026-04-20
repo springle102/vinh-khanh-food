@@ -13,6 +13,10 @@
       color: #1f2937;
     }
 
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
@@ -27,9 +31,9 @@
 
     main {
       width: min(620px, 100%);
-      border-radius: 30px;
+      border-radius: 28px;
       padding: 30px;
-      background: rgba(255, 255, 255, 0.93);
+      background: rgba(255, 255, 255, 0.94);
       box-shadow: 0 24px 80px rgba(146, 64, 14, 0.18);
       border: 1px solid rgba(245, 158, 11, 0.22);
       text-align: center;
@@ -43,7 +47,7 @@
     }
 
     p {
-      margin: 0 auto 20px;
+      margin: 0 auto 18px;
       max-width: 520px;
       line-height: 1.65;
       color: #4b5563;
@@ -55,21 +59,49 @@
       height: auto;
       margin: 22px auto 18px;
       padding: 14px;
-      border-radius: 24px;
+      border-radius: 22px;
       background: #fff;
       border: 1px solid rgba(245, 158, 11, 0.24);
       box-shadow: 0 14px 38px rgba(146, 64, 14, 0.12);
     }
 
+    .actions {
+      display: flex;
+      justify-content: center;
+      margin-top: 22px;
+    }
+
+    .download-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 22px;
+      border-radius: 999px;
+      background: #c2410c;
+      color: #fff;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 12px 28px rgba(194, 65, 12, 0.22);
+    }
+
+    .note {
+      margin-top: 16px;
+      font-size: 14px;
+      color: #6b7280;
+    }
   </style>
 </head>
 
 <body>
   <main>
     <h1>Tải ứng dụng Vĩnh Khánh Food Guide</h1>
-    <p>Quét mã QR bên dưới bằng điện thoại Android để tải trực tiếp file APK về máy. Mã QR này trỏ thẳng tới file cài
-      đặt, không đi qua trang trung gian.</p>
+    <p>Quét mã QR bên dưới bằng điện thoại Android để tải trực tiếp file cài đặt APK về máy.</p>
     <img class="qr" src="./qr-direct-apk.png" alt="Mã QR tải trực tiếp APK Vĩnh Khánh Food Guide">
+    <p class="note">Mã QR trỏ thẳng đến file APK, không tự động mở trang giới thiệu này.</p>
+    <div class="actions">
+      <a class="download-link" href="./vinh-khanh-food.apk" download>Tải APK thủ công</a>
+    </div>
   </main>
 </body>
 

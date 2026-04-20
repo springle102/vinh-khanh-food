@@ -1,7 +1,16 @@
 {
-  "version": "915c4a44307f934e",
-  "generatedAtUtc": "2026-04-19T08:35:03.5145857+00:00",
+  "version": "3f420345896c5830",
+  "generatedAtUtc": "2026-04-20T09:39:55.2971338+00:00",
   "files": [
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-loan/en/oc-loan-en-41dd75a8111f-20260420093851106.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/0473b744efac3fbbb3fc8784218068f7a34ff9d8a33fb6cb48400e1ee8e63bbb.mp3",
+      "entityType": "poi",
+      "entityId": "oc-loan",
+      "languageCode": "en",
+      "sizeBytes": 515387
+    },
     {
       "key": "http://127.0.0.1:5080/storage/audio/pois/sushi-ko/ko/sushi-ko-ko-67ba60699d9a-20260418113423867.mp3",
       "kind": "audio",
@@ -28,6 +37,15 @@
       "entityId": "oc-oanh-1",
       "languageCode": "ja",
       "sizeBytes": 448932
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-loan/ko/oc-loan-ko-4363f9a03f76-20260420093856527.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/360a998c1710c93f9840646a55d28a11cc049bf021b18cdc07a7d09369387229.mp3",
+      "entityType": "poi",
+      "entityId": "oc-loan",
+      "languageCode": "ko",
+      "sizeBytes": 586022
     },
     {
       "key": "http://127.0.0.1:5080/storage/audio/pois/sushi-ko/vi/sushi-ko-vi-2bd4986d94b3-20260418113355811.mp3",
@@ -57,6 +75,15 @@
       "sizeBytes": 419675
     },
     {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-loan/ja/oc-loan-ja-4ffe9dc4d31c-20260420093853625.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/5cb7ea0828ddf711aa930e30b1ead2f4bfd432e7ccd6f5e31053bd5d66a96815.mp3",
+      "entityType": "poi",
+      "entityId": "oc-loan",
+      "languageCode": "ja",
+      "sizeBytes": 553004
+    },
+    {
       "key": "http://127.0.0.1:5080/storage/audio/pois/sushi-ko/zh-CN/sushi-ko-zh-CN-32573024f2ed-20260418113423947.mp3",
       "kind": "audio",
       "relativePath": "assets/audio/63f2431ede3db884e62bc2846fdd685342feaee9313add0f27190ce343976ad9.mp3",
@@ -73,6 +100,15 @@
       "entityId": "oc-phat",
       "languageCode": "zh-CN",
       "sizeBytes": 341516
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-loan/zh-CN/oc-loan-zh-CN-5cc1c9c87e3b-20260420093859457.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/8c95b650251e3b541c9e41673becd99e7b8695d553f2fa0bdf5f33bd7441cfe7.mp3",
+      "entityType": "poi",
+      "entityId": "oc-loan",
+      "languageCode": "zh-CN",
+      "sizeBytes": 399195
     },
     {
       "key": "http://127.0.0.1:5080/storage/audio/pois/ca-phe-che/vi/ca-phe-che-vi-a992769838c6-20260418114108592.mp3",
@@ -174,6 +210,15 @@
       "sizeBytes": 395433
     },
     {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-loan/vi/oc-loan-vi-12e1d8405d03-20260420091741190.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/f1868d727f3ba613905f0478834b49df3499183947fd4259e5717e1b373a736c.mp3",
+      "entityType": "poi",
+      "entityId": "oc-loan",
+      "languageCode": "vi",
+      "sizeBytes": 394179
+    },
+    {
       "key": "http://127.0.0.1:5080/storage/audio/pois/ca-phe-che/zh-CN/ca-phe-che-zh-CN-8f3e4cb7850e-20260418114122224.mp3",
       "kind": "audio",
       "relativePath": "assets/audio/f392e11ee239cafb6d139d768ac241d1255645c8b94b070fb7e5ed8f45099825.mp3",
@@ -190,6 +235,24 @@
       "entityId": "food-so-diep",
       "languageCode": "",
       "sizeBytes": 138949
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/pois/20260420082328041-b9759e3ad25f4a2e9c6164987fbd3e52.jpg",
+      "kind": "image",
+      "relativePath": "assets/image/0e4f6399f0dcb43bb536a2adeffc894bf20ce2066dc581e2641fa15e786a02e6.jpg",
+      "entityType": "poi",
+      "entityId": "oc-loan",
+      "languageCode": "",
+      "sizeBytes": 61945
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/food-items/20260420082517595-ab9d950d953b4a8f820734d5a1f9e91f.jpg",
+      "kind": "image",
+      "relativePath": "assets/image/12d1c77ae94caa34533ffed9ac34e9b441022a7d9f4c85b7603ed98ecf623152.jpg",
+      "entityType": "food_item",
+      "entityId": "food-37e487ed",
+      "languageCode": "",
+      "sizeBytes": 132531
     },
     {
       "key": "http://127.0.0.1:5080/storage/images/food-items/20260418101330404-89fc4289c8ab488d935ea06bb814b4ee.webp",

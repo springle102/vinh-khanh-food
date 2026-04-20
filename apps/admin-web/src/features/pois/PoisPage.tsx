@@ -32,6 +32,10 @@ const describeAudioGenerationResult = (result: PoiAudioGenerationResult) => {
     return result.message;
   }
 
+  const baseMessage = result.message
+    .replace(/^Generate audio that bai:\s*/i, "")
+    .replace(/^Generate that bai:\s*/i, "")
+    .trim();
   const details = [
     result.providerStatusCode ? `HTTP ${result.providerStatusCode}` : null,
     result.providerErrorCode,
@@ -41,8 +45,8 @@ const describeAudioGenerationResult = (result: PoiAudioGenerationResult) => {
   ].filter(Boolean);
 
   return details.length > 0
-    ? `${result.message} (${details.join(" / ")})`
-    : result.message;
+    ? `${baseMessage} (${details.join(" / ")})`
+    : baseMessage;
 };
 
 type PoiFormState = {
@@ -1306,19 +1310,33 @@ export const PoisPage = () => {
           const result = await adminApi.generatePoiAudio(currentFormPoiId, {
             languageCode: form.contentLanguageCode,
           });
-          setAudioActionMessage(describeAudioGenerationResult(result));
+          const nextMessage = describeAudioGenerationResult(result);
+          if (result.success) {
+            setAudioActionMessage(nextMessage);
+          } else {
+            setFormError(nextMessage);
+          }
         } else if (mode === "regenerate") {
           const result = await adminApi.regeneratePoiAudio(currentFormPoiId, {
             languageCode: form.contentLanguageCode,
             forceRegenerate: true,
           });
-          setAudioActionMessage(describeAudioGenerationResult(result));
+          const nextMessage = describeAudioGenerationResult(result);
+          if (result.success) {
+            setAudioActionMessage(nextMessage);
+          } else {
+            setFormError(nextMessage);
+          }
         } else {
           const results = await adminApi.generatePoiAllLanguagesAudio(currentFormPoiId, {
             forceRegenerate: false,
           });
           const succeeded = results.filter((item) => item.success).length;
           setAudioActionMessage(`Đã xử lý generate audio cho ${results.length} ngôn ngữ, thành công ${succeeded}.`);
+          const firstFailure = results.find((item) => !item.success);
+          if (firstFailure) {
+            setFormError(describeAudioGenerationResult(firstFailure));
+          }
         }
 
         await refreshData();

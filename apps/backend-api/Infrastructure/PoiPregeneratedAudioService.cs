@@ -531,6 +531,18 @@ public sealed class PoiPregeneratedAudioService(
     {
         var providerText = BuildProviderDebugText(exception);
         int? statusCode = exception.StatusCode is null ? null : (int)exception.StatusCode.Value;
+        if (ContainsAny(
+            providerText,
+            "detected_unusual_activity",
+            "unusual activity",
+            "free tier usage disabled",
+            "free tier",
+            "abuse detectors",
+            "proxy/vpn"))
+        {
+            return false;
+        }
+
         if (ContainsAny(providerText, "character limit", "usage cap") ||
             (statusCode != 402 && ContainsAny(providerText, "credit", "quota", "insufficient")))
         {
@@ -647,6 +659,11 @@ public sealed class PoiPregeneratedAudioService(
         var collapsed = CollapseExceptionMessage(exception);
         if (exception is TextToSpeechGenerationException ttsException)
         {
+            if (ContainsAny(BuildProviderDebugText(ttsException), "detected_unusual_activity", "unusual activity"))
+            {
+                return "ElevenLabs đang từ chối Free Tier vì phát hiện unusual activity. Hãy dùng ElevenLabs API key trả phí hoặc tắt VPN/proxy theo hướng dẫn của ElevenLabs rồi generate lại.";
+            }
+
             var details = new List<string> { collapsed };
             if (ttsException.StatusCode is not null)
             {
@@ -663,7 +680,8 @@ public sealed class PoiPregeneratedAudioService(
                 details.Add($"providerErrorMessage={ttsException.ProviderErrorMessage}");
             }
 
-            if (!string.IsNullOrWhiteSpace(ttsException.ResponseBody))
+            if (!string.IsNullOrWhiteSpace(ttsException.ResponseBody) &&
+                string.IsNullOrWhiteSpace(ttsException.ProviderErrorMessage))
             {
                 details.Add($"providerResponseBody={ttsException.ResponseBody}");
             }

@@ -28,7 +28,6 @@ const TILE_SOURCES: {
   url: string;
   maxZoom: number;
   attribution: string;
-  subdomains?: string;
 }[] = [
   {
     key: "osm",
@@ -39,11 +38,10 @@ const TILE_SOURCES: {
   },
   {
     key: "carto-light",
-    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    url: "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
     maxZoom: 20,
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO',
-    subdomains: "abcd",
   },
 ];
 
@@ -372,7 +370,6 @@ const ResilientTileLayer = ({
       }}
       keepBuffer={2}
       maxZoom={source.maxZoom}
-      subdomains={source.subdomains}
       url={source.url}
       updateWhenIdle
     />

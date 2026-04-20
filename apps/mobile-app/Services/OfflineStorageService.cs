@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Maui.Storage;
+using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
@@ -58,14 +59,17 @@ public sealed class OfflineStorageService : IOfflineStorageService
             return null;
         }
 
-        var assetMap = manifest.Files
-            .Where(item =>
-                !string.IsNullOrWhiteSpace(item.Key) &&
-                !string.IsNullOrWhiteSpace(item.RelativePath))
-            .ToDictionary(
-                item => item.Key,
-                item => ResolveInstalledAssetPath(item.RelativePath),
-                StringComparer.OrdinalIgnoreCase);
+        var assetMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in manifest.Files.Where(item =>
+                     !string.IsNullOrWhiteSpace(item.Key) &&
+                     !string.IsNullOrWhiteSpace(item.RelativePath)))
+        {
+            var localPath = ResolveInstalledAssetPath(item.RelativePath);
+            foreach (var key in OfflineAssetUrlHelper.BuildLookupKeys(item.Key))
+            {
+                assetMap.TryAdd(key, localPath);
+            }
+        }
 
         return new OfflinePackageInstallation
         {

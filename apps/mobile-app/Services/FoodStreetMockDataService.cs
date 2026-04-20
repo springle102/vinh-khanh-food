@@ -777,6 +777,7 @@ public sealed partial class FoodStreetApiDataService
 
         using var _ = BeginLanguageScope(requestedLanguageCode);
         var nextBootstrapSource = envelope.Data;
+        await ApplyCurrentOfflineAssetMapAsync(nextBootstrapSource, cancellationToken);
         var snapshot = CreateSnapshot(nextBootstrapSource);
 
         if (_bootstrapSnapshot is not null &&
@@ -940,6 +941,7 @@ public sealed partial class FoodStreetApiDataService
             return null;
         }
 
+        await ApplyCurrentOfflineAssetMapAsync(envelope.Data, cancellationToken);
         return BuildPoiDetailFromDto(envelope.Data, requestedLanguageCode);
     }
 
