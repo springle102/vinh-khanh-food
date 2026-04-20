@@ -8,6 +8,11 @@ public static class LocalizationFallbackPolicy
     private const int StrongRomanizedMarkerThreshold = 3;
     private const int ShortTextRomanizedMarkerThreshold = 2;
     private const int ShortTextWordThreshold = 12;
+    private static readonly string[] SourceLanguageCandidates =
+    [
+        AppLanguage.DefaultLanguage,
+        "vi-VN"
+    ];
 
     private static readonly string[] VietnameseMojibakeMarkers =
     [
@@ -50,7 +55,30 @@ public static class LocalizationFallbackPolicy
     ];
 
     public static IReadOnlyList<string> GetDisplayTextFallbackCandidates(string? languageCode)
-        => AppLanguage.GetCandidateCodes(languageCode);
+    {
+        var normalizedLanguageCode = AppLanguage.NormalizeCode(languageCode);
+        var candidates = new List<string>();
+
+        AddCandidate(candidates, normalizedLanguageCode);
+
+        var separatorIndex = normalizedLanguageCode.IndexOf('-');
+        if (separatorIndex > 0)
+        {
+            AddCandidate(candidates, normalizedLanguageCode[..separatorIndex]);
+        }
+
+        if (IsSourceLanguage(normalizedLanguageCode))
+        {
+            foreach (var sourceLanguageCandidate in SourceLanguageCandidates)
+            {
+                AddCandidate(candidates, sourceLanguageCandidate);
+            }
+        }
+
+        AddCandidate(candidates, AppLanguage.FallbackLanguage);
+        AddCandidate(candidates, "en-US");
+        return candidates;
+    }
 
     public static bool IsSourceLanguage(string? languageCode)
         => string.Equals(
@@ -72,9 +100,31 @@ public static class LocalizationFallbackPolicy
     }
 
     public static string SourceTextForLanguage(string? value, string? requestedLanguageCode)
-        => CanUseSourceLanguageText(requestedLanguageCode) && !string.IsNullOrWhiteSpace(value)
-            ? value.Trim()
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalizedValue = value.Trim();
+        return IsSourceLanguage(requestedLanguageCode) ||
+               IsUsableTextForLanguage(normalizedValue, requestedLanguageCode)
+            ? normalizedValue
             : string.Empty;
+    }
+
+    private static void AddCandidate(ICollection<string> candidates, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!candidates.Contains(value, StringComparer.OrdinalIgnoreCase))
+        {
+            candidates.Add(value.Trim());
+        }
+    }
 
     private static bool LooksLikeVietnameseContent(string value)
     {

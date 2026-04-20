@@ -95,13 +95,14 @@ public sealed partial class AdminDataRepository
     private static AudioGuide MapAudioGuide(SqlDataReader reader)
     {
         var audioUrl = ReadString(reader, "AudioUrl");
+        var audioFilePath = ReadString(reader, "AudioFilePath");
         var sourceType = AudioGuideCatalog.NormalizeSourceType(ReadString(reader, "SourceType"));
         var generationStatus = AudioGuideCatalog.NormalizeGenerationStatus(ReadNullableString(reader, "GenerationStatus"));
         var isOutdated = ReadNullableBool(reader, "IsOutdated") ?? false;
 
         var normalizedStatus = AudioGuideCatalog.ResolvePublicStatus(
             generationStatus,
-            !string.IsNullOrWhiteSpace(audioUrl),
+            !string.IsNullOrWhiteSpace(audioUrl) || !string.IsNullOrWhiteSpace(audioFilePath),
             isOutdated);
 
         return new AudioGuide
@@ -109,10 +110,10 @@ public sealed partial class AdminDataRepository
             Id = ReadString(reader, "Id"),
             EntityType = NormalizeStoredEntityType(ReadString(reader, "EntityType")),
             EntityId = ReadString(reader, "EntityId"),
-            LanguageCode = ReadString(reader, "LanguageCode"),
+            LanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(ReadString(reader, "LanguageCode")),
             TranscriptText = ReadString(reader, "TranscriptText"),
             AudioUrl = audioUrl,
-            AudioFilePath = ReadString(reader, "AudioFilePath"),
+            AudioFilePath = audioFilePath,
             AudioFileName = ReadString(reader, "AudioFileName"),
             VoiceType = ReadString(reader, "VoiceType"),
             SourceType = sourceType,

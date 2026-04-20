@@ -13,16 +13,6 @@ public sealed class PoiNarrationService(
     private const string AutoTranslatedStatus = "auto_translated";
     private const string FallbackSourceStatus = "fallback_source";
 
-    private static readonly Dictionary<string, string> LanguageLocales = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["vi"] = "vi-VN",
-        ["en"] = "en-US",
-        ["fr"] = "fr-FR",
-        ["zh-CN"] = "zh-CN",
-        ["ko"] = "ko-KR",
-        ["ja"] = "ja-JP"
-    };
-
     public async Task<PoiNarrationResponse?> ResolveAsync(
         string poiId,
         string requestedLanguageCode,
@@ -105,13 +95,15 @@ public sealed class PoiNarrationService(
         var audioLanguageCode = translationFailedForTarget
             ? sourceLanguageCode
             : normalizedRequestedLanguage;
+        var poiAudioGuides = repository.GetAudioGuides(actor)
+            .Where(item =>
+                string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.EntityId, poiId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var selectedAudioGuide = FindPoiAudioGuide(poiAudioGuides, audioLanguageCode);
+        var foundPreparedAudio = selectedAudioGuide is not null && HasUsablePreparedAudio(selectedAudioGuide);
         var audioGuide = NormalizeAudioGuideForResponse(
-            FindPoiAudioGuide(
-                repository.GetAudioGuides(actor)
-                    .Where(item =>
-                        string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals(item.EntityId, poiId, StringComparison.OrdinalIgnoreCase)),
-                audioLanguageCode));
+            selectedAudioGuide);
         var uiPlaybackKey = BuildUiPlaybackKey(poi.Id, normalizedRequestedLanguage);
         var audioCacheKey = BuildAudioCacheKey(
             uiPlaybackKey,
@@ -140,14 +132,20 @@ public sealed class PoiNarrationService(
             GetLocale(effectiveLanguageCode));
 
         logger.LogInformation(
-            "Resolved POI narration through runtime translation. poiId={PoiId}; requestedLanguage={RequestedLanguage}; sourceLanguage={SourceLanguage}; effectiveLanguage={EffectiveLanguage}; status={Status}; fallback={Fallback}; audioGuideId={AudioGuideId}",
+            "[AudioRequest] poiId={PoiId}; requestedLang={RequestedLanguage}; normalizedLang={NormalizedLanguage}; effectiveLanguage={EffectiveLanguage}; audioLookupLanguage={AudioLookupLanguage}; foundAudio={FoundAudio}; audioGuideId={AudioGuideId}; audioGuideLanguage={AudioGuideLanguage}; generationStatus={GenerationStatus}; publicStatus={PublicStatus}; audioUrl={AudioUrl}; audioFilePath={AudioFilePath}; candidateCount={CandidateCount}",
             poi.Id,
+            requestedLanguageCode,
             normalizedRequestedLanguage,
-            sourceLanguageCode,
             effectiveLanguageCode,
-            translationStatus,
-            translationFailedForTarget,
-            audioGuide?.Id);
+            audioLanguageCode,
+            foundPreparedAudio,
+            selectedAudioGuide?.Id,
+            selectedAudioGuide?.LanguageCode,
+            selectedAudioGuide?.GenerationStatus,
+            selectedAudioGuide?.Status,
+            selectedAudioGuide?.AudioUrl,
+            selectedAudioGuide?.AudioFilePath,
+            poiAudioGuides.Count);
 
         return resolved;
     }
@@ -157,10 +155,7 @@ public sealed class PoiNarrationService(
         string languageCode)
     {
         var matchingGuides = audioGuides
-            .Where(item => string.Equals(
-                PremiumAccessCatalog.NormalizeLanguageCode(item.LanguageCode),
-                PremiumAccessCatalog.NormalizeLanguageCode(languageCode),
-                StringComparison.OrdinalIgnoreCase))
+            .Where(item => PremiumAccessCatalog.LanguageCodesMatch(item.LanguageCode, languageCode))
             .OrderByDescending(item => item.UpdatedAt)
             .ToList();
 
@@ -275,10 +270,8 @@ public sealed class PoiNarrationService(
         return "vi";
     }
 
-    private static string GetLocale(string languageCode) =>
-        LanguageLocales.TryGetValue(languageCode, out var locale)
-            ? locale
-            : "en-US";
+    private static string GetLocale(string languageCode)
+        => LanguageRegistry.GetLocale(languageCode);
 
     private AudioGuide? NormalizeAudioGuideForResponse(AudioGuide? audioGuide)
     {

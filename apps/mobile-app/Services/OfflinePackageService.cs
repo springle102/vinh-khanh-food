@@ -34,6 +34,8 @@ public sealed class OfflinePackageService : IOfflinePackageService
         WriteIndented = false
     };
     private readonly IOfflineStorageService _storageService;
+    private readonly IBundledOfflinePackageSeedService _bundledSeedService;
+    private readonly IMobileApiBaseUrlService _apiBaseUrlService;
     private readonly IAppLanguageService _languageService;
     private readonly ILogger<OfflinePackageService> _logger;
 
@@ -45,10 +47,14 @@ public sealed class OfflinePackageService : IOfflinePackageService
 
     public OfflinePackageService(
         IOfflineStorageService storageService,
+        IBundledOfflinePackageSeedService bundledSeedService,
+        IMobileApiBaseUrlService apiBaseUrlService,
         IAppLanguageService languageService,
         ILogger<OfflinePackageService> logger)
     {
         _storageService = storageService;
+        _bundledSeedService = bundledSeedService;
+        _apiBaseUrlService = apiBaseUrlService;
         _languageService = languageService;
         _logger = logger;
     }
@@ -64,7 +70,8 @@ public sealed class OfflinePackageService : IOfflinePackageService
             return _state;
         }
 
-        var installation = await _storageService.LoadInstallationAsync(cancellationToken);
+        var installation = await _bundledSeedService.EnsureInstalledAsync(cancellationToken)
+                           ?? await _storageService.LoadInstallationAsync(cancellationToken);
         var remoteSyncState = await TryFetchSyncStateAsync(cancellationToken);
         var nextState = BuildState(
             installation,
@@ -84,7 +91,20 @@ public sealed class OfflinePackageService : IOfflinePackageService
         string? stagingRoot = null;
         try
         {
-            var existingInstallation = await _storageService.LoadInstallationAsync(cancellationToken);
+            var existingInstallation = await _bundledSeedService.EnsureInstalledAsync(cancellationToken)
+                                     ?? await _storageService.LoadInstallationAsync(cancellationToken);
+            if (!HasAnyNetworkAccess())
+            {
+                var offlineState = BuildState(
+                    existingInstallation,
+                    remoteSyncState: null,
+                    OfflinePackageLifecycleStatus.Error,
+                    canReachServer: false,
+                    errorMessage: "Can ket noi mang de tai goi du lieu.");
+                PublishState(offlineState);
+                return offlineState;
+            }
+
             var operationCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             ReplaceOperationCancellationSource(operationCancellationSource);
             var operationToken = operationCancellationSource.Token;
@@ -175,6 +195,7 @@ public sealed class OfflinePackageService : IOfflinePackageService
                 errorMessage: string.Empty));
 
             packageDraft.Metadata.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+            packageDraft.Metadata.InstallationSource = OfflinePackageInstallationSources.Downloaded;
             packageDraft.Metadata.FileCount = packageDraft.Manifest.Files.Count;
 
             var bootstrapPath = _storageService.GetStagingBootstrapPath(stagingRoot);
@@ -464,9 +485,7 @@ public sealed class OfflinePackageService : IOfflinePackageService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var runtimeSettings = await LoadRuntimeSettingsAsync(cancellationToken);
-        var nextBaseUrl = MobileApiEndpointHelper.EnsureTrailingSlash(
-            MobileApiEndpointHelper.ResolveBaseUrl(runtimeSettings.ApiBaseUrl, runtimeSettings.PlatformApiBaseUrls));
+        var nextBaseUrl = MobileApiEndpointHelper.EnsureTrailingSlash(await _apiBaseUrlService.GetBaseUrlAsync());
         if (string.IsNullOrWhiteSpace(nextBaseUrl))
         {
             return null;
@@ -597,6 +616,27 @@ public sealed class OfflinePackageService : IOfflinePackageService
                     kind: "image",
                     entityType: "food_item",
                     entityId: GetString(foodItemElement, "id"),
+                    languageCode: string.Empty);
+            }
+        }
+
+        if (dataElement.TryGetProperty("routes", out var routesElement) &&
+            routesElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var routeElement in routesElement.EnumerateArray())
+            {
+                var url = GetString(routeElement, "coverImageUrl");
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    continue;
+                }
+
+                AddFileEntry(
+                    fileEntries,
+                    url,
+                    kind: "image",
+                    entityType: "route",
+                    entityId: GetString(routeElement, "id"),
                     languageCode: string.Empty);
             }
         }

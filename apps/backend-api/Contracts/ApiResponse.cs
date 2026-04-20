@@ -126,7 +126,8 @@ public sealed record AppUsageEventCreateRequest(
     string? Source,
     string? Metadata,
     int? DurationInSeconds,
-    DateTimeOffset? OccurredAt);
+    DateTimeOffset? OccurredAt,
+    string? IdempotencyKey = null);
 
 public sealed record TextTranslationResponse(
     string TargetLanguageCode,
@@ -193,7 +194,14 @@ public sealed record PoiAudioGenerationResult(
     string Message,
     string TranscriptText,
     string TextHash,
-    Models.AudioGuide? AudioGuide);
+    Models.AudioGuide? AudioGuide,
+    int? ProviderStatusCode = null,
+    string? ProviderErrorCode = null,
+    string? ProviderErrorMessage = null,
+    string? ProviderResponseBody = null,
+    string? AttemptedVoiceId = null,
+    string? AttemptedModelId = null,
+    string? OutputFormat = null);
 
 public sealed record MediaAssetUpsertRequest(
     string EntityType,
@@ -302,7 +310,16 @@ public sealed record PoiNarrationResponse(
     Models.AudioGuide? AudioGuide,
     string UiPlaybackKey,
     string AudioCacheKey,
-    string TtsLocale);
+    string TtsLocale)
+{
+    public string AudioUrl => AudioGuide?.AudioUrl ?? string.Empty;
+    public string Language => EffectiveLanguageCode;
+    public bool IsPreGenerated =>
+        AudioGuide is not null &&
+        (!string.IsNullOrWhiteSpace(AudioGuide.AudioUrl) || !string.IsNullOrWhiteSpace(AudioGuide.AudioFilePath)) &&
+        string.Equals(AudioGuide.GenerationStatus, "success", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(AudioGuide.Status, "ready", StringComparison.OrdinalIgnoreCase);
+}
 
 public sealed record StoredFileResponse(
     string Url,

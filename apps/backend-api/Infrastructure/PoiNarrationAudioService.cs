@@ -1,6 +1,5 @@
 using System.Net;
 using System.Text;
-using Microsoft.Extensions.Caching.Memory;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
 
@@ -8,13 +7,11 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed class PoiNarrationAudioService(
     PoiNarrationService poiNarrationService,
-    IMemoryCache cache,
     IWebHostEnvironment environment,
     IHttpClientFactory httpClientFactory,
     ILogger<PoiNarrationAudioService> logger)
 {
     private static readonly TimeSpan PreparedAudioProxyTimeout = TimeSpan.FromSeconds(20);
-    private static readonly TimeSpan CachedAudioDuration = TimeSpan.FromHours(2);
 
     public async Task<PoiNarrationAudioResult?> GetAudioAsync(
         string poiId,
@@ -32,44 +29,27 @@ public sealed class PoiNarrationAudioService(
             return null;
         }
 
-        if (cache.TryGetValue<PoiNarrationAudioResult>(narration.AudioCacheKey, out var cachedAudio) &&
-            cachedAudio is not null)
-        {
-            logger.LogInformation(
-                "POI narration audio cache hit. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; source={Source}; cacheKey={CacheKey}; audioBytes={AudioBytes}; durationSeconds={DurationSeconds}",
-                narration.PoiId,
-                narration.RequestedLanguageCode,
-                cachedAudio.EffectiveLanguageCode,
-                cachedAudio.Source,
-                narration.AudioCacheKey,
-                cachedAudio.Content.Length,
-                cachedAudio.EstimatedDurationSeconds.ToString("0.00"));
-            return cachedAudio;
-        }
-
         if (!CanUsePreparedAudio(narration.AudioGuide))
         {
             logger.LogWarning(
-                "POI narration audio is missing a ready pre-generated file. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; cacheKey={CacheKey}",
+                "[AudioRequest] prepared audio lookup failed. poiId={PoiId}; requestedLang={RequestedLanguage}; normalizedLang={NormalizedLanguage}; effectiveLanguage={EffectiveLanguage}; foundAudio=false; reason={Reason}; audioGuideId={AudioGuideId}; audioGuideLanguage={AudioGuideLanguage}; generationStatus={GenerationStatus}; publicStatus={PublicStatus}; isOutdated={IsOutdated}; audioUrl={AudioUrl}; audioFilePath={AudioFilePath}; cacheKey={CacheKey}",
                 narration.PoiId,
                 narration.RequestedLanguageCode,
+                PremiumAccessCatalog.NormalizeLanguageCode(narration.RequestedLanguageCode),
                 narration.EffectiveLanguageCode,
+                DescribeAudioGuideAvailability(narration.AudioGuide),
+                narration.AudioGuide?.Id,
+                narration.AudioGuide?.LanguageCode,
+                narration.AudioGuide?.GenerationStatus,
+                narration.AudioGuide?.Status,
+                narration.AudioGuide?.IsOutdated,
+                narration.AudioGuide?.AudioUrl,
+                narration.AudioGuide?.AudioFilePath,
                 narration.AudioCacheKey);
             throw new PoiNarrationAudioUnavailableException("Chua co audio pre-generated cho POI/ngon ngu nay.");
         }
 
-        var resolvedAudio = await LoadPreparedAudioAsync(narration, cancellationToken);
-
-        cache.Set(
-            narration.AudioCacheKey,
-            resolvedAudio,
-            new MemoryCacheEntryOptions
-            {
-                SlidingExpiration = CachedAudioDuration,
-                Size = Math.Max(resolvedAudio.Content.Length, 1)
-            });
-
-        return resolvedAudio;
+        return await LoadPreparedAudioAsync(narration, cancellationToken);
     }
 
     private async Task<PoiNarrationAudioResult> LoadPreparedAudioAsync(
@@ -153,6 +133,9 @@ public sealed class PoiNarrationAudioService(
             "prepared_audio",
             narration.UiPlaybackKey,
             narration.AudioCacheKey,
+            audioGuide.Id,
+            audioGuide.ContentVersion,
+            audioGuide.UpdatedAt,
             narration.EffectiveLanguageCode,
             narration.TtsLocale,
             narration.TtsInputText.Length,
@@ -207,6 +190,38 @@ public sealed class PoiNarrationAudioService(
         string.Equals(AudioGuideCatalog.NormalizeGenerationStatus(audioGuide.GenerationStatus), AudioGuideCatalog.GenerationStatusSuccess, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(AudioGuideCatalog.NormalizePublicStatus(audioGuide.Status), AudioGuideCatalog.PublicStatusReady, StringComparison.OrdinalIgnoreCase) &&
         (!string.IsNullOrWhiteSpace(audioGuide.AudioUrl) || !string.IsNullOrWhiteSpace(audioGuide.AudioFilePath));
+
+    private static string DescribeAudioGuideAvailability(AudioGuide? audioGuide)
+    {
+        if (audioGuide is null)
+        {
+            return "no_audio_guide_record";
+        }
+
+        if (audioGuide.IsOutdated)
+        {
+            return "audio_guide_outdated";
+        }
+
+        var generationStatus = AudioGuideCatalog.NormalizeGenerationStatus(audioGuide.GenerationStatus);
+        if (!string.Equals(generationStatus, AudioGuideCatalog.GenerationStatusSuccess, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"generation_status_{generationStatus}";
+        }
+
+        var publicStatus = AudioGuideCatalog.NormalizePublicStatus(audioGuide.Status);
+        if (!string.Equals(publicStatus, AudioGuideCatalog.PublicStatusReady, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"public_status_{publicStatus}";
+        }
+
+        if (string.IsNullOrWhiteSpace(audioGuide.AudioUrl) && string.IsNullOrWhiteSpace(audioGuide.AudioFilePath))
+        {
+            return "missing_audio_url_and_file_path";
+        }
+
+        return "ready";
+    }
 
     private static string? ResolveAudioLocation(AudioGuide audioGuide)
         => !string.IsNullOrWhiteSpace(audioGuide.AudioUrl)
@@ -317,6 +332,9 @@ public sealed record PoiNarrationAudioResult(
     string Source,
     string UiPlaybackKey,
     string AudioCacheKey,
+    string AudioGuideId,
+    string ContentVersion,
+    DateTimeOffset UpdatedAt,
     string EffectiveLanguageCode,
     string TtsLocale,
     int TextLength,

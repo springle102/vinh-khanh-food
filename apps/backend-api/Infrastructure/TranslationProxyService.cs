@@ -23,10 +23,10 @@ public sealed class TranslationProxyService(HttpClient httpClient, ILogger<Trans
             throw new InvalidOperationException("At least one text segment is required for translation.");
         }
 
-        var targetLanguageCode = NormalizeLanguageCode(request.TargetLanguageCode);
+        var targetLanguageCode = LanguageRegistry.GetTranslationCode(request.TargetLanguageCode);
         var sourceLanguageCode = string.IsNullOrWhiteSpace(request.SourceLanguageCode)
             ? "auto"
-            : NormalizeLanguageCode(request.SourceLanguageCode);
+            : LanguageRegistry.GetTranslationCode(request.SourceLanguageCode);
         var translatedTexts = new string[request.Texts.Count];
 
         for (var index = 0; index < request.Texts.Count; index += 1)
@@ -139,5 +139,4 @@ public sealed class TranslationProxyService(HttpClient httpClient, ILogger<Trans
         return WebUtility.HtmlDecode(builder.ToString().Trim());
     }
 
-    private static string NormalizeLanguageCode(string value) => value.Trim();
 }

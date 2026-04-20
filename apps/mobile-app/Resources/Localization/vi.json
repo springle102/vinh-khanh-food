@@ -174,6 +174,8 @@
   "bottom_tour": "Tour c\u1EE7a t\u00F4i",
   "poi_detail_listen": "Nghe thuy\u1EBFt minh",
   "poi_detail_stop_narration": "D\u1EEBng thuy\u1EBFt minh",
+  "poi_detail_pause_narration": "T\u1EA1m d\u1EEBng",
+  "poi_detail_resume_narration": "Ti\u1EBFp t\u1EE5c nghe",
   "poi_detail_narration_loading": "\u0110ang chu\u1EA9n b\u1ECB audio...",
   "poi_detail_narration_error": "Kh\u00F4ng th\u1EC3 ph\u00E1t thuy\u1EBFt minh l\u00FAc n\u00E0y.",
   "poi_detail_narration_missing": "Hi\u1EC7n ch\u01B0a c\u00F3 audio thuy\u1EBFt minh cho ng\u00F4n ng\u1EEF n\u00E0y.",

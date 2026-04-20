@@ -165,6 +165,8 @@
   "bottom_tour": "My Tour",
   "poi_detail_listen": "Listen",
   "poi_detail_stop_narration": "Stop narration",
+  "poi_detail_pause_narration": "Pause narration",
+  "poi_detail_resume_narration": "Resume narration",
   "poi_detail_narration_loading": "Preparing audio...",
   "poi_detail_narration_error": "Unable to play narration right now.",
   "poi_detail_narration_missing": "No pre-generated narration audio is available for this language yet.",

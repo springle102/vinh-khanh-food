@@ -75,9 +75,10 @@ public sealed class TextToSpeechOptions
             .GetSection("ElevenLabs:VoiceIdsByLanguage")
             .GetChildren()
             .Where(section => !string.IsNullOrWhiteSpace(section.Key) && !string.IsNullOrWhiteSpace(section.Value))
+            .GroupBy(section => LanguageRegistry.NormalizeInternalCode(section.Key), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
-                section => section.Key.Trim(),
-                section => section.Value!.Trim(),
+                group => group.Key,
+                group => group.Last().Value!.Trim(),
                 StringComparer.OrdinalIgnoreCase);
         if (configuredVoiceIds.Count > 0)
         {
@@ -86,15 +87,65 @@ public sealed class TextToSpeechOptions
     }
 
     public string ResolveVoiceId(string? languageCode)
+        => ResolveVoiceCandidates(languageCode).First();
+
+    public IReadOnlyList<string> ResolveVoiceCandidates(string? languageCode, string? requestedVoiceId = null)
     {
-        if (!string.IsNullOrWhiteSpace(languageCode) &&
-            VoiceIdsByLanguage.TryGetValue(languageCode.Trim(), out var configuredVoiceId) &&
-            !string.IsNullOrWhiteSpace(configuredVoiceId))
+        if (!string.IsNullOrWhiteSpace(requestedVoiceId))
         {
-            return configuredVoiceId.Trim();
+            return new[] { requestedVoiceId.Trim() };
         }
 
-        return DefaultVoiceId;
+        var definition = LanguageRegistry.GetDefinition(languageCode);
+        var candidates = new List<string>();
+        if (VoiceIdsByLanguage.TryGetValue(definition.InternalCode, out var configuredVoiceId) &&
+            !string.IsNullOrWhiteSpace(configuredVoiceId))
+        {
+            AddCandidate(candidates, configuredVoiceId);
+        }
+
+        AddCandidate(candidates, definition.DefaultVoiceId);
+        AddCandidate(candidates, definition.FallbackVoiceId);
+        AddCandidate(candidates, DefaultVoiceId);
+        AddCandidate(candidates, DefaultVoiceIdValue);
+
+        return candidates.Count == 0
+            ? new[] { DefaultVoiceIdValue }
+            : candidates;
+    }
+
+    public string ResolveModelId(string? languageCode, string? requestedModelId = null)
+        => ResolveModelCandidates(languageCode, requestedModelId).First();
+
+    public IReadOnlyList<string> ResolveModelCandidates(string? languageCode, string? requestedModelId = null)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedModelId))
+        {
+            return new[] { requestedModelId.Trim() };
+        }
+
+        var definition = LanguageRegistry.GetDefinition(languageCode);
+        var candidates = new List<string>();
+        AddCandidate(candidates, definition.DefaultModelId);
+        AddCandidate(candidates, definition.FallbackModelId);
+        AddCandidate(candidates, ModelId);
+        AddCandidate(candidates, DefaultModelIdValue);
+
+        return candidates.Count == 0
+            ? new[] { DefaultModelIdValue }
+            : candidates;
+    }
+
+    private static void AddCandidate(ICollection<string> candidates, string? value)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) ||
+            candidates.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        candidates.Add(normalized);
     }
 
     private static string? ResolveValue(

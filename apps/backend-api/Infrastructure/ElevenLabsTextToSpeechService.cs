@@ -55,7 +55,8 @@ public sealed class ElevenLabsTextToSpeechService(
             options.OutputFormat,
             TextToSpeechOptions.DefaultOutputFormatValue)!;
         var apiKeyConfigured = !string.IsNullOrWhiteSpace(apiKey);
-        var normalizedLanguageCode = NormalizeLanguageCode(request.LanguageCode);
+        var internalLanguageCode = LanguageRegistry.NormalizeInternalCode(request.LanguageCode);
+        var normalizedLanguageCode = LanguageRegistry.GetTtsProviderCode(internalLanguageCode);
         var segments = SplitNarrationIntoSegments(normalizedText, MaxSegmentLength);
         var effectiveOutputFormat = outputFormat;
 
@@ -79,8 +80,10 @@ public sealed class ElevenLabsTextToSpeechService(
         }
 
         logger.LogInformation(
-            "Preparing ElevenLabs TTS request. apiKeyConfigured={ApiKeyConfigured}; language={LanguageCode}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; textLength={TextLength}; segmentCount={SegmentCount}; textHash={TextHash}; text={Text}",
+            "Preparing ElevenLabs TTS request. apiKeyConfigured={ApiKeyConfigured}; requestedLang={RequestedLanguage}; normalizedLang={NormalizedLanguage}; providerLang={ProviderLanguage}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; textLength={TextLength}; segmentCount={SegmentCount}; textHash={TextHash}; text={Text}",
             apiKeyConfigured,
+            request.LanguageCode,
+            internalLanguageCode,
             normalizedLanguageCode ?? request.LanguageCode?.Trim(),
             voiceId,
             modelId,
@@ -255,9 +258,10 @@ public sealed class ElevenLabsTextToSpeechService(
         var totalSegments = request.TotalSegments ?? 1;
 
         logger.LogInformation(
-            "Sending ElevenLabs TTS segment. apiKeyConfigured={ApiKeyConfigured}; endpoint={Endpoint}; language={LanguageCode}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; segment={SegmentNumber}/{TotalSegments}; textLength={TextLength}; textHash={TextHash}; text={Text}",
+            "Sending ElevenLabs TTS segment. apiKeyConfigured={ApiKeyConfigured}; endpoint={Endpoint}; requestedLang={RequestedLanguage}; providerLang={ProviderLanguage}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; segment={SegmentNumber}/{TotalSegments}; textLength={TextLength}; textPreview={TextPreview}; textHash={TextHash}; payload={Payload}",
             apiKeyConfigured,
             requestEndpoint,
+            request.LanguageCode,
             normalizedLanguageCode ?? request.LanguageCode?.Trim(),
             voiceId,
             modelId,
@@ -265,8 +269,9 @@ public sealed class ElevenLabsTextToSpeechService(
             segmentNumber,
             totalSegments,
             request.Text.Length,
+            CreatePreview(request.Text),
             CreateHash(request.Text),
-            request.Text);
+            payloadJson);
 
         using var message = new HttpRequestMessage(HttpMethod.Post, requestUri)
         {
@@ -284,8 +289,15 @@ public sealed class ElevenLabsTextToSpeechService(
         {
             var errorContentType = response.Content.Headers.ContentType?.ToString();
             var responseBody = await ReadResponseBodyAsync(response, cancellationToken);
+            var providerErrorCode = TryReadProviderErrorField(responseBody, "status", "code", "error_code", "type");
+            var providerErrorMessage = TryReadProviderErrorField(responseBody, "message", "detail", "error");
+            var providerFailureMessage = BuildProviderFailureMessage(
+                response.StatusCode,
+                providerErrorCode,
+                providerErrorMessage,
+                responseBody);
             logger.LogWarning(
-                "ElevenLabs TTS failed. apiKeyConfigured={ApiKeyConfigured}; endpoint={Endpoint}; statusCode={StatusCode}; contentType={ContentType}; language={LanguageCode}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; segment={SegmentNumber}/{TotalSegments}; textLength={TextLength}; textHash={TextHash}; responseBody={ResponseBody}",
+                "ElevenLabs TTS failed. apiKeyConfigured={ApiKeyConfigured}; endpoint={Endpoint}; statusCode={StatusCode}; contentType={ContentType}; language={LanguageCode}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; segment={SegmentNumber}/{TotalSegments}; textLength={TextLength}; textPreview={TextPreview}; textHash={TextHash}; providerErrorCode={ProviderErrorCode}; providerErrorMessage={ProviderErrorMessage}; responseBody={ResponseBody}",
                 apiKeyConfigured,
                 requestEndpoint,
                 (int)response.StatusCode,
@@ -297,10 +309,22 @@ public sealed class ElevenLabsTextToSpeechService(
                 segmentNumber,
                 totalSegments,
                 request.Text.Length,
+                CreatePreview(request.Text),
                 CreateHash(request.Text),
+                providerErrorCode,
+                providerErrorMessage,
                 responseBody);
             throw new TextToSpeechGenerationException(
-                $"ElevenLabs Text-to-Speech tra ve loi HTTP {(int)response.StatusCode} ({response.StatusCode}).");
+                providerFailureMessage,
+                response.StatusCode,
+                providerErrorCode,
+                providerErrorMessage,
+                responseBody,
+                requestEndpoint,
+                voiceId,
+                modelId,
+                outputFormat,
+                normalizedLanguageCode ?? request.LanguageCode?.Trim());
         }
 
         var contentType = response.Content.Headers.ContentType?.ToString();
@@ -322,7 +346,17 @@ public sealed class ElevenLabsTextToSpeechService(
                 totalSegments,
                 content.Length,
                 errorBody);
-            throw new TextToSpeechGenerationException("ElevenLabs Text-to-Speech khong tra ve du lieu audio hop le.");
+            throw new TextToSpeechGenerationException(
+                "ElevenLabs Text-to-Speech khong tra ve du lieu audio hop le.",
+                response.StatusCode,
+                TryReadProviderErrorField(errorBody, "status", "code", "error_code", "type"),
+                TryReadProviderErrorField(errorBody, "message", "detail", "error"),
+                errorBody,
+                requestEndpoint,
+                voiceId,
+                modelId,
+                outputFormat,
+                normalizedLanguageCode ?? request.LanguageCode?.Trim());
         }
 
         if (content.Length == 0)
@@ -366,26 +400,6 @@ public sealed class ElevenLabsTextToSpeechService(
             estimatedDurationSeconds);
     }
 
-    private static string? NormalizeLanguageCode(string? languageCode)
-    {
-        var normalized = languageCode?.Trim();
-        if (string.IsNullOrWhiteSpace(normalized))
-        {
-            return null;
-        }
-
-        return normalized switch
-        {
-            "zh-CN" => "zh",
-            "en-US" => "en",
-            "ja-JP" => "ja",
-            "ko-KR" => "ko",
-            "vi-VN" => "vi",
-            _ when normalized.Contains('-', StringComparison.Ordinal) => normalized[..normalized.IndexOf('-')].ToLowerInvariant(),
-            _ => normalized.ToLowerInvariant()
-        };
-    }
-
     private static string InferContentType(string outputFormat)
         => outputFormat.StartsWith("mp3_", StringComparison.OrdinalIgnoreCase)
             ? "audio/mpeg"
@@ -419,6 +433,115 @@ public sealed class ElevenLabsTextToSpeechService(
             return string.Empty;
         }
     }
+
+    private static string BuildProviderFailureMessage(
+        HttpStatusCode statusCode,
+        string? providerErrorCode,
+        string? providerErrorMessage,
+        string? responseBody)
+    {
+        var parts = new List<string>
+        {
+            $"ElevenLabs Text-to-Speech tra ve loi HTTP {(int)statusCode} ({statusCode})."
+        };
+
+        if (!string.IsNullOrWhiteSpace(providerErrorCode))
+        {
+            parts.Add($"providerCode={providerErrorCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(providerErrorMessage))
+        {
+            parts.Add($"providerMessage={providerErrorMessage}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(responseBody))
+        {
+            parts.Add($"responseBody={CreatePreview(responseBody, 1200)}");
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    private static string? TryReadProviderErrorField(string? responseBody, params string[] fieldNames)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            return TryReadJsonField(document.RootElement, fieldNames);
+        }
+        catch (JsonException)
+        {
+            return fieldNames.Any(field =>
+                field.Equals("message", StringComparison.OrdinalIgnoreCase) ||
+                field.Equals("error", StringComparison.OrdinalIgnoreCase) ||
+                field.Equals("detail", StringComparison.OrdinalIgnoreCase))
+                ? CreatePreview(responseBody, 500)
+                : null;
+        }
+    }
+
+    private static string? TryReadJsonField(JsonElement element, IReadOnlyCollection<string> fieldNames)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (!fieldNames.Contains(property.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var directValue = ReadJsonScalar(property.Value);
+                if (!string.IsNullOrWhiteSpace(directValue))
+                {
+                    return directValue;
+                }
+
+                var nestedValue = TryReadJsonField(property.Value, fieldNames);
+                if (!string.IsNullOrWhiteSpace(nestedValue))
+                {
+                    return nestedValue;
+                }
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                var nestedValue = TryReadJsonField(property.Value, fieldNames);
+                if (!string.IsNullOrWhiteSpace(nestedValue))
+                {
+                    return nestedValue;
+                }
+            }
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                var nestedValue = TryReadJsonField(item, fieldNames);
+                if (!string.IsNullOrWhiteSpace(nestedValue))
+                {
+                    return nestedValue;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ReadJsonScalar(JsonElement element)
+        => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString()?.Trim(),
+            JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False => element.GetRawText(),
+            _ => null
+        };
 
     private static bool LooksLikeTextErrorPayload(string? contentType, byte[] content)
     {
@@ -514,7 +637,7 @@ public sealed class ElevenLabsTextToSpeechService(
                 var searchStart = Math.Min(text.Length, start + MinSegmentLength);
                 for (var index = end; index > searchStart; index -= 1)
                 {
-                    if (char.IsWhiteSpace(text[index - 1]) || ".!?,;:".Contains(text[index - 1]))
+                    if (IsSegmentBreakCharacter(text[index - 1]))
                     {
                         end = index;
                         break;
@@ -533,6 +656,10 @@ public sealed class ElevenLabsTextToSpeechService(
 
         return segments;
     }
+
+    private static bool IsSegmentBreakCharacter(char character)
+        => char.IsWhiteSpace(character) ||
+           ".!?,;:。！？；：，、".Contains(character, StringComparison.Ordinal);
 
     private static TextToSpeechRequest CreateSegmentRequest(
         TextToSpeechRequest request,
@@ -903,6 +1030,25 @@ public sealed class ElevenLabsTextToSpeechService(
         }
 
         return hash.ToString("x8");
+    }
+
+    private static string CreatePreview(string? value, int maxLength = 100)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value
+            .Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal)
+            .Trim();
+        if (normalized.Length <= maxLength)
+        {
+            return normalized;
+        }
+
+        return normalized[..maxLength] + "...";
     }
 
     // ✓ Overload để hash audio bytes

@@ -1,16 +1,10 @@
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.Storage;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
-
-public interface IAudioPlayerService
-{
-    bool IsPlaying { get; }
-    Task PlayPoiNarrationAsync(PoiExperienceDetail detail, string languageCode, CancellationToken cancellationToken = default);
-    Task StopAsync();
-}
 
 public interface IAutoNarrationService
 {
@@ -40,7 +34,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
     private readonly IPoiProximityService _poiProximityService;
     private readonly IPoiAudioPlaybackService _audioPlaybackService;
     private readonly IAppLanguageService _languageService;
-    private readonly HashSet<string> _recentlyPlayedPoiIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ILogger<AutoNarrationService> _logger;
 
     private RouteNarrationPlan? _activeRoutePlan;
     private bool _isPlaybackDispatching;
@@ -61,12 +55,14 @@ public sealed class AutoNarrationService : IAutoNarrationService
         IFoodStreetDataService dataService,
         IPoiProximityService poiProximityService,
         IPoiAudioPlaybackService audioPlaybackService,
-        IAppLanguageService languageService)
+        IAppLanguageService languageService,
+        ILogger<AutoNarrationService> logger)
     {
         _dataService = dataService;
         _poiProximityService = poiProximityService;
         _audioPlaybackService = audioPlaybackService;
         _languageService = languageService;
+        _logger = logger;
         IsEnabled = Preferences.Default.Get(AppPreferenceKeys.AutoNarrationEnabled, true);
     }
 
@@ -74,8 +70,8 @@ public sealed class AutoNarrationService : IAutoNarrationService
 
     public double ActivationRadiusMeters => 30d;
 
-    public TimeSpan PlaybackGap => TimeSpan.FromSeconds(20);
-    private static TimeSpan CandidateStableDuration => TimeSpan.FromSeconds(3);
+    public TimeSpan PlaybackGap => TimeSpan.FromSeconds(3);
+    private static TimeSpan CandidateStableDuration => TimeSpan.FromSeconds(2);
     private static TimeSpan ManualReplayCooldown => TimeSpan.FromSeconds(7);
 
     public Task SetEnabledAsync(bool isEnabled)
@@ -140,28 +136,32 @@ public sealed class AutoNarrationService : IAutoNarrationService
 
         PoiLocation? nextPlaybackPoi = null;
         AutoNarrationDecision decision;
+        var shouldStopAudioBecauseUserLeftPoi = false;
 
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
             if (selectedCandidate is null)
             {
+                shouldStopAudioBecauseUserLeftPoi = !string.IsNullOrWhiteSpace(_currentPlayingPoiId);
                 _lastInsidePoiId = null;
                 _candidatePoiId = null;
                 _candidateSince = DateTimeOffset.MinValue;
+                _currentPlayingPoiId = null;
+                _isPlaybackDispatching = false;
                 decision = AutoNarrationDecision.NoNearbyPoi;
             }
             else if (!CanStartPlaybackLocked())
             {
                 decision = AutoNarrationDecision.Busy;
             }
-            else if (IsInCooldownLocked())
-            {
-                decision = AutoNarrationDecision.Cooldown;
-            }
             else if (string.Equals(_currentPlayingPoiId, selectedCandidate.Poi.Id, StringComparison.OrdinalIgnoreCase))
             {
                 decision = AutoNarrationDecision.Busy;
+            }
+            else if (string.IsNullOrWhiteSpace(_currentPlayingPoiId) && IsInCooldownLocked())
+            {
+                decision = AutoNarrationDecision.Cooldown;
             }
             else if (CanPlayCandidateLocked(selectedCandidate.Poi.Id))
             {
@@ -177,6 +177,12 @@ public sealed class AutoNarrationService : IAutoNarrationService
         finally
         {
             _stateLock.Release();
+        }
+
+        if (shouldStopAudioBecauseUserLeftPoi)
+        {
+            _logger.LogInformation("Stopping auto narration because the user left the POI activation area.");
+            await _audioPlaybackService.StopAsync();
         }
 
         if (nextPlaybackPoi is null)
@@ -284,7 +290,6 @@ public sealed class AutoNarrationService : IAutoNarrationService
             return CreateResult(snapshot, poi, null, AutoNarrationDecision.None, isMockLocation: true);
         }
 
-        await _audioPlaybackService.StopAsync();
         await _stateLock.WaitAsync(cancellationToken);
         try
         {
@@ -385,7 +390,6 @@ public sealed class AutoNarrationService : IAutoNarrationService
 
     private void ResetRouteStateLocked()
     {
-        _recentlyPlayedPoiIds.Clear();
         _isPlaybackDispatching = false;
         _currentPlayingPoiId = null;
         _lastPlayedTime = DateTimeOffset.MinValue;
@@ -397,8 +401,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
     }
 
     private bool CanStartPlaybackLocked()
-        => !_isPlaybackDispatching &&
-           !_audioPlaybackService.IsBusy;
+        => !_isPlaybackDispatching;
 
     private bool IsInCooldownLocked()
         => DateTimeOffset.UtcNow - _lastPlayedTime < PlaybackGap;
@@ -441,7 +444,6 @@ public sealed class AutoNarrationService : IAutoNarrationService
     {
         _currentPlayingPoiId = poiId;
         _lastPlayedTime = DateTimeOffset.UtcNow;
-        _recentlyPlayedPoiIds.Add(poiId);
         _isPlaybackDispatching = true;
     }
 
@@ -462,6 +464,10 @@ public sealed class AutoNarrationService : IAutoNarrationService
     private void BeginBackgroundPlayback(PoiLocation poi, PoiExperienceDetail detail)
     {
         var languageCode = _languageService.CurrentLanguage;
+        _logger.LogInformation(
+            "Dispatching POI auto narration. poiId={PoiId}; languageCode={LanguageCode}",
+            poi.Id,
+            languageCode);
         MainThread.BeginInvokeOnMainThread(() => _ = RunPlaybackAsync(poi, detail, languageCode));
     }
 
@@ -473,7 +479,10 @@ public sealed class AutoNarrationService : IAutoNarrationService
         }
         catch
         {
-            // Best-effort only. Manual replay is still available from the POI sheet.
+            _logger.LogDebug(
+                "Auto narration playback dispatch ended with a best-effort failure. poiId={PoiId}; languageCode={LanguageCode}",
+                poi.Id,
+                languageCode);
         }
         finally
         {
@@ -481,7 +490,6 @@ public sealed class AutoNarrationService : IAutoNarrationService
             try
             {
                 _isPlaybackDispatching = false;
-                _currentPlayingPoiId = null;
             }
             finally
             {
@@ -520,8 +528,6 @@ public sealed class AutoNarrationService : IAutoNarrationService
         };
 
         SetInlineFallbackText(detail.Name, poi.Title);
-        SetInlineFallbackText(detail.Summary, poi.ShortDescription);
-        SetInlineFallbackText(detail.Description, poi.ShortDescription);
         return detail;
     }
 

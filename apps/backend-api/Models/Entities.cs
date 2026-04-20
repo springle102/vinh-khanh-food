@@ -159,6 +159,7 @@ public sealed class AppUsageEvent
     public string Metadata { get; set; } = string.Empty;
     public int? DurationInSeconds { get; set; }
     public DateTimeOffset OccurredAt { get; set; }
+    public string? IdempotencyKey { get; set; }
 }
 
 public sealed class TourRoute

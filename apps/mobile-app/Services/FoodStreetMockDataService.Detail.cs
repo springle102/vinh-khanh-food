@@ -43,7 +43,10 @@ public sealed partial class FoodStreetApiDataService
 
         PopulateLocalizedContent(detail.Name, translations, item => item.Title);
         PopulateLocalizedContent(detail.Summary, translations, item => FirstNonEmpty(item.ShortText, item.FullText));
-        PopulateLocalizedContent(detail.Description, translations, item => FirstNonEmpty(item.FullText, item.ShortText));
+        PopulateLocalizedContent(detail.Description, translations, item => item.FullText);
+        SeedLocalizedSourceContent(detail.Name, poi.SourceLanguageCode, poi.Title);
+        SeedLocalizedSourceContent(detail.Summary, poi.SourceLanguageCode, poi.ShortDescription, poi.Description);
+        SeedLocalizedSourceContent(detail.Description, poi.SourceLanguageCode, poi.AudioScript, poi.Description, poi.ShortDescription);
 
         if (audioGuides is not null)
         {
@@ -52,6 +55,19 @@ public sealed partial class FoodStreetApiDataService
                          .OrderByDescending(item => item.UpdatedAt))
             {
                 detail.AudioUrls.Set(audioGuide.LanguageCode, audioGuide.AudioUrl);
+                detail.AudioAssets.Set(new PoiAudioAsset
+                {
+                    AudioGuideId = audioGuide.Id,
+                    PoiId = detail.Id,
+                    LanguageCode = audioGuide.LanguageCode,
+                    AudioUrl = audioGuide.AudioUrl,
+                    SourceType = audioGuide.SourceType,
+                    ContentVersion = audioGuide.ContentVersion,
+                    TextHash = audioGuide.TextHash,
+                    DurationInSeconds = audioGuide.DurationInSeconds,
+                    FileSizeBytes = audioGuide.FileSizeBytes,
+                    UpdatedAt = audioGuide.UpdatedAt
+                });
             }
         }
 
@@ -79,6 +95,44 @@ public sealed partial class FoodStreetApiDataService
             Latitude = detail.Latitude,
             Longitude = detail.Longitude,
             IsFeatured = detail.IsFeatured,
+            TriggerRadius = double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= 20d
+                ? poi.TriggerRadius
+                : 20d,
+            Priority = Math.Max(0, poi.Priority),
+            HeatIntensity = ResolveHeatIntensity(poi, []),
+            DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))
+        };
+    }
+
+    private PoiLocation CreatePoiLocation(
+        PoiDto poi,
+        string category,
+        IReadOnlyList<TranslationDto>? translations,
+        string thumbnailUrl)
+    {
+        var translation = SelectTranslation(translations, CurrentLanguageCode, "poi", poi.Id);
+        var localizedTitle = FirstNonEmpty(
+            GetTranslationText(translation, value => value.Title),
+            GetSourceTextForCurrentLanguage(poi.Title),
+            CreateSafePoiTitleFallback(poi.Slug),
+            poi.Id);
+        var localizedSummary = FirstNonEmpty(
+            GetTranslationText(translation, value => value.ShortText, value => value.FullText),
+            GetSourceTextForCurrentLanguage(poi.ShortDescription),
+            category);
+
+        return new PoiLocation
+        {
+            Id = poi.Id,
+            Title = localizedTitle,
+            ShortDescription = localizedSummary,
+            Address = LocalizeAddress(poi.Address, poi.Id),
+            Category = category,
+            PriceRange = poi.PriceRange?.Trim() ?? string.Empty,
+            ThumbnailUrl = string.IsNullOrWhiteSpace(thumbnailUrl) ? DefaultBackdropImageUrl : thumbnailUrl,
+            Latitude = poi.Lat,
+            Longitude = poi.Lng,
+            IsFeatured = poi.Featured,
             TriggerRadius = double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= 20d
                 ? poi.TriggerRadius
                 : 20d,
@@ -375,11 +429,61 @@ public sealed partial class FoodStreetApiDataService
         }
     }
 
+    private void SeedLocalizedSourceContent(
+        LocalizedTextSet target,
+        string? sourceLanguageCode,
+        params string?[] candidateValues)
+    {
+        var normalizedSourceLanguage = AppLanguage.NormalizeCode(
+            string.IsNullOrWhiteSpace(sourceLanguageCode)
+                ? AppLanguage.DefaultLanguage
+                : sourceLanguageCode);
+        var normalizedCurrentLanguage = CurrentLanguageCode;
+
+        foreach (var candidateValue in candidateValues)
+        {
+            if (string.IsNullOrWhiteSpace(candidateValue))
+            {
+                continue;
+            }
+
+            var normalizedValue = TextEncodingHelper.NormalizeDisplayText(candidateValue);
+            if (string.IsNullOrWhiteSpace(normalizedValue))
+            {
+                continue;
+            }
+
+            if (LocalizationFallbackPolicy.IsUsableTextForLanguage(normalizedValue, normalizedCurrentLanguage))
+            {
+                SetLocalizedValue(target, normalizedCurrentLanguage, normalizedValue);
+                return;
+            }
+
+            if (LocalizationFallbackPolicy.IsUsableTextForLanguage(normalizedValue, normalizedSourceLanguage))
+            {
+                SetLocalizedValue(target, normalizedSourceLanguage, normalizedValue);
+                return;
+            }
+        }
+    }
+
     private static void SetLocalizedValues(LocalizedTextSet target, IReadOnlyDictionary<string, string> values)
     {
         foreach (var pair in values)
         {
             target.Set(pair.Key, pair.Value);
+        }
+    }
+
+    private static void SetLocalizedValue(LocalizedTextSet target, string languageCode, string value)
+    {
+        var normalizedLanguageCode = AppLanguage.NormalizeCode(languageCode);
+        target.Set(normalizedLanguageCode, value);
+
+        var separatorIndex = normalizedLanguageCode.IndexOf('-');
+        if (separatorIndex > 0)
+        {
+            target.Set(normalizedLanguageCode[..separatorIndex], value);
         }
     }
 

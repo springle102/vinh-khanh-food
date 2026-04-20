@@ -2,9 +2,12 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Networking;
 using Microsoft.Maui.Storage;
 using VinhKhanh.MobileApp.Helpers;
+using VinhKhanh.MobileApp.Models;
 using VinhKhanh.MobileApp.ViewModels;
 
 namespace VinhKhanh.MobileApp.Pages;
@@ -17,6 +20,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private const string MapStatePlaceholder = "__MAP_STATE_BASE64__";
     private const string LeafletCssPlaceholder = "__LEAFLET_CSS__";
     private const string LeafletJsPlaceholder = "__LEAFLET_JS__";
+    private const string MapHtmlBaseUrl = "https://appassets.vinhkhanh.local/";
     private const string TourPanelHeightAnimationName = "HomeMapPage.TourPanel.Height";
     private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromSeconds(5);
     private const uint TourPanelAnimationDuration = 240;
@@ -30,14 +34,23 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private const double BrowseViewportBottomInset = 168;
     private const double TourViewportTopInset = 230;
     private const double TourViewportBottomInsetFallback = 176;
+    private const double MinMapContainerSize = 48;
     private static readonly SemaphoreSlim MapTemplateLock = new(1, 1);
     private static string? _cachedMapHtmlTemplate;
 
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HomeMapViewModel _viewModel;
     private readonly LocalizedPageBindingSubscription _localizedPageBinding;
+    private readonly ILogger<HomeMapPage> _logger;
     private readonly SemaphoreSlim _mapRenderLock = new(1, 1);
     private bool _isMapReady;
+    private bool _isMapNavigationComplete;
+    private bool _hasPendingMapContentRefresh;
+    private int _mapRenderGeneration;
+    private int _mapReadyGeneration;
+    private int _mapAutoRetryCount;
+    private string _lastMapContentSignature = string.Empty;
+    private string _mapStatusKind = string.Empty;
     private bool _isTourPanelPresented;
     private bool _isTourPanelExpanded;
     private bool _isTourPanelPanning;
@@ -57,6 +70,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     {
         InitializeComponent();
         _viewModel = ServiceHelper.GetService<HomeMapViewModel>();
+        _logger = ServiceHelper.GetService<ILogger<HomeMapPage>>();
         BindingContext = _viewModel;
         _localizedPageBinding = new(this);
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -70,7 +84,9 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         _localizedPageBinding.Rebind();
         _viewModel.ActivateNarrationContext();
         StartAutoRefreshLoop();
-        var renderTask = EnsureMapRenderedAsync();
+        ShowMapStatus(
+            "Đang tải bản đồ...",
+            "Ứng dụng đang tải dữ liệu POI và khởi tạo lớp bản đồ.");
         await _viewModel.LoadAsync();
         if (!string.IsNullOrWhiteSpace(_pendingStartTourId))
         {
@@ -98,9 +114,10 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         }
 
         await _viewModel.StartLocationTrackingAsync();
-        await renderTask;
+        await EnsureMapRenderedAsync();
         await PoiDetailBottomSheet.SetPresentedAsync(_viewModel.IsBottomSheetVisible);
         await SyncTourPanelAsync(animated: false, refitTour: false);
+        await InvalidateMapSizeAsync("appearing");
     }
 
     protected override async void OnDisappearing()
@@ -130,8 +147,12 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         _lastAllocatedWidth = width;
         _lastAllocatedHeight = height;
 
-        MainThread.BeginInvokeOnMainThread(() => _ = RefreshTourPanelLayoutAsync(
-            refitTour: TourPanelOverlay.IsVisible && _isTourPanelExpanded && _viewModel.HasVisibleTour));
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            await RefreshTourPanelLayoutAsync(
+                refitTour: TourPanelOverlay.IsVisible && _isTourPanelExpanded && _viewModel.HasVisibleTour);
+            await InvalidateMapSizeAsync("page-size-allocated");
+        });
     }
 
     private void StartAutoRefreshLoop()
@@ -202,16 +223,22 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     {
         if (e.Result != WebNavigationResult.Success)
         {
+            _isMapNavigationComplete = false;
+            _isMapReady = false;
+            _logger.LogError("[MapInit] WebView navigation failed. result={Result}", e.Result);
+            ShowMapStatus(
+                "Không thể tải bản đồ",
+                "WebView không mở được nội dung bản đồ. Hãy thử mở lại ứng dụng hoặc kiểm tra log dev.");
             return;
         }
 
-        _isMapReady = true;
-        await RefreshMapContentAsync();
-        await UpdateMapViewportInsetsAsync(refitTour: _viewModel.HasVisibleTour && _viewModel.IsTourPanelVisible);
-        if (_viewModel.HasSimulationRoute)
-        {
-            await FitToSimulationRouteAsync();
-        }
+        _isMapNavigationComplete = true;
+        _logger.LogInformation(
+            "[MapInit] WebView navigation completed. generation={Generation}; width={Width}; height={Height}",
+            _mapRenderGeneration,
+            MapWebView.Width,
+            MapWebView.Height);
+        await ProbeMapReadyAsync("webview-navigated");
     }
 
     private async void OnMapNavigating(object? sender, WebNavigatingEventArgs e)
@@ -223,6 +250,12 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         }
 
         e.Cancel = true;
+
+        if (string.Equals(uri.Host, "map-event", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleMapEventAsync(uri);
+            return;
+        }
 
         if (string.Equals(uri.Host, "dismiss-detail", StringComparison.OrdinalIgnoreCase))
         {
@@ -252,6 +285,238 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         {
             await _viewModel.SelectPoiByIdAsync(poiId);
         }
+    }
+
+    private async Task HandleMapEventAsync(Uri uri)
+    {
+        var parameters = ParseQueryParameters(uri);
+        parameters.TryGetValue("type", out var eventType);
+        parameters.TryGetValue("detail", out var detail);
+        eventType ??= "unknown";
+
+        _logger.LogInformation(
+            "[MapEvent] type={EventType}; detail={Detail}; generation={Generation}; ready={Ready}",
+            eventType,
+            detail ?? string.Empty,
+            _mapRenderGeneration,
+            _isMapReady);
+
+        switch (eventType)
+        {
+            case "ready":
+                await MarkMapReadyAsync("host-ready");
+                break;
+
+            case "tile-url":
+                _logger.LogInformation("[MapTile] Active tile url. detail={Detail}", detail ?? string.Empty);
+                break;
+
+            case "tile-error":
+                _logger.LogWarning("[MapTile] Tile provider reported an error. detail={Detail}", detail ?? string.Empty);
+                ShowMapStatus(
+                    "Không tải được lớp bản đồ",
+                    "Ứng dụng vẫn giữ nền và POI nếu có dữ liệu. Vui lòng kiểm tra mạng hoặc tile provider trong log dev.",
+                    "tile-error");
+                break;
+
+            case "poi-sync":
+                _logger.LogInformation("[MarkerRender] Browser marker sync. detail={Detail}", detail ?? string.Empty);
+                break;
+
+            case "resize":
+                _logger.LogDebug("[MapInit] Leaflet size invalidated. detail={Detail}", detail ?? string.Empty);
+                break;
+
+            case "map-error":
+                _isMapReady = false;
+                _logger.LogError("[MapInit] Leaflet initialization failed. detail={Detail}", detail ?? string.Empty);
+                ShowMapStatus(
+                    "Không thể khởi tạo bản đồ",
+                    "Leaflet gặp lỗi khi render. Chi tiết đã được ghi vào log dev để xử lý dữ liệu hoặc tile.",
+                    "fatal");
+                if (_mapAutoRetryCount < 1)
+                {
+                    _mapAutoRetryCount += 1;
+                    await Task.Delay(250);
+                    await EnsureMapRenderedAsync(force: true);
+                }
+                break;
+        }
+    }
+
+    private async Task MarkMapReadyAsync(string reason)
+    {
+        _isMapReady = true;
+        _mapAutoRetryCount = 0;
+        _mapReadyGeneration = _mapRenderGeneration;
+        _logger.LogInformation(
+            "[MapInit] Leaflet API ready. reason={Reason}; generation={Generation}; pendingRefresh={PendingRefresh}; width={Width}; height={Height}",
+            reason,
+            _mapReadyGeneration,
+            _hasPendingMapContentRefresh,
+            MapWebView.Width,
+            MapWebView.Height);
+
+        await InvalidateMapSizeAsync(reason);
+        if (_hasPendingMapContentRefresh)
+        {
+            await RefreshMapContentAsync();
+        }
+        else
+        {
+            await RefreshMapStateAsync();
+        }
+
+        await UpdateMapViewportInsetsAsync(refitTour: _viewModel.HasVisibleTour && _viewModel.IsTourPanelVisible);
+        if (_viewModel.HasSimulationRoute)
+        {
+            await FitToSimulationRouteAsync();
+        }
+    }
+
+    private async Task ProbeMapReadyAsync(string reason)
+    {
+        if (!_isMapNavigationComplete)
+        {
+            return;
+        }
+
+        await Task.Delay(120);
+        var result = await EvaluateMapScriptAsync(
+            "(() => { try { return window.vkFoodMap && window.vkFoodMap.isReady && window.vkFoodMap.isReady() ? 'ready' : 'missing-map-api'; } catch (error) { return 'probe-error:' + (error && error.message ? error.message : error); } })()",
+            $"probe-ready:{reason}");
+        if (IsJavaScriptReady(result))
+        {
+            await MarkMapReadyAsync($"probe:{reason}");
+            return;
+        }
+
+        _logger.LogWarning(
+            "[MapInit] WebView loaded but Leaflet API is not ready yet. reason={Reason}; result={Result}",
+            reason,
+            result ?? "null");
+        ShowMapStatus(
+            "Đang khởi tạo bản đồ...",
+            "WebView đã tải xong nhưng Leaflet chưa báo sẵn sàng. Ứng dụng sẽ tự thử đồng bộ lại.",
+            "loading");
+    }
+
+    private async Task<string?> EvaluateMapScriptAsync(string script, string operation, bool critical = false)
+    {
+        try
+        {
+            return await MapWebView.EvaluateJavaScriptAsync(script);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[MapJs] JavaScript operation failed. operation={Operation}", operation);
+            if (critical)
+            {
+                ShowMapStatus(
+                    "Không thể cập nhật bản đồ",
+                    "Một lệnh đồng bộ POI/marker bị lỗi. Chi tiết đã được ghi vào log dev.",
+                    "fatal");
+            }
+
+            return null;
+        }
+    }
+
+    private async Task InvalidateMapSizeAsync(string reason)
+    {
+        if (!_isMapReady)
+        {
+            return;
+        }
+
+        if (MapWebView.Width < MinMapContainerSize || MapWebView.Height < MinMapContainerSize)
+        {
+            _logger.LogWarning(
+                "[MapInit] Map container is too small during invalidate. reason={Reason}; width={Width}; height={Height}",
+                reason,
+                MapWebView.Width,
+                MapWebView.Height);
+            return;
+        }
+
+        var reasonLiteral = JsonSerializer.Serialize(reason, _jsonOptions);
+        await EvaluateMapScriptAsync(
+            $"window.vkFoodMap && window.vkFoodMap.invalidateSize && window.vkFoodMap.invalidateSize({reasonLiteral});",
+            $"invalidate-size:{reason}");
+    }
+
+    private void ShowMapStatus(string title, string description, string kind = "loading")
+    {
+        _mapStatusKind = kind;
+        MapStatusTitleLabel.Text = title;
+        MapStatusDescriptionLabel.Text = description;
+        MapStatusOverlay.IsVisible = true;
+    }
+
+    private void HideMapStatus(params string[] allowedKinds)
+    {
+        if (allowedKinds.Length > 0 &&
+            !allowedKinds.Any(kind => string.Equals(kind, _mapStatusKind, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        _mapStatusKind = string.Empty;
+        MapStatusOverlay.IsVisible = false;
+    }
+
+    private void UpdateMapDataStatus(int sourcePoiCount, int validPoiCount)
+    {
+        if (sourcePoiCount == 0)
+        {
+            ShowMapStatus(
+                "Chưa có dữ liệu bản đồ/POI",
+                "API hoặc bộ lọc hiện tại chưa trả về POI nào. Bản đồ vẫn giữ nền thay vì trắng toàn bộ.",
+                "empty");
+            return;
+        }
+
+        if (validPoiCount == 0)
+        {
+            ShowMapStatus(
+                "Chưa có POI hợp lệ để hiển thị",
+                "Có dữ liệu POI nhưng tất cả tọa độ đều không hợp lệ. Kiểm tra log dev để biết POI nào bị loại.",
+                "invalid-poi");
+            return;
+        }
+
+        HideMapStatus("loading", "empty", "invalid-poi");
+    }
+
+    private static bool IsJavaScriptOk(string? result)
+        => result is not null &&
+           result.Contains("ok", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsJavaScriptReady(string? result)
+        => result is not null &&
+           result.Contains("ready", StringComparison.OrdinalIgnoreCase);
+
+    private static Dictionary<string, string> ParseQueryParameters(Uri uri)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(uri.Query))
+        {
+            return values;
+        }
+
+        foreach (var pair in uri.Query.TrimStart('?')
+                     .Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var segments = pair.Split('=', 2);
+            if (segments.Length != 2)
+            {
+                continue;
+            }
+
+            values[Uri.UnescapeDataString(segments[0])] = Uri.UnescapeDataString(segments[1]);
+        }
+
+        return values;
     }
 
     private async void OnCenterTapped(object? sender, TappedEventArgs e)
@@ -625,12 +890,14 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         };
 
         var viewportInsetsLiteral = JsonSerializer.Serialize(viewportInsets, _jsonOptions);
-        await MapWebView.EvaluateJavaScriptAsync(
-            $"window.vkFoodMap && window.vkFoodMap.setViewportInsets({viewportInsetsLiteral});");
+        await EvaluateMapScriptAsync(
+            $"window.vkFoodMap && window.vkFoodMap.setViewportInsets({viewportInsetsLiteral});",
+            "set-viewport-insets");
+        await InvalidateMapSizeAsync("viewport-insets");
 
         if (refitTour && _viewModel.HasVisibleTour && !_viewModel.HasVisibleBottomSheet)
         {
-            await MapWebView.EvaluateJavaScriptAsync("window.vkFoodMap && window.vkFoodMap.fitToTour();");
+            await EvaluateMapScriptAsync("window.vkFoodMap && window.vkFoodMap.fitToTour();", "fit-tour");
         }
     }
 
@@ -639,12 +906,12 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
             ? string.Empty
             : $"{_viewModel.TourMode}:{_viewModel.VisibleTour.Id}";
 
-    private async Task RenderMapAsync()
+    private async Task RenderMapAsync(bool force = false)
     {
         await _mapRenderLock.WaitAsync();
         try
         {
-            if (MapWebView.Source is not null)
+            if (!force && MapWebView.Source is not null)
             {
                 return;
             }
@@ -660,75 +927,241 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
     private async Task RenderMapCoreAsync()
     {
         _isMapReady = false;
+        _isMapNavigationComplete = false;
+        _hasPendingMapContentRefresh = true;
+        _mapRenderGeneration += 1;
+        var generation = _mapRenderGeneration;
+        var payload = BuildMapPayload("initial-render");
+        _logger.LogInformation(
+            "[MapInit] Rendering map webview. generation={Generation}; language={LanguageCode}; sourcePois={SourcePoiCount}; validPois={ValidPoiCount}; rejectedPois={RejectedPoiCount}; selectedPoiId={SelectedPoiId}; activePoiId={ActivePoiId}; allowRemoteTiles={AllowRemoteTiles}; containerWidth={Width}; containerHeight={Height}",
+            generation,
+            _viewModel.CurrentLanguageCode,
+            payload.SourcePoiCount,
+            payload.ValidPoiCount,
+            payload.RejectedPoiCount,
+            _viewModel.SelectedPoi?.Id ?? string.Empty,
+            _viewModel.CurrentActivePoiId ?? string.Empty,
+            Connectivity.Current.NetworkAccess is not NetworkAccess.None,
+            MapWebView.Width,
+            MapWebView.Height);
+        UpdateMapDataStatus(payload.SourcePoiCount, payload.ValidPoiCount);
         var template = await GetMapHtmlTemplateAsync();
-        var json = JsonSerializer.Serialize(BuildMapPayload(), _jsonOptions);
+        var json = JsonSerializer.Serialize(payload.State, _jsonOptions);
         var encodedJson = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
         MapWebView.Source = new HtmlWebViewSource
         {
+            BaseUrl = MapHtmlBaseUrl,
             Html = template
                 .Replace(MapStatePlaceholder, encodedJson, StringComparison.Ordinal)
         };
     }
 
-    private async Task EnsureMapRenderedAsync()
+    private async Task EnsureMapRenderedAsync(bool force = false)
     {
-        if (MapWebView.Source is not null)
+        if (!force && MapWebView.Source is not null)
         {
             return;
         }
 
-        await RenderMapAsync();
+        await RenderMapAsync(force);
     }
 
-    private object BuildMapPayload()
+    private MapPayload BuildMapPayload(string reason)
     {
-        return new
+        var poiPayload = BuildPoiPayload(reason);
+        var state = new
         {
             featuredLabel = _viewModel.FeaturedBadgeText,
             selectedPoiId = _viewModel.SelectedPoi?.Id,
             activePoiId = _viewModel.CurrentActivePoiId,
             userLocation = _viewModel.GetMapUserLocationState(),
+            allowRemoteTiles = Connectivity.Current.NetworkAccess is not NetworkAccess.None,
             allowLocationMockSelection = true,
             routeSimulation = _viewModel.GetMapRouteSimulationState(),
             currentTour = _viewModel.GetCurrentTourMapState(),
-            pois = BuildPoiPayload()
+            pois = poiPayload.Items
         };
+
+        return new MapPayload(
+            state,
+            poiPayload.Items,
+            poiPayload.SourceCount,
+            poiPayload.ValidCount,
+            poiPayload.RejectedCount,
+            poiPayload.Signature);
     }
 
-    private IEnumerable<object> BuildPoiPayload()
+    private PoiPayload BuildPoiPayload(string reason)
     {
-        return _viewModel.Pois.Select(poi => new
+        var mapPois = string.IsNullOrWhiteSpace(_viewModel.SearchText)
+            ? _viewModel.Pois
+            : _viewModel.SearchResults;
+
+        var sourcePois = mapPois.ToList();
+        var items = new List<object>(sourcePois.Count);
+        var rejectedCount = 0;
+
+        foreach (var poi in sourcePois)
+        {
+            if (!TryBuildPoiMapItem(poi, out var mapItem, out var rejectReason))
+            {
+                rejectedCount += 1;
+                _logger.LogWarning(
+                    "[MarkerRender] Rejected invalid POI coordinate. reason={Reason}; poiId={PoiId}; title={Title}; latitude={Latitude}; longitude={Longitude}",
+                    rejectReason,
+                    poi.Id,
+                    poi.Title,
+                    poi.Latitude,
+                    poi.Longitude);
+                continue;
+            }
+
+            items.Add(mapItem);
+        }
+
+        var signature = string.Join(
+            "|",
+            items.Select(item => JsonSerializer.Serialize(item, _jsonOptions)));
+        _logger.LogInformation(
+            "[MarkerRender] Built POI payload. reason={Reason}; language={LanguageCode}; searchText={SearchText}; sourcePois={SourcePoiCount}; validPois={ValidPoiCount}; rejectedPois={RejectedPoiCount}",
+            reason,
+            _viewModel.CurrentLanguageCode,
+            _viewModel.SearchText ?? string.Empty,
+            sourcePois.Count,
+            items.Count,
+            rejectedCount);
+
+        return new PoiPayload(items, sourcePois.Count, items.Count, rejectedCount, signature);
+    }
+
+    private static bool TryBuildPoiMapItem(PoiLocation poi, out object mapItem, out string rejectReason)
+    {
+        mapItem = new { };
+        rejectReason = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(poi.Id))
+        {
+            rejectReason = "missing-id";
+            return false;
+        }
+
+        if (!TryNormalizeLatitude(poi.Latitude, out var latitude, out rejectReason) ||
+            !TryNormalizeLongitude(poi.Longitude, out var longitude, out rejectReason))
+        {
+            return false;
+        }
+
+        var triggerRadius = double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= 20d
+            ? poi.TriggerRadius
+            : 20d;
+        mapItem = new
         {
             id = poi.Id,
-            title = poi.Title,
-            description = poi.ShortDescription,
-            address = poi.Address,
-            category = poi.Category,
+            title = poi.Title ?? string.Empty,
+            address = poi.Address ?? string.Empty,
+            category = poi.Category ?? string.Empty,
             status = poi.IsFeatured ? "featured" : "standard",
-            latitude = poi.Latitude,
-            longitude = poi.Longitude,
+            latitude,
+            longitude,
             isFeatured = poi.IsFeatured,
-            triggerRadius = poi.TriggerRadius
-        });
+            triggerRadius
+        };
+
+        return true;
+    }
+
+    private static bool TryNormalizeLatitude(double value, out double latitude, out string rejectReason)
+    {
+        latitude = value;
+        if (!double.IsFinite(value))
+        {
+            rejectReason = "latitude-not-finite";
+            return false;
+        }
+
+        if (value is < -90d or > 90d)
+        {
+            rejectReason = "latitude-out-of-range";
+            return false;
+        }
+
+        rejectReason = string.Empty;
+        return true;
+    }
+
+    private static bool TryNormalizeLongitude(double value, out double longitude, out string rejectReason)
+    {
+        longitude = value;
+        if (!double.IsFinite(value))
+        {
+            rejectReason = "longitude-not-finite";
+            return false;
+        }
+
+        if (value is < -180d or > 180d)
+        {
+            rejectReason = "longitude-out-of-range";
+            return false;
+        }
+
+        rejectReason = string.Empty;
+        return true;
     }
 
     private async Task RefreshMapContentAsync()
     {
         if (!_isMapReady)
         {
+            _hasPendingMapContentRefresh = true;
+            _logger.LogDebug(
+                "[MarkerRender] Map content refresh queued because map API is not ready. navigationComplete={NavigationComplete}; generation={Generation}",
+                _isMapNavigationComplete,
+                _mapRenderGeneration);
             await EnsureMapRenderedAsync();
             return;
+        }
+
+        var payload = BuildMapPayload("refresh");
+        UpdateMapDataStatus(payload.SourcePoiCount, payload.ValidPoiCount);
+        if (string.Equals(_lastMapContentSignature, payload.Signature, StringComparison.Ordinal))
+        {
+            _logger.LogDebug(
+                "[MarkerRender] POI payload signature unchanged. validPois={ValidPoiCount}; selectedPoiId={SelectedPoiId}; activePoiId={ActivePoiId}",
+                payload.ValidPoiCount,
+                _viewModel.SelectedPoi?.Id ?? string.Empty,
+                _viewModel.CurrentActivePoiId ?? string.Empty);
         }
 
         var payloadLiteral = JsonSerializer.Serialize(new
         {
             featuredLabel = _viewModel.FeaturedBadgeText,
-            pois = BuildPoiPayload()
+            pois = payload.PoiItems
         }, _jsonOptions);
 
-        await MapWebView.EvaluateJavaScriptAsync(
-            $"window.vkFoodMap && window.vkFoodMap.setPoiData({payloadLiteral});");
+        var result = await EvaluateMapScriptAsync(
+            $"(() => {{ if (!window.vkFoodMap || !window.vkFoodMap.setPoiData) return 'missing-map-api'; window.vkFoodMap.setPoiData({payloadLiteral}); return 'ok'; }})()",
+            "set-poi-data",
+            critical: true);
+        if (!IsJavaScriptOk(result))
+        {
+            _hasPendingMapContentRefresh = true;
+            _isMapReady = false;
+            _logger.LogWarning(
+                "[MarkerRender] Map API rejected POI update. result={Result}; sourcePois={SourcePoiCount}; validPois={ValidPoiCount}",
+                result ?? "null",
+                payload.SourcePoiCount,
+                payload.ValidPoiCount);
+            ShowMapStatus(
+                "Bản đồ chưa sẵn sàng",
+                "Ứng dụng sẽ tự đồng bộ lại POI ngay khi Leaflet khởi tạo xong.");
+            await ProbeMapReadyAsync("set-poi-data-missing-api");
+            return;
+        }
+
+        _lastMapContentSignature = payload.Signature;
+        _hasPendingMapContentRefresh = false;
         await RefreshMapStateAsync();
+        await InvalidateMapSizeAsync("poi-refresh");
     }
 
     private static async Task<string> ReadRawAssetTextAsync(string fileName)
@@ -777,12 +1210,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         switch (e.PropertyName)
         {
             case nameof(HomeMapViewModel.MapDataVersion):
-                MainThread.BeginInvokeOnMainThread(() =>
-                    _ = MapWebView.Source is null
-                        ? EnsureMapRenderedAsync()
-                        : _isMapReady
-                            ? RefreshMapContentAsync()
-                            : Task.CompletedTask);
+                MainThread.BeginInvokeOnMainThread(() => _ = RefreshMapContentAsync());
                 break;
 
             case nameof(HomeMapViewModel.MapContentVersion):
@@ -793,7 +1221,8 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
                 MainThread.BeginInvokeOnMainThread(async () =>
                 {
                     await RefreshMapStateAsync();
-                    if (_viewModel.SelectedPoi is not null)
+                    if (_viewModel.SelectedPoi is not null &&
+                        _viewModel.ConsumeSelectedPoiMapCenterRequest())
                     {
                         await FlyToCoordinateAsync(_viewModel.SelectedPoi.Latitude, _viewModel.SelectedPoi.Longitude, 17);
                     }
@@ -868,11 +1297,17 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         var userLocationStateLiteral = JsonSerializer.Serialize(_viewModel.GetMapUserLocationState(), _jsonOptions);
         var routeSimulationLiteral = JsonSerializer.Serialize(_viewModel.GetMapRouteSimulationState(), _jsonOptions);
         var tourStateLiteral = JsonSerializer.Serialize(_viewModel.GetCurrentTourMapState(), _jsonOptions);
-        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.selectPoi({selectedPoiIdLiteral});");
-        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setActivePoi({activePoiIdLiteral});");
-        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setUserLocation({userLocationStateLiteral});");
-        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setRouteSimulation({routeSimulationLiteral});");
-        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.setTourState({tourStateLiteral});");
+        await EvaluateMapScriptAsync($"window.vkFoodMap && window.vkFoodMap.selectPoi({selectedPoiIdLiteral});", "select-poi");
+        await EvaluateMapScriptAsync($"window.vkFoodMap && window.vkFoodMap.setActivePoi({activePoiIdLiteral});", "set-active-poi");
+        await EvaluateMapScriptAsync($"window.vkFoodMap && window.vkFoodMap.setUserLocation({userLocationStateLiteral});", "set-user-location");
+        await EvaluateMapScriptAsync($"window.vkFoodMap && window.vkFoodMap.setRouteSimulation({routeSimulationLiteral});", "set-route-simulation");
+        await EvaluateMapScriptAsync($"window.vkFoodMap && window.vkFoodMap.setTourState({tourStateLiteral});", "set-tour-state");
+
+        if (_viewModel.SelectedPoi is not null &&
+            _viewModel.ConsumeSelectedPoiMapCenterRequest())
+        {
+            await FlyToCoordinateAsync(_viewModel.SelectedPoi.Latitude, _viewModel.SelectedPoi.Longitude, 17);
+        }
     }
 
     private async Task FlyToCoordinateAsync(double latitude, double longitude, int zoom)
@@ -884,7 +1319,7 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
 
         var latitudeLiteral = latitude.ToString(CultureInfo.InvariantCulture);
         var longitudeLiteral = longitude.ToString(CultureInfo.InvariantCulture);
-        await MapWebView.EvaluateJavaScriptAsync($"window.vkFoodMap && window.vkFoodMap.flyToCoordinate({latitudeLiteral}, {longitudeLiteral}, {zoom}, true);");
+        await EvaluateMapScriptAsync($"window.vkFoodMap && window.vkFoodMap.flyToCoordinate({latitudeLiteral}, {longitudeLiteral}, {zoom}, true);", "fly-to-coordinate");
     }
 
     private async Task FitToSimulationRouteAsync()
@@ -894,8 +1329,23 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
             return;
         }
 
-        await MapWebView.EvaluateJavaScriptAsync("window.vkFoodMap && window.vkFoodMap.fitToSimulationRoute();");
+        await EvaluateMapScriptAsync("window.vkFoodMap && window.vkFoodMap.fitToSimulationRoute();", "fit-simulation-route");
     }
+
+    private sealed record MapPayload(
+        object State,
+        IReadOnlyList<object> PoiItems,
+        int SourcePoiCount,
+        int ValidPoiCount,
+        int RejectedPoiCount,
+        string Signature);
+
+    private sealed record PoiPayload(
+        IReadOnlyList<object> Items,
+        int SourceCount,
+        int ValidCount,
+        int RejectedCount,
+        string Signature);
 
     private static bool TryReadCoordinate(Uri uri, string key, out double value)
     {

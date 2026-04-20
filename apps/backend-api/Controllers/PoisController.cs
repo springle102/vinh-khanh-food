@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Infrastructure;
@@ -14,9 +15,14 @@ public sealed class PoisController(
     PoiNarrationService poiNarrationService,
     PoiNarrationAudioService poiNarrationAudioService,
     PoiPregeneratedAudioService poiPregeneratedAudioService,
+    BootstrapLocalizationService bootstrapLocalizationService,
+    ResponseUrlNormalizer responseUrlNormalizer,
+    IMemoryCache memoryCache,
     IOptions<TextToSpeechOptions> textToSpeechOptions,
     ILogger<PoisController> logger) : ControllerBase
 {
+    private static readonly TimeSpan PublicPoiDetailCacheTtl = TimeSpan.FromMinutes(2);
+
     [HttpGet]
     public ActionResult<ApiResponse<IReadOnlyList<Poi>>> GetPois(
         [FromQuery] string? status,
@@ -58,71 +64,86 @@ public sealed class PoisController(
     }
 
     [HttpGet("{id}/detail")]
-    public ActionResult<ApiResponse<PoiDetailResponse>> GetPoiDetailById(string id)
+    public async Task<ActionResult<ApiResponse<PoiDetailResponse>>> GetPoiDetailById(
+        string id,
+        [FromQuery] string? languageCode,
+        CancellationToken cancellationToken)
     {
-        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
-        var poi = repository.GetPois(actor).FirstOrDefault(item => item.Id == id);
-        if (poi is null)
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var actor = adminRequestContextResolver.TryGetCurrentAdmin();
+        var syncState = repository.GetSyncState();
+        var normalizedLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(languageCode);
+        if (string.IsNullOrWhiteSpace(normalizedLanguageCode))
+        {
+            normalizedLanguageCode = "vi";
+        }
+
+        var publicCacheKey = actor is null
+            ? $"public-poi-detail:{id.Trim().ToLowerInvariant()}:{normalizedLanguageCode}:{syncState.Version}"
+            : string.Empty;
+        if (actor is null &&
+            memoryCache.TryGetValue(publicCacheKey, out PoiDetailResponse? cachedDetail) &&
+            cachedDetail is not null)
+        {
+            var cachedNormalized = responseUrlNormalizer.Normalize(cachedDetail);
+            Response.Headers["X-Data-Version"] = syncState.Version;
+            Response.Headers["X-Poi-Detail-Cache"] = "hit";
+            logger.LogInformation(
+                "[PoiDetailPerf] cache=hit; poiId={PoiId}; languageCode={LanguageCode}; version={Version}; elapsedMs={ElapsedMs}",
+                id,
+                normalizedLanguageCode,
+                syncState.Version,
+                stopwatch.Elapsed.TotalMilliseconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+            return Ok(ApiResponse<PoiDetailResponse>.Ok(cachedNormalized));
+        }
+
+        var bootstrap = BuildPoiDetailBootstrap(
+            repository.GetBootstrap(actor),
+            id,
+            publicOnly: actor is null,
+            syncState);
+        if (bootstrap.Pois.Count == 0)
         {
             return NotFound(ApiResponse<PoiDetailResponse>.Fail("Khong tim thay POI."));
         }
 
-        var translations = repository.GetTranslations(actor).ToList();
-        var foodItems = repository.GetFoodItems(actor)
-            .Where(item => string.Equals(item.PoiId, id, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(item => item.Name)
-            .ToList();
-        var foodItemIds = foodItems
-            .Select(item => item.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var promotions = repository.GetPromotions(actor)
-            .Where(item => string.Equals(item.PoiId, id, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(item => item.StartAt)
-            .ThenBy(item => item.EndAt)
-            .ToList();
-        var promotionIds = promotions
-            .Select(item => item.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var poiTranslations = translations
-            .Where(item => item.EntityType == "poi" && item.EntityId == id)
-            .OrderByDescending(item => item.UpdatedAt)
-            .ToList();
-        var foodItemTranslations = translations
-            .Where(item =>
-                string.Equals(item.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
-                foodItemIds.Contains(item.EntityId))
-            .OrderByDescending(item => item.UpdatedAt)
-            .ToList();
-        var promotionTranslations = translations
-            .Where(item =>
-                string.Equals(item.EntityType, "promotion", StringComparison.OrdinalIgnoreCase) &&
-                promotionIds.Contains(item.EntityId))
-            .OrderByDescending(item => item.UpdatedAt)
-            .ToList();
-        var audioGuides = repository.GetAudioGuides(actor)
-            .Where(item => item.EntityType == "poi" && item.EntityId == id)
-            .OrderByDescending(item => item.UpdatedAt)
-            .ToList();
-        var mediaAssets = repository.GetMediaAssets(actor)
-            .Where(item =>
-                (string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
-                 string.Equals(item.EntityId, id, StringComparison.OrdinalIgnoreCase)) ||
-                (string.Equals(item.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
-                 foodItemIds.Contains(item.EntityId)) ||
-                (string.Equals(item.EntityType, "promotion", StringComparison.OrdinalIgnoreCase) &&
-                 promotionIds.Contains(item.EntityId)))
-            .OrderByDescending(item => item.CreatedAt)
-            .ToList();
+        if (actor is null)
+        {
+            bootstrap = await bootstrapLocalizationService.ApplyAutoTranslationsAsync(
+                bootstrap,
+                normalizedLanguageCode,
+                cancellationToken);
+        }
 
-        return Ok(ApiResponse<PoiDetailResponse>.Ok(new PoiDetailResponse(
-            poi,
-            poiTranslations,
-            audioGuides,
-            foodItems,
-            foodItemTranslations,
-            promotions,
-            promotionTranslations,
-            mediaAssets)));
+        var detail = BuildPoiDetailResponse(bootstrap, id);
+        if (actor is null)
+        {
+            memoryCache.Set(
+                publicCacheKey,
+                detail,
+                new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = PublicPoiDetailCacheTtl,
+                    Size = EstimatePoiDetailCacheSize(detail)
+                });
+        }
+
+        var normalizedDetail = responseUrlNormalizer.Normalize(detail);
+        Response.Headers["X-Data-Version"] = syncState.Version;
+        Response.Headers["X-Poi-Detail-Cache"] = actor is null ? "miss" : "bypass-admin";
+        Response.Headers["X-Effective-Language-Code"] = normalizedLanguageCode;
+        logger.LogInformation(
+            "[PoiDetailPerf] cache={Cache}; poiId={PoiId}; languageCode={LanguageCode}; version={Version}; foodItems={FoodItemCount}; promotions={PromotionCount}; audioGuides={AudioGuideCount}; elapsedMs={ElapsedMs}",
+            actor is null ? "miss" : "bypass-admin",
+            id,
+            normalizedLanguageCode,
+            syncState.Version,
+            normalizedDetail.FoodItems.Count,
+            normalizedDetail.Promotions.Count,
+            normalizedDetail.AudioGuides.Count,
+            stopwatch.Elapsed.TotalMilliseconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+
+        return Ok(ApiResponse<PoiDetailResponse>.Ok(normalizedDetail));
     }
 
     [HttpGet("{id}/narration")]
@@ -143,6 +164,19 @@ public sealed class PoisController(
             languageCode,
             actor,
             cancellationToken);
+        if (narration is not null)
+        {
+            Response.Headers["X-Ui-Playback-Key"] = narration.UiPlaybackKey;
+            Response.Headers["X-Audio-Cache-Key"] = narration.AudioCacheKey;
+            Response.Headers["X-Effective-Language-Code"] = narration.EffectiveLanguageCode;
+            if (narration.AudioGuide is not null)
+            {
+                Response.Headers["X-Audio-Guide-Id"] = narration.AudioGuide.Id;
+                Response.Headers["X-Audio-Content-Version"] = narration.AudioGuide.ContentVersion;
+                Response.Headers["X-Audio-Source"] = narration.AudioGuide.SourceType;
+            }
+        }
+
         return narration is null
             ? NotFound(ApiResponse<PoiNarrationResponse>.Fail("POI was not found."))
             : Ok(ApiResponse<PoiNarrationResponse>.Ok(narration));
@@ -175,13 +209,17 @@ public sealed class PoisController(
 
             Response.Headers["X-Ui-Playback-Key"] = audio.UiPlaybackKey;
             Response.Headers["X-Audio-Cache-Key"] = audio.AudioCacheKey;
+            Response.Headers["X-Audio-Guide-Id"] = audio.AudioGuideId;
+            Response.Headers["X-Audio-Content-Version"] = audio.ContentVersion;
             Response.Headers["X-Audio-Source"] = audio.Source;
             Response.Headers["X-Effective-Language-Code"] = audio.EffectiveLanguageCode;
             Response.Headers["X-TTS-Locale"] = audio.TtsLocale;
             Response.Headers["X-Narration-Text-Length"] = audio.TextLength.ToString();
             Response.Headers["X-TTS-Segment-Count"] = audio.SegmentCount.ToString();
             Response.Headers["X-Audio-Duration-Seconds"] = audio.EstimatedDurationSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
-            Response.Headers.CacheControl = "public, max-age=3600";
+            Response.Headers.ETag = $"\"{audio.AudioCacheKey}\"";
+            Response.Headers.LastModified = audio.UpdatedAt.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            Response.Headers.CacheControl = "public, max-age=86400";
             Response.Headers.Remove("Pragma");
             Response.Headers.Remove("Expires");
             return File(audio.Content, audio.ContentType);
@@ -324,6 +362,159 @@ public sealed class PoisController(
             ? Ok(ApiResponse<string>.Ok(id, "Xoa POI thanh cong."))
             : NotFound(ApiResponse<string>.Fail("Khong tim thay POI."));
     }
+
+    private static AdminBootstrapResponse BuildPoiDetailBootstrap(
+        AdminBootstrapResponse bootstrap,
+        string poiId,
+        bool publicOnly,
+        DataSyncState syncState)
+    {
+        var pois = bootstrap.Pois
+            .Where(item => string.Equals(item.Id, poiId, StringComparison.OrdinalIgnoreCase))
+            .Where(item => !publicOnly || IsPublishedPoi(item))
+            .ToList();
+        if (pois.Count == 0)
+        {
+            return bootstrap with
+            {
+                Users = [],
+                Pois = [],
+                Translations = [],
+                AudioGuides = [],
+                MediaAssets = [],
+                FoodItems = [],
+                Promotions = [],
+                UsageEvents = [],
+                ViewLogs = [],
+                AudioListenLogs = [],
+                AuditLogs = [],
+                SyncState = syncState
+            };
+        }
+
+        var foodItems = bootstrap.FoodItems
+            .Where(item => string.Equals(item.PoiId, poiId, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.Name)
+            .ToList();
+        var foodItemIds = foodItems
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var promotions = bootstrap.Promotions
+            .Where(item => string.Equals(item.PoiId, poiId, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.StartAt)
+            .ThenBy(item => item.EndAt)
+            .ToList();
+        var promotionIds = promotions
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var entityIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            poiId
+        };
+        entityIds.UnionWith(foodItemIds);
+        entityIds.UnionWith(promotionIds);
+
+        return bootstrap with
+        {
+            Users = [],
+            Categories = bootstrap.Categories
+                .Where(item => pois.Any(poi => string.Equals(poi.CategoryId, item.Id, StringComparison.OrdinalIgnoreCase)))
+                .ToList(),
+            Pois = pois,
+            Translations = bootstrap.Translations
+                .Where(item => entityIds.Contains(item.EntityId))
+                .OrderByDescending(item => item.UpdatedAt)
+                .ToList(),
+            FoodItems = foodItems,
+            Promotions = promotions,
+            Routes = [],
+            AudioGuides = bootstrap.AudioGuides
+                .Where(item =>
+                    string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(item.EntityId, poiId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(item => item.UpdatedAt)
+                .ToList(),
+            MediaAssets = bootstrap.MediaAssets
+                .Where(item =>
+                    (string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(item.EntityId, poiId, StringComparison.OrdinalIgnoreCase)) ||
+                    (string.Equals(item.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                     foodItemIds.Contains(item.EntityId)) ||
+                    (string.Equals(item.EntityType, "promotion", StringComparison.OrdinalIgnoreCase) &&
+                     promotionIds.Contains(item.EntityId)))
+                .OrderByDescending(item => item.CreatedAt)
+                .ToList(),
+            UsageEvents = [],
+            ViewLogs = [],
+            AudioListenLogs = [],
+            AuditLogs = [],
+            SyncState = syncState
+        };
+    }
+
+    private static PoiDetailResponse BuildPoiDetailResponse(AdminBootstrapResponse bootstrap, string poiId)
+    {
+        var poi = bootstrap.Pois.First(item => string.Equals(item.Id, poiId, StringComparison.OrdinalIgnoreCase));
+        var foodItemIds = bootstrap.FoodItems
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var promotionIds = bootstrap.Promotions
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return new PoiDetailResponse(
+            poi,
+            bootstrap.Translations
+                .Where(item =>
+                    string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(item.EntityId, poiId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(item => item.UpdatedAt)
+                .ToList(),
+            bootstrap.AudioGuides
+                .Where(item =>
+                    string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(item.EntityId, poiId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(item => item.UpdatedAt)
+                .ToList(),
+            bootstrap.FoodItems
+                .OrderBy(item => item.Name)
+                .ToList(),
+            bootstrap.Translations
+                .Where(item =>
+                    string.Equals(item.EntityType, "food_item", StringComparison.OrdinalIgnoreCase) &&
+                    foodItemIds.Contains(item.EntityId))
+                .OrderByDescending(item => item.UpdatedAt)
+                .ToList(),
+            bootstrap.Promotions
+                .OrderBy(item => item.StartAt)
+                .ThenBy(item => item.EndAt)
+                .ToList(),
+            bootstrap.Translations
+                .Where(item =>
+                    string.Equals(item.EntityType, "promotion", StringComparison.OrdinalIgnoreCase) &&
+                    promotionIds.Contains(item.EntityId))
+                .OrderByDescending(item => item.UpdatedAt)
+                .ToList(),
+            bootstrap.MediaAssets
+                .OrderByDescending(item => item.CreatedAt)
+                .ToList());
+    }
+
+    private static bool IsPublishedPoi(Poi poi)
+        => string.Equals(poi.Status, "published", StringComparison.OrdinalIgnoreCase) &&
+           poi.IsActive;
+
+    private static int EstimatePoiDetailCacheSize(PoiDetailResponse detail)
+        => Math.Max(
+            1,
+            1 +
+            detail.Translations.Count +
+            detail.AudioGuides.Count +
+            detail.FoodItems.Count +
+            detail.FoodItemTranslations.Count +
+            detail.Promotions.Count +
+            detail.PromotionTranslations.Count +
+            detail.MediaAssets.Count);
 
     private async Task TryAutoGeneratePoiAudioAsync(
         Poi poi,

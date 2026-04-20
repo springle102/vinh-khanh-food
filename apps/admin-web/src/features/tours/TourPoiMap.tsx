@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import L from "leaflet";
 import {
   MapContainer,
@@ -13,12 +13,31 @@ const DEFAULT_CENTER: [number, number] = [10.7578, 106.7033];
 const DEFAULT_ZOOM = 15;
 const FOCUS_ZOOM = 17;
 const SELECTION_RADIUS_METERS = 180;
-const BASE_TILE_SOURCE = {
-  url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-  maxZoom: 19,
-  attribution:
-    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-};
+const TRANSPARENT_TILE_URL =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3C/svg%3E";
+const TILE_SOURCES: {
+  key: string;
+  url: string;
+  maxZoom: number;
+  attribution: string;
+  subdomains?: string;
+}[] = [
+  {
+    key: "osm",
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    maxZoom: 19,
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  {
+    key: "carto-light",
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    maxZoom: 20,
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO',
+    subdomains: "abcd",
+  },
+];
 
 const markerIconCache = new Map<string, L.DivIcon>();
 
@@ -105,6 +124,7 @@ const MapInstanceBinder = ({
 
   useEffect(() => {
     mapRef.current = map;
+    const container = map.getContainer();
     if (!isVisible) {
       return () => {
         if (mapRef.current === map) {
@@ -135,6 +155,16 @@ const MapInstanceBinder = ({
     map.whenReady(invalidateSize);
     invalidateSize();
     [50, 150, 350, 700, 1200].forEach(scheduleInvalidate);
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            invalidateSize();
+          });
+    resizeObserver?.observe(container);
+    if (container.parentElement) {
+      resizeObserver?.observe(container.parentElement);
+    }
     window.addEventListener("resize", invalidateSize);
 
     return () => {
@@ -143,6 +173,7 @@ const MapInstanceBinder = ({
         window.cancelAnimationFrame(frameId);
       }
 
+      resizeObserver?.disconnect();
       window.removeEventListener("resize", invalidateSize);
       if (mapRef.current === map) {
         mapRef.current = null;
@@ -151,6 +182,67 @@ const MapInstanceBinder = ({
   }, [isVisible, map, mapRef]);
 
   return null;
+};
+
+const ResilientTileLayer = ({
+  onStatusChange,
+}: {
+  onStatusChange: (message: string | null) => void;
+}) => {
+  const map = useMap();
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const tileErrorCountRef = useRef(0);
+  const source = TILE_SOURCES[sourceIndex] ?? TILE_SOURCES[0];
+
+  useEffect(() => {
+    tileErrorCountRef.current = 0;
+    onStatusChange(null);
+    console.debug("[admin-tour-map] tile-provider-active", {
+      key: source.key,
+      url: source.url,
+    });
+    map.invalidateSize({ pan: false });
+  }, [map, onStatusChange, source.key, source.url]);
+
+  return (
+    <TileLayer
+      key={source.key}
+      attribution={source.attribution}
+      errorTileUrl={TRANSPARENT_TILE_URL}
+      eventHandlers={{
+        load: () => {
+          tileErrorCountRef.current = 0;
+          onStatusChange(null);
+        },
+        tileerror: () => {
+          tileErrorCountRef.current += 1;
+          console.warn("[admin-tour-map] tile-load-error", {
+            key: source.key,
+            url: source.url,
+            errors: tileErrorCountRef.current,
+          });
+
+          if (tileErrorCountRef.current < 4) {
+            return;
+          }
+
+          if (sourceIndex < TILE_SOURCES.length - 1) {
+            setSourceIndex((current) => Math.min(current + 1, TILE_SOURCES.length - 1));
+            return;
+          }
+
+          onStatusChange(
+            "Không tải được lớp bản đồ. Hệ thống vẫn giữ POI hợp lệ để bạn chọn tour.",
+          );
+        },
+      }}
+      keepBuffer={2}
+      maxZoom={source.maxZoom}
+      subdomains={source.subdomains}
+      url={source.url}
+      updateWhenIdle
+    />
+  );
 };
 
 const MapViewportController = ({
@@ -247,11 +339,32 @@ export const TourPoiMap = ({
   isVisible = true,
 }: TourPoiMapProps) => {
   const mapRef = useRef<L.Map | null>(null);
-  const validPois = useMemo(
-    () =>
-      pois.filter((poi) => isValidLatitude(poi.lat) && isValidLongitude(poi.lng)),
-    [pois],
-  );
+  const [tileStatusMessage, setTileStatusMessage] = useState<string | null>(null);
+  const validPois = useMemo(() => {
+    const validItems = pois.filter((poi) => isValidLatitude(poi.lat) && isValidLongitude(poi.lng));
+    if (validItems.length !== pois.length) {
+      console.warn("[admin-tour-map] rejected-invalid-poi-coordinates", {
+        sourceCount: pois.length,
+        validCount: validItems.length,
+        rejected: pois
+          .filter((poi) => !isValidLatitude(poi.lat) || !isValidLongitude(poi.lng))
+          .map((poi) => ({
+            id: poi.id,
+            title: poi.title,
+            lat: poi.lat,
+            lng: poi.lng,
+          })),
+      });
+    }
+
+    console.debug("[admin-tour-map] poi-payload-ready", {
+      sourceCount: pois.length,
+      validCount: validItems.length,
+      selectedCount: selectedPoiIds.length,
+    });
+
+    return validItems;
+  }, [pois, selectedPoiIds.length]);
   const stopOrderByPoiId = useMemo(
     () =>
       new Map(
@@ -268,6 +381,12 @@ export const TourPoiMap = ({
           : "Không có POI phù hợp với bộ lọc hiện tại để hiển thị trên bản đồ."}
       </div>
 
+      {tileStatusMessage ? (
+        <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+          {tileStatusMessage}
+        </div>
+      ) : null}
+
       <div className="vinh-khanh-poi-map overflow-hidden rounded-3xl border border-sand-200 bg-sand-50">
         <MapContainer
           center={DEFAULT_CENTER}
@@ -276,11 +395,7 @@ export const TourPoiMap = ({
           className="h-[440px] w-full"
         >
           <MapInstanceBinder mapRef={mapRef} isVisible={isVisible} />
-          <TileLayer
-            attribution={BASE_TILE_SOURCE.attribution}
-            maxZoom={BASE_TILE_SOURCE.maxZoom}
-            url={BASE_TILE_SOURCE.url}
-          />
+          <ResilientTileLayer onStatusChange={setTileStatusMessage} />
           <MapClickSelector pois={validPois} onTogglePoi={onTogglePoi} />
           <MapViewportController pois={validPois} focusedPoiId={focusedPoiId} />
 

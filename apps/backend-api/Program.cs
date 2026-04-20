@@ -148,7 +148,19 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        var path = context.Context.Request.Path.Value ?? string.Empty;
+        if (path.StartsWith("/storage/audio/", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Context.Response.Headers.CacheControl = "public, max-age=604800, immutable";
+            context.Context.Response.Headers.Remove("Pragma");
+            context.Context.Response.Headers.Remove("Expires");
+        }
+    }
+});
 app.UseCors("AdminWeb");
 app.Use(async (context, next) =>
 {

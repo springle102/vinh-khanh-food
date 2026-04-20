@@ -70,7 +70,7 @@ public static class AudioGuideCatalog
            string.Equals(NormalizePublicStatus(audioGuide.Status), PublicStatusReady, StringComparison.OrdinalIgnoreCase) &&
            (!string.IsNullOrWhiteSpace(audioGuide.AudioUrl) || !string.IsNullOrWhiteSpace(audioGuide.AudioFilePath));
 
-    public static string ResolvePublicStatus(string generationStatus, bool hasAudioUrl, bool isOutdated)
+    public static string ResolvePublicStatus(string generationStatus, bool hasPlaybackAsset, bool isOutdated)
     {
         if (isOutdated || string.Equals(generationStatus, GenerationStatusOutdated, StringComparison.OrdinalIgnoreCase))
         {
@@ -82,7 +82,7 @@ public static class AudioGuideCatalog
             return PublicStatusProcessing;
         }
 
-        return string.Equals(generationStatus, GenerationStatusSuccess, StringComparison.OrdinalIgnoreCase) && hasAudioUrl
+        return string.Equals(generationStatus, GenerationStatusSuccess, StringComparison.OrdinalIgnoreCase) && hasPlaybackAsset
             ? PublicStatusReady
             : PublicStatusMissing;
     }

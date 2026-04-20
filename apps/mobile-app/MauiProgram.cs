@@ -3,6 +3,10 @@ using Plugin.Maui.Audio;
 using VinhKhanh.MobileApp.Services;
 using VinhKhanh.MobileApp.ViewModels;
 using ZXing.Net.Maui.Controls;
+#if ANDROID
+using Android.Webkit;
+using Microsoft.Maui.Handlers;
+#endif
 
 namespace VinhKhanh.MobileApp;
 
@@ -21,9 +25,37 @@ public static class MauiProgram
                 fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
             });
 
+#if ANDROID
+        builder.ConfigureMauiHandlers(handlers =>
+        {
+            WebViewHandler.Mapper.AppendToMapping("VinhKhanhMapNetworkSettings", (handler, _) =>
+            {
+                var settings = handler.PlatformView.Settings;
+                settings.JavaScriptEnabled = true;
+                settings.DomStorageEnabled = true;
+                settings.LoadsImagesAutomatically = true;
+                settings.BlockNetworkImage = false;
+                settings.BlockNetworkLoads = false;
+                settings.AllowContentAccess = true;
+                settings.AllowFileAccess = true;
+
+                if (OperatingSystem.IsAndroidVersionAtLeast(21))
+                {
+                    settings.MixedContentMode = MixedContentHandling.AlwaysAllow;
+                }
+            });
+        });
+#endif
+
         builder.Services.AddSingleton<IAppLanguageService, AppLanguageService>();
+        builder.Services.AddSingleton<IMobileApiBaseUrlService, MobileApiBaseUrlService>();
 
         builder.Services.AddSingleton<IOfflineStorageService, OfflineStorageService>();
+        builder.Services.AddSingleton<IBundledOfflinePackageSeedService, BundledOfflinePackageSeedService>();
+        builder.Services.AddSingleton<MobileOfflineDatabaseService>();
+        builder.Services.AddSingleton<IMobileOfflineDatabaseService>(sp => sp.GetRequiredService<MobileOfflineDatabaseService>());
+        builder.Services.AddSingleton<IMobileDatasetRepository>(sp => sp.GetRequiredService<MobileOfflineDatabaseService>());
+        builder.Services.AddSingleton<IMobileSyncQueueRepository>(sp => sp.GetRequiredService<MobileOfflineDatabaseService>());
         builder.Services.AddSingleton<IOfflinePackageService, OfflinePackageService>();
         builder.Services.AddSingleton<IFoodStreetDataService, FoodStreetApiDataService>();
         builder.Services.AddSingleton<PoiAudioPlaybackService>();

@@ -13,8 +13,40 @@
         <Grid>
             <WebView
                 x:Name="MapWebView"
+                BackgroundColor="#F0ECE6"
+                HorizontalOptions="Fill"
+                MinimumHeightRequest="360"
                 Navigated="OnMapNavigated"
-                Navigating="OnMapNavigating" />
+                Navigating="OnMapNavigating"
+                VerticalOptions="Fill" />
+
+            <Border
+                x:Name="MapStatusOverlay"
+                Margin="18,132,18,0"
+                Padding="16,14"
+                BackgroundColor="#FDF8F0EE"
+                HorizontalOptions="Fill"
+                InputTransparent="True"
+                IsVisible="False"
+                Stroke="#EAD8C2"
+                StrokeShape="RoundRectangle 22"
+                VerticalOptions="Start">
+                <Border.Shadow>
+                    <Shadow Brush="#24111722" Offset="0,6" Radius="16" Opacity="0.12" />
+                </Border.Shadow>
+                <VerticalStackLayout Spacing="4">
+                    <Label
+                        x:Name="MapStatusTitleLabel"
+                        FontFamily="OpenSansSemibold"
+                        FontSize="14"
+                        TextColor="{StaticResource BrandTextPrimary}" />
+                    <Label
+                        x:Name="MapStatusDescriptionLabel"
+                        FontSize="12"
+                        LineBreakMode="WordWrap"
+                        TextColor="{StaticResource BrandTextSecondary}" />
+                </VerticalStackLayout>
+            </Border>
 
             <Grid>
                 <Grid.Padding>

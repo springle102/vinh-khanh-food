@@ -30,7 +30,8 @@ public sealed class GeneratedAudioStorageService(
         var options = optionsAccessor.Value;
         var relativeRoot = NormalizeRelativeRoot(options.AudioStorageRoot);
         var safePoiId = SanitizeSegment(poiId);
-        var safeLanguageCode = SanitizeSegment(languageCode);
+        var storageLanguageCode = LanguageRegistry.GetStorageCode(languageCode);
+        var safeLanguageCode = SanitizeSegment(storageLanguageCode);
         var contentVersionSuffix = SanitizeSegment(contentVersion)[..Math.Min(12, SanitizeSegment(contentVersion).Length)];
         var fileExtension = ResolveFileExtension(outputFormat, contentType);
         var relativeDirectory = $"{relativeRoot}/pois/{safePoiId}/{safeLanguageCode}";
@@ -53,9 +54,10 @@ public sealed class GeneratedAudioStorageService(
         var relativePath = $"{relativeDirectory}/{fileName}";
         var publicUrl = BuildPublicUrl(relativePath);
         logger.LogInformation(
-            "Generated audio file saved. poiId={PoiId}; languageCode={LanguageCode}; relativePath={RelativePath}; sizeBytes={SizeBytes}",
+            "[AudioGenerate] Generated audio file saved. poiId={PoiId}; requestedLanguage={RequestedLanguage}; storageLanguage={StorageLanguage}; relativePath={RelativePath}; sizeBytes={SizeBytes}",
             poiId,
             languageCode,
+            storageLanguageCode,
             relativePath,
             content.LongLength);
 

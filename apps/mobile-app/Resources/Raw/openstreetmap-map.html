@@ -23,9 +23,20 @@
     #map {
       background-color: #f0ece6;
       background-image:
-        linear-gradient(rgba(184, 172, 157, 0.12) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(184, 172, 157, 0.12) 1px, transparent 1px);
-      background-size: 32px 32px;
+        radial-gradient(circle at top right, rgba(245, 158, 11, 0.08), transparent 26%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(240, 236, 230, 0.96));
+    }
+
+    #map.map--fallback,
+    .leaflet-container.map--fallback {
+      background-color: #e9dfcf;
+      background-image:
+        linear-gradient(30deg, transparent 0 45%, rgba(255,255,255,0.70) 45% 48%, rgba(213,196,169,0.50) 48% 49%, transparent 49% 100%),
+        linear-gradient(150deg, transparent 0 43%, rgba(255,255,255,0.56) 43% 46%, rgba(213,196,169,0.40) 46% 47%, transparent 47% 100%),
+        linear-gradient(90deg, rgba(189,174,151,0.22) 1px, transparent 1px),
+        linear-gradient(rgba(189,174,151,0.20) 1px, transparent 1px),
+        linear-gradient(180deg, #efe6da 0%, #e7dccb 100%);
+      background-size: 180px 180px, 220px 220px, 54px 54px, 54px 54px, auto;
     }
 
     .leaflet-control-zoom,
@@ -35,6 +46,38 @@
 
     .leaflet-tile {
       filter: saturate(0.82) brightness(1.03);
+    }
+
+    .map-status {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      top: 126px;
+      z-index: 900;
+      padding: 14px 16px;
+      border: 1px solid rgba(234, 216, 194, 0.95);
+      border-radius: 22px;
+      background: rgba(253, 248, 240, 0.94);
+      color: #57534e;
+      box-shadow: 0 10px 24px rgba(17, 24, 39, 0.12);
+      pointer-events: none;
+    }
+
+    .map-status[hidden] {
+      display: none;
+    }
+
+    .map-status__title {
+      margin: 0;
+      color: #292524;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .map-status__description {
+      margin: 4px 0 0;
+      font-size: 12px;
+      line-height: 1.45;
     }
 
     .poi-marker {
@@ -264,11 +307,80 @@
 </head>
 <body>
   <div id="map"></div>
+  <div id="map-status" class="map-status" hidden>
+    <p id="map-status-title" class="map-status__title"></p>
+    <p id="map-status-description" class="map-status__description"></p>
+  </div>
 
   <script>__LEAFLET_JS__</script>
   <script>
+    const notifyHost = (type, detail) => {
+      try {
+        const encodedType = encodeURIComponent(type || "unknown");
+        const encodedDetail = encodeURIComponent(
+          typeof detail === "string" ? detail : JSON.stringify(detail || {}));
+        window.location.href = `vkfood://map-event?type=${encodedType}&detail=${encodedDetail}`;
+      } catch (_) {
+      }
+    };
+
+    let currentStatusKind = "";
+
+    const showMapStatus = (title, description, kind) => {
+      const status = document.getElementById("map-status");
+      const titleElement = document.getElementById("map-status-title");
+      const descriptionElement = document.getElementById("map-status-description");
+      if (!status || !titleElement || !descriptionElement) {
+        return;
+      }
+
+      currentStatusKind = kind || "status";
+      titleElement.textContent = title || "";
+      descriptionElement.textContent = description || "";
+      status.hidden = false;
+    };
+
+    function hideMapStatus() {
+      const allowedKinds = Array.prototype.slice.call(arguments);
+      if (allowedKinds.length &&
+          !allowedKinds.some((kind) => kind === currentStatusKind)) {
+        return;
+      }
+
+      const status = document.getElementById("map-status");
+      if (status) {
+        status.hidden = true;
+      }
+      currentStatusKind = "";
+    }
+
+    const reportMapError = (source, error) => {
+      const message = error && error.message ? error.message : String(error || "unknown");
+      notifyHost("map-error", { source, message });
+      showMapStatus(
+        "Không thể khởi tạo bản đồ",
+        "Leaflet gặp lỗi khi render. Vui lòng kiểm tra log dev để xem nguyên nhân chi tiết.",
+        "fatal");
+    };
+
+    window.addEventListener("error", (event) => {
+      reportMapError("window-error", event.error || event.message);
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      reportMapError("unhandled-rejection", event.reason);
+    });
+
     const decodeBase64Json = (value) => {
       const binary = window.atob(value);
+      if (window.TextDecoder) {
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) {
+          bytes[index] = binary.charCodeAt(index);
+        }
+
+        return JSON.parse(new TextDecoder("utf-8").decode(bytes));
+      }
+
       return JSON.parse(decodeURIComponent(escape(binary)));
     };
 
@@ -276,6 +388,8 @@
     const DEFAULT_BROWSE_ZOOM = 15;
     const DEFAULT_TRIGGER_RADIUS_METERS = 20;
     const EARTH_RADIUS_METERS = 6371000;
+    const TILE_TIMEOUT_MS = 7000;
+    const TRANSPARENT_TILE_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3C/svg%3E";
     const state = decodeBase64Json("__MAP_STATE_BASE64__");
     const map = L.map("map", {
       zoomControl: false,
@@ -284,14 +398,15 @@
     }).setView(DEFAULT_CENTER, DEFAULT_BROWSE_ZOOM);
 
     const poiMarkers = new Map();
-    let featuredLabel = state.featuredLabel ?? "";
+    let featuredLabel = state.featuredLabel || "";
     let pois = Array.isArray(state.pois) ? state.pois : [];
-    let selectedPoiId = state.selectedPoiId ?? null;
-    let activePoiId = state.activePoiId ?? null;
-    let userLocationState = state.userLocation ?? null;
+    let selectedPoiId = state.selectedPoiId || null;
+    let activePoiId = state.activePoiId || null;
+    let userLocationState = state.userLocation || null;
+    const allowRemoteTiles = state.allowRemoteTiles === true;
     const allowLocationMockSelection = state.allowLocationMockSelection === true;
-    let routeSimulationState = state.routeSimulation ?? null;
-    let currentTour = state.currentTour ?? null;
+    let routeSimulationState = state.routeSimulation || null;
+    let currentTour = state.currentTour || null;
     let viewportInsets = {
       browseTop: 180,
       browseBottom: 168,
@@ -301,12 +416,394 @@
     let userMarker = null;
     let routeSimulationLayer = null;
     let tourRouteLayer = null;
+    let baseTileLayer = null;
+    let fallbackTileLayer = null;
+    let tileLoadErrorCount = 0;
+    let activeTileProviderIndex = -1;
+    let tileRetryHandle = null;
+    let hasAutoFittedPoiViewport = false;
     const tourCheckpointLayers = [];
+    const getDiagnostics = () => {
+      const container = map.getContainer();
+      const validPoiCount = (pois || []).filter(isValidPoi).length;
+      return {
+        provider: activeTileProviderIndex >= 0 && tileProviders[activeTileProviderIndex]
+          ? tileProviders[activeTileProviderIndex].key
+          : "offline",
+        tileErrors: tileLoadErrorCount,
+        sourcePoiCount: Array.isArray(pois) ? pois.length : 0,
+        validPoiCount,
+        markerCount: poiMarkers.size,
+        width: container.clientWidth,
+        height: container.clientHeight,
+        zoom: map.getZoom()
+      };
+    };
+    const tileProviders = [
+      {
+        key: "osm",
+        url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        options: {
+          maxZoom: 19,
+          attribution: "&copy; OpenStreetMap contributors"
+        }
+      },
+      {
+        key: "carto-light",
+        url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        options: {
+          maxZoom: 20,
+          subdomains: "abcd",
+          attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+        }
+      },
+      {
+        key: "carto-voyager",
+        url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+        options: {
+          maxZoom: 20,
+          subdomains: "abcd",
+          attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+        }
+      },
+      {
+        key: "esri-gray",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        options: {
+          maxZoom: 16,
+          attribution: "Tiles &copy; Esri"
+        }
+      }
+    ];
+    notifyHost("init", {
+      allowRemoteTiles,
+      tileUrls: tileProviders.map((provider) => provider.url),
+      width: map.getContainer().clientWidth,
+      height: map.getContainer().clientHeight
+    });
 
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors"
-    }).addTo(map);
+    const clearTileRetry = () => {
+      if (!tileRetryHandle) {
+        return;
+      }
+
+      window.clearTimeout(tileRetryHandle);
+      tileRetryHandle = null;
+    };
+
+    const drawFallbackTile = (canvas, coords) => {
+      const context = canvas.getContext("2d");
+      if (!context) {
+        return;
+      }
+
+      const tileSize = 256;
+      const bleed = Math.max(0, Math.floor((canvas.width - tileSize) / 2));
+      const size = canvas.width;
+      const worldLeft = (coords.x * tileSize) - bleed;
+      const worldTop = (coords.y * tileSize) - bleed;
+      const worldRight = worldLeft + size;
+      const worldBottom = worldTop + size;
+
+      const toLocalX = (worldX) => worldX - worldLeft;
+      const toLocalY = (worldY) => worldY - worldTop;
+      const stableNoise = (x, y, seed) => {
+        const value = Math.sin((x * 12.9898) + (y * 78.233) + (seed * 37.719)) * 43758.5453;
+        return value - Math.floor(value);
+      };
+
+      context.fillStyle = "#e9dfcf";
+      context.fillRect(0, 0, size, size);
+
+      const drawWorldRect = (worldX, worldY, width, height, fillStyle, strokeStyle) => {
+        const localX = toLocalX(worldX);
+        const localY = toLocalY(worldY);
+        context.fillStyle = fillStyle;
+        context.fillRect(localX, localY, width, height);
+        if (strokeStyle) {
+          context.strokeStyle = strokeStyle;
+          context.lineWidth = 1;
+          context.strokeRect(localX, localY, width, height);
+        }
+      };
+
+      const drawContinuousLine = (slope, intercept, casingWidth, centerWidth, casingColor, centerColor) => {
+        const startX = worldLeft - 64;
+        const endX = worldRight + 64;
+        const startY = slope * startX + intercept;
+        const endY = slope * endX + intercept;
+
+        context.lineCap = "round";
+        context.strokeStyle = casingColor;
+        context.lineWidth = casingWidth;
+        context.beginPath();
+        context.moveTo(toLocalX(startX), toLocalY(startY));
+        context.lineTo(toLocalX(endX), toLocalY(endY));
+        context.stroke();
+
+        context.strokeStyle = centerColor;
+        context.lineWidth = centerWidth;
+        context.beginPath();
+        context.moveTo(toLocalX(startX), toLocalY(startY));
+        context.lineTo(toLocalX(endX), toLocalY(endY));
+        context.stroke();
+      };
+
+      const drawRepeatedRoads = (slope, spacing, offset, casingWidth, centerWidth, casingColor, centerColor) => {
+        const minIntercept = (worldTop - 96) - (slope * (worldRight + 96));
+        const maxIntercept = (worldBottom + 96) - (slope * (worldLeft - 96));
+        const start = Math.floor((minIntercept - offset) / spacing) * spacing + offset;
+        for (let intercept = start; intercept <= maxIntercept; intercept += spacing) {
+          drawContinuousLine(slope, intercept, casingWidth, centerWidth, casingColor, centerColor);
+        }
+      };
+
+      const featureCell = 420;
+      const startCellX = Math.floor((worldLeft - featureCell) / featureCell);
+      const endCellX = Math.floor((worldRight + featureCell) / featureCell);
+      const startCellY = Math.floor((worldTop - featureCell) / featureCell);
+      const endCellY = Math.floor((worldBottom + featureCell) / featureCell);
+      for (let gx = startCellX; gx <= endCellX; gx += 1) {
+        for (let gy = startCellY; gy <= endCellY; gy += 1) {
+          const noise = stableNoise(gx, gy, coords.z);
+          const worldX = gx * featureCell + 54 + stableNoise(gx, gy, 9) * 130;
+          const worldY = gy * featureCell + 42 + stableNoise(gx, gy, 13) * 140;
+          if (noise < 0.18) {
+            drawWorldRect(worldX, worldY, 130, 78, "rgba(151, 188, 143, 0.18)");
+          } else if (noise > 0.86) {
+            context.fillStyle = "rgba(137, 190, 217, 0.16)";
+            context.beginPath();
+            context.ellipse(toLocalX(worldX + 74), toLocalY(worldY + 46), 62, 30, 0.35, 0, Math.PI * 2);
+            context.fill();
+          }
+        }
+      }
+
+      drawRepeatedRoads(0.06, 132, coords.z * 7, 7, 4.2, "rgba(162, 148, 129, 0.48)", "rgba(255, 255, 255, 0.88)");
+      drawRepeatedRoads(-0.18, 176, coords.z * 11, 5, 2.8, "rgba(178, 160, 132, 0.36)", "rgba(255, 255, 255, 0.70)");
+      drawRepeatedRoads(0.78, 260, coords.z * 17, 3, 1.2, "rgba(190, 171, 142, 0.34)", "rgba(255, 255, 255, 0.42)");
+
+      const blockSize = 56;
+      const startBlockX = Math.floor((worldLeft - blockSize) / blockSize);
+      const endBlockX = Math.floor((worldRight + blockSize) / blockSize);
+      const startBlockY = Math.floor((worldTop - blockSize) / blockSize);
+      const endBlockY = Math.floor((worldBottom + blockSize) / blockSize);
+      for (let gx = startBlockX; gx <= endBlockX; gx += 1) {
+        for (let gy = startBlockY; gy <= endBlockY; gy += 1) {
+          if (stableNoise(gx, gy, 31 + coords.z) < 0.58) {
+            continue;
+          }
+
+          const insetX = 10 + Math.floor(stableNoise(gx, gy, 41) * 8);
+          const insetY = 9 + Math.floor(stableNoise(gx, gy, 43) * 7);
+          const width = 20 + Math.floor(stableNoise(gx, gy, 47) * 18);
+          const height = 14 + Math.floor(stableNoise(gx, gy, 53) * 14);
+          drawWorldRect(
+            gx * blockSize + insetX,
+            gy * blockSize + insetY,
+            width,
+            height,
+            "rgba(255, 255, 255, 0.34)",
+            "rgba(191, 174, 149, 0.26)");
+        }
+      }
+    };
+
+    const attachFallbackTiles = (reason) => {
+      if (baseTileLayer) {
+        baseTileLayer.off();
+        if (map.hasLayer(baseTileLayer)) {
+          map.removeLayer(baseTileLayer);
+        }
+        baseTileLayer = null;
+      }
+
+      if (fallbackTileLayer) {
+        return;
+      }
+
+      map.getContainer().classList.add("map--fallback");
+      fallbackTileLayer = L.gridLayer({
+        tileSize: 256,
+        opacity: 1
+      });
+      fallbackTileLayer.createTile = (coords) => {
+        const tile = document.createElement("canvas");
+        tile.width = 258;
+        tile.height = 258;
+        tile.style.width = "258px";
+        tile.style.height = "258px";
+        tile.style.marginLeft = "-1px";
+        tile.style.marginTop = "-1px";
+        drawFallbackTile(tile, coords);
+        return tile;
+      };
+      fallbackTileLayer.addTo(map);
+      activeTileProviderIndex = -1;
+      notifyHost("tile-url", {
+        provider: "local-fallback",
+        url: "generated://vinh-khanh-map-fallback",
+        reason: reason || "unknown"
+      });
+      showMapStatus(
+        "Đang dùng nền bản đồ dự phòng",
+        "Tile online chưa tải được trên thiết bị này. POI vẫn hiển thị và bản đồ sẽ tự thử lại tile online.",
+        "tile-fallback");
+    };
+
+    const detachBaseTiles = () => {
+      clearTileRetry();
+      if (!baseTileLayer) {
+      if (fallbackTileLayer && map.hasLayer(fallbackTileLayer)) {
+        map.removeLayer(fallbackTileLayer);
+      }
+      fallbackTileLayer = null;
+      map.getContainer().classList.remove("map--fallback");
+      return;
+      }
+
+      baseTileLayer.off();
+      if (map.hasLayer(baseTileLayer)) {
+        map.removeLayer(baseTileLayer);
+      }
+      baseTileLayer = null;
+      if (fallbackTileLayer && map.hasLayer(fallbackTileLayer)) {
+        map.removeLayer(fallbackTileLayer);
+      }
+      fallbackTileLayer = null;
+      map.getContainer().classList.remove("map--fallback");
+    };
+
+    const createTimedTileLayer = (provider) => {
+      const layer = L.tileLayer(
+        provider.url,
+        Object.assign(
+          {
+            errorTileUrl: TRANSPARENT_TILE_URL,
+            keepBuffer: 2,
+            updateWhenIdle: true
+          },
+          provider.options));
+
+      layer.createTile = function createTimedTile(coords, done) {
+        let completed = false;
+        let timeoutHandle = null;
+        const tile = L.TileLayer.prototype.createTile.call(this, coords, (error, tileElement) => {
+          if (completed) {
+            return;
+          }
+
+          completed = true;
+          if (timeoutHandle) {
+            window.clearTimeout(timeoutHandle);
+          }
+          done(error, tileElement);
+        });
+
+        timeoutHandle = window.setTimeout(() => {
+          if (completed) {
+            return;
+          }
+
+          completed = true;
+          tile.src = TRANSPARENT_TILE_URL;
+          done(new Error("tile-timeout"), tile);
+        }, TILE_TIMEOUT_MS);
+
+        return tile;
+      };
+
+      return layer;
+    };
+
+    const scheduleTileRetry = () => {
+      if (tileRetryHandle || !allowRemoteTiles) {
+        return;
+      }
+
+      tileRetryHandle = window.setTimeout(() => {
+        tileRetryHandle = null;
+        switchBaseTiles(0);
+      }, 12000);
+    };
+
+    const switchBaseTiles = (providerIndex) => {
+      detachBaseTiles();
+      if (!allowRemoteTiles) {
+        attachFallbackTiles("network-unavailable");
+        return;
+      }
+
+      if (providerIndex >= tileProviders.length) {
+        activeTileProviderIndex = tileProviders.length - 1;
+        notifyHost("tile-error", {
+          provider: "all",
+          message: "all tile providers failed"
+        });
+        showMapStatus(
+          "Không tải được lớp bản đồ",
+          "Các tile provider đều lỗi. Ứng dụng vẫn giữ POI và sẽ tự thử tải lại.",
+          "tile-error");
+        attachFallbackTiles("all-online-providers-failed");
+        scheduleTileRetry();
+        return;
+      }
+
+      attachBaseTiles(providerIndex);
+    };
+
+    const attachBaseTiles = (providerIndex = 0) => {
+      if (!allowRemoteTiles) {
+        notifyHost("tile-url", {
+          provider: "offline",
+          url: ""
+        });
+        attachFallbackTiles("network-unavailable");
+        return;
+      }
+
+      if (baseTileLayer) {
+        return;
+      }
+
+      const provider = tileProviders[providerIndex];
+      if (!provider) {
+        scheduleTileRetry();
+        return;
+      }
+
+      activeTileProviderIndex = providerIndex;
+      tileLoadErrorCount = 0;
+      notifyHost("tile-url", {
+        provider: provider.key,
+        url: provider.url
+      });
+      if (fallbackTileLayer && map.hasLayer(fallbackTileLayer)) {
+        map.removeLayer(fallbackTileLayer);
+      }
+      fallbackTileLayer = null;
+      map.getContainer().classList.remove("map--fallback");
+      baseTileLayer = createTimedTileLayer(provider);
+      baseTileLayer.on("load", () => {
+        tileLoadErrorCount = 0;
+        clearTileRetry();
+        hideMapStatus("tile-error", "tile-offline", "tile-fallback");
+      });
+      baseTileLayer.on("tileerror", () => {
+        tileLoadErrorCount += 1;
+        if (tileLoadErrorCount >= 4) {
+          notifyHost("tile-error", {
+            provider: provider.key,
+            url: provider.url,
+            errors: tileLoadErrorCount
+          });
+          switchBaseTiles(providerIndex + 1);
+        }
+      });
+      baseTileLayer.addTo(map);
+    };
+
+    attachBaseTiles();
 
     const hasVisibleTour = () =>
       Boolean(currentTour && Array.isArray(currentTour.stopPoiIds) && currentTour.stopPoiIds.length);
@@ -315,22 +812,39 @@
       Boolean(routeSimulationState && Array.isArray(routeSimulationState.points) && routeSimulationState.points.length > 1);
 
     const getSimulationEligiblePoiSet = () =>
-      new Set((routeSimulationState?.eligiblePoiIds ?? []).map((item) => String(item)));
+      new Set((routeSimulationState && Array.isArray(routeSimulationState.eligiblePoiIds)
+        ? routeSimulationState.eligiblePoiIds
+        : []).map((item) => String(item)));
 
-    const getTourPoiSet = () => new Set((currentTour?.stopPoiIds ?? []).map((item) => String(item)));
+    const getTourPoiSet = () => new Set((currentTour && Array.isArray(currentTour.stopPoiIds)
+      ? currentTour.stopPoiIds
+      : []).map((item) => String(item)));
 
     const getTourStopOrder = (poiId) => {
       if (!currentTour || !currentTour.stopOrderByPoiId) {
         return null;
       }
 
-      return currentTour.stopOrderByPoiId[poiId] ?? null;
+      return currentTour.stopOrderByPoiId[poiId] || null;
     };
 
     const resolvePoiTriggerRadius = (poi) =>
-      Number.isFinite(poi?.triggerRadius) && poi.triggerRadius >= DEFAULT_TRIGGER_RADIUS_METERS
+      poi && Number.isFinite(poi.triggerRadius) && poi.triggerRadius >= DEFAULT_TRIGGER_RADIUS_METERS
         ? poi.triggerRadius
         : DEFAULT_TRIGGER_RADIUS_METERS;
+
+    const isFiniteCoordinate = (value) =>
+      typeof value === "number" && Number.isFinite(value);
+
+    const isValidPoi = (poi) =>
+      Boolean(poi) &&
+      poi.id != null &&
+      isFiniteCoordinate(poi.latitude) &&
+      isFiniteCoordinate(poi.longitude) &&
+      poi.latitude >= -90 &&
+      poi.latitude <= 90 &&
+      poi.longitude >= -180 &&
+      poi.longitude <= 180;
 
     const toDegrees = (radians) => (radians * 180) / Math.PI;
     const clampLatitude = (latitude) => Math.max(-90, Math.min(90, latitude));
@@ -359,7 +873,7 @@
     };
 
     const buildPoiBounds = (items) => {
-      const validItems = (items || []).filter((item) => item.latitude != null && item.longitude != null);
+      const validItems = (items || []).filter(isValidPoi);
       if (!validItems.length) {
         return null;
       }
@@ -380,14 +894,56 @@
       }, null);
     };
 
+    const updatePoiDataStatus = (sourceCount, validCount) => {
+      notifyHost("poi-sync", {
+        sourceCount,
+        validCount,
+        markerCount: poiMarkers.size
+      });
+
+      if (!sourceCount) {
+        showMapStatus(
+          "Chưa có dữ liệu bản đồ/POI",
+          "API hoặc bộ lọc hiện tại chưa trả về POI nào. Bản đồ vẫn giữ nền thay vì trắng toàn bộ.",
+          "empty");
+        return;
+      }
+
+      if (!validCount) {
+        showMapStatus(
+          "Chưa có POI hợp lệ để hiển thị",
+          "Có dữ liệu POI nhưng toàn bộ tọa độ không hợp lệ. Kiểm tra log dev để biết POI bị loại.",
+          "invalid-poi");
+        return;
+      }
+
+      hideMapStatus("empty", "invalid-poi", "loading");
+    };
+
+    const invalidateMapSize = (reason) => {
+      try {
+        map.invalidateSize(false);
+        notifyHost("resize", Object.assign({ reason }, getDiagnostics()));
+      } catch (error) {
+        reportMapError("invalidate-size", error);
+      }
+    };
+
+    const scheduleInvalidateSize = (reason) => {
+      [0, 80, 220, 520, 900].forEach((delay) => {
+        window.setTimeout(() => invalidateMapSize(reason), delay);
+      });
+    };
+
     const getPoiVisualState = (poi, selected, active) => {
+      const poiId = String(poi.id);
       const isTourVisible = hasVisibleTour();
-      const isInTour = isTourVisible && getTourPoiSet().has(poi.id);
-      const order = isInTour ? getTourStopOrder(poi.id) : null;
+      const isInTour = isTourVisible && getTourPoiSet().has(poiId);
+      const order = isInTour ? getTourStopOrder(poiId) : null;
       const isSimulationVisible = hasSimulationRoute();
       const simulationPoiSet = getSimulationEligiblePoiSet();
-      const isRouteDestination = isSimulationVisible && routeSimulationState.destinationPoiId === poi.id;
-      const isOnSimulationRoute = isSimulationVisible && simulationPoiSet.has(poi.id);
+      const isRouteDestination = isSimulationVisible && String(routeSimulationState.destinationPoiId) === poiId;
+      const isOnSimulationRoute = isSimulationVisible && simulationPoiSet.has(poiId);
       const classes = ["poi-marker"];
 
       let color = poi.isFeatured ? "#f97316" : "#1f2937";
@@ -630,13 +1186,18 @@
     };
 
     const createPoiMarker = (poi) => {
-      const isSelected = poi.id === selectedPoiId;
-      const isActive = poi.id === activePoiId;
-      const circle = L.circle([poi.latitude, poi.longitude], {
-        radius: resolvePoiTriggerRadius(poi),
-        ...createPoiCircleOptions(poi, isSelected, isActive),
-        interactive: false
-      }).addTo(map);
+      const poiId = String(poi.id);
+      const isSelected = poiId === String(selectedPoiId);
+      const isActive = poiId === String(activePoiId);
+      const circle = L.circle(
+        [poi.latitude, poi.longitude],
+        Object.assign(
+          {
+            radius: resolvePoiTriggerRadius(poi),
+            interactive: false
+          },
+          createPoiCircleOptions(poi, isSelected, isActive))
+      ).addTo(map);
 
       const marker = L.marker([poi.latitude, poi.longitude], {
         icon: createPoiIcon(poi, isSelected, isActive),
@@ -645,15 +1206,16 @@
 
       marker.bindPopup(buildPoiPopupHtml(poi));
       marker.on("click", () => {
-        notifyPoiSelected(poi.id, true);
+        notifyPoiSelected(poiId, true);
       });
 
       circle.bringToBack();
-      poiMarkers.set(poi.id, { marker, circle });
+      poiMarkers.set(poiId, { marker, circle });
     };
 
     const syncPoiMarkers = (openPopupForSelection) => {
-      const nextPoiIds = new Set(pois.map((poi) => String(poi.id)));
+      const visiblePois = (pois || []).filter(isValidPoi);
+      const nextPoiIds = new Set(visiblePois.map((poi) => String(poi.id)));
 
       Array.from(poiMarkers.entries()).forEach(([poiId, layers]) => {
         if (nextPoiIds.has(poiId)) {
@@ -665,8 +1227,9 @@
         poiMarkers.delete(poiId);
       });
 
-      pois.forEach((poi) => {
-        const layers = poiMarkers.get(poi.id);
+      visiblePois.forEach((poi) => {
+        const poiId = String(poi.id);
+        const layers = poiMarkers.get(poiId);
         if (!layers) {
           createPoiMarker(poi);
           return;
@@ -678,15 +1241,25 @@
         layers.circle.setRadius(resolvePoiTriggerRadius(poi));
       });
 
-      if (selectedPoiId && !poiMarkers.has(selectedPoiId)) {
+      if (selectedPoiId && !poiMarkers.has(String(selectedPoiId))) {
         selectedPoiId = null;
       }
 
-      if (activePoiId && !poiMarkers.has(activePoiId)) {
+      if (activePoiId && !poiMarkers.has(String(activePoiId))) {
         activePoiId = null;
       }
 
       refreshPoiMarkers(openPopupForSelection);
+      updatePoiDataStatus(pois && pois.length ? pois.length : 0, visiblePois.length);
+
+      if (!selectedPoiId &&
+          !hasVisibleTour() &&
+          !hasSimulationRoute() &&
+          visiblePois.length > 0 &&
+          !hasAutoFittedPoiViewport) {
+        fitToPoiData(visiblePois);
+        hasAutoFittedPoiViewport = true;
+      }
     };
 
     const refreshPoiMarkers = (openPopupForSelection) => {
@@ -696,16 +1269,17 @@
       const isSimulationVisible = hasSimulationRoute();
 
       pois.forEach((poi) => {
-        const layers = poiMarkers.get(poi.id);
+        const poiId = String(poi.id);
+        const layers = poiMarkers.get(poiId);
         if (!layers) {
           return;
         }
 
-        const isSelected = poi.id === selectedPoiId;
-        const isActive = poi.id === activePoiId;
-        const isInTour = tourPoiSet.has(poi.id);
-        const isRouteDestination = isSimulationVisible && routeSimulationState.destinationPoiId === poi.id;
-        const isOnSimulationRoute = isSimulationVisible && simulationPoiSet.has(poi.id);
+        const isSelected = poiId === String(selectedPoiId);
+        const isActive = poiId === String(activePoiId);
+        const isInTour = tourPoiSet.has(poiId);
+        const isRouteDestination = isSimulationVisible && String(routeSimulationState.destinationPoiId) === poiId;
+        const isOnSimulationRoute = isSimulationVisible && simulationPoiSet.has(poiId);
         const visualState = getPoiVisualState(poi, isSelected, isActive);
 
         layers.marker.setIcon(createPoiIcon(poi, isSelected, isActive));
@@ -736,12 +1310,12 @@
     };
 
     const setSelectedPoi = (poiId, openPopup) => {
-      selectedPoiId = poiId;
+      selectedPoiId = poiId == null ? null : String(poiId);
       refreshPoiMarkers(openPopup);
     };
 
     const setActivePoi = (poiId) => {
-      activePoiId = poiId;
+      activePoiId = poiId == null ? null : String(poiId);
       refreshPoiMarkers(false);
     };
 
@@ -758,10 +1332,7 @@
     };
 
     const setViewportInsets = (nextInsets) => {
-      viewportInsets = {
-        ...viewportInsets,
-        ...(nextInsets || {})
-      };
+      viewportInsets = Object.assign({}, viewportInsets, nextInsets || {});
     };
 
     const getBrowseFitOptions = () => ({
@@ -778,13 +1349,23 @@
       animate: false
     });
 
-    const notifyPoiSelected = (poiId, openPopup) => {
-      if (!poiId || !poiMarkers.has(poiId)) {
+    const fitToPoiData = (items) => {
+      const bounds = buildPoiBounds(items);
+      if (!bounds || !bounds.isValid()) {
         return;
       }
 
-      setSelectedPoi(poiId, openPopup);
-      window.location.href = `vkfood://select-poi/${encodeURIComponent(poiId)}`;
+      map.fitBounds(bounds.pad(0.1), getBrowseFitOptions());
+    };
+
+    const notifyPoiSelected = (poiId, openPopup) => {
+      const normalizedPoiId = poiId == null ? "" : String(poiId);
+      if (!normalizedPoiId || !poiMarkers.has(normalizedPoiId)) {
+        return;
+      }
+
+      setSelectedPoi(normalizedPoiId, openPopup);
+      window.location.href = `vkfood://select-poi/${encodeURIComponent(normalizedPoiId)}`;
     };
 
     const notifySimulatedLocationMoved = (latitude, longitude) => {
@@ -841,7 +1422,8 @@
     };
 
     const fitMap = () => {
-      if (!pois.length) {
+      const visiblePois = (pois || []).filter(isValidPoi);
+      if (!visiblePois.length) {
         if (userLocationState && userLocationState.latitude != null && userLocationState.longitude != null) {
           map.setView([userLocationState.latitude, userLocationState.longitude], 17, { animate: false });
           return;
@@ -851,18 +1433,18 @@
         return;
       }
 
-      if (pois.length === 1) {
-        const singlePoiBounds = buildPoiBounds(pois);
+      if (visiblePois.length === 1) {
+        const singlePoiBounds = buildPoiBounds(visiblePois);
         if (singlePoiBounds && singlePoiBounds.isValid()) {
           map.fitBounds(singlePoiBounds.pad(0.18), getBrowseFitOptions());
           return;
         }
 
-        map.setView([pois[0].latitude, pois[0].longitude], 16, { animate: false });
+        map.setView([visiblePois[0].latitude, visiblePois[0].longitude], 16, { animate: false });
         return;
       }
 
-      const bounds = buildPoiBounds(pois);
+      const bounds = buildPoiBounds(visiblePois);
       if (bounds && bounds.isValid()) {
         map.fitBounds(bounds.pad(0.12), getBrowseFitOptions());
       }
@@ -934,17 +1516,23 @@
     };
 
     window.vkFoodMap = {
+      isReady: () => true,
+      invalidateSize: (reason) => {
+        scheduleInvalidateSize(reason || "native");
+      },
+      getDiagnostics: () => getDiagnostics(),
       selectPoi: (poiId) => {
         if (!poiId) {
           setSelectedPoi(null, false);
           return;
         }
 
-        if (!poiMarkers.has(poiId)) {
+        const normalizedPoiId = String(poiId);
+        if (!poiMarkers.has(normalizedPoiId)) {
           return;
         }
 
-        setSelectedPoi(poiId, true);
+        setSelectedPoi(normalizedPoiId, true);
       },
       setActivePoi: (poiId) => {
         setActivePoi(poiId || null);
@@ -958,11 +1546,10 @@
           return;
         }
 
-        upsertUserLocationMarker({
-          ...(userLocationState || {}),
+        upsertUserLocationMarker(Object.assign({}, userLocationState || {}, {
           latitude,
           longitude
-        });
+        }));
       },
       setRouteSimulation: (nextRouteSimulation) => {
         setRouteSimulation(nextRouteSimulation);
@@ -974,8 +1561,14 @@
         setViewportInsets(nextInsets);
       },
       setPoiData: (nextPoiState) => {
-        featuredLabel = nextPoiState?.featuredLabel ?? "";
-        pois = Array.isArray(nextPoiState?.pois) ? nextPoiState.pois : [];
+        featuredLabel = nextPoiState && nextPoiState.featuredLabel ? nextPoiState.featuredLabel : "";
+        const previousPoiSignature = (pois || []).map((poi) => String(poi.id)).join("|");
+        const nextPois = nextPoiState && Array.isArray(nextPoiState.pois) ? nextPoiState.pois : [];
+        const nextPoiSignature = nextPois.map((poi) => String(poi.id)).join("|");
+        pois = nextPois;
+        if (nextPoiSignature !== previousPoiSignature) {
+          hasAutoFittedPoiViewport = false;
+        }
         syncPoiMarkers(Boolean(selectedPoiId));
       },
       fitToTour: () => {
@@ -995,6 +1588,9 @@
         });
       }
     };
+
+    scheduleInvalidateSize("initial");
+    notifyHost("ready", getDiagnostics());
 
   </script>
 </body>

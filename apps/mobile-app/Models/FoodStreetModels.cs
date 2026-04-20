@@ -36,6 +36,44 @@ public sealed class LocalizedTextSet
     }
 }
 
+public sealed class LocalizedAudioAssetSet
+{
+    private readonly Dictionary<string, PoiAudioAsset> _values = new(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyDictionary<string, PoiAudioAsset> Values => _values;
+
+    public void Set(PoiAudioAsset? asset)
+    {
+        if (asset is null ||
+            string.IsNullOrWhiteSpace(asset.LanguageCode) ||
+            string.IsNullOrWhiteSpace(asset.AudioUrl))
+        {
+            return;
+        }
+
+        asset.LanguageCode = AppLanguage.NormalizeCode(asset.LanguageCode);
+        asset.AudioUrl = asset.AudioUrl.Trim();
+        _values[asset.LanguageCode] = asset;
+    }
+
+    public bool TryGetValue(string languageCode, out PoiAudioAsset asset)
+        => _values.TryGetValue(AppLanguage.NormalizeCode(languageCode), out asset!);
+}
+
+public sealed class PoiAudioAsset
+{
+    public string AudioGuideId { get; set; } = string.Empty;
+    public string PoiId { get; set; } = string.Empty;
+    public string LanguageCode { get; set; } = AppLanguage.DefaultLanguage;
+    public string AudioUrl { get; set; } = string.Empty;
+    public string SourceType { get; set; } = "generated";
+    public string ContentVersion { get; set; } = string.Empty;
+    public string TextHash { get; set; } = string.Empty;
+    public double? DurationInSeconds { get; set; }
+    public long? FileSizeBytes { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public sealed class PoiLocation
 {
     public string Id { get; set; } = string.Empty;
@@ -71,6 +109,7 @@ public sealed class PoiExperienceDetail
     public LocalizedTextSet Summary { get; } = new();
     public LocalizedTextSet Description { get; } = new();
     public LocalizedTextSet AudioUrls { get; } = new();
+    public LocalizedAudioAssetSet AudioAssets { get; } = new();
     public List<string> Images { get; set; } = [];
 }
 

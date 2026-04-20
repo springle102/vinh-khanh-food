@@ -1,4 +1,5 @@
 using Microsoft.Data.SqlClient;
+using VinhKhanh.Core.Mobile;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
 
@@ -24,9 +25,13 @@ public sealed partial class AdminDataRepository
                     Source NVARCHAR(60) NOT NULL,
                     Metadata NVARCHAR(MAX) NOT NULL,
                     DurationInSeconds INT NULL,
-                    OccurredAt DATETIMEOFFSET(7) NOT NULL
+                    OccurredAt DATETIMEOFFSET(7) NOT NULL,
+                    IdempotencyKey NVARCHAR(100) NULL
                 );
             END;
+
+            IF COL_LENGTH(N'dbo.AppUsageEvents', N'IdempotencyKey') IS NULL
+                ALTER TABLE dbo.AppUsageEvents ADD IdempotencyKey NVARCHAR(100) NULL;
 
             IF NOT EXISTS (
                 SELECT 1
@@ -38,6 +43,18 @@ public sealed partial class AdminDataRepository
                 CREATE INDEX IX_AppUsageEvents_OccurredAt
                 ON dbo.AppUsageEvents (OccurredAt DESC, EventType, PoiId, LanguageCode);
             END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE object_id = OBJECT_ID(N'dbo.AppUsageEvents')
+                  AND name = N'UX_AppUsageEvents_IdempotencyKey'
+            )
+            BEGIN
+                EXEC(N'CREATE UNIQUE INDEX UX_AppUsageEvents_IdempotencyKey
+                      ON dbo.AppUsageEvents (IdempotencyKey)
+                      WHERE IdempotencyKey IS NOT NULL AND IdempotencyKey <> N'''';');
+            END;
             """);
     }
 
@@ -46,6 +63,16 @@ public sealed partial class AdminDataRepository
         ArgumentNullException.ThrowIfNull(request);
 
         using var connection = OpenConnection();
+        var idempotencyKey = NormalizeIdempotencyKey(request.IdempotencyKey);
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            var existing = GetAppUsageEventByIdempotencyKey(connection, null, idempotencyKey);
+            if (existing is not null)
+            {
+                return existing;
+            }
+        }
+
         var usageEvent = new AppUsageEvent
         {
             Id = CreateId("evt"),
@@ -57,7 +84,8 @@ public sealed partial class AdminDataRepository
             Source = string.IsNullOrWhiteSpace(request.Source) ? "mobile-app" : request.Source.Trim(),
             Metadata = string.IsNullOrWhiteSpace(request.Metadata) ? string.Empty : request.Metadata.Trim(),
             DurationInSeconds = request.DurationInSeconds > 0 ? request.DurationInSeconds : null,
-            OccurredAt = request.OccurredAt ?? DateTimeOffset.UtcNow
+            OccurredAt = request.OccurredAt ?? DateTimeOffset.UtcNow,
+            IdempotencyKey = idempotencyKey
         };
 
         ExecuteNonQuery(
@@ -65,9 +93,9 @@ public sealed partial class AdminDataRepository
             null,
             """
             INSERT INTO dbo.AppUsageEvents (
-                Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt
+                Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt, IdempotencyKey
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             usageEvent.Id,
             usageEvent.EventType,
@@ -78,7 +106,8 @@ public sealed partial class AdminDataRepository
             usageEvent.Source,
             usageEvent.Metadata,
             usageEvent.DurationInSeconds,
-            usageEvent.OccurredAt);
+            usageEvent.OccurredAt,
+            usageEvent.IdempotencyKey);
 
         return usageEvent;
     }
@@ -91,7 +120,7 @@ public sealed partial class AdminDataRepository
         }
 
         const string sql = """
-            SELECT Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt
+            SELECT Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt, IdempotencyKey
             FROM dbo.AppUsageEvents
             ORDER BY OccurredAt DESC, Id DESC;
             """;
@@ -102,19 +131,7 @@ public sealed partial class AdminDataRepository
         {
             while (reader.Read())
             {
-                items.Add(new AppUsageEvent
-                {
-                    Id = ReadString(reader, "Id"),
-                    EventType = ReadString(reader, "EventType"),
-                    PoiId = ReadNullableString(reader, "PoiId"),
-                    LanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(ReadString(reader, "LanguageCode")),
-                    Platform = NormalizeUsagePlatform(ReadString(reader, "Platform")),
-                    SessionId = ReadString(reader, "SessionId"),
-                    Source = ReadString(reader, "Source"),
-                    Metadata = ReadString(reader, "Metadata"),
-                    DurationInSeconds = ReadNullableInt(reader, "DurationInSeconds"),
-                    OccurredAt = ReadDateTimeOffset(reader, "OccurredAt")
-                });
+                items.Add(MapAppUsageEvent(reader));
             }
         }
 
@@ -171,13 +188,10 @@ public sealed partial class AdminDataRepository
 
     private static string NormalizeUsageEventType(string? eventType)
     {
-        return eventType?.Trim().ToLowerInvariant() switch
-        {
-            "poi_view" => "poi_view",
-            "audio_play" => "audio_play",
-            "qr_scan" => "qr_scan",
-            _ => throw new ArgumentException("Unsupported app usage event type.", nameof(eventType))
-        };
+        var normalized = MobileUsageEventTypes.Normalize(eventType);
+        return string.IsNullOrWhiteSpace(normalized)
+            ? throw new ArgumentException("Unsupported app usage event type.", nameof(eventType))
+            : normalized;
     }
 
     private static string NormalizeUsagePlatform(string? platform)
@@ -187,5 +201,49 @@ public sealed partial class AdminDataRepository
             "web" => "web",
             _ => "android"
         };
+    }
+
+    private static string? NormalizeIdempotencyKey(string? idempotencyKey)
+    {
+        var value = idempotencyKey?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Length <= 100 ? value : value[..100];
+    }
+
+    private static AppUsageEvent MapAppUsageEvent(SqlDataReader reader)
+        => new()
+        {
+            Id = ReadString(reader, "Id"),
+            EventType = ReadString(reader, "EventType"),
+            PoiId = ReadNullableString(reader, "PoiId"),
+            LanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(ReadString(reader, "LanguageCode")),
+            Platform = NormalizeUsagePlatform(ReadString(reader, "Platform")),
+            SessionId = ReadString(reader, "SessionId"),
+            Source = ReadString(reader, "Source"),
+            Metadata = ReadString(reader, "Metadata"),
+            DurationInSeconds = ReadNullableInt(reader, "DurationInSeconds"),
+            OccurredAt = ReadDateTimeOffset(reader, "OccurredAt"),
+            IdempotencyKey = ReadNullableString(reader, "IdempotencyKey")
+        };
+
+    private AppUsageEvent? GetAppUsageEventByIdempotencyKey(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string idempotencyKey)
+    {
+        const string sql = """
+            SELECT TOP 1 Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata,
+                         DurationInSeconds, OccurredAt, IdempotencyKey
+            FROM dbo.AppUsageEvents
+            WHERE IdempotencyKey = ?;
+            """;
+
+        using var command = CreateCommand(connection, transaction, sql, idempotencyKey);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? MapAppUsageEvent(reader) : null;
     }
 }

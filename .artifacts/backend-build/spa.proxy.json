@@ -1,0 +1,10 @@
+{
+"SpaProxyServer": {
+"ServerUrl": "http://localhost:5173",
+"RedirectUrl": "",
+"LaunchCommand": "npm.cmd run dev",
+"WorkingDirectory": "D:\\vinh-khanh-food\\apps\\backend-api\\..\\admin-web\\",
+"MaxTimeoutInSeconds": "120",
+"KeepRunning": "false"
+}
+}

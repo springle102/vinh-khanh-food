@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace VinhKhanh.BackendApi.Infrastructure;
 
 public interface ITextToSpeechService
@@ -42,4 +44,46 @@ public sealed class TextToSpeechGenerationException : InvalidOperationException
         : base(message, innerException)
     {
     }
+
+    public TextToSpeechGenerationException(
+        string message,
+        HttpStatusCode? statusCode,
+        string? providerErrorCode,
+        string? providerErrorMessage,
+        string? responseBody,
+        string? endpoint,
+        string? voiceId,
+        string? modelId,
+        string? outputFormat,
+        string? languageCode)
+        : base(message)
+    {
+        StatusCode = statusCode;
+        ProviderErrorCode = providerErrorCode;
+        ProviderErrorMessage = providerErrorMessage;
+        ResponseBody = responseBody;
+        Endpoint = endpoint;
+        VoiceId = voiceId;
+        ModelId = modelId;
+        OutputFormat = outputFormat;
+        LanguageCode = languageCode;
+    }
+
+    public HttpStatusCode? StatusCode { get; }
+
+    public string? ProviderErrorCode { get; }
+
+    public string? ProviderErrorMessage { get; }
+
+    public string? ResponseBody { get; }
+
+    public string? Endpoint { get; }
+
+    public string? VoiceId { get; }
+
+    public string? ModelId { get; }
+
+    public string? OutputFormat { get; }
+
+    public string? LanguageCode { get; }
 }

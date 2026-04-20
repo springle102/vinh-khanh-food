@@ -48,7 +48,6 @@ public enum AutoNarrationDecision
 {
     None,
     Played,
-    Queued,
     Disabled,
     Busy,
     Cooldown,

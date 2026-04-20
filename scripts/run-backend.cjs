@@ -20,7 +20,7 @@ for (const dir of [dotnetHome, appData, nugetPackages, buildOutput, path.dirname
 
 const command = process.argv[2] ?? "dev";
 const dotnetCommand = process.platform === "win32" ? "dotnet.exe" : "dotnet";
-const enableSpaProxy = process.env.VK_DISABLE_SPA_PROXY !== "1";
+const enableSpaProxy = command !== "serve" && process.env.VK_DISABLE_SPA_PROXY !== "1";
 const defaultBackendUrls = "http://0.0.0.0:5080";
 const resolvedBackendUrls =
   process.env.VK_BACKEND_URLS ??
@@ -283,6 +283,14 @@ const args =
         "-p:AppendTargetFrameworkToOutputPath=true",
         "-p:UseAppHost=false",
       ]
+    : command === "serve"
+      ? [
+          "run",
+          "--project",
+          projectPath,
+          "--no-launch-profile",
+          "--no-restore",
+        ]
     : [
         "watch",
         "--project",
@@ -300,8 +308,12 @@ const child = spawn(dotnetCommand, args, {
         ...baseEnv,
         ASPNETCORE_ENVIRONMENT: "Development",
         ASPNETCORE_URLS: resolvedBackendUrls,
-        DOTNET_WATCH_RESTART_ON_RUDE_EDIT: "1",
-        DOTNET_WATCH_SUPPRESS_MSBUILD_INCREMENTALISM: "1",
+        ...(command === "serve"
+          ? {}
+          : {
+              DOTNET_WATCH_RESTART_ON_RUDE_EDIT: "1",
+              DOTNET_WATCH_SUPPRESS_MSBUILD_INCREMENTALISM: "1",
+            }),
         ...(enableSpaProxy
           ? { ASPNETCORE_HOSTINGSTARTUPASSEMBLIES: "Microsoft.AspNetCore.SpaProxy" }
           : {}),

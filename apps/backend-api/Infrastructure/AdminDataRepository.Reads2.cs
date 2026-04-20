@@ -440,6 +440,10 @@ public sealed partial class AdminDataRepository
         string entityId,
         string languageCode)
     {
+        var normalizedLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(languageCode);
+        var normalizedLanguageKey = PremiumAccessCatalog.NormalizeLanguageLookupKey(languageCode);
+        var normalizedLanguagePrefix = $"{normalizedLanguageKey}-%";
+
         const string sql = """
             SELECT TOP 1
                 Id,
@@ -468,15 +472,40 @@ public sealed partial class AdminDataRepository
                 UpdatedBy,
                 UpdatedAt
             FROM dbo.AudioGuides
-            WHERE EntityId = ? AND LanguageCode = ?
+            WHERE EntityId = ?
+              AND (
+                    LOWER(REPLACE(LTRIM(RTRIM(LanguageCode)), N'_', N'-')) = ? OR
+                    LOWER(REPLACE(LTRIM(RTRIM(LanguageCode)), N'_', N'-')) = ? OR
+                    LOWER(REPLACE(LTRIM(RTRIM(LanguageCode)), N'_', N'-')) LIKE ?
+              )
               AND (
                     EntityType = ? OR
                     (? = N'poi' AND EntityType = N'place')
               )
-            ORDER BY CASE WHEN EntityType = ? THEN 0 ELSE 1 END, UpdatedAt DESC, Id DESC;
+            ORDER BY
+                CASE WHEN EntityType = ? THEN 0 ELSE 1 END,
+                CASE
+                    WHEN LOWER(REPLACE(LTRIM(RTRIM(LanguageCode)), N'_', N'-')) = ? THEN 0
+                    WHEN LOWER(REPLACE(LTRIM(RTRIM(LanguageCode)), N'_', N'-')) = ? THEN 1
+                    ELSE 2
+                END,
+                UpdatedAt DESC,
+                Id DESC;
             """;
 
-        using var command = CreateCommand(connection, transaction, sql, entityId, languageCode, entityType, entityType, entityType);
+        using var command = CreateCommand(
+            connection,
+            transaction,
+            sql,
+            entityId,
+            normalizedLanguageCode.ToLowerInvariant(),
+            normalizedLanguageKey,
+            normalizedLanguagePrefix,
+            entityType,
+            entityType,
+            entityType,
+            normalizedLanguageCode.ToLowerInvariant(),
+            normalizedLanguageKey);
         using var reader = command.ExecuteReader();
         return reader.Read() ? MapAudioGuide(reader) : null;
     }

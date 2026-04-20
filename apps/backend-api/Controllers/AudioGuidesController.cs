@@ -38,7 +38,7 @@ public sealed class AudioGuidesController(
 
         if (!string.IsNullOrWhiteSpace(languageCode))
         {
-            query = query.Where(item => item.LanguageCode.Equals(languageCode, StringComparison.OrdinalIgnoreCase));
+            query = query.Where(item => PremiumAccessCatalog.LanguageCodesMatch(item.LanguageCode, languageCode));
         }
 
         if (!string.IsNullOrWhiteSpace(status))

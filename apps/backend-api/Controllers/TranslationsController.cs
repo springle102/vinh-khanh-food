@@ -38,7 +38,7 @@ public sealed class TranslationsController(
 
         if (!string.IsNullOrWhiteSpace(languageCode))
         {
-            query = query.Where(item => item.LanguageCode.Equals(languageCode, StringComparison.OrdinalIgnoreCase));
+            query = query.Where(item => PremiumAccessCatalog.LanguageCodesMatch(item.LanguageCode, languageCode));
         }
 
         return Ok(ApiResponse<IReadOnlyList<Translation>>.Ok(query.OrderByDescending(item => item.UpdatedAt).ToList()));

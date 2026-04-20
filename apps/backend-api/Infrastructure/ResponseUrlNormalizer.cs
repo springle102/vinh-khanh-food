@@ -156,6 +156,14 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
             Routes = response.Routes.Select(Normalize).ToList()
         };
 
+    public PoiDetailResponse Normalize(PoiDetailResponse response)
+        => response with
+        {
+            AudioGuides = response.AudioGuides.Select(Normalize).ToList(),
+            FoodItems = response.FoodItems.Select(Normalize).ToList(),
+            MediaAssets = response.MediaAssets.Select(Normalize).ToList()
+        };
+
     private static bool ShouldRewriteToRequestHost(Uri absoluteUri, HttpRequest request)
     {
         if (!IsLoopbackHost(absoluteUri.Host))

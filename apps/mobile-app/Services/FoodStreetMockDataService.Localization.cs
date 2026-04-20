@@ -243,7 +243,6 @@ public sealed partial class FoodStreetApiDataService
             "zh-CN" => $"{safeDuration} 分钟",
             "ko" => $"{safeDuration}분",
             "ja" => $"{safeDuration}分",
-            "fr" => $"{safeDuration} min",
             "en" => $"{safeDuration} min",
             _ => $"{safeDuration} phút"
         };
@@ -278,9 +277,7 @@ public sealed partial class FoodStreetApiDataService
 
     private string FormatMeasurement(string number, string unit)
     {
-        var normalizedNumber = CurrentLanguageCode == "fr"
-            ? number.Replace('.', ',')
-            : number.Replace(',', '.');
+        var normalizedNumber = number.Replace(',', '.');
 
         return (CurrentLanguageCode, unit) switch
         {
@@ -290,8 +287,6 @@ public sealed partial class FoodStreetApiDataService
             ("ko", "m") => $"{normalizedNumber}m",
             ("ja", "km") => $"{normalizedNumber}km",
             ("ja", "m") => $"{normalizedNumber}m",
-            ("fr", "km") => $"{normalizedNumber} km",
-            ("fr", "m") => $"{normalizedNumber} m",
             ("en", "km") => $"{normalizedNumber} km",
             ("en", "m") => $"{normalizedNumber} m",
             (_, "km") => $"{number.Replace('.', ',')} km",
@@ -469,21 +464,6 @@ public sealed partial class FoodStreetApiDataService
                 ("Viet Nam", "ベトナム"),
                 ("Vietnam", "ベトナム")
             },
-            "fr" => new[]
-            {
-                ("Phường Khánh Hội", "quartier Khanh Hoi"),
-                ("Phường Vĩnh Hội", "quartier Vinh Hoi"),
-                ("Quận 4", "4e arrondissement"),
-                ("TP.HCM", "Hô-Chi-Minh-Ville"),
-                ("TP. HCM", "Hô-Chi-Minh-Ville"),
-                ("Thành phố Hồ Chí Minh", "Hô-Chi-Minh-Ville"),
-                ("Vĩnh Khánh", "Vinh Khanh"),
-                ("Đường", "rue"),
-                ("Hẻm", "ruelle"),
-                ("Việt Nam", "Vietnam"),
-                ("Viet Nam", "Vietnam"),
-                ("Vietnam", "Vietnam")
-            },
             _ => new[]
             {
                 ("Phường Khánh Hội", "Khanh Hoi Ward"),
@@ -519,15 +499,14 @@ public sealed partial class FoodStreetApiDataService
         string simplifiedChineseText,
         string koreanText,
         string japaneseText,
-        string frenchText)
+        string unusedLegacyText)
         => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["vi"] = vietnameseText,
             ["en"] = englishText,
             ["zh-CN"] = simplifiedChineseText,
             ["ko"] = koreanText,
-            ["ja"] = japaneseText,
-            ["fr"] = frenchText
+            ["ja"] = japaneseText
         };
 
     private static IReadOnlyDictionary<string, string> CreateFallbackTranslationMap(string fallbackText, string englishFallback)

@@ -89,7 +89,6 @@ type PoiDraft = Omit<Poi, "id" | "createdAt" | "updatedAt" | "updatedBy" | "appr
   requestedId?: string;
   translationLanguageCode: Translation["languageCode"];
   title: string;
-  shortText: string;
   fullText: string;
   seoTitle: string;
   seoDescription: string;
@@ -225,7 +224,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
         slug: draft.slug,
         translationLanguageCode: draft.translationLanguageCode,
         title: draft.title,
-        shortTextLength: draft.shortText.length,
         fullTextLength: draft.fullText.length,
         address: draft.address,
         tags: draft.tags,
@@ -270,7 +268,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
           )?.id,
           languageCode: draft.translationLanguageCode,
           title: draft.title,
-          shortText: draft.shortText,
+          shortText: "",
           fullText: draft.fullText,
           seoTitle: draft.seoTitle,
           seoDescription: draft.seoDescription,

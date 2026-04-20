@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Networking;
 using Microsoft.Maui.Storage;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.ViewModels;
@@ -18,6 +19,7 @@ public partial class MapPage : ContentPage
     private const string MapStatePlaceholder = "__MAP_STATE_BASE64__";
     private const string LeafletCssPlaceholder = "__LEAFLET_CSS__";
     private const string LeafletJsPlaceholder = "__LEAFLET_JS__";
+    private const string MapHtmlBaseUrl = "https://appassets.vinhkhanh.local/";
 
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly MapViewModel _viewModel;
@@ -58,13 +60,28 @@ public partial class MapPage : ContentPage
     private async void OnMapNavigating(object? sender, WebNavigatingEventArgs e)
     {
         if (!Uri.TryCreate(e.Url, UriKind.Absolute, out var uri) ||
-            !string.Equals(uri.Scheme, "vkfood", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(uri.Host, "select-poi", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(uri.Scheme, "vkfood", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         e.Cancel = true;
+
+        if (string.Equals(uri.Host, "map-event", StringComparison.OrdinalIgnoreCase))
+        {
+            if (uri.Query.Contains("type=ready", StringComparison.OrdinalIgnoreCase))
+            {
+                _isMapReady = true;
+                await RefreshMapSelectionAsync();
+            }
+
+            return;
+        }
+
+        if (!string.Equals(uri.Host, "select-poi", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
 
         var poiId = Uri.UnescapeDataString(uri.AbsolutePath.Trim('/'));
         if (string.IsNullOrWhiteSpace(poiId))
@@ -102,6 +119,7 @@ public partial class MapPage : ContentPage
         var html = await BuildMapHtmlAsync();
         MapWebView.Source = new HtmlWebViewSource
         {
+            BaseUrl = MapHtmlBaseUrl,
             Html = html
         };
     }
@@ -114,7 +132,7 @@ public partial class MapPage : ContentPage
 
         var payload = new MapPageState
         {
-            CurrentLocation = _viewModel.CurrentLocation is null
+            UserLocation = _viewModel.CurrentLocation is null
                 ? null
                 : new MapCoordinate
                 {
@@ -122,6 +140,8 @@ public partial class MapPage : ContentPage
                     Longitude = _viewModel.CurrentLocation.Longitude
                 },
             SelectedPoiId = _viewModel.SelectedPoi?.Id,
+            AllowRemoteTiles = Connectivity.Current.NetworkAccess is not NetworkAccess.None,
+            AllowLocationMockSelection = false,
             Pois = _viewModel.Pois.Select(poi => new MapPoiMarker
             {
                 Id = poi.Id,
@@ -131,7 +151,8 @@ public partial class MapPage : ContentPage
                 Category = poi.Category,
                 Latitude = poi.Latitude,
                 Longitude = poi.Longitude,
-                IsFeatured = poi.IsFeatured
+                IsFeatured = poi.IsFeatured,
+                TriggerRadius = poi.TriggerRadius
             }).ToList()
         };
 
@@ -214,8 +235,10 @@ public partial class MapPage : ContentPage
     private sealed class MapPageState
     {
         public List<MapPoiMarker> Pois { get; set; } = [];
-        public MapCoordinate? CurrentLocation { get; set; }
+        public MapCoordinate? UserLocation { get; set; }
         public string? SelectedPoiId { get; set; }
+        public bool AllowRemoteTiles { get; set; }
+        public bool AllowLocationMockSelection { get; set; }
     }
 
     private sealed class MapPoiMarker
@@ -228,6 +251,7 @@ public partial class MapPage : ContentPage
         public double Latitude { get; set; }
         public double Longitude { get; set; }
         public bool IsFeatured { get; set; }
+        public double TriggerRadius { get; set; } = 20d;
     }
 
     private sealed class MapCoordinate

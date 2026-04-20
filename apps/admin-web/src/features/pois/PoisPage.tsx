@@ -11,7 +11,7 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useSearchParams } from "react-router-dom";
 import { useAdminData } from "../../data/store";
 import type { AdminDataState, AudioGuide, FoodItem, LanguageCode, MediaAsset, Poi, PoiDetail, Translation } from "../../data/types";
-import { adminApi, getErrorMessage } from "../../lib/api";
+import { adminApi, getErrorMessage, type PoiAudioGenerationResult } from "../../lib/api";
 import { preventImplicitFormSubmit } from "../../lib/forms";
 import { getCategoryName, getEntityTranslationFromList, getOwnerName, searchPois } from "../../lib/selectors";
 import { contentStatusLabels, formatDateTime, formatNumber, languageLabels, poiActivityLabels, slugify } from "../../lib/utils";
@@ -26,6 +26,24 @@ import {
 
 const DEFAULT_LAT = 10.7578;
 const DEFAULT_LNG = 106.7033;
+
+const describeAudioGenerationResult = (result: PoiAudioGenerationResult) => {
+  if (result.success) {
+    return result.message;
+  }
+
+  const details = [
+    result.providerStatusCode ? `HTTP ${result.providerStatusCode}` : null,
+    result.providerErrorCode,
+    result.providerErrorMessage,
+    result.attemptedVoiceId ? `voice=${result.attemptedVoiceId}` : null,
+    result.attemptedModelId ? `model=${result.attemptedModelId}` : null,
+  ].filter(Boolean);
+
+  return details.length > 0
+    ? `${result.message} (${details.join(" / ")})`
+    : result.message;
+};
 
 type PoiFormState = {
   id?: string;
@@ -45,7 +63,6 @@ type PoiFormState = {
   priority: string;
   tags: string;
   ownerUserId: string;
-  shortText: string;
   fullText: string;
   audioUrl: string;
   audioSourceType: AudioGuide["sourceType"];
@@ -85,7 +102,6 @@ const createDefaultForm = (status: Poi["status"] = "draft"): PoiFormState => ({
   priority: "0",
   tags: "",
   ownerUserId: "",
-  shortText: "",
   fullText: "",
   audioUrl: "",
   audioSourceType: "generated",
@@ -257,7 +273,6 @@ const buildPoiTranslationFields = (
   if (!poi) {
     return {
       title: "",
-      shortText: "",
       fullText: "",
     };
   }
@@ -265,8 +280,7 @@ const buildPoiTranslationFields = (
   const exactTranslation = findPoiTranslationForLanguage(translations, poi, languageCode);
   return {
     title: exactTranslation?.title ?? "",
-    shortText: exactTranslation?.shortText ?? "",
-    fullText: exactTranslation?.fullText ?? "",
+    fullText: exactTranslation?.fullText ?? exactTranslation?.shortText ?? "",
   };
 };
 
@@ -328,7 +342,6 @@ const buildPoiEditorContentSnapshot = (
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean),
-    shortText: form.shortText.trim(),
     fullText: form.fullText.trim(),
     audioUrl: form.audioUrl.trim(),
     audioSourceType: form.audioSourceType,
@@ -896,7 +909,6 @@ export const PoisPage = () => {
         priority: String(loadedPoi.priority ?? 0),
         tags: loadedPoi.tags.join(", "),
         ownerUserId: isOwner ? user?.id ?? "" : loadedPoi.ownerUserId ?? "",
-        shortText: translationFields.shortText,
         fullText: translationFields.fullText,
         audioUrl: audioGuide?.audioUrl ?? "",
         audioSourceType: audioGuide?.sourceType ?? "generated",
@@ -1014,7 +1026,6 @@ export const PoisPage = () => {
           ...current,
           contentLanguageCode: languageCode,
           title: translationFields.title,
-          shortText: translationFields.shortText,
           fullText: translationFields.fullText,
           audioUrl: audioGuide?.audioUrl ?? "",
           audioSourceType: audioGuide?.sourceType ?? "generated",
@@ -1295,13 +1306,13 @@ export const PoisPage = () => {
           const result = await adminApi.generatePoiAudio(currentFormPoiId, {
             languageCode: form.contentLanguageCode,
           });
-          setAudioActionMessage(result.message);
+          setAudioActionMessage(describeAudioGenerationResult(result));
         } else if (mode === "regenerate") {
           const result = await adminApi.regeneratePoiAudio(currentFormPoiId, {
             languageCode: form.contentLanguageCode,
             forceRegenerate: true,
           });
-          setAudioActionMessage(result.message);
+          setAudioActionMessage(describeAudioGenerationResult(result));
         } else {
           const results = await adminApi.generatePoiAllLanguagesAudio(currentFormPoiId, {
             forceRegenerate: false,
@@ -1403,7 +1414,6 @@ export const PoisPage = () => {
         contentLanguageCode: form.contentLanguageCode,
         address: form.address,
         tags: form.tags,
-        shortTextLength: form.shortText.length,
         fullTextLength: form.fullText.length,
       });
       const nextSlug = form.slug || slugify(form.title);
@@ -1479,10 +1489,9 @@ export const PoisPage = () => {
           ownerUserId: (isOwner ? user.id : form.ownerUserId) || null,
           translationLanguageCode: form.contentLanguageCode,
           title: form.title,
-          shortText: form.shortText,
           fullText: form.fullText,
           seoTitle: form.title,
-          seoDescription: form.shortText || form.title,
+          seoDescription: form.fullText || form.title,
         },
         user,
       );
@@ -1678,10 +1687,10 @@ export const PoisPage = () => {
         entityId: savedPoi.id,
         languageCode: form.contentLanguageCode,
         title: form.title,
-        shortText: form.shortText,
+        shortText: "",
         fullText: form.fullText,
         seoTitle: form.title,
-        seoDescription: form.shortText || form.title,
+        seoDescription: form.fullText || form.title,
         updatedBy: user.name,
         updatedAt: savedPoi.updatedAt,
       };
@@ -2461,15 +2470,9 @@ export const PoisPage = () => {
                 </div>
               </div>
 
-              <div className="grid gap-5 md:grid-cols-2">
-                <div>
-                  <label className="field-label">Mô tả ngắn</label>
-                  <Textarea value={form.shortText} disabled={isPoiModalViewOnly} onChange={(event) => setForm((current) => ({ ...current, shortText: event.target.value }))} />
-                </div>
-                <div>
-                  <label className="field-label">Thuyết minh</label>
-                  <Textarea value={form.fullText} disabled={isPoiModalViewOnly} onChange={(event) => setForm((current) => ({ ...current, fullText: event.target.value }))} />
-                </div>
+              <div>
+                <label className="field-label">Thuyết minh</label>
+                <Textarea value={form.fullText} disabled={isPoiModalViewOnly} onChange={(event) => setForm((current) => ({ ...current, fullText: event.target.value }))} />
               </div>
 
               <div className="space-y-5 rounded-3xl border border-sand-100 bg-sand-50/70 p-5">

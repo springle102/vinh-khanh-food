@@ -1,0 +1,276 @@
+{
+  "version": "915c4a44307f934e",
+  "generatedAtUtc": "2026-04-19T08:35:03.5145857+00:00",
+  "files": [
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/sushi-ko/ko/sushi-ko-ko-67ba60699d9a-20260418113423867.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/05f696897b712b3cf821b6ed5e4a13e4dadbaa57b1279f649597044fbeac0827.mp3",
+      "entityType": "poi",
+      "entityId": "sushi-ko",
+      "languageCode": "ko",
+      "sizeBytes": 412151
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/sushi-ko/ja/sushi-ko-ja-c658e5a9083c-20260418113423817.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/1a5be9ebbcdfb20caa61331742b7aff6ab668f5e69907fd478f76928f28991f0.mp3",
+      "entityType": "poi",
+      "entityId": "sushi-ko",
+      "languageCode": "ja",
+      "sizeBytes": 388328
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-oanh-1/ja/oc-oanh-1-ja-e4ff22bfc1ae-20260418114351736.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/287ba8c17165496ab9baaecfef6f89b2823bfb70b7016399a2f98e5006800197.mp3",
+      "entityType": "poi",
+      "entityId": "oc-oanh-1",
+      "languageCode": "ja",
+      "sizeBytes": 448932
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/sushi-ko/vi/sushi-ko-vi-2bd4986d94b3-20260418113355811.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/38e72f96c5befd25a6851697d7a33259033dcc369d522a318a4b89d2f6daf971.mp3",
+      "entityType": "poi",
+      "entityId": "sushi-ko",
+      "languageCode": "vi",
+      "sizeBytes": 290943
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/ca-phe-che/ko/ca-phe-che-ko-a7d587415819-20260418114120314.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/54a5d78480c48520db839fa1e2c7a6d6e1077ae9d3fd4f6f208184103cc14cae.mp3",
+      "entityType": "poi",
+      "entityId": "ca-phe-che",
+      "languageCode": "ko",
+      "sizeBytes": 382894
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-phat/ja/oc-phat-ja-f8006173f77f-20260418104633490.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/551a062ac6d1f9d774dd4038647764b1435d3bfeec3db6e5c34530d7bd43c65c.mp3",
+      "entityType": "poi",
+      "entityId": "oc-phat",
+      "languageCode": "ja",
+      "sizeBytes": 419675
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/sushi-ko/zh-CN/sushi-ko-zh-CN-32573024f2ed-20260418113423947.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/63f2431ede3db884e62bc2846fdd685342feaee9313add0f27190ce343976ad9.mp3",
+      "entityType": "poi",
+      "entityId": "sushi-ko",
+      "languageCode": "zh-CN",
+      "sizeBytes": 346532
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-phat/zh-CN/oc-phat-zh-CN-15b19c16f023-20260418113155428.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/66c6f1b7920f4d788bb6a79594e19c36cea962af539f62253f59f944e8ad0cc9.mp3",
+      "entityType": "poi",
+      "entityId": "oc-phat",
+      "languageCode": "zh-CN",
+      "sizeBytes": 341516
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/ca-phe-che/vi/ca-phe-che-vi-a992769838c6-20260418114108592.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/916252550b8b7de2e5c38bf2d7f02209f4ca8c1d8c1389d79871fd9d154f420b.mp3",
+      "entityType": "poi",
+      "entityId": "ca-phe-che",
+      "languageCode": "vi",
+      "sizeBytes": 230757
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/sushi-ko/en/sushi-ko-en-eab3333e241e-20260418113423768.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/98cda1b2177605448cc2b0cf46310c5193006739697fb3169e4d566dbde8d2af.mp3",
+      "entityType": "poi",
+      "entityId": "sushi-ko",
+      "languageCode": "en",
+      "sizeBytes": 321454
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-oanh-1/zh-CN/oc-oanh-1-zh-CN-a25a83910930-20260418114351869.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/a7034896888548158e075b0aea66b3c4209b6201398c769ee6839a47f40d2f82.mp3",
+      "entityType": "poi",
+      "entityId": "oc-oanh-1",
+      "languageCode": "zh-CN",
+      "sizeBytes": 324380
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-phat/en/oc-phat-en-e53d825d5251-20260418104628201.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/a91328f6be07a47d628e4efdde9864ae07702bd39d2d4feb0fb769adbee5dd4e.mp3",
+      "entityType": "poi",
+      "entityId": "oc-phat",
+      "languageCode": "en",
+      "sizeBytes": 363250
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-oanh-1/ko/oc-oanh-1-ko-5d1f65132f57-20260418114351792.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/b2c5084d09c35a85191cc2799ff0ad5c74a5c5c11ca9487e881d522c55bf5b36.mp3",
+      "entityType": "poi",
+      "entityId": "oc-oanh-1",
+      "languageCode": "ko",
+      "sizeBytes": 412569
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/ca-phe-che/en/ca-phe-che-en-00cd880d9843-20260418114115510.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/b7f101fc879a4d8777df909796ea0c40e72db50db500851a67d2228eb3b4140a.mp3",
+      "entityType": "poi",
+      "entityId": "ca-phe-che",
+      "languageCode": "en",
+      "sizeBytes": 276733
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-oanh-1/en/oc-oanh-1-en-273b37553526-20260418114351683.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/c1d6354af8de0298d15e08e29dd9dcf7a255fb6a7808b245047560ea1c72181c.mp3",
+      "entityType": "poi",
+      "entityId": "oc-oanh-1",
+      "languageCode": "en",
+      "sizeBytes": 318528
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-phat/vi/oc-phat-vi-ce78b21da241-20260418101432168.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/c832450ab3599d6b65868e2f6f82efc1410b50fccf14e1c2cc3b025a72266487.mp3",
+      "entityType": "poi",
+      "entityId": "oc-phat",
+      "languageCode": "vi",
+      "sizeBytes": 340262
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/ca-phe-che/ja/ca-phe-che-ja-33e14a759899-20260418114117723.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/cd099a9835ad2ce9e1ddc8c6683147c55c7d281d2361938269839d478aedd076.mp3",
+      "entityType": "poi",
+      "entityId": "ca-phe-che",
+      "languageCode": "ja",
+      "sizeBytes": 308079
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-oanh-1/vi/oc-oanh-1-vi-97ac46d28db0-20260418114320318.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/eacaade6501c89ea317907290b876ee423b878317a1cd89b23f843675b443e2d.mp3",
+      "entityType": "poi",
+      "entityId": "oc-oanh-1",
+      "languageCode": "vi",
+      "sizeBytes": 258342
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/oc-phat/ko/oc-phat-ko-157e34dc0925-20260418104638271.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/f07db06835df2e11e68d21831499df6dbeb3569b5542642d9c4a023f43c243b0.mp3",
+      "entityType": "poi",
+      "entityId": "oc-phat",
+      "languageCode": "ko",
+      "sizeBytes": 395433
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/audio/pois/ca-phe-che/zh-CN/ca-phe-che-zh-CN-8f3e4cb7850e-20260418114122224.mp3",
+      "kind": "audio",
+      "relativePath": "assets/audio/f392e11ee239cafb6d139d768ac241d1255645c8b94b070fb7e5ed8f45099825.mp3",
+      "entityType": "poi",
+      "entityId": "ca-phe-che",
+      "languageCode": "zh-CN",
+      "sizeBytes": 278404
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/food-items/20260418114249365-62422ad719d84075aa07c44621da3a08.jpg",
+      "kind": "image",
+      "relativePath": "assets/image/03c7e5744d3b71abcd6895cc232ad76b57f2e7f012de19feeceb9f6c3ca27ed1.jpg",
+      "entityType": "food_item",
+      "entityId": "food-so-diep",
+      "languageCode": "",
+      "sizeBytes": 138949
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/food-items/20260418101330404-89fc4289c8ab488d935ea06bb814b4ee.webp",
+      "kind": "image",
+      "relativePath": "assets/image/466e4831b6ebdd8313da0fd576cb48ac5d9027e8a027b3947b2e6a18cb377fe5.webp",
+      "entityType": "food_item",
+      "entityId": "food-oc-mong-tay",
+      "languageCode": "",
+      "sizeBytes": 112850
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/pois/20260418114238581-5458cbb19c3c4207b0a6cb246ac275e9.jpg",
+      "kind": "image",
+      "relativePath": "assets/image/68277fe36a99df45172e94d5159f4afa867fbd7b1990c0b55ce0474682a0e1e1.jpg",
+      "entityType": "poi",
+      "entityId": "oc-oanh-1",
+      "languageCode": "",
+      "sizeBytes": 166700
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/pois/20260418113747792-d2631d25bd8f42b2a2ffad2d2ffc1eca.jpeg",
+      "kind": "image",
+      "relativePath": "assets/image/7e61f2f9db28d8520b7f950f370360ec3537b2c8771c35950b8ad626317139dc.jpeg",
+      "entityType": "poi",
+      "entityId": "ca-phe-che",
+      "languageCode": "",
+      "sizeBytes": 447122
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/pois/20260418113300732-db188c6d687646b396ddffbdee8b783f.jpg",
+      "kind": "image",
+      "relativePath": "assets/image/878078d0c7a20d072b7f96f700c49eacca97998be04351d14ac968db344b1409.jpg",
+      "entityType": "poi",
+      "entityId": "sushi-ko",
+      "languageCode": "",
+      "sizeBytes": 111685
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/food-items/20260418113323609-bdbd6dc0c1d04469865ddafb49c2dfe6.jpg",
+      "kind": "image",
+      "relativePath": "assets/image/9c06be52ebc4feedd17b287a347a43f03aa70a1a22588f21c7eb7fde45d79707.jpg",
+      "entityType": "food_item",
+      "entityId": "food-sushi-kajiki",
+      "languageCode": "",
+      "sizeBytes": 49193
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/food-items/20260418113329577-0dd004c0b7f04a02b74200e08df5d5f9.jpg",
+      "kind": "image",
+      "relativePath": "assets/image/a2f22ace253b4f9b87dd011f981cf14f635386a71a8e9cfbec48419d47261416.jpg",
+      "entityType": "food_item",
+      "entityId": "food-sushi-zaru-soba",
+      "languageCode": "",
+      "sizeBytes": 12143
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/pois/20260418101246920-8ad4ae1cabbe427bbb224e5e4ac2abfb.jpg",
+      "kind": "image",
+      "relativePath": "assets/image/ce06085e3e96fb726e599ebe98a09ee2f3def50f2556b46acc7211f556519854.jpg",
+      "entityType": "poi",
+      "entityId": "oc-phat",
+      "languageCode": "",
+      "sizeBytes": 132805
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/food-items/20260418114004257-3b8fb21766a54283bdb3922680752610.jpg",
+      "kind": "image",
+      "relativePath": "assets/image/e8ea297e7c6ea081e9bceac4b48779e1db167fc102729cfae1ba5d5d9084fdc4.jpg",
+      "entityType": "food_item",
+      "entityId": "food-che-khuc-bach",
+      "languageCode": "",
+      "sizeBytes": 101548
+    },
+    {
+      "key": "http://127.0.0.1:5080/storage/images/food-items/20260418101318762-9877e771be5c4d71bb025fc66ac3040c.jpg",
+      "kind": "image",
+      "relativePath": "assets/image/fc83fbe12457d94e5960e2a9cec98f4d843c188611d90f13c40a949ed004cf88.jpg",
+      "entityType": "food_item",
+      "entityId": "food-oc-giac",
+      "languageCode": "",
+      "sizeBytes": 239090
+    }
+  ]
+}

@@ -19,6 +19,7 @@ public sealed class OfflinePackageMetadata
     public string Version { get; set; } = string.Empty;
     public DateTimeOffset GeneratedAtUtc { get; set; }
     public DateTimeOffset LastUpdatedAtUtc { get; set; }
+    public string InstallationSource { get; set; } = string.Empty;
     public DateTimeOffset? ServerLastChangedAtUtc { get; set; }
     public long PackageSizeBytes { get; set; }
     public int PoiCount { get; set; }
@@ -27,6 +28,12 @@ public sealed class OfflinePackageMetadata
     public int TourCount { get; set; }
     public int LanguageCount { get; set; }
     public int FileCount { get; set; }
+}
+
+public static class OfflinePackageInstallationSources
+{
+    public const string BundledSeed = "bundled_seed";
+    public const string Downloaded = "downloaded";
 }
 
 public sealed class OfflinePackageFileEntry

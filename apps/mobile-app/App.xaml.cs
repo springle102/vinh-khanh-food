@@ -7,6 +7,8 @@ namespace VinhKhanh.MobileApp;
 public partial class App : Application
 {
     private readonly IAppLanguageService _languageService;
+    private readonly IBundledOfflinePackageSeedService _bundledSeedService;
+    private readonly IMobileOfflineDatabaseService _offlineDatabaseService;
     private readonly ILogger<App>? _logger;
     private bool _languageInitializationStarted;
 
@@ -15,6 +17,8 @@ public partial class App : Application
         InitializeComponent();
         ServiceHelper.Services = services;
         _languageService = services.GetRequiredService<IAppLanguageService>();
+        _bundledSeedService = services.GetRequiredService<IBundledOfflinePackageSeedService>();
+        _offlineDatabaseService = services.GetRequiredService<IMobileOfflineDatabaseService>();
         _logger = services.GetService<ILogger<App>>();
     }
 
@@ -38,6 +42,9 @@ public partial class App : Application
         }
 
         _languageInitializationStarted = true;
+        _logger?.LogInformation(
+            "[AppStart] App window created. currentLanguage={CurrentLanguage}",
+            _languageService.CurrentLanguage);
         _ = InitializeLanguageAsync();
     }
 
@@ -45,7 +52,13 @@ public partial class App : Application
     {
         try
         {
+            _logger?.LogInformation("[AppStart] Ensuring bundled offline seed is installed.");
+            await _bundledSeedService.EnsureInstalledAsync();
+            await _offlineDatabaseService.EnsureInitializedAsync();
             await _languageService.InitializeAsync();
+            _logger?.LogInformation(
+                "[AppStart] App language initialization finished. currentLanguage={CurrentLanguage}",
+                _languageService.CurrentLanguage);
         }
         catch (Exception ex)
         {

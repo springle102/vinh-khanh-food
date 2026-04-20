@@ -49,11 +49,6 @@ public sealed partial class HomeMapViewModel
     public bool CanStopSimulation => false;
     public bool CanResetSimulation => _userLocationSnapshot is not null;
     public bool IsTourSimulationRouteActive => false;
-    public bool IsSelectedPoiSimulationCardVisible => SelectedPoi is not null && IsAutoNarrationDevToolsVisible;
-    public bool HasSelectedPoiSimulationRoute => false;
-    public bool CanStartSelectedPoiSimulation => SelectedPoi is not null;
-    public bool CanPauseSelectedPoiSimulation => false;
-    public bool CanStopSelectedPoiSimulation => false;
 
     public string SimulationPanelTitleText => LanguageService.GetText("simulation_panel_title");
     public string SimulationModeManualText => LanguageService.GetText("simulation_mode_manual");
@@ -62,7 +57,6 @@ public sealed partial class HomeMapViewModel
     public string PauseSimulationText => LanguageService.GetText("simulation_action_pause");
     public string StopSimulationText => LanguageService.GetText("simulation_action_stop");
     public string ResetSimulationText => LanguageService.GetText("simulation_action_reset");
-    public string PoiSimulationTitleText => LanguageService.GetText("poi_simulation_title");
 
     public string SimulationDestinationText
     {
@@ -82,22 +76,12 @@ public sealed partial class HomeMapViewModel
 
     public string SimulationDetailText => LanguageService.GetText("auto_narration_dev_description");
 
-    public string SelectedPoiSimulationDescriptionText
-        => SelectedPoi is null
-            ? LanguageService.GetText("simulation_select_destination_hint")
-            : LanguageService.GetText("auto_narration_dev_description");
-
-    public string SelectedPoiSimulationStatusText => LanguageService.GetText("poi_simulation_manual_hint");
-
     public AsyncCommand StartSimulationCommand => new(StartSimulationAsync);
     public AsyncCommand PauseSimulationCommand => new(PauseSimulationAsync);
     public AsyncCommand StopSimulationCommand => new(StopSimulationAsync);
     public AsyncCommand ResetSimulationCommand => new(ResetSimulationAsync);
     public AsyncCommand SwitchToManualSimulationCommand => new(SwitchToManualSimulationAsync);
     public AsyncCommand SwitchToAutoSimulationCommand => new(SwitchToAutoSimulationAsync);
-    public AsyncCommand StartSelectedPoiSimulationCommand => new(SimulateNearSelectedPoiAsync);
-    public AsyncCommand PauseSelectedPoiSimulationCommand => new(PauseSelectedPoiSimulationAsync);
-    public AsyncCommand StopSelectedPoiSimulationCommand => new(StopSelectedPoiSimulationAsync);
 
     public MapRouteSimulationState? GetMapRouteSimulationState() => null;
 
@@ -160,12 +144,6 @@ public sealed partial class HomeMapViewModel
         await SynchronizeSimulationStateAsync();
     }
 
-    private Task PauseSelectedPoiSimulationAsync()
-        => Task.CompletedTask;
-
-    private Task StopSelectedPoiSimulationAsync()
-        => Task.CompletedTask;
-
     private bool IsCurrentRouteContext(SimulationContextKind contextKind, string? contextId = null)
         => false;
 
@@ -209,11 +187,6 @@ public sealed partial class HomeMapViewModel
         OnPropertyChanged(nameof(CanStopSimulation));
         OnPropertyChanged(nameof(CanResetSimulation));
         OnPropertyChanged(nameof(IsTourSimulationRouteActive));
-        OnPropertyChanged(nameof(IsSelectedPoiSimulationCardVisible));
-        OnPropertyChanged(nameof(HasSelectedPoiSimulationRoute));
-        OnPropertyChanged(nameof(CanStartSelectedPoiSimulation));
-        OnPropertyChanged(nameof(CanPauseSelectedPoiSimulation));
-        OnPropertyChanged(nameof(CanStopSelectedPoiSimulation));
         OnPropertyChanged(nameof(SimulationPanelTitleText));
         OnPropertyChanged(nameof(SimulationDestinationText));
         OnPropertyChanged(nameof(SimulationStatusText));
@@ -224,8 +197,5 @@ public sealed partial class HomeMapViewModel
         OnPropertyChanged(nameof(PauseSimulationText));
         OnPropertyChanged(nameof(StopSimulationText));
         OnPropertyChanged(nameof(ResetSimulationText));
-        OnPropertyChanged(nameof(PoiSimulationTitleText));
-        OnPropertyChanged(nameof(SelectedPoiSimulationDescriptionText));
-        OnPropertyChanged(nameof(SelectedPoiSimulationStatusText));
     }
 }

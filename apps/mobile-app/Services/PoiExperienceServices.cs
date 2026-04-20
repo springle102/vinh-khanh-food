@@ -4,44 +4,10 @@ using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
 
-public interface IPoiNarrationService
-{
-    bool IsPlaying { get; }
-    Task PlayAsync(PoiExperienceDetail detail, string languageCode, CancellationToken cancellationToken = default);
-    Task StopAsync();
-}
-
 public interface IPoiTourStoreService
 {
     Task<bool> IsSavedAsync(string poiId);
     Task<bool> ToggleSavedAsync(string poiId);
-}
-
-public sealed class PoiNarrationService : IPoiNarrationService, IAudioPlayerService
-{
-    private readonly IPoiAudioPlaybackService _audioPlaybackService;
-
-    public PoiNarrationService(IPoiAudioPlaybackService audioPlaybackService)
-    {
-        _audioPlaybackService = audioPlaybackService;
-    }
-
-    public bool IsPlaying => _audioPlaybackService.IsPlaying;
-
-    public Task PlayPoiNarrationAsync(
-        PoiExperienceDetail detail,
-        string languageCode,
-        CancellationToken cancellationToken = default)
-        => PlayAsync(detail, languageCode, cancellationToken);
-
-    public Task PlayAsync(
-        PoiExperienceDetail detail,
-        string languageCode,
-        CancellationToken cancellationToken = default)
-        => _audioPlaybackService.PlayAsync(detail, languageCode, cancellationToken);
-
-    public Task StopAsync()
-        => _audioPlaybackService.StopAsync();
 }
 
 public sealed class PoiTourStoreService : IPoiTourStoreService

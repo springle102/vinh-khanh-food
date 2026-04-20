@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Caching.Memory;
@@ -29,6 +30,7 @@ public sealed class RuntimeTranslationService(
     ILogger<RuntimeTranslationService> logger)
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(30);
+    private readonly ConcurrentDictionary<string, Lazy<Task<TextTranslationResponse>>> _inflightBatches = new(StringComparer.Ordinal);
 
     public async Task<RuntimeTranslationResult> TranslateTextAsync(
         string entityType,
@@ -72,6 +74,7 @@ public sealed class RuntimeTranslationService(
 
         var output = new RuntimeTranslationResult[indexedFields.Count];
         var pending = new List<IndexedField>();
+        var cacheHitCount = 0;
 
         foreach (var item in indexedFields)
         {
@@ -91,6 +94,7 @@ public sealed class RuntimeTranslationService(
             if (memoryCache.TryGetValue(cacheKey, out string? cachedText) &&
                 !string.IsNullOrWhiteSpace(cachedText))
             {
+                cacheHitCount += 1;
                 output[item.Index] = CreateResult(
                     item.Field,
                     target,
@@ -130,12 +134,43 @@ public sealed class RuntimeTranslationService(
                     uniqueRequests.Count,
                     group.Count());
 
-                var translated = await translationClient.TranslateAsync(
-                    new TextTranslationRequest(
+                var batchKey = CreateBatchKey(target, group.Key, uniqueRequests.Select(item => item.CacheKey));
+                var startedNewBatch = false;
+                var lazyBatch = _inflightBatches.GetOrAdd(
+                    batchKey,
+                    _ =>
+                    {
+                        startedNewBatch = true;
+                        return new Lazy<Task<TextTranslationResponse>>(
+                            () => translationClient.TranslateAsync(
+                                new TextTranslationRequest(
+                                    target,
+                                    group.Key,
+                                    uniqueRequests.Select(item => item.SourceText).ToList()),
+                                CancellationToken.None),
+                            LazyThreadSafetyMode.ExecutionAndPublication);
+                    });
+                if (!startedNewBatch)
+                {
+                    logger.LogDebug(
+                        "[TranslationCache] Coalesced runtime translation request. targetLanguage={TargetLanguage}; sourceLanguage={SourceLanguage}; uniqueTexts={UniqueTextCount}",
                         target,
                         group.Key,
-                        uniqueRequests.Select(item => item.SourceText).ToList()),
-                    cancellationToken);
+                        uniqueRequests.Count);
+                }
+
+                TextTranslationResponse translated;
+                try
+                {
+                    translated = await lazyBatch.Value.WaitAsync(cancellationToken);
+                }
+                finally
+                {
+                    if (lazyBatch.IsValueCreated && lazyBatch.Value.IsCompleted)
+                    {
+                        _inflightBatches.TryRemove(batchKey, out _);
+                    }
+                }
 
                 for (var index = 0; index < uniqueRequests.Count; index += 1)
                 {
@@ -206,9 +241,11 @@ public sealed class RuntimeTranslationService(
 
         var fallbackCount = output.Count(item => item.UsedFallback);
         logger.LogDebug(
-            "Runtime translation completed. targetLanguage={TargetLanguage}; fieldCount={FieldCount}; fallbackCount={FallbackCount}",
+            "Runtime translation completed. targetLanguage={TargetLanguage}; fieldCount={FieldCount}; cacheHits={CacheHits}; cacheMisses={CacheMisses}; fallbackCount={FallbackCount}",
             target,
             output.Length,
+            cacheHitCount,
+            pending.Count,
             fallbackCount);
 
         return output;
@@ -257,6 +294,14 @@ public sealed class RuntimeTranslationService(
             field.SourceLanguageCode.Trim().ToLowerInvariant(),
             targetLanguageCode.Trim().ToLowerInvariant(),
             CreateSha256(field.SourceText));
+
+    private static string CreateBatchKey(string targetLanguageCode, string sourceLanguageCode, IEnumerable<string> cacheKeys)
+        => string.Join(
+            "|",
+            "runtime-translation-batch",
+            sourceLanguageCode.Trim().ToLowerInvariant(),
+            targetLanguageCode.Trim().ToLowerInvariant(),
+            string.Join(",", cacheKeys));
 
     private static string CreateSha256(string value)
     {

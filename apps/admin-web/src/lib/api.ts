@@ -83,6 +83,13 @@ export type PoiAudioGenerationResult = {
   transcriptText: string;
   textHash: string;
   audioGuide: AudioGuide | null;
+  providerStatusCode?: number | null;
+  providerErrorCode?: string | null;
+  providerErrorMessage?: string | null;
+  providerResponseBody?: string | null;
+  attemptedVoiceId?: string | null;
+  attemptedModelId?: string | null;
+  outputFormat?: string | null;
 };
 
 export class ApiError extends Error {

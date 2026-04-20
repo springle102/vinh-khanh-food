@@ -549,6 +549,11 @@ public sealed class AppLanguageService : IAppLanguageService
         CurrentLanguage = AppLanguage.NormalizeCode(savedLanguage);
         CurrentCulture = AppLanguage.CreateCulture(CurrentLanguage);
         HasSavedLanguageSelection = Preferences.Default.ContainsKey(PreferenceKey);
+        _logger?.LogInformation(
+            "[Language] Loaded saved language preference. saved={SavedLanguage}; normalized={NormalizedLanguage}; hasSavedSelection={HasSavedSelection}",
+            savedLanguage,
+            CurrentLanguage,
+            HasSavedLanguageSelection);
     }
 
     public string CurrentLanguage { get; private set; }
@@ -570,6 +575,10 @@ public sealed class AppLanguageService : IAppLanguageService
 
     public async Task InitializeAsync()
     {
+        _logger?.LogInformation(
+            "[Language] App language initialization started. current={CurrentLanguage}; hasSavedSelection={HasSavedSelection}",
+            CurrentLanguage,
+            HasSavedLanguageSelection);
         try
         {
             await ApplyLanguageAsync(CurrentLanguage, persistSelection: false);
@@ -584,6 +593,11 @@ public sealed class AppLanguageService : IAppLanguageService
     public async Task<string> SetLanguageAsync(string languageCode)
     {
         var normalizedCode = AppLanguage.NormalizeCode(languageCode);
+        _logger?.LogInformation(
+            "[Language] Language change requested. requested={RequestedLanguage}; normalized={NormalizedLanguage}; current={CurrentLanguage}",
+            languageCode,
+            normalizedCode,
+            CurrentLanguage);
         await ApplyLanguageAsync(normalizedCode, persistSelection: true);
         return normalizedCode;
     }
@@ -669,10 +683,14 @@ public sealed class AppLanguageService : IAppLanguageService
         try
         {
             var normalizedCode = AppLanguage.NormalizeCode(languageCode);
+            var previousLanguage = CurrentLanguage;
 
             // Skip if same language and already initialized (avoid redundant reloads)
             if (string.Equals(normalizedCode, CurrentLanguage, StringComparison.OrdinalIgnoreCase) && _initialized)
             {
+                _logger?.LogDebug(
+                    "[Language] Skipping language apply because the requested language is already active. language={LanguageCode}",
+                    normalizedCode);
                 return;
             }
 
@@ -721,12 +739,18 @@ public sealed class AppLanguageService : IAppLanguageService
                 // ✅ FIX: Always persist to UserSettings via Preferences
                 Preferences.Default.Set(PreferenceKey, normalizedCode);
                 HasSavedLanguageSelection = true;
-                _logger?.LogInformation("Language changed to '{LanguageCode}' and persisted.", normalizedCode);
+                _logger?.LogInformation(
+                    "[Language] Language applied and persisted. previous={PreviousLanguage}; current={LanguageCode}",
+                    previousLanguage,
+                    normalizedCode);
             }
             else
             {
                 HasSavedLanguageSelection = Preferences.Default.ContainsKey(PreferenceKey);
-                _logger?.LogInformation("Language initialized to '{LanguageCode}'.", normalizedCode);
+                _logger?.LogInformation(
+                    "[Language] Language initialized from startup/bootstrap. current={LanguageCode}; hasSavedSelection={HasSavedSelection}",
+                    normalizedCode,
+                    HasSavedLanguageSelection);
             }
 
             // ✅ FIX: Only raise event if token hasn't changed (prevents old requests from firing events)

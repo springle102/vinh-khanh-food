@@ -27,15 +27,23 @@ public static class AppLanguage
             return DefaultLanguage;
         }
 
-        return languageCode.Trim() switch
+        var normalized = languageCode.Trim().Replace('_', '-');
+        var lower = normalized.ToLowerInvariant();
+        var baseLanguage = lower.Split('-', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+
+        return lower switch
         {
-            "vi-VN" => "vi",
-            "zh" => "zh-CN",
-            "zh-Hans" => "zh-CN",
-            "en-US" => "en",
-            "ja-JP" => "ja",
-            "ko-KR" => "ko",
-            _ => languageCode.Trim()
+            "zh" or "zh-cn" or "zh-hans" or "zh-sg" or "zh-tw" or "zh-hant" => "zh-CN",
+            _ => baseLanguage switch
+            {
+                "vi" => "vi",
+                "en" => "en",
+                "ja" => "ja",
+                "ko" => "ko",
+                "zh" => "zh-CN",
+                _ => DefaultLanguage
+            }
         };
     }
 

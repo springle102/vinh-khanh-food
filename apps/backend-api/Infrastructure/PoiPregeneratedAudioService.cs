@@ -52,15 +52,15 @@ public sealed class PoiPregeneratedAudioService(
 
         var transcriptText = narration.TtsInputText?.Trim() ?? string.Empty;
         var existing = GetPoiAudioGuides(poiId, actor)
-            .FirstOrDefault(item => string.Equals(item.LanguageCode, normalizedLanguageCode, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(item => PremiumAccessCatalog.LanguageCodesMatch(item.LanguageCode, normalizedLanguageCode));
         var options = optionsAccessor.Value;
         var effectiveLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(narration.EffectiveLanguageCode);
-        var voiceId = string.IsNullOrWhiteSpace(request.VoiceId)
-            ? options.ResolveVoiceId(effectiveLanguageCode)
-            : request.VoiceId.Trim();
-        var modelId = string.IsNullOrWhiteSpace(request.ModelId)
-            ? options.ModelId
-            : request.ModelId.Trim();
+        var ttsProviderLanguageCode = LanguageRegistry.GetTtsProviderCode(effectiveLanguageCode);
+        var storageLanguageCode = LanguageRegistry.GetStorageCode(normalizedLanguageCode);
+        var voiceCandidates = options.ResolveVoiceCandidates(effectiveLanguageCode, request.VoiceId);
+        var modelCandidates = options.ResolveModelCandidates(effectiveLanguageCode, request.ModelId);
+        var voiceId = voiceCandidates.First();
+        var modelId = modelCandidates.First();
         var outputFormat = string.IsNullOrWhiteSpace(request.OutputFormat)
             ? options.OutputFormat
             : request.OutputFormat.Trim();
@@ -164,8 +164,8 @@ public sealed class PoiPregeneratedAudioService(
         if (!request.ForceRegenerate &&
             existing is not null &&
             string.Equals(existing.TextHash, textHash, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(existing.VoiceId, voiceId, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(existing.ModelId, modelId, StringComparison.OrdinalIgnoreCase) &&
+            voiceCandidates.Any(candidate => string.Equals(existing.VoiceId, candidate, StringComparison.OrdinalIgnoreCase)) &&
+            modelCandidates.Any(candidate => string.Equals(existing.ModelId, candidate, StringComparison.OrdinalIgnoreCase)) &&
             string.Equals(existing.OutputFormat, outputFormat, StringComparison.OrdinalIgnoreCase) &&
             !existing.IsOutdated &&
             AudioGuideCatalog.IsReadyForPlayback(existing) &&
@@ -221,25 +221,31 @@ public sealed class PoiPregeneratedAudioService(
         try
         {
             logger.LogInformation(
-                "Generating POI audio via ElevenLabs. poiId={PoiId}; requestedLanguageCode={RequestedLanguageCode}; effectiveLanguageCode={EffectiveLanguageCode}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}",
+                "[AudioGenerate] Generating POI audio via ElevenLabs. poiId={PoiId}; requestedLang={RequestedLanguage}; normalizedLang={NormalizedLanguage}; effectiveLang={EffectiveLanguage}; providerLang={ProviderLanguage}; storageLang={StorageLanguage}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; textLength={TextLength}; textHash={TextHash}; translationStatus={TranslationStatus}",
                 poiId,
+                request.LanguageCode,
                 normalizedLanguageCode,
                 effectiveLanguageCode,
+                ttsProviderLanguageCode,
+                storageLanguageCode,
                 voiceId,
                 modelId,
-                outputFormat);
+                outputFormat,
+                transcriptText.Length,
+                textHash,
+                narration.TranslationStatus);
 
-            var ttsAudio = await textToSpeechService.GenerateAudioAsync(
-                new TextToSpeechRequest(
-                    transcriptText,
-                    effectiveLanguageCode,
-                    voiceId,
-                    modelId,
-                    outputFormat),
+            var ttsAudio = await GenerateTtsWithFallbackAsync(
+                transcriptText,
+                effectiveLanguageCode,
+                ttsProviderLanguageCode,
+                outputFormat,
+                voiceCandidates,
+                modelCandidates,
                 cancellationToken);
             var storedFile = await generatedAudioStorageService.SavePoiAudioAsync(
                 poiId,
-                normalizedLanguageCode,
+                storageLanguageCode,
                 textHash,
                 outputFormat,
                 ttsAudio.ContentType,
@@ -274,11 +280,17 @@ public sealed class PoiPregeneratedAudioService(
                     VoiceType: existing?.VoiceType ?? "standard"));
 
             logger.LogInformation(
-                "POI audio generated successfully. poiId={PoiId}; languageCode={LanguageCode}; audioGuideId={AudioGuideId}; filePath={FilePath}",
+                "[AudioGenerate] POI audio generated successfully. poiId={PoiId}; requestedLang={RequestedLanguage}; normalizedLang={NormalizedLanguage}; effectiveLang={EffectiveLanguage}; providerLang={ProviderLanguage}; storageLang={StorageLanguage}; audioGuideId={AudioGuideId}; filePath={FilePath}; audioUrl={AudioUrl}; fileSaved={FileSaved}",
                 poiId,
+                request.LanguageCode,
                 normalizedLanguageCode,
+                effectiveLanguageCode,
+                ttsProviderLanguageCode,
+                storageLanguageCode,
                 savedGuide.Id,
-                savedGuide.AudioFilePath);
+                savedGuide.AudioFilePath,
+                savedGuide.AudioUrl,
+                generatedAudioStorageService.Exists(savedGuide.AudioFilePath));
 
             return new PoiAudioGenerationResult(
                 poiId,
@@ -299,13 +311,24 @@ public sealed class PoiPregeneratedAudioService(
             exception is TaskCanceledException ||
             exception is InvalidOperationException)
         {
+            var ttsException = exception as TextToSpeechGenerationException;
+            var failureMessage = BuildGenerationFailureMessage(exception);
             logger.LogWarning(
                 exception,
-                "Failed to generate POI audio. poiId={PoiId}; languageCode={LanguageCode}; voiceId={VoiceId}; modelId={ModelId}",
+                "[AudioGenerate] Failed to generate POI audio. poiId={PoiId}; requestedLang={RequestedLanguage}; normalizedLang={NormalizedLanguage}; effectiveLang={EffectiveLanguage}; providerLang={ProviderLanguage}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; textLength={TextLength}; providerStatusCode={ProviderStatusCode}; providerErrorCode={ProviderErrorCode}; providerErrorMessage={ProviderErrorMessage}; providerResponseBody={ProviderResponseBody}",
                 poiId,
+                request.LanguageCode,
                 normalizedLanguageCode,
-                voiceId,
-                modelId);
+                effectiveLanguageCode,
+                ttsProviderLanguageCode,
+                ttsException?.VoiceId ?? voiceId,
+                ttsException?.ModelId ?? modelId,
+                outputFormat,
+                transcriptText.Length,
+                ttsException?.StatusCode is null ? null : (int)ttsException.StatusCode.Value,
+                ttsException?.ProviderErrorCode,
+                ttsException?.ProviderErrorMessage,
+                ttsException?.ResponseBody);
 
             var failedGuide = SaveGuide(
                 existing?.Id,
@@ -331,7 +354,7 @@ public sealed class PoiPregeneratedAudioService(
                     ContentVersion: textHash,
                     GeneratedAt: null,
                     GenerationStatus: AudioGuideCatalog.GenerationStatusFailed,
-                    ErrorMessage: CollapseExceptionMessage(exception),
+                    ErrorMessage: failureMessage,
                     IsOutdated: true,
                     VoiceType: existing?.VoiceType ?? "standard"));
 
@@ -342,10 +365,17 @@ public sealed class PoiPregeneratedAudioService(
                 false,
                 false,
                 existing is not null,
-                $"Generate audio that bai: {CollapseExceptionMessage(exception)}",
+                $"Generate audio that bai: {failureMessage}",
                 transcriptText,
                 textHash,
-                failedGuide);
+                failedGuide,
+                ttsException?.StatusCode is null ? null : (int)ttsException.StatusCode.Value,
+                ttsException?.ProviderErrorCode,
+                ttsException?.ProviderErrorMessage,
+                ttsException?.ResponseBody,
+                ttsException?.VoiceId ?? voiceId,
+                ttsException?.ModelId ?? modelId,
+                outputFormat);
         }
     }
 
@@ -387,7 +417,7 @@ public sealed class PoiPregeneratedAudioService(
             foreach (var languageCode in GetGenerationLanguages())
             {
                 var existing = GetPoiAudioGuides(poiId, actor)
-                    .FirstOrDefault(item => string.Equals(item.LanguageCode, languageCode, StringComparison.OrdinalIgnoreCase));
+                    .FirstOrDefault(item => PremiumAccessCatalog.LanguageCodesMatch(item.LanguageCode, languageCode));
                 if (!request.ForceRegenerate && !ShouldGenerate(existing, request))
                 {
                     continue;
@@ -403,6 +433,139 @@ public sealed class PoiPregeneratedAudioService(
 
         return results;
     }
+
+    private async Task<TextToSpeechResult> GenerateTtsWithFallbackAsync(
+        string transcriptText,
+        string effectiveLanguageCode,
+        string providerLanguageCode,
+        string outputFormat,
+        IReadOnlyList<string> voiceCandidates,
+        IReadOnlyList<string> modelCandidates,
+        CancellationToken cancellationToken)
+    {
+        var attempts = BuildTtsAttempts(voiceCandidates, modelCandidates, outputFormat);
+        TextToSpeechGenerationException? lastProviderException = null;
+
+        for (var attemptIndex = 0; attemptIndex < attempts.Count; attemptIndex += 1)
+        {
+            var attempt = attempts[attemptIndex];
+            try
+            {
+                logger.LogInformation(
+                    "[AudioGenerate] ElevenLabs attempt {AttemptNumber}/{AttemptCount}. effectiveLang={EffectiveLanguage}; providerLang={ProviderLanguage}; voiceId={VoiceId}; modelId={ModelId}; outputFormat={OutputFormat}; isFallback={IsFallback}",
+                    attemptIndex + 1,
+                    attempts.Count,
+                    effectiveLanguageCode,
+                    providerLanguageCode,
+                    attempt.VoiceId,
+                    attempt.ModelId,
+                    attempt.OutputFormat,
+                    attemptIndex > 0);
+
+                return await textToSpeechService.GenerateAudioAsync(
+                    new TextToSpeechRequest(
+                        transcriptText,
+                        effectiveLanguageCode,
+                        attempt.VoiceId,
+                        attempt.ModelId,
+                        attempt.OutputFormat),
+                    cancellationToken);
+            }
+            catch (TextToSpeechGenerationException exception) when (
+                attemptIndex < attempts.Count - 1 &&
+                ShouldRetryWithNextTtsAttempt(exception))
+            {
+                lastProviderException = exception;
+                var nextAttempt = attempts[attemptIndex + 1];
+                logger.LogWarning(
+                    exception,
+                    "[AudioGenerate] ElevenLabs attempt failed with retryable provider/config error; retrying next voice/model candidate. failedVoiceId={FailedVoiceId}; failedModelId={FailedModelId}; nextVoiceId={NextVoiceId}; nextModelId={NextModelId}; providerStatusCode={ProviderStatusCode}; providerErrorCode={ProviderErrorCode}; providerErrorMessage={ProviderErrorMessage}; providerResponseBody={ProviderResponseBody}",
+                    attempt.VoiceId,
+                    attempt.ModelId,
+                    nextAttempt.VoiceId,
+                    nextAttempt.ModelId,
+                    exception.StatusCode is null ? null : (int)exception.StatusCode.Value,
+                    exception.ProviderErrorCode,
+                    exception.ProviderErrorMessage,
+                    exception.ResponseBody);
+            }
+        }
+
+        throw lastProviderException ??
+              new TextToSpeechGenerationException("Khong the tao audio TTS bang bat ky voice/model candidate nao.");
+    }
+
+    private static IReadOnlyList<TtsGenerationAttempt> BuildTtsAttempts(
+        IReadOnlyList<string> voiceCandidates,
+        IReadOnlyList<string> modelCandidates,
+        string outputFormat)
+    {
+        var attempts = new List<TtsGenerationAttempt>();
+        foreach (var modelId in modelCandidates.Where(value => !string.IsNullOrWhiteSpace(value)))
+        {
+            foreach (var voiceId in voiceCandidates.Where(value => !string.IsNullOrWhiteSpace(value)))
+            {
+                if (attempts.Any(item =>
+                    string.Equals(item.VoiceId, voiceId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(item.ModelId, modelId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                attempts.Add(new TtsGenerationAttempt(voiceId.Trim(), modelId.Trim(), outputFormat));
+            }
+        }
+
+        if (attempts.Count == 0)
+        {
+            attempts.Add(new TtsGenerationAttempt(
+                TextToSpeechOptions.DefaultVoiceIdValue,
+                TextToSpeechOptions.DefaultModelIdValue,
+                outputFormat));
+        }
+
+        return attempts;
+    }
+
+    private static bool ShouldRetryWithNextTtsAttempt(TextToSpeechGenerationException exception)
+    {
+        var providerText = BuildProviderDebugText(exception);
+        int? statusCode = exception.StatusCode is null ? null : (int)exception.StatusCode.Value;
+        if (ContainsAny(providerText, "character limit", "usage cap") ||
+            (statusCode != 402 && ContainsAny(providerText, "credit", "quota", "insufficient")))
+        {
+            return false;
+        }
+
+        if (ContainsAny(
+            providerText,
+            "voice",
+            "model",
+            "subscription",
+            "plan",
+            "permission",
+            "not allowed",
+            "not_authorized",
+            "access",
+            "invalid"))
+        {
+            return true;
+        }
+
+        return statusCode is 400 or 402 or 403 or 404;
+    }
+
+    private static string BuildProviderDebugText(TextToSpeechGenerationException exception)
+        => string.Join(
+                " ",
+                exception.ProviderErrorCode,
+                exception.ProviderErrorMessage,
+                exception.ResponseBody,
+                exception.Message)
+            .ToLowerInvariant();
+
+    private static bool ContainsAny(string value, params string[] markers)
+        => markers.Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase));
 
     private static bool ShouldGenerate(AudioGuide? existing, PoiAudioBulkGenerationRequest request)
     {
@@ -478,4 +641,40 @@ public sealed class PoiPregeneratedAudioService(
             (exception.Message ?? string.Empty)
                 .Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries))
             .Trim();
+
+    private static string BuildGenerationFailureMessage(Exception exception)
+    {
+        var collapsed = CollapseExceptionMessage(exception);
+        if (exception is TextToSpeechGenerationException ttsException)
+        {
+            var details = new List<string> { collapsed };
+            if (ttsException.StatusCode is not null)
+            {
+                details.Add($"providerStatusCode={(int)ttsException.StatusCode.Value}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(ttsException.ProviderErrorCode))
+            {
+                details.Add($"providerErrorCode={ttsException.ProviderErrorCode}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(ttsException.ProviderErrorMessage))
+            {
+                details.Add($"providerErrorMessage={ttsException.ProviderErrorMessage}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(ttsException.ResponseBody))
+            {
+                details.Add($"providerResponseBody={ttsException.ResponseBody}");
+            }
+
+            collapsed = string.Join(" ", details);
+        }
+
+        return collapsed.Length <= 1900
+            ? collapsed
+            : collapsed[..1900] + "...";
+    }
+
+    private sealed record TtsGenerationAttempt(string VoiceId, string ModelId, string OutputFormat);
 }

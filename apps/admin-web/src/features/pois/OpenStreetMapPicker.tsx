@@ -21,16 +21,31 @@ const DEFAULT_BROWSE_ZOOM = 15;
 const SELECTION_RADIUS_METERS = 180;
 const DEFAULT_TRIGGER_RADIUS_METERS = 20;
 const EARTH_RADIUS_METERS = 6_371_000;
-const BASE_TILE_SOURCE: {
+const TRANSPARENT_TILE_URL =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3C/svg%3E";
+const TILE_SOURCES: {
+  key: string;
   url: string;
   maxZoom: number;
   attribution: string;
-} = {
-  url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-  maxZoom: 19,
-  attribution:
-    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-};
+  subdomains?: string;
+}[] = [
+  {
+    key: "osm",
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    maxZoom: 19,
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  {
+    key: "carto-light",
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    maxZoom: 20,
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO',
+    subdomains: "abcd",
+  },
+];
 
 const isValidLatitude = (value: number) => Number.isFinite(value) && value >= -90 && value <= 90;
 const isValidLongitude = (value: number) => Number.isFinite(value) && value >= -180 && value <= 180;
@@ -303,6 +318,67 @@ const MapInstanceBinder = ({
   return null;
 };
 
+const ResilientTileLayer = ({
+  onStatusChange,
+}: {
+  onStatusChange: (message: string | null) => void;
+}) => {
+  const map = useMap();
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const tileErrorCountRef = useRef(0);
+  const source = TILE_SOURCES[sourceIndex] ?? TILE_SOURCES[0];
+
+  useEffect(() => {
+    tileErrorCountRef.current = 0;
+    onStatusChange(null);
+    console.debug("[admin-map] tile-provider-active", {
+      key: source.key,
+      url: source.url,
+    });
+    map.invalidateSize({ pan: false });
+  }, [map, onStatusChange, source.key, source.url]);
+
+  return (
+    <TileLayer
+      key={source.key}
+      attribution={source.attribution}
+      errorTileUrl={TRANSPARENT_TILE_URL}
+      eventHandlers={{
+        load: () => {
+          tileErrorCountRef.current = 0;
+          onStatusChange(null);
+        },
+        tileerror: () => {
+          tileErrorCountRef.current += 1;
+          console.warn("[admin-map] tile-load-error", {
+            key: source.key,
+            url: source.url,
+            errors: tileErrorCountRef.current,
+          });
+
+          if (tileErrorCountRef.current < 4) {
+            return;
+          }
+
+          if (sourceIndex < TILE_SOURCES.length - 1) {
+            setSourceIndex((current) => Math.min(current + 1, TILE_SOURCES.length - 1));
+            return;
+          }
+
+          onStatusChange(
+            "Không tải được lớp bản đồ. Hệ thống vẫn giữ marker POI nếu dữ liệu hợp lệ.",
+          );
+        },
+      }}
+      keepBuffer={2}
+      maxZoom={source.maxZoom}
+      subdomains={source.subdomains}
+      url={source.url}
+      updateWhenIdle
+    />
+  );
+};
+
 const EditableMapClickHandler = ({
   onSelectPosition,
 }: {
@@ -455,16 +531,38 @@ export const OpenStreetMapPicker = ({
         : DEFAULT_CENTER,
     [lat, lng],
   );
-  const selectablePois = useMemo(
-    () => pois.filter((item) => isValidLatitude(item.lat) && isValidLongitude(item.lng)),
-    [pois],
-  );
+  const selectablePois = useMemo(() => {
+    const validItems = pois.filter((item) => isValidLatitude(item.lat) && isValidLongitude(item.lng));
+    if (validItems.length !== pois.length) {
+      console.warn("[admin-map] rejected-invalid-poi-coordinates", {
+        sourceCount: pois.length,
+        validCount: validItems.length,
+        rejected: pois
+          .filter((item) => !isValidLatitude(item.lat) || !isValidLongitude(item.lng))
+          .map((item) => ({
+            id: item.id,
+            title: item.title,
+            lat: item.lat,
+            lng: item.lng,
+          })),
+      });
+    }
+
+    console.debug("[admin-map] poi-payload-ready", {
+      sourceCount: pois.length,
+      validCount: validItems.length,
+      editable,
+    });
+
+    return validItems;
+  }, [editable, pois]);
   const { reverseGeocode, forwardGeocode } = useGeocoding();
 
   const [position, setPosition] = useState<MapPosition>(selectedPosition);
   const [isLoading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<"idle" | "resolved" | "error">("idle");
+  const [tileStatusMessage, setTileStatusMessage] = useState<string | null>(null);
   const [message, setMessage] = useState("Nhập địa chỉ chi tiết để bản đồ tự định vị.");
 
   useEffect(() => {
@@ -720,6 +818,12 @@ export const OpenStreetMapPicker = ({
         {isLoading ? `${statusMessage}` : statusMessage}
       </div>
 
+      {tileStatusMessage ? (
+        <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+          {tileStatusMessage}
+        </div>
+      ) : null}
+
       <div className="vinh-khanh-poi-map overflow-hidden rounded-3xl border border-sand-200 bg-sand-50">
         <MapContainer
           center={editable ? position : selectedPosition}
@@ -728,11 +832,7 @@ export const OpenStreetMapPicker = ({
           className="h-[360px] w-full"
         >
           <MapInstanceBinder mapRef={mapRef} isVisible={isVisible} />
-          <TileLayer
-            attribution={BASE_TILE_SOURCE.attribution}
-            maxZoom={BASE_TILE_SOURCE.maxZoom}
-            url={BASE_TILE_SOURCE.url}
-          />
+          <ResilientTileLayer onStatusChange={setTileStatusMessage} />
 
           {editable ? (
             <>

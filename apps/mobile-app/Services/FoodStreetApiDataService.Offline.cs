@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
@@ -15,8 +17,66 @@ public sealed partial class FoodStreetApiDataService
 
     private void InvalidateOfflinePackageCache()
     {
+        _localDatasetLoadAttempted = false;
         _offlinePackageLoadAttempted = false;
         InvalidateBootstrapSnapshot();
+    }
+
+    private async Task<bool> TryLoadLocalDatasetAsync(string requestedLanguageCode)
+    {
+        if (_bootstrapSource is not null || _localDatasetLoadAttempted)
+        {
+            return _bootstrapSource is not null;
+        }
+
+        _localDatasetLoadAttempted = true;
+
+        MobileBootstrapCache? cache;
+        try
+        {
+            cache = await _mobileDatasetRepository.LoadBootstrapEnvelopeAsync();
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "[OfflineDb] Failed to load local SQLite bootstrap cache.");
+            return false;
+        }
+
+        if (cache is null || string.IsNullOrWhiteSpace(cache.EnvelopeJson))
+        {
+            _logger.LogInformation("[OfflineDb] Local SQLite bootstrap cache is empty.");
+            return false;
+        }
+
+        var envelope = JsonSerializer.Deserialize<ApiEnvelope<AdminBootstrapDto>>(
+            cache.EnvelopeJson,
+            JsonOptions);
+        if (envelope?.Success != true || envelope.Data is null)
+        {
+            _logger.LogWarning("[OfflineDb] Local SQLite bootstrap cache is invalid.");
+            return false;
+        }
+
+        var installation = await _offlineStorageService.LoadInstallationAsync();
+        if (installation is not null)
+        {
+            ApplyOfflineAssetMap(envelope.Data, installation.AssetMap);
+        }
+
+        _bootstrapSource = envelope.Data;
+        _bootstrapSourceLanguageCode = AppLanguage.NormalizeCode(requestedLanguageCode);
+        _syncState = envelope.Data.SyncState;
+        _lastSyncCheckAt = DateTimeOffset.UtcNow;
+
+        _logger.LogInformation(
+            "[OfflineDb] Bootstrap loaded from local SQLite. requestedLanguage={Language}; version={Version}; source={Source}; pois={PoiCount}; routes={RouteCount}",
+            requestedLanguageCode,
+            cache.DatasetVersion,
+            cache.InstallationSource,
+            envelope.Data.Pois.Count,
+            envelope.Data.Routes.Count);
+
+        return TryRebuildBootstrapSnapshotFromCache(requestedLanguageCode, "local-sqlite");
     }
 
     private async Task<bool> TryLoadOfflinePackageAsync(string requestedLanguageCode)
@@ -28,7 +88,8 @@ public sealed partial class FoodStreetApiDataService
 
         _offlinePackageLoadAttempted = true;
 
-        var installation = await _offlineStorageService.LoadInstallationAsync();
+        var installation = await _bundledSeedService.EnsureInstalledAsync()
+                           ?? await _offlineStorageService.LoadInstallationAsync();
         if (installation is null || string.IsNullOrWhiteSpace(installation.BootstrapEnvelopeJson))
         {
             return false;
@@ -44,6 +105,7 @@ public sealed partial class FoodStreetApiDataService
 
         ApplyOfflineAssetMap(envelope.Data, installation.AssetMap);
         _bootstrapSource = envelope.Data;
+        _bootstrapSourceLanguageCode = AppLanguage.NormalizeCode(requestedLanguageCode);
         _syncState = envelope.Data.SyncState;
         _lastSyncCheckAt = DateTimeOffset.UtcNow;
         return TryRebuildBootstrapSnapshotFromCache(requestedLanguageCode, "offline-package");
@@ -80,6 +142,15 @@ public sealed partial class FoodStreetApiDataService
                 assetMap.TryGetValue(foodItem.ImageUrl, out var localPath))
             {
                 foodItem.ImageUrl = localPath;
+            }
+        }
+
+        foreach (var route in bootstrap.Routes)
+        {
+            if (!string.IsNullOrWhiteSpace(route.CoverImageUrl) &&
+                assetMap.TryGetValue(route.CoverImageUrl, out var localPath))
+            {
+                route.CoverImageUrl = localPath;
             }
         }
     }
