@@ -163,7 +163,6 @@ public sealed class FoodItemModel
     public string Description { get; set; } = string.Empty;
     public string PriceRange { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
-    public string SpicyLevel { get; set; } = string.Empty;
 }
 
 public sealed class MediaAssetModel

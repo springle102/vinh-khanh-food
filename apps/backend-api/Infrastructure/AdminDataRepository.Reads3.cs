@@ -21,7 +21,7 @@ public sealed partial class AdminDataRepository
     private FoodItem? GetFoodItemById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, PoiId, Name, [Description], PriceRange, ImageUrl, SpicyLevel
+            SELECT TOP 1 Id, PoiId, Name, [Description], PriceRange, ImageUrl
             FROM dbo.FoodItems
             WHERE Id = ?;
             """;
@@ -158,8 +158,7 @@ public sealed partial class AdminDataRepository
             Name = ReadString(reader, "Name"),
             Description = ReadString(reader, "Description"),
             PriceRange = ReadString(reader, "PriceRange"),
-            ImageUrl = ReadString(reader, "ImageUrl"),
-            SpicyLevel = ReadString(reader, "SpicyLevel")
+            ImageUrl = ReadString(reader, "ImageUrl")
         };
     }
 

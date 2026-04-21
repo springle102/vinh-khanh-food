@@ -53,6 +53,7 @@ public sealed class LocalizedAudioAssetSet
 
         asset.LanguageCode = AppLanguage.NormalizeCode(asset.LanguageCode);
         asset.AudioUrl = asset.AudioUrl.Trim();
+        asset.RemoteAudioUrl = asset.RemoteAudioUrl?.Trim() ?? string.Empty;
         _values[asset.LanguageCode] = asset;
     }
 
@@ -66,6 +67,7 @@ public sealed class PoiAudioAsset
     public string PoiId { get; set; } = string.Empty;
     public string LanguageCode { get; set; } = AppLanguage.DefaultLanguage;
     public string AudioUrl { get; set; } = string.Empty;
+    public string RemoteAudioUrl { get; set; } = string.Empty;
     public string SourceType { get; set; } = "generated";
     public string ContentVersion { get; set; } = string.Empty;
     public string TextHash { get; set; } = string.Empty;
@@ -120,13 +122,10 @@ public sealed class PoiFoodItemDetail
     public string Description { get; set; } = string.Empty;
     public string PriceRange { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
-    public string SpicyLevel { get; set; } = string.Empty;
-    public string SpicyLevelLabel { get; set; } = string.Empty;
 
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
     public bool HasPriceRange => !string.IsNullOrWhiteSpace(PriceRange);
     public bool HasImage => !string.IsNullOrWhiteSpace(ImageUrl);
-    public bool HasSpicyLevel => !string.IsNullOrWhiteSpace(SpicyLevelLabel);
 }
 
 public sealed class PoiPromotionDetail

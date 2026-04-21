@@ -182,6 +182,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         _syncQueueRepository = syncQueueRepository;
         _logger = logger;
         offlinePackageService.StateChanged += OnOfflinePackageStateChanged;
+        Connectivity.Current.ConnectivityChanged += OnConnectivityChanged;
     }
 
     public async Task<IReadOnlyList<LanguageOption>> GetLanguagesAsync(CancellationToken cancellationToken = default)
@@ -564,8 +565,16 @@ public sealed partial class FoodStreetApiDataService
         {
             var currentLanguageCode = SelectedLanguageCode;
             cancellationToken.ThrowIfCancellationRequested();
-            await TryLoadLocalDatasetAsync(currentLanguageCode);
-            await TryLoadOfflinePackageAsync(currentLanguageCode);
+            if (HasAnyNetworkAccess())
+            {
+                await TryLoadLocalDatasetAsync(currentLanguageCode);
+                await TryLoadOfflinePackageAsync(currentLanguageCode);
+            }
+            else
+            {
+                await TryLoadOfflinePackageAsync(currentLanguageCode);
+                await TryLoadLocalDatasetAsync(currentLanguageCode);
+            }
 
             var needsLanguageBootstrapRefresh =
                 _bootstrapSource is not null &&
@@ -1135,7 +1144,7 @@ public sealed partial class FoodStreetApiDataService
     }
 
     private static bool HasAnyNetworkAccess()
-        => Connectivity.Current.NetworkAccess is not NetworkAccess.None;
+        => Connectivity.Current.NetworkAccess == NetworkAccess.Internet;
 
     private async Task<MobileRuntimeAppSettings> LoadRuntimeSettingsAsync()
     {
@@ -1174,6 +1183,10 @@ public sealed partial class FoodStreetApiDataService
             .Where(item => string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+        var audioGuidesByPoiId = bootstrap.AudioGuides
+            .Where(item => string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<AudioGuideDto>)group.ToList(), StringComparer.OrdinalIgnoreCase);
 
         var translationsByFoodItemId = accessibleTranslations
             .Where(item => string.Equals(item.EntityType, "food_item", StringComparison.OrdinalIgnoreCase))
@@ -1184,7 +1197,6 @@ public sealed partial class FoodStreetApiDataService
             .Where(item => string.Equals(item.EntityType, "promotion", StringComparison.OrdinalIgnoreCase))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<TranslationDto>)group.ToList(), StringComparer.OrdinalIgnoreCase);
-
         var poiImages = BuildMediaImageLookupByEntityId(bootstrap.MediaAssets, "poi")
             .Where(pair => pair.Value.Count > 0)
             .ToDictionary(pair => pair.Key, pair => pair.Value[0], StringComparer.OrdinalIgnoreCase);
@@ -1206,35 +1218,14 @@ public sealed partial class FoodStreetApiDataService
         var poiLocations = orderedPois.Select(poi =>
         {
             translationsByPoiId.TryGetValue(poi.Id, out var poiTranslations);
-            var translation = SelectTranslation(poiTranslations, CurrentLanguageCode, "poi", poi.Id);
-            var title = FirstNonEmpty(translation?.Title, CreateSafePoiTitleFallback(poi.Slug), poi.Id);
+            audioGuidesByPoiId.TryGetValue(poi.Id, out var poiAudioGuides);
             var category = LocalizeCategory(GetCategoryName(categoriesById, poi.CategoryId));
-            var shortDescription = FirstNonEmpty(translation?.ShortText, translation?.FullText);
-
-            if (string.IsNullOrWhiteSpace(shortDescription))
-            {
-                shortDescription = $"{title} • {category}";
-            }
-
-            return new PoiLocation
-            {
-                Id = poi.Id,
-                Title = title,
-                ShortDescription = shortDescription,
-                Address = LocalizeAddress(poi.Address),
-                Category = category,
-                PriceRange = poi.PriceRange,
-                ThumbnailUrl = ResolvePoiImageUrl(poi.Id, poiImages, foodImages),
-                Latitude = poi.Lat,
-                Longitude = poi.Lng,
-                IsFeatured = poi.Featured,
-                TriggerRadius = double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= 20d
-                    ? poi.TriggerRadius
-                    : 20d,
-                Priority = Math.Max(0, poi.Priority),
-                HeatIntensity = ResolveHeatIntensity(poi, bootstrap.UsageEvents),
-                DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))
-            };
+            return CreatePoiLocation(
+                poi,
+                category,
+                poiTranslations,
+                poiAudioGuides,
+                ResolvePoiImageUrl(poi.Id, poiImages, foodImages));
         }).ToList();
 
         return new BootstrapSnapshot(
@@ -1270,6 +1261,10 @@ public sealed partial class FoodStreetApiDataService
             .Where(item => string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase))
             .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+        var audioGuidesByPoiId = bootstrap.AudioGuides
+            .Where(item => string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(item => item.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<AudioGuideDto>)group.ToList(), StringComparer.OrdinalIgnoreCase);
 
         var poiImages = BuildMediaImageLookupByEntityId(bootstrap.MediaAssets, "poi");
         var foodItemImagesById = BuildMediaImageLookupByEntityId(bootstrap.MediaAssets, "food_item");
@@ -1295,11 +1290,13 @@ public sealed partial class FoodStreetApiDataService
             .Select(poi =>
             {
                 translationsByPoiId.TryGetValue(poi.Id, out var poiTranslations);
+                audioGuidesByPoiId.TryGetValue(poi.Id, out var poiAudioGuides);
                 var category = LocalizeCategory(GetCategoryName(categoriesById, poi.CategoryId));
                 return CreatePoiLocation(
                     poi,
                     category,
                     poiTranslations,
+                    poiAudioGuides,
                     ResolvePoiImageUrl(poi.Id, primaryPoiImages, primaryFoodImages));
             })
             .ToList();
@@ -2192,7 +2189,6 @@ public sealed partial class FoodStreetApiDataService
         public string Description { get; set; } = string.Empty;
         public string PriceRange { get; set; } = string.Empty;
         public string ImageUrl { get; set; } = string.Empty;
-        public string SpicyLevel { get; set; } = string.Empty;
     }
 
     private sealed class RouteDto
@@ -2225,7 +2221,9 @@ public sealed partial class FoodStreetApiDataService
         public string EntityType { get; set; } = string.Empty;
         public string EntityId { get; set; } = string.Empty;
         public string LanguageCode { get; set; } = string.Empty;
+        public string TranscriptText { get; set; } = string.Empty;
         public string AudioUrl { get; set; } = string.Empty;
+        public string RemoteAudioUrl { get; set; } = string.Empty;
         public string SourceType { get; set; } = string.Empty;
         public string ContentVersion { get; set; } = string.Empty;
         public string TextHash { get; set; } = string.Empty;

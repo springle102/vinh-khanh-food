@@ -1202,8 +1202,7 @@
         "name": "Kajiki Maguro Yaki",
         "description": "Cá kiếm nướng kiểu Nhật, ướp sốt đậm nhẹ và nướng vừa chín.",
         "priceRange": "138.000 VND",
-        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418113323609-bdbd6dc0c1d04469865ddafb49c2dfe6.jpg",
-        "spicyLevel": "mild"
+        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418113323609-bdbd6dc0c1d04469865ddafb49c2dfe6.jpg"
       },
       {
         "id": "food-che-khuc-bach",
@@ -1211,8 +1210,7 @@
         "name": "Matcha Latte",
         "description": "Matcha Latte được làm từ bột matcha Nhật Bản, thức uống phù hợp với các bạn gen Z trẻ trung năng động.",
         "priceRange": "35.000 VND",
-        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418114004257-3b8fb21766a54283bdb3922680752610.jpg",
-        "spicyLevel": "mild"
+        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418114004257-3b8fb21766a54283bdb3922680752610.jpg"
       },
       {
         "id": "food-37e487ed",
@@ -1220,8 +1218,7 @@
         "name": "Ốc bươu nướng muối ớt",
         "description": "",
         "priceRange": "80.000",
-        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260420082517595-ab9d950d953b4a8f820734d5a1f9e91f.jpg",
-        "spicyLevel": "mild"
+        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260420082517595-ab9d950d953b4a8f820734d5a1f9e91f.jpg"
       },
       {
         "id": "food-oc-giac",
@@ -1229,8 +1226,7 @@
         "name": "Ốc giác xào rau muống",
         "description": "Ốc giác thái miếng, xào cùng rau muống giòn và nước sốt đậm vị.",
         "priceRange": "129.000 VND",
-        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418101318762-9877e771be5c4d71bb025fc66ac3040c.jpg",
-        "spicyLevel": "mild"
+        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418101318762-9877e771be5c4d71bb025fc66ac3040c.jpg"
       },
       {
         "id": "food-oc-mong-tay",
@@ -1238,8 +1234,7 @@
         "name": "Ốc móng tay xào bơ tỏi",
         "description": "Ốc móng tay xào nhanh với bơ, tỏi và rau thơm, hợp dùng cùng bia lạnh.",
         "priceRange": "79.000 VND",
-        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418101330404-89fc4289c8ab488d935ea06bb814b4ee.webp",
-        "spicyLevel": "mild"
+        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418101330404-89fc4289c8ab488d935ea06bb814b4ee.webp"
       },
       {
         "id": "food-so-diep",
@@ -1247,8 +1242,7 @@
         "name": "Sò điệp nướng mỡ hành",
         "description": "Sò điệp nướng thơm, phủ mỡ hành và đậu phộng rang.",
         "priceRange": "40.000 VND",
-        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418114249365-62422ad719d84075aa07c44621da3a08.jpg",
-        "spicyLevel": "mild"
+        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418114249365-62422ad719d84075aa07c44621da3a08.jpg"
       },
       {
         "id": "food-sushi-zaru-soba",
@@ -1256,8 +1250,7 @@
         "name": "Zaru Soba",
         "description": "Mì soba lạnh đặt trên khay tre, dùng kèm nước chấm thanh nhẹ.",
         "priceRange": "142.000 VND",
-        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418113329577-0dd004c0b7f04a02b74200e08df5d5f9.jpg",
-        "spicyLevel": "mild"
+        "imageUrl": "http://127.0.0.1:5080/storage/images/food-items/20260418113329577-0dd004c0b7f04a02b74200e08df5d5f9.jpg"
       }
     ],
     "routes": [

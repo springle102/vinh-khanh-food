@@ -252,22 +252,13 @@
                                                     </Border>
 
                                                     <VerticalStackLayout Grid.Column="1" Spacing="8">
-                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <Grid ColumnDefinitions="*" ColumnSpacing="8">
                                                             <Label
                                                                 FontFamily="OpenSansSemibold"
                                                                 FontSize="15"
                                                                 LineBreakMode="WordWrap"
                                                                 Text="{Binding Name}"
                                                                 TextColor="{StaticResource BrandTextPrimary}" />
-                                                            <Border
-                                                                Grid.Column="1"
-                                                                BackgroundColor="#FFF2E3"
-                                                                IsVisible="{Binding HasSpicyLevel}"
-                                                                Padding="8,4"
-                                                                Stroke="#F1D2AE"
-                                                                StrokeShape="RoundRectangle 12">
-                                                                <Label FontFamily="OpenSansSemibold" FontSize="11" Text="{Binding SpicyLevelLabel}" TextColor="#A85D10" />
-                                                            </Border>
                                                         </Grid>
 
                                                         <Label

@@ -293,16 +293,15 @@ public sealed partial class AdminDataRepository
                 connection,
                 transaction,
                 """
-                INSERT INTO dbo.FoodItems (Id, PoiId, Name, [Description], PriceRange, ImageUrl, SpicyLevel)
-                VALUES (?, ?, ?, ?, ?, ?, ?);
+                INSERT INTO dbo.FoodItems (Id, PoiId, Name, [Description], PriceRange, ImageUrl)
+                VALUES (?, ?, ?, ?, ?, ?);
                 """,
                 foodId,
                 request.PoiId,
                 request.Name,
                 request.Description,
                 request.PriceRange,
-                request.ImageUrl,
-                request.SpicyLevel);
+                request.ImageUrl);
         }
         else
         {
@@ -315,8 +314,7 @@ public sealed partial class AdminDataRepository
                     Name = ?,
                     [Description] = ?,
                     PriceRange = ?,
-                    ImageUrl = ?,
-                    SpicyLevel = ?
+                    ImageUrl = ?
                 WHERE Id = ?;
                 """,
                 request.PoiId,
@@ -324,7 +322,6 @@ public sealed partial class AdminDataRepository
                 request.Description,
                 request.PriceRange,
                 request.ImageUrl,
-                request.SpicyLevel,
                 foodId);
         }
 

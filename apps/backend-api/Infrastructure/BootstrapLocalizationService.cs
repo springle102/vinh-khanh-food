@@ -217,17 +217,22 @@ public sealed class BootstrapLocalizationService(
         string fullText,
         string updatedBy,
         DateTimeOffset updatedAt)
-        => new()
+    {
+        var resolvedTitle = ResolveLocalizedField(title, sourceTitle, targetLanguageCode);
+        var resolvedShortText = ResolveLocalizedField(shortText, sourceShortText, targetLanguageCode);
+        var resolvedFullText = ResolveLocalizedField(fullText, sourceFullText, targetLanguageCode);
+
+        return new()
         {
             Id = $"runtime-{entityType}-{entityId}-{targetLanguageCode}",
             EntityType = entityType,
             EntityId = entityId,
             LanguageCode = targetLanguageCode,
-            Title = title,
-            ShortText = shortText,
-            FullText = fullText,
-            SeoTitle = title,
-            SeoDescription = string.IsNullOrWhiteSpace(shortText) ? fullText : shortText,
+            Title = resolvedTitle,
+            ShortText = resolvedShortText,
+            FullText = resolvedFullText,
+            SeoTitle = resolvedTitle,
+            SeoDescription = string.IsNullOrWhiteSpace(resolvedShortText) ? resolvedFullText : resolvedShortText,
             SourceLanguageCode = sourceLanguageCode,
             SourceHash = TranslationSourceVersioning.CreateSourceHashForRuntime(
                 sourceTitle,
@@ -238,6 +243,7 @@ public sealed class BootstrapLocalizationService(
             UpdatedBy = string.IsNullOrWhiteSpace(updatedBy) ? "runtime-translation" : updatedBy,
             UpdatedAt = updatedAt == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : updatedAt
         };
+    }
 
     private static PoiCategory CopyCategory(
         PoiCategory category,
@@ -296,8 +302,7 @@ public sealed class BootstrapLocalizationService(
             Name = GetText(textByKey, "food_item", foodItem.Id, "name", foodItem.Name),
             Description = GetText(textByKey, "food_item", foodItem.Id, "description", foodItem.Description),
             PriceRange = foodItem.PriceRange,
-            ImageUrl = foodItem.ImageUrl,
-            SpicyLevel = foodItem.SpicyLevel
+            ImageUrl = foodItem.ImageUrl
         };
 
     private static TourRoute CopyRoute(
@@ -354,15 +359,35 @@ public sealed class BootstrapLocalizationService(
         string entityId,
         string fieldName,
         string? fallback)
-        => textByKey.TryGetValue(CreateFieldKey(entityType, entityId, fieldName), out var result)
-            ? result.Text
-            : fallback ?? string.Empty;
+    {
+        if (textByKey.TryGetValue(CreateFieldKey(entityType, entityId, fieldName), out var result))
+        {
+            var cleaned = LocalizationContentPolicy.CleanForLanguage(result.Text, result.TargetLanguageCode);
+            if (!string.IsNullOrWhiteSpace(cleaned))
+            {
+                return cleaned;
+            }
+        }
+
+        return NarrationTextSanitizer.Clean(fallback) ?? string.Empty;
+    }
 
     private static string CreateResultKey(RuntimeTranslationResult result)
         => CreateFieldKey(result.EntityType, result.EntityId, result.FieldName);
 
     private static string CreateFieldKey(string entityType, string entityId, string fieldName)
         => $"{entityType.Trim().ToLowerInvariant()}:{entityId.Trim().ToLowerInvariant()}:{fieldName.Trim().ToLowerInvariant()}";
+
+    private static string ResolveLocalizedField(string? candidate, string? fallback, string targetLanguageCode)
+    {
+        var cleanedCandidate = LocalizationContentPolicy.CleanForLanguage(candidate, targetLanguageCode);
+        if (!string.IsNullOrWhiteSpace(cleanedCandidate))
+        {
+            return cleanedCandidate;
+        }
+
+        return NarrationTextSanitizer.Clean(fallback) ?? string.Empty;
+    }
 
     private static string ResolveRequestedLanguage(SystemSetting settings, string? requestedLanguageCode)
     {

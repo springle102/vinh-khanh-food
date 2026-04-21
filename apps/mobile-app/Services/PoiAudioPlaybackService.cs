@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.Networking;
 using Microsoft.Maui.Storage;
 using Plugin.Maui.Audio;
 using VinhKhanh.MobileApp.Helpers;
@@ -74,7 +75,7 @@ public interface IPoiAudioPlaybackService
     Task StopAsync();
 }
 
-public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
+public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService, IAppLifecycleAwareService
 {
     private const string AppSettingsFileName = "appsettings.json";
     private const string CacheIndexFileName = "poi-audio-cache-index.json";
@@ -85,6 +86,7 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
+    private readonly SemaphoreSlim _offlineInstallationLock = new(1, 1);
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -92,6 +94,8 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
     };
     private readonly IAudioManager _audioManager;
     private readonly IFoodStreetDataService _dataService;
+    private readonly IOfflineStorageService _offlineStorageService;
+    private readonly IOfflinePackageService _offlinePackageService;
     private readonly IMobileApiBaseUrlService _apiBaseUrlService;
     private readonly ILogger<PoiAudioPlaybackService> _logger;
     private readonly HttpClient _httpClient;
@@ -109,15 +113,21 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
     private DateTimeOffset _lastAcceptedRequestAt = DateTimeOffset.MinValue;
     private string? _lastAcceptedRequestKey;
     private Dictionary<string, AudioCacheIndexEntry>? _cacheIndex;
+    private OfflinePackageInstallation? _offlineInstallation;
+    private bool _offlineInstallationLoaded;
 
     public PoiAudioPlaybackService(
         IAudioManager audioManager,
         IFoodStreetDataService dataService,
+        IOfflineStorageService offlineStorageService,
+        IOfflinePackageService offlinePackageService,
         IMobileApiBaseUrlService apiBaseUrlService,
         ILogger<PoiAudioPlaybackService> logger)
     {
         _audioManager = audioManager;
         _dataService = dataService;
+        _offlineStorageService = offlineStorageService;
+        _offlinePackageService = offlinePackageService;
         _apiBaseUrlService = apiBaseUrlService;
         _logger = logger;
         _httpClient = new HttpClient(new HttpClientHandler
@@ -128,6 +138,8 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
             Timeout = Timeout.InfiniteTimeSpan
         };
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Linux; Android 12; VinhKhanhMobile)");
+        _offlinePackageService.StateChanged += OnOfflinePackageStateChanged;
+        Connectivity.Current.ConnectivityChanged += OnConnectivityChanged;
     }
 
     public PoiAudioPlaybackSnapshot Snapshot => _snapshot;
@@ -137,6 +149,15 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
     public bool IsBusy => Snapshot.IsBusy;
 
     public event EventHandler<PoiAudioPlaybackSnapshot>? PlaybackStateChanged;
+
+    public async Task HandleAppResumedAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Network] App resumed for POI audio playback. networkAccess={NetworkAccess}",
+            Connectivity.Current.NetworkAccess);
+        InvalidateOfflineInstallationCache();
+        await ResetErrorStateIfNeededAsync("app_resumed", cancellationToken);
+    }
 
     public async Task ToggleAsync(
         PoiExperienceDetail detail,
@@ -198,19 +219,20 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
 
         try
         {
-            var audio = await ResolveAudioForPlaybackAsync(request, session.Token);
-            if (audio is null)
+            var resolution = await ResolveAudioForPlaybackAsync(request, session.Token);
+            if (resolution.Audio is null)
             {
                 _logger.LogInformation(
-                    "POI audio source missing. poiId={PoiId}; requestedLanguage={RequestedLanguage}; requestKey={RequestKey}",
+                    "POI audio source unavailable. poiId={PoiId}; requestedLanguage={RequestedLanguage}; requestKey={RequestKey}; failureCode={FailureCode}",
                     request.PoiId,
                     request.RequestedLanguageCode,
-                    request.RequestKey);
-                await PublishErrorAsync(session, MissingAudioErrorCode);
+                    request.RequestKey,
+                    resolution.FailureCode ?? MissingAudioErrorCode);
+                await PublishErrorAsync(session, resolution.FailureCode ?? MissingAudioErrorCode);
                 return;
             }
 
-            await PlayLocalAudioAsync(audio, session);
+            await PlayLocalAudioAsync(resolution.Audio, session);
         }
         catch (OperationCanceledException) when (session.Token.IsCancellationRequested)
         {
@@ -333,7 +355,7 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
                 return;
             }
 
-            if (TryResolvePackagedAudioAsset(request) is not null)
+            if (await TryResolvePackagedAudioAssetAsync(request, cancellationToken) is not null)
             {
                 _logger.LogDebug(
                     "POI audio preload skipped because packaged audio is ready. poiId={PoiId}; requestedLanguage={RequestedLanguage}; requestKey={RequestKey}",
@@ -513,10 +535,15 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
         }
     }
 
-    private async Task<CachedAudioAsset?> ResolveAudioForPlaybackAsync(
+    private async Task<AudioResolutionResult> ResolveAudioForPlaybackAsync(
         AudioPlaybackRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.Candidates.Count == 0)
+        {
+            return new AudioResolutionResult(null, MissingAudioErrorCode);
+        }
+
         var cached = await TryGetCachedAudioAsync(request.Candidates.Select(item => item.AudioCacheKey), cancellationToken);
         if (cached is not null)
         {
@@ -527,10 +554,10 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
                 cached.EffectiveLanguageCode,
                 cached.LocalFilePath,
                 cached.AudioCacheKey);
-            return cached with { PlaybackSource = "local_cache" };
+            return new AudioResolutionResult(cached with { PlaybackSource = "local_cache" }, null);
         }
 
-        var packagedAudio = TryResolvePackagedAudioAsset(request);
+        var packagedAudio = await TryResolvePackagedAudioAssetAsync(request, cancellationToken);
         if (packagedAudio is not null)
         {
             _logger.LogInformation(
@@ -540,10 +567,23 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
                 packagedAudio.EffectiveLanguageCode,
                 packagedAudio.LocalFilePath,
                 packagedAudio.AudioCacheKey);
-            return packagedAudio;
+            return new AudioResolutionResult(packagedAudio, null);
         }
 
-        return await ResolveAndCacheFirstRemoteAudioAsync(request, cancellationToken);
+        if (!HasInternetAccess())
+        {
+            _logger.LogInformation(
+                "[AudioResolve] No usable internet access for remote fallback. poiId={PoiId}; requestedLanguage={RequestedLanguage}; candidateCount={CandidateCount}",
+                request.PoiId,
+                request.RequestedLanguageCode,
+                request.Candidates.Count);
+            return new AudioResolutionResult(null, UnavailableAudioErrorCode);
+        }
+
+        var remoteAudio = await ResolveAndCacheFirstRemoteAudioAsync(request, cancellationToken);
+        return remoteAudio is not null
+            ? new AudioResolutionResult(remoteAudio, null)
+            : new AudioResolutionResult(null, UnavailableAudioErrorCode);
     }
 
     private async Task<CachedAudioAsset?> ResolveAndCacheFirstRemoteAudioAsync(
@@ -555,15 +595,18 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var localFilePath = TryResolveLocalFilePath(candidate.AudioLocation);
-            if (!string.IsNullOrWhiteSpace(localFilePath))
-            {
-                continue;
-            }
-
-            var preparedAudioUri = ResolvePreparedAudioUri(candidate.AudioLocation, apiBaseUrl);
+            var preparedAudioUri = ResolvePreparedAudioUri(
+                FirstNonEmpty(candidate.RemoteAudioLocation, candidate.AudioLocation),
+                apiBaseUrl);
             if (preparedAudioUri is null)
             {
+                _logger.LogDebug(
+                    "[AudioResolve] Remote audio URI could not be resolved. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioLocation={AudioLocation}; remoteAudioLocation={RemoteAudioLocation}",
+                    request.PoiId,
+                    request.RequestedLanguageCode,
+                    candidate.EffectiveLanguageCode,
+                    candidate.AudioLocation,
+                    candidate.RemoteAudioLocation ?? string.Empty);
                 continue;
             }
 
@@ -1004,6 +1047,67 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
         return UnavailableAudioErrorCode;
     }
 
+    private void OnOfflinePackageStateChanged(object? sender, OfflinePackageState state)
+    {
+        InvalidateOfflineInstallationCache();
+        _logger.LogInformation(
+            "[AudioResolve] Offline package state changed. status={Status}; installed={IsInstalled}; version={Version}",
+            state.Status,
+            state.IsInstalled,
+            state.InstalledVersion);
+        _ = ResetErrorStateIfNeededAsync($"offline_package_{state.Status}");
+    }
+
+    private void OnConnectivityChanged(object? sender, ConnectivityChangedEventArgs e)
+    {
+        InvalidateOfflineInstallationCache();
+        _logger.LogInformation(
+            "[Network] Connectivity changed for POI audio playback. access={NetworkAccess}; profiles={Profiles}",
+            e.NetworkAccess,
+            string.Join(",", e.ConnectionProfiles));
+        _ = ResetErrorStateIfNeededAsync("network_changed");
+    }
+
+    private async Task ResetErrorStateIfNeededAsync(
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        PoiAudioPlaybackSnapshot? snapshotToPublish = null;
+
+        await _stateLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (_snapshot.Status != PoiAudioPlaybackStatus.Error)
+            {
+                return;
+            }
+
+            snapshotToPublish = string.IsNullOrWhiteSpace(_snapshot.PoiId)
+                ? PoiAudioPlaybackSnapshot.Idle
+                : _snapshot with
+                {
+                    Status = PoiAudioPlaybackStatus.Stopped,
+                    Source = null,
+                    ErrorMessage = null
+                };
+            _snapshot = snapshotToPublish;
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+
+        if (snapshotToPublish is not null)
+        {
+            _logger.LogInformation(
+                "[AudioResolve] Cleared stale playback error. reason={Reason}; poiId={PoiId}; requestedLanguage={RequestedLanguage}",
+                reason,
+                snapshotToPublish.PoiId,
+                snapshotToPublish.RequestedLanguageCode);
+            PublishSnapshotChanged(snapshotToPublish);
+        }
+    }
+
     private void CancelActiveSessionLocked()
     {
         _activeSessionSource?.Cancel();
@@ -1170,20 +1274,43 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
     private static string ResolveIndexLookupKey(AudioCacheIndexEntry indexEntry)
         => FirstNonEmpty(indexEntry.LookupKey, indexEntry.AudioCacheKey, indexEntry.UiPlaybackKey);
 
-    private CachedAudioAsset? TryResolvePackagedAudioAsset(AudioPlaybackRequest request)
+    private async Task<CachedAudioAsset?> TryResolvePackagedAudioAssetAsync(
+        AudioPlaybackRequest request,
+        CancellationToken cancellationToken)
     {
+        var installation = await GetOfflineInstallationAsync(cancellationToken);
+        var assetMap = installation?.AssetMap;
+
         foreach (var candidate in request.Candidates)
         {
-            var localFilePath = TryResolveLocalFilePath(candidate.AudioLocation);
+            string? localFilePath = null;
+            if (assetMap is not null &&
+                OfflineAssetUrlHelper.TryResolveAssetPath(
+                    assetMap,
+                    FirstNonEmpty(candidate.RemoteAudioLocation, candidate.AudioLocation),
+                    out var mappedPath))
+            {
+                localFilePath = mappedPath;
+            }
+
+            localFilePath ??= TryResolveLocalFilePath(candidate.AudioLocation);
+
             if (string.IsNullOrWhiteSpace(localFilePath))
             {
+                _logger.LogDebug(
+                    "[AudioResolve] Offline package has no local match. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioLocation={AudioLocation}; remoteAudioLocation={RemoteAudioLocation}",
+                    request.PoiId,
+                    request.RequestedLanguageCode,
+                    candidate.EffectiveLanguageCode,
+                    candidate.AudioLocation,
+                    candidate.RemoteAudioLocation ?? string.Empty);
                 continue;
             }
 
             if (!IsUsableAudioFile(localFilePath))
             {
                 _logger.LogDebug(
-                    "Skipping missing or invalid local POI audio asset. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; path={Path}",
+                    "[AudioResolve] Skipping missing or invalid local POI audio asset. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; path={Path}",
                     request.PoiId,
                     request.RequestedLanguageCode,
                     candidate.EffectiveLanguageCode,
@@ -1206,6 +1333,37 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
         }
 
         return null;
+    }
+
+    private async Task<OfflinePackageInstallation?> GetOfflineInstallationAsync(CancellationToken cancellationToken)
+    {
+        if (_offlineInstallationLoaded)
+        {
+            return _offlineInstallation;
+        }
+
+        await _offlineInstallationLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (_offlineInstallationLoaded)
+            {
+                return _offlineInstallation;
+            }
+
+            _offlineInstallation = await _offlineStorageService.LoadInstallationAsync(cancellationToken);
+            _offlineInstallationLoaded = true;
+            return _offlineInstallation;
+        }
+        finally
+        {
+            _offlineInstallationLock.Release();
+        }
+    }
+
+    private void InvalidateOfflineInstallationCache()
+    {
+        _offlineInstallation = null;
+        _offlineInstallationLoaded = false;
     }
 
     private async Task<string?> GetApiBaseUrlAsync()
@@ -1243,13 +1401,9 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
         var apiBaseUrl = await GetApiBaseUrlAsync();
         foreach (var candidate in request.Candidates)
         {
-            var localFilePath = TryResolveLocalFilePath(candidate.AudioLocation);
-            if (!string.IsNullOrWhiteSpace(localFilePath))
-            {
-                continue;
-            }
-
-            var preparedAudioUri = ResolvePreparedAudioUri(candidate.AudioLocation, apiBaseUrl);
+            var preparedAudioUri = ResolvePreparedAudioUri(
+                FirstNonEmpty(candidate.RemoteAudioLocation, candidate.AudioLocation),
+                apiBaseUrl);
             if (preparedAudioUri is null)
             {
                 continue;
@@ -1284,15 +1438,18 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
             var normalizedCandidateLanguage = AppLanguage.NormalizeCode(candidateLanguage);
             PoiAudioAsset? audioAsset = null;
             string? audioLocation = null;
+            string? remoteAudioLocation = null;
             if (detail.AudioAssets.TryGetValue(normalizedCandidateLanguage, out var richAsset))
             {
                 audioAsset = richAsset;
                 audioLocation = richAsset.AudioUrl;
+                remoteAudioLocation = FirstNonEmpty(richAsset.RemoteAudioUrl, richAsset.AudioUrl);
             }
             else if (detail.AudioUrls.Values.TryGetValue(candidateLanguage, out var legacyLocation) ||
                      detail.AudioUrls.Values.TryGetValue(normalizedCandidateLanguage, out legacyLocation))
             {
                 audioLocation = legacyLocation;
+                remoteAudioLocation = legacyLocation;
             }
 
             if (string.IsNullOrWhiteSpace(audioLocation))
@@ -1314,6 +1471,7 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
             candidates.Add(new AudioSourceCandidate(
                 normalizedCandidateLanguage,
                 audioLocation.Trim(),
+                string.IsNullOrWhiteSpace(remoteAudioLocation) ? null : remoteAudioLocation.Trim(),
                 audioCacheKey,
                 audioAsset?.SourceType ?? "generated",
                 null,
@@ -1403,9 +1561,13 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
             : null;
     }
 
+    private static bool HasInternetAccess()
+        => Connectivity.Current.NetworkAccess == NetworkAccess.Internet;
+
     private static Uri? ResolvePreparedAudioUri(string audioLocation, string? apiBaseUrl)
     {
-        if (Uri.TryCreate(audioLocation, UriKind.Absolute, out var absoluteUri))
+        var normalizedAudioLocation = MobileApiEndpointHelper.NormalizeAssetUrl(audioLocation, apiBaseUrl);
+        if (Uri.TryCreate(normalizedAudioLocation, UriKind.Absolute, out var absoluteUri))
         {
             return absoluteUri.IsFile ? null : absoluteUri;
         }
@@ -1415,7 +1577,7 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
             return null;
         }
 
-        return Uri.TryCreate(new Uri(apiBaseUrl, UriKind.Absolute), audioLocation, out var combinedUri)
+        return Uri.TryCreate(new Uri(apiBaseUrl, UriKind.Absolute), normalizedAudioLocation, out var combinedUri)
             ? combinedUri
             : null;
     }
@@ -1702,6 +1864,7 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
     private sealed record AudioSourceCandidate(
         string EffectiveLanguageCode,
         string AudioLocation,
+        string? RemoteAudioLocation,
         string AudioCacheKey,
         string SourceType,
         string? TtsLocale,
@@ -1719,6 +1882,10 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService
         string? TtsLocale,
         double? EstimatedDurationSeconds,
         string PlaybackSource);
+
+    private sealed record AudioResolutionResult(
+        CachedAudioAsset? Audio,
+        string? FailureCode);
 
     private sealed record DownloadedAudioPayload(
         byte[] Content,

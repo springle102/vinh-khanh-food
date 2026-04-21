@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
@@ -44,6 +45,7 @@ public sealed partial class FoodStreetApiDataService
         PopulateLocalizedContent(detail.Name, translations, item => item.Title);
         PopulateLocalizedContent(detail.Summary, translations, item => FirstNonEmpty(item.ShortText, item.FullText));
         PopulateLocalizedContent(detail.Description, translations, item => item.FullText);
+        PopulateLocalizedAudioTranscripts(detail.Description, audioGuides);
         SeedLocalizedSourceContent(detail.Name, poi.SourceLanguageCode, poi.Title);
         SeedLocalizedSourceContent(detail.Summary, poi.SourceLanguageCode, poi.ShortDescription, poi.Description);
         SeedLocalizedSourceContent(detail.Description, poi.SourceLanguageCode, poi.AudioScript, poi.Description, poi.ShortDescription);
@@ -61,6 +63,7 @@ public sealed partial class FoodStreetApiDataService
                     PoiId = detail.Id,
                     LanguageCode = audioGuide.LanguageCode,
                     AudioUrl = audioGuide.AudioUrl,
+                    RemoteAudioUrl = FirstNonEmpty(audioGuide.RemoteAudioUrl, audioGuide.AudioUrl),
                     SourceType = audioGuide.SourceType,
                     ContentVersion = audioGuide.ContentVersion,
                     TextHash = audioGuide.TextHash,
@@ -108,6 +111,7 @@ public sealed partial class FoodStreetApiDataService
         PoiDto poi,
         string category,
         IReadOnlyList<TranslationDto>? translations,
+        IReadOnlyList<AudioGuideDto>? audioGuides,
         string thumbnailUrl)
     {
         var translation = SelectTranslation(translations, CurrentLanguageCode, "poi", poi.Id);
@@ -116,9 +120,12 @@ public sealed partial class FoodStreetApiDataService
             GetSourceTextForCurrentLanguage(poi.Title),
             CreateSafePoiTitleFallback(poi.Slug),
             poi.Id);
+        var localizedTranscript = ResolveLocalizedAudioTranscript(audioGuides);
         var localizedSummary = FirstNonEmpty(
             GetTranslationText(translation, value => value.ShortText, value => value.FullText),
+            localizedTranscript,
             GetSourceTextForCurrentLanguage(poi.ShortDescription),
+            GetSourceTextForCurrentLanguage(poi.Description),
             category);
 
         return new PoiLocation
@@ -140,6 +147,18 @@ public sealed partial class FoodStreetApiDataService
             HeatIntensity = ResolveHeatIntensity(poi, []),
             DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))
         };
+    }
+
+    private string ResolveLocalizedAudioTranscript(IReadOnlyList<AudioGuideDto>? audioGuides)
+    {
+        if (audioGuides is null || audioGuides.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var localizedTranscripts = new LocalizedTextSet();
+        PopulateLocalizedAudioTranscripts(localizedTranscripts, audioGuides);
+        return LocalizedTextHelper.GetLocalizedText(localizedTranscripts, CurrentLanguageCode);
     }
 
     private PoiExperienceDetail? BuildFallbackPoiDetail(string poiId)
@@ -214,10 +233,7 @@ public sealed partial class FoodStreetApiDataService
             {
                 foodItemTranslationsById.TryGetValue(item.Id, out var foodTranslations);
                 var translation = SelectTranslation(foodTranslations, CurrentLanguageCode, "food_item", item.Id);
-                var name = FirstNonEmpty(
-                    GetTranslationText(translation, value => value.Title),
-                    GetSourceTextForCurrentLanguage(item.Name),
-                    item.Id);
+                var name = ResolveFoodItemDisplayName(item, translation);
                 var description = FirstNonEmpty(
                     GetTranslationText(translation, value => value.FullText, value => value.ShortText),
                     GetSourceTextForCurrentLanguage(item.Description));
@@ -229,9 +245,7 @@ public sealed partial class FoodStreetApiDataService
                     Name = name,
                     Description = description,
                     PriceRange = priceRange,
-                    ImageUrl = ResolveFoodItemImageUrl(item, foodItemImagesById),
-                    SpicyLevel = item.SpicyLevel.Trim(),
-                    SpicyLevelLabel = LocalizeSpicyLevel(item.SpicyLevel)
+                    ImageUrl = ResolveFoodItemImageUrl(item, foodItemImagesById)
                 };
             })
             .Where(item =>
@@ -241,6 +255,79 @@ public sealed partial class FoodStreetApiDataService
             .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private string ResolveFoodItemDisplayName(FoodItemDto item, TranslationDto? translation)
+    {
+        var translatedName = GetTranslationText(translation, value => value.Title);
+        if (IsUsableFoodItemDisplayName(translatedName, item.Id))
+        {
+            return translatedName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(translatedName))
+        {
+            _logger.LogWarning(
+                "[FoodItemName] Ignoring technical translated title. foodItemId={FoodItemId}; requestedLanguage={RequestedLanguage}; translationLanguage={TranslationLanguage}; translatedTitle={TranslatedTitle}",
+                item.Id,
+                CurrentLanguageCode,
+                translation?.LanguageCode ?? string.Empty,
+                translatedName);
+        }
+
+        var sourceName = TextEncodingHelper.NormalizeDisplayText(item.Name);
+        if (IsUsableFoodItemDisplayName(sourceName, item.Id))
+        {
+            return sourceName;
+        }
+
+        return CreateFoodItemTitleFallback(item.Id);
+    }
+
+    private static bool IsUsableFoodItemDisplayName(string? value, string foodItemId)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        if (LocalizationFallbackPolicy.LooksLikeTechnicalIdentifier(value))
+        {
+            return false;
+        }
+
+        return !string.Equals(
+            NormalizeLookupKey(value),
+            NormalizeLookupKey(foodItemId),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string CreateFoodItemTitleFallback(string value)
+    {
+        var normalizedValue = NormalizeLookupKey(value);
+        if (string.IsNullOrWhiteSpace(normalizedValue))
+        {
+            return LocalizationFallbackPolicy.CanUseSourceLanguageText(CurrentLanguageCode)
+                ? "Mon an dac trung"
+                : "Signature dish";
+        }
+
+        const string foodPrefix = "food-";
+        if (normalizedValue.StartsWith(foodPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedValue = normalizedValue[foodPrefix.Length..];
+        }
+
+        if (normalizedValue.All(character => char.IsLetterOrDigit(character)) &&
+            normalizedValue.Any(char.IsDigit) &&
+            normalizedValue.Any(character => character is >= 'a' and <= 'f'))
+        {
+            return LocalizationFallbackPolicy.CanUseSourceLanguageText(CurrentLanguageCode)
+                ? "Mon an dac trung"
+                : "Signature dish";
+        }
+
+        return CreateTitleFromSlug(normalizedValue);
     }
 
     private static string ResolveFoodItemImageUrl(
@@ -308,15 +395,6 @@ public sealed partial class FoodStreetApiDataService
             "upcoming" => 1,
             "expired" => 2,
             _ => 3
-        };
-
-    private string LocalizeSpicyLevel(string? spicyLevel)
-        => spicyLevel?.Trim().ToLowerInvariant() switch
-        {
-            "mild" => _languageService.GetText("poi_detail_spicy_mild"),
-            "medium" => _languageService.GetText("poi_detail_spicy_medium"),
-            "hot" => _languageService.GetText("poi_detail_spicy_hot"),
-            _ => spicyLevel?.Trim() ?? string.Empty
         };
 
     private string LocalizePromotionStatus(string? status)
@@ -426,6 +504,31 @@ public sealed partial class FoodStreetApiDataService
             {
                 target.Set(translation.LanguageCode, value);
             }
+        }
+    }
+
+    private static void PopulateLocalizedAudioTranscripts(
+        LocalizedTextSet target,
+        IReadOnlyList<AudioGuideDto>? audioGuides)
+    {
+        if (audioGuides is null)
+        {
+            return;
+        }
+
+        foreach (var audioGuide in audioGuides
+                     .Where(IsPlayableAudioGuide)
+                     .Where(item => LocalizationFallbackPolicy.IsUsableTextForLanguage(item.TranscriptText, item.LanguageCode))
+                     .OrderByDescending(item => item.UpdatedAt))
+        {
+            var normalizedLanguageCode = AppLanguage.NormalizeCode(audioGuide.LanguageCode);
+            if (target.Values.TryGetValue(normalizedLanguageCode, out var existingValue) &&
+                LocalizationFallbackPolicy.IsUsableTextForLanguage(existingValue, normalizedLanguageCode))
+            {
+                continue;
+            }
+
+            SetLocalizedValue(target, normalizedLanguageCode, audioGuide.TranscriptText);
         }
     }
 

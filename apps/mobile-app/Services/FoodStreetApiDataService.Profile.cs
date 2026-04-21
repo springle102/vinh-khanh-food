@@ -1,9 +1,10 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.Networking;
 using VinhKhanh.MobileApp.Helpers;
 
 namespace VinhKhanh.MobileApp.Services;
 
-public sealed partial class FoodStreetApiDataService
+public sealed partial class FoodStreetApiDataService : IAppLifecycleAwareService
 {
     public async Task<string> EnsureAllowedLanguageSelectionAsync()
     {
@@ -50,6 +51,16 @@ public sealed partial class FoodStreetApiDataService
     public Task<string> RestoreToAllowedLanguageAsync()
         => EnsureAllowedLanguageSelectionAsync();
 
+    public Task HandleAppResumedAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Network] App resumed. Invalidating mobile data caches. currentLanguage={LanguageCode}; networkAccess={NetworkAccess}",
+            SelectedLanguageCode,
+            Connectivity.Current.NetworkAccess);
+        InvalidateBootstrapSnapshot();
+        return Task.CompletedTask;
+    }
+
     private void InvalidateBootstrapSnapshot()
     {
         _offlinePackageLoadAttempted = false;
@@ -61,5 +72,14 @@ public sealed partial class FoodStreetApiDataService
         _lastSyncCheckAt = DateTimeOffset.MinValue;
         _poiDetailCache.Clear();
         _inflightPoiDetailLoads.Clear();
+    }
+
+    private void OnConnectivityChanged(object? sender, ConnectivityChangedEventArgs e)
+    {
+        _logger.LogInformation(
+            "[Network] Connectivity changed for mobile data. access={NetworkAccess}; profiles={Profiles}",
+            e.NetworkAccess,
+            string.Join(",", e.ConnectionProfiles));
+        InvalidateBootstrapSnapshot();
     }
 }

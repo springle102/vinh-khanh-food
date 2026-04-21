@@ -86,7 +86,6 @@ type PoiFoodItemFormState = {
   description: string;
   priceRange: string;
   imageUrl: string;
-  spicyLevel: FoodItem["spicyLevel"];
 };
 
 const createDefaultForm = (status: Poi["status"] = "draft"): PoiFormState => ({
@@ -126,7 +125,6 @@ const createPoiFoodItemForm = (
   description: "",
   priceRange: "",
   imageUrl: "",
-  spicyLevel: "mild",
 });
 
 const isPoiEntityType = (entityType: string) => entityType === "poi" || entityType === "place";
@@ -179,7 +177,6 @@ const buildPoiFoodItemForms = (
         description: translation?.fullText || translation?.shortText || item.description,
         priceRange: item.priceRange,
         imageUrl: item.imageUrl,
-        spicyLevel: item.spicyLevel,
       };
     });
 
@@ -360,7 +357,6 @@ const buildPoiEditorContentSnapshot = (
         description: item.description.trim(),
         priceRange: item.priceRange.trim(),
         imageUrl: item.imageUrl.trim(),
-        spicyLevel: item.spicyLevel,
       }))
       .filter((item) =>
         item.id ||
@@ -1570,8 +1566,7 @@ export const PoisPage = () => {
           existingFoodItem.name !== baseFoodItemName ||
           existingFoodItem.description !== baseFoodItemDescription ||
           existingFoodItem.priceRange !== foodItemDraft.priceRange ||
-          existingFoodItem.imageUrl !== foodItemDraft.imageUrl ||
-          existingFoodItem.spicyLevel !== foodItemDraft.spicyLevel;
+          existingFoodItem.imageUrl !== foodItemDraft.imageUrl;
 
         const savedFoodItem = hasFoodItemChanged
           ? await saveFoodItem(
@@ -1582,7 +1577,6 @@ export const PoisPage = () => {
                 description: baseFoodItemDescription,
                 priceRange: foodItemDraft.priceRange,
                 imageUrl: foodItemDraft.imageUrl,
-                spicyLevel: foodItemDraft.spicyLevel,
               },
               user,
             )
@@ -2603,23 +2597,7 @@ export const PoisPage = () => {
                           </div>
 
                           <div className="grid gap-4 md:grid-cols-2">
-                            <div>
-                              <label className="field-label">Độ cay</label>
-                              <Select
-                                value={foodItem.spicyLevel}
-                                disabled={isPoiModalViewOnly}
-                                onChange={(event) =>
-                                  updatePoiFoodItemForm(foodItem.clientId, {
-                                    spicyLevel: event.target.value as FoodItem["spicyLevel"],
-                                  })
-                                }
-                              >
-                                <option value="mild">Mild</option>
-                                <option value="medium">Medium</option>
-                                <option value="hot">Hot</option>
-                              </Select>
-                            </div>
-                            <div className="rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3">
+                            <div className="rounded-2xl border border-sand-200 bg-sand-50 px-4 py-3 md:col-span-2">
                               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-500">
                                 Trạng thái
                               </p>

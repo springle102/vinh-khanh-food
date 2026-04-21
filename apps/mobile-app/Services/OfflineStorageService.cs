@@ -8,6 +8,7 @@ namespace VinhKhanh.MobileApp.Services;
 public interface IOfflineStorageService
 {
     Task<OfflinePackageInstallation?> LoadInstallationAsync(CancellationToken cancellationToken = default);
+    Task<OfflinePackageInstallation?> LoadInstallationFromRootAsync(string installationRoot, CancellationToken cancellationToken = default);
     Task<string> CreateStagingRootAsync(CancellationToken cancellationToken = default);
     string GetStagingAssetsDirectory(string stagingRoot);
     string GetStagingBootstrapPath(string stagingRoot);
@@ -36,11 +37,21 @@ public sealed class OfflineStorageService : IOfflineStorageService
     };
 
     public async Task<OfflinePackageInstallation?> LoadInstallationAsync(CancellationToken cancellationToken = default)
+        => await LoadInstallationFromRootAsync(GetCurrentRoot(), cancellationToken);
+
+    public async Task<OfflinePackageInstallation?> LoadInstallationFromRootAsync(
+        string installationRoot,
+        CancellationToken cancellationToken = default)
     {
-        var currentRoot = GetCurrentRoot();
-        var metadataPath = Path.Combine(currentRoot, MetadataFileName);
-        var manifestPath = Path.Combine(currentRoot, ManifestFileName);
-        var bootstrapPath = Path.Combine(currentRoot, BootstrapFileName);
+        if (string.IsNullOrWhiteSpace(installationRoot))
+        {
+            return null;
+        }
+
+        var normalizedRoot = installationRoot.Trim();
+        var metadataPath = Path.Combine(normalizedRoot, MetadataFileName);
+        var manifestPath = Path.Combine(normalizedRoot, ManifestFileName);
+        var bootstrapPath = Path.Combine(normalizedRoot, BootstrapFileName);
 
         if (!File.Exists(metadataPath) || !File.Exists(manifestPath) || !File.Exists(bootstrapPath))
         {
@@ -60,12 +71,11 @@ public sealed class OfflineStorageService : IOfflineStorageService
         }
 
         var assetMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in manifest.Files.Where(item =>
-                     !string.IsNullOrWhiteSpace(item.Key) &&
-                     !string.IsNullOrWhiteSpace(item.RelativePath)))
+        foreach (var item in manifest.Files.Where(item => !string.IsNullOrWhiteSpace(item.RelativePath)))
         {
-            var localPath = ResolveInstalledAssetPath(item.RelativePath);
-            foreach (var key in OfflineAssetUrlHelper.BuildLookupKeys(item.Key))
+            var localPath = Path.Combine(normalizedRoot, item.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+            foreach (var key in OfflineAssetUrlHelper.BuildLookupKeys(item.Key)
+                         .Concat(OfflineAssetUrlHelper.BuildLookupKeys(item.RelativePath)))
             {
                 assetMap.TryAdd(key, localPath);
             }

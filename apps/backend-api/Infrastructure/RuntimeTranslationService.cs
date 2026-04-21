@@ -91,17 +91,20 @@ public sealed class RuntimeTranslationService(
             }
 
             var cacheKey = CreateCacheKey(item.Field, target);
-            if (memoryCache.TryGetValue(cacheKey, out string? cachedText) &&
-                !string.IsNullOrWhiteSpace(cachedText))
+            if (memoryCache.TryGetValue(cacheKey, out string? cachedText))
             {
-                cacheHitCount += 1;
-                output[item.Index] = CreateResult(
-                    item.Field,
-                    target,
-                    cachedText,
-                    wasTranslated: true,
-                    usedFallback: false);
-                continue;
+                var cleanedCachedText = CleanTranslatedText(cachedText, target);
+                if (!string.IsNullOrWhiteSpace(cleanedCachedText))
+                {
+                    cacheHitCount += 1;
+                    output[item.Index] = CreateResult(
+                        item.Field,
+                        target,
+                        cleanedCachedText,
+                        wasTranslated: true,
+                        usedFallback: false);
+                    continue;
+                }
             }
 
             pending.Add(item);

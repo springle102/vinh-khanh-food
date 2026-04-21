@@ -6,7 +6,6 @@ import { ImageSourceField } from "../../components/ui/ImageSourceField";
 import { Input, Textarea } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
-import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import type { FoodItem, LanguageCode } from "../../data/types";
 import { adminApi, getErrorMessage } from "../../lib/api";
@@ -22,7 +21,6 @@ type FoodForm = {
   description: string;
   priceRange: string;
   imageUrl: string;
-  spicyLevel: FoodItem["spicyLevel"];
   languageCode: LanguageCode;
 };
 
@@ -32,7 +30,6 @@ const defaultFoodForm: FoodForm = {
   description: "",
   priceRange: "",
   imageUrl: "",
-  spicyLevel: "mild",
   languageCode: "vi",
 };
 
@@ -45,7 +42,6 @@ export const ContentPage = () => {
   const [isSaving, setSaving] = useState(false);
 
   const poisWithDishes = new Set(state.foodItems.map((item) => item.poiId)).size;
-  const hotDishes = state.foodItems.filter((item) => item.spicyLevel === "hot").length;
 
   const resolveFoodTranslationFields = (item: FoodItem, languageCode: LanguageCode) => {
     const translation = getEntityTranslation(state, "food_item", item.id, languageCode);
@@ -67,7 +63,6 @@ export const ContentPage = () => {
             ...resolveFoodTranslationFields(item, languageCode),
             priceRange: item.priceRange,
             imageUrl: item.imageUrl,
-            spicyLevel: item.spicyLevel,
             languageCode,
           }
         : { ...defaultFoodForm, languageCode },
@@ -96,10 +91,11 @@ export const ContentPage = () => {
           id: foodForm.id,
           poiId: foodForm.poiId,
           name: shouldWriteBaseText ? foodForm.name : existingFoodItem?.name ?? foodForm.name,
-          description: shouldWriteBaseText ? foodForm.description : existingFoodItem?.description ?? foodForm.description,
+          description: shouldWriteBaseText
+            ? foodForm.description
+            : existingFoodItem?.description ?? foodForm.description,
           priceRange: foodForm.priceRange,
           imageUrl: foodForm.imageUrl,
-          spicyLevel: foodForm.spicyLevel,
         },
         user,
       );
@@ -173,12 +169,6 @@ export const ContentPage = () => {
       ),
     },
     {
-      key: "spicy",
-      header: "Độ cay",
-      widthClassName: "min-w-[120px]",
-      render: (item) => <StatusBadge status="draft" label={item.spicyLevel} />,
-    },
-    {
       key: "actions",
       header: "Thao tác",
       widthClassName: "min-w-[160px]",
@@ -199,11 +189,10 @@ export const ContentPage = () => {
         <h1 className="mt-3 text-3xl font-bold text-ink-900">Quản lý món ăn</h1>
       </Card>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2">
         {[
           ["Tổng món ăn", state.foodItems.length],
           ["POI có món", poisWithDishes],
-          ["Món cay", hotDishes],
         ].map(([label, value]) => (
           <Card key={label}>
             <p className="text-sm text-ink-500">{label}</p>
@@ -227,7 +216,12 @@ export const ContentPage = () => {
       </Card>
 
       <Modal open={foodModalOpen} onClose={() => setFoodModalOpen(false)} title="Quản lý món ăn">
-        <form className="space-y-5" onSubmit={handleFoodSubmit} onKeyDown={preventImplicitFormSubmit} autoComplete="off">
+        <form
+          className="space-y-5"
+          onSubmit={handleFoodSubmit}
+          onKeyDown={preventImplicitFormSubmit}
+          autoComplete="off"
+        >
           <div>
             <label className="field-label">POI</label>
             <Select
@@ -292,34 +286,14 @@ export const ContentPage = () => {
             />
           </div>
 
-          <div className="grid gap-5 md:grid-cols-2">
-            <div>
-              <ImageSourceField
-                label="Ảnh món ăn"
-                value={foodForm.imageUrl}
-                onChange={(value) =>
-                  setFoodForm((current) => ({ ...current, imageUrl: value }))
-                }
-                onUpload={async (file) => (await adminApi.uploadFile(file, "images/food-items")).url}
-              />
-            </div>
-            <div>
-              <label className="field-label">Độ cay</label>
-              <Select
-                value={foodForm.spicyLevel}
-                onChange={(event) =>
-                  setFoodForm((current) => ({
-                    ...current,
-                    spicyLevel: event.target.value as FoodItem["spicyLevel"],
-                  }))
-                }
-              >
-                <option value="mild">Mild</option>
-                <option value="medium">Medium</option>
-                <option value="hot">Hot</option>
-              </Select>
-            </div>
-          </div>
+          <ImageSourceField
+            label="Ảnh món ăn"
+            value={foodForm.imageUrl}
+            onChange={(value) =>
+              setFoodForm((current) => ({ ...current, imageUrl: value }))
+            }
+            onUpload={async (file) => (await adminApi.uploadFile(file, "images/food-items")).url}
+          />
 
           {formError ? (
             <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{formError}</div>

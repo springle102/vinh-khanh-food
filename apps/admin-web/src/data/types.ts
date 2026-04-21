@@ -93,7 +93,6 @@ export interface FoodItem {
   description: string;
   priceRange: string;
   imageUrl: string;
-  spicyLevel: "mild" | "medium" | "hot";
 }
 
 export interface Translation {

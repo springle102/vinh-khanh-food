@@ -21,7 +21,7 @@ public interface IOfflinePackageService
     long? TryGetAvailableFreeSpaceBytes();
 }
 
-public sealed class OfflinePackageService : IOfflinePackageService
+public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycleAwareService
 {
     private const string AppSettingsFileName = "appsettings.json";
     private const string BootstrapEndpoint = "api/v1/bootstrap";
@@ -37,6 +37,7 @@ public sealed class OfflinePackageService : IOfflinePackageService
     private readonly IBundledOfflinePackageSeedService _bundledSeedService;
     private readonly IMobileApiBaseUrlService _apiBaseUrlService;
     private readonly IAppLanguageService _languageService;
+    private readonly IMobileDatasetRepository _mobileDatasetRepository;
     private readonly ILogger<OfflinePackageService> _logger;
 
     private HttpClient? _httpClient;
@@ -50,18 +51,34 @@ public sealed class OfflinePackageService : IOfflinePackageService
         IBundledOfflinePackageSeedService bundledSeedService,
         IMobileApiBaseUrlService apiBaseUrlService,
         IAppLanguageService languageService,
+        IMobileDatasetRepository mobileDatasetRepository,
         ILogger<OfflinePackageService> logger)
     {
         _storageService = storageService;
         _bundledSeedService = bundledSeedService;
         _apiBaseUrlService = apiBaseUrlService;
         _languageService = languageService;
+        _mobileDatasetRepository = mobileDatasetRepository;
         _logger = logger;
+        Connectivity.Current.ConnectivityChanged += OnConnectivityChanged;
     }
 
     public OfflinePackageState State => _state;
 
     public event EventHandler<OfflinePackageState>? StateChanged;
+
+    public async Task HandleAppResumedAsync(CancellationToken cancellationToken = default)
+    {
+        if (_state.IsBusy)
+        {
+            return;
+        }
+
+        _logger.LogInformation(
+            "[Network] App resumed for offline package service. networkAccess={NetworkAccess}",
+            Connectivity.Current.NetworkAccess);
+        await RefreshStatusAsync(cancellationToken);
+    }
 
     public async Task<OfflinePackageState> RefreshStatusAsync(CancellationToken cancellationToken = default)
     {
@@ -72,13 +89,20 @@ public sealed class OfflinePackageService : IOfflinePackageService
 
         var installation = await _bundledSeedService.EnsureInstalledAsync(cancellationToken)
                            ?? await _storageService.LoadInstallationAsync(cancellationToken);
+        var verification = VerifyInstallation(installation, "refresh");
         var remoteSyncState = await TryFetchSyncStateAsync(cancellationToken);
         var nextState = BuildState(
             installation,
             remoteSyncState,
-            installation is null ? OfflinePackageLifecycleStatus.NotInstalled : OfflinePackageLifecycleStatus.Ready,
+            installation is null
+                ? OfflinePackageLifecycleStatus.NotInstalled
+                : verification?.IsValid == true
+                    ? OfflinePackageLifecycleStatus.Ready
+                    : OfflinePackageLifecycleStatus.Error,
             canReachServer: remoteSyncState is not null,
-            errorMessage: string.Empty);
+            errorMessage: verification is { IsValid: false }
+                ? BuildVerificationErrorMessage(verification)
+                : string.Empty);
 
         PublishState(nextState);
         return nextState;
@@ -216,6 +240,25 @@ public sealed class OfflinePackageService : IOfflinePackageService
             metadataJson = JsonSerializer.Serialize(packageDraft.Metadata, _jsonOptions);
             await File.WriteAllTextAsync(metadataPath, metadataJson, operationToken);
 
+            var stagedInstallation = await _storageService.LoadInstallationFromRootAsync(stagingRoot, operationToken);
+            var stagedVerification = VerifyInstallation(stagedInstallation, "staging");
+            if (stagedVerification is not { IsValid: true })
+            {
+                var errorState = BuildState(
+                    existingInstallation,
+                    new RemoteSyncState(packageDraft.Metadata.Version, packageDraft.Metadata.GeneratedAtUtc, packageDraft.Metadata.ServerLastChangedAtUtc),
+                    OfflinePackageLifecycleStatus.Error,
+                    canReachServer: true,
+                    downloadedBytes: downloadedBytes,
+                    totalBytes: packageDraft.Metadata.PackageSizeBytes,
+                    downloadedFileCount: downloadedFileCount,
+                    totalFileCount: packageDraft.Manifest.Files.Count,
+                    errorMessage: BuildVerificationErrorMessage(stagedVerification));
+
+                PublishState(errorState);
+                return errorState;
+            }
+
             PublishState(BuildState(
                 existingInstallation,
                 new RemoteSyncState(packageDraft.Metadata.Version, packageDraft.Metadata.GeneratedAtUtc, packageDraft.Metadata.ServerLastChangedAtUtc),
@@ -231,6 +274,39 @@ public sealed class OfflinePackageService : IOfflinePackageService
             stagingRoot = null;
 
             var installed = await _storageService.LoadInstallationAsync(operationToken);
+            var installedVerification = VerifyInstallation(installed, "installed");
+            if (installedVerification is not { IsValid: true })
+            {
+                var errorState = BuildState(
+                    installed,
+                    new RemoteSyncState(
+                        installed?.Metadata.Version ?? packageDraft.Metadata.Version,
+                        installed?.Metadata.GeneratedAtUtc ?? packageDraft.Metadata.GeneratedAtUtc,
+                        installed?.Metadata.ServerLastChangedAtUtc ?? packageDraft.Metadata.ServerLastChangedAtUtc),
+                    OfflinePackageLifecycleStatus.Error,
+                    canReachServer: true,
+                    downloadedBytes: installed?.Metadata.PackageSizeBytes ?? packageDraft.Metadata.PackageSizeBytes,
+                    totalBytes: installed?.Metadata.PackageSizeBytes ?? packageDraft.Metadata.PackageSizeBytes,
+                    downloadedFileCount: installed?.Metadata.FileCount ?? packageDraft.Metadata.FileCount,
+                    totalFileCount: installed?.Metadata.FileCount ?? packageDraft.Metadata.FileCount,
+                    errorMessage: BuildVerificationErrorMessage(installedVerification));
+
+                PublishState(errorState);
+                return errorState;
+            }
+
+            try
+            {
+                await _mobileDatasetRepository.SaveBootstrapEnvelopeAsync(
+                    bootstrapEnvelopeJson,
+                    packageDraft.Metadata.InstallationSource,
+                    operationToken);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "[OfflinePackage] Installed package could not be synced into local SQLite bootstrap cache.");
+            }
+
             var completedState = BuildState(
                 installed,
                 new RemoteSyncState(
@@ -358,6 +434,71 @@ public sealed class OfflinePackageService : IOfflinePackageService
     {
         _operationCancellationSource?.Dispose();
         _operationCancellationSource = nextSource;
+    }
+
+    private void OnConnectivityChanged(object? sender, ConnectivityChangedEventArgs e)
+    {
+        _logger.LogInformation(
+            "[Network] Offline package connectivity changed. access={NetworkAccess}; profiles={Profiles}",
+            e.NetworkAccess,
+            string.Join(",", e.ConnectionProfiles));
+
+        if (_state.IsBusy)
+        {
+            return;
+        }
+
+        _ = RefreshStatusAsync();
+    }
+
+    private OfflinePackageVerificationResult? VerifyInstallation(
+        OfflinePackageInstallation? installation,
+        string context)
+    {
+        if (installation is null)
+        {
+            return null;
+        }
+
+        var verification = OfflinePackageIntegrityHelper.VerifyInstallation(installation);
+        if (verification.IsValid)
+        {
+            _logger.LogInformation(
+                "[OfflinePackage] Integrity verified. context={Context}; version={Version}; files={FileCount}; pois={PoiCount}; routes={RouteCount}; audioGuides={AudioGuideCount}",
+                context,
+                installation.Metadata.Version,
+                verification.ManifestFileCount,
+                verification.BootstrapPoiCount,
+                verification.BootstrapRouteCount,
+                verification.BootstrapAudioGuideCount);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "[OfflinePackage] Integrity verification failed. context={Context}; version={Version}; summary={Summary}; problems={Problems}",
+                context,
+                installation.Metadata.Version,
+                verification.Summary,
+                string.Join(" | ", verification.Problems.Take(8)));
+        }
+
+        return verification;
+    }
+
+    private static string BuildVerificationErrorMessage(OfflinePackageVerificationResult? verification)
+    {
+        if (verification is null || verification.IsValid)
+        {
+            return string.Empty;
+        }
+
+        return verification.MissingFileCount > 0
+            ? "Goi offline bi thieu tep du lieu. Vui long tai lai."
+            : verification.InvalidAudioFileCount > 0
+                ? "Goi offline co audio loi. Vui long tai lai."
+                : verification.InvalidImageFileCount > 0
+                    ? "Goi offline co tep hinh loi. Vui long tai lai."
+                    : "Goi offline khong hop le. Vui long tai lai.";
     }
 
     private async Task<string> DownloadBootstrapEnvelopeAsync(CancellationToken cancellationToken)
@@ -757,7 +898,7 @@ public sealed class OfflinePackageService : IOfflinePackageService
     }
 
     private static bool HasAnyNetworkAccess()
-        => Connectivity.Current.NetworkAccess is not NetworkAccess.None;
+        => Connectivity.Current.NetworkAccess == NetworkAccess.Internet;
 
     private static string BuildBootstrapEndpoint(string languageCode)
         => $"{BootstrapEndpoint}?languageCode={Uri.EscapeDataString(AppLanguage.NormalizeCode(languageCode))}";

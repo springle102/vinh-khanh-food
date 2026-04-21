@@ -700,7 +700,6 @@ export const adminApi = {
     description: string;
     priceRange: string;
     imageUrl: string;
-    spicyLevel: FoodItem["spicyLevel"];
   }) =>
     jsonRequest<FoodItem>(
       item.id ? `/api/v1/food-items/${item.id}` : "/api/v1/food-items",

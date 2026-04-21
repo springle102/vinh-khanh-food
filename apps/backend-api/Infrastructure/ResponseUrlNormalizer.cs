@@ -115,8 +115,7 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
             Name = item.Name,
             Description = item.Description,
             PriceRange = item.PriceRange,
-            ImageUrl = absoluteUrl,
-            SpicyLevel = item.SpicyLevel
+            ImageUrl = absoluteUrl
         };
     }
 

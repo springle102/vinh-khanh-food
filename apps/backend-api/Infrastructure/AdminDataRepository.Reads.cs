@@ -243,7 +243,7 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<FoodItem> GetFoodItems(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, PoiId, Name, [Description], PriceRange, ImageUrl, SpicyLevel
+            SELECT Id, PoiId, Name, [Description], PriceRange, ImageUrl
             FROM dbo.FoodItems
             ORDER BY Name, Id;
             """;

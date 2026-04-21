@@ -128,6 +128,12 @@ public sealed partial class FoodStreetApiDataService
 
         foreach (var audioGuide in bootstrap.AudioGuides)
         {
+            if (string.IsNullOrWhiteSpace(audioGuide.RemoteAudioUrl) &&
+                !string.IsNullOrWhiteSpace(audioGuide.AudioUrl))
+            {
+                audioGuide.RemoteAudioUrl = audioGuide.AudioUrl.Trim();
+            }
+
             if (OfflineAssetUrlHelper.TryResolveAssetPath(assetMap, audioGuide.AudioUrl, out var localPath))
             {
                 audioGuide.AudioUrl = localPath;
@@ -168,6 +174,12 @@ public sealed partial class FoodStreetApiDataService
 
         foreach (var audioGuide in detail.AudioGuides)
         {
+            if (string.IsNullOrWhiteSpace(audioGuide.RemoteAudioUrl) &&
+                !string.IsNullOrWhiteSpace(audioGuide.AudioUrl))
+            {
+                audioGuide.RemoteAudioUrl = audioGuide.AudioUrl.Trim();
+            }
+
             if (OfflineAssetUrlHelper.TryResolveAssetPath(assetMap, audioGuide.AudioUrl, out var localPath))
             {
                 audioGuide.AudioUrl = localPath;

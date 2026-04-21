@@ -126,7 +126,6 @@ public sealed class FoodItem
     public string Description { get; set; } = string.Empty;
     public string PriceRange { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
-    public string SpicyLevel { get; set; } = "mild";
 }
 
 public sealed class ViewLog

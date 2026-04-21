@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Services;
@@ -9,6 +10,7 @@ public partial class App : Application
     private readonly IAppLanguageService _languageService;
     private readonly IBundledOfflinePackageSeedService _bundledSeedService;
     private readonly IMobileOfflineDatabaseService _offlineDatabaseService;
+    private readonly IReadOnlyList<IAppLifecycleAwareService> _lifecycleAwareServices;
     private readonly ILogger<App>? _logger;
     private bool _languageInitializationStarted;
 
@@ -19,6 +21,7 @@ public partial class App : Application
         _languageService = services.GetRequiredService<IAppLanguageService>();
         _bundledSeedService = services.GetRequiredService<IBundledOfflinePackageSeedService>();
         _offlineDatabaseService = services.GetRequiredService<IMobileOfflineDatabaseService>();
+        _lifecycleAwareServices = services.GetServices<IAppLifecycleAwareService>().ToArray();
         _logger = services.GetService<ILogger<App>>();
     }
 
@@ -26,6 +29,8 @@ public partial class App : Application
     {
         var window = new Window(new AppShell(AppRoutes.HomeMap));
         window.Created += OnWindowCreated;
+        window.Activated += OnWindowActivated;
+        window.Resumed += OnWindowResumed;
         return window;
     }
 
@@ -48,6 +53,12 @@ public partial class App : Application
         _ = InitializeLanguageAsync();
     }
 
+    private void OnWindowActivated(object? sender, EventArgs e)
+        => _ = RefreshRuntimeStateAsync("activated");
+
+    private void OnWindowResumed(object? sender, EventArgs e)
+        => _ = RefreshRuntimeStateAsync("resumed");
+
     private async Task InitializeLanguageAsync()
     {
         try
@@ -63,6 +74,22 @@ public partial class App : Application
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Unable to initialize app language during startup.");
+        }
+    }
+
+    private async Task RefreshRuntimeStateAsync(string reason)
+    {
+        try
+        {
+            _logger?.LogInformation("[AppState] Refreshing runtime services after window {Reason}.", reason);
+            foreach (var service in _lifecycleAwareServices)
+            {
+                await service.HandleAppResumedAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger?.LogWarning(exception, "[AppState] Failed to refresh runtime services after window {Reason}.", reason);
         }
     }
 }

@@ -56,10 +56,15 @@ public static class MauiProgram
         builder.Services.AddSingleton<IMobileOfflineDatabaseService>(sp => sp.GetRequiredService<MobileOfflineDatabaseService>());
         builder.Services.AddSingleton<IMobileDatasetRepository>(sp => sp.GetRequiredService<MobileOfflineDatabaseService>());
         builder.Services.AddSingleton<IMobileSyncQueueRepository>(sp => sp.GetRequiredService<MobileOfflineDatabaseService>());
-        builder.Services.AddSingleton<IOfflinePackageService, OfflinePackageService>();
-        builder.Services.AddSingleton<IFoodStreetDataService, FoodStreetApiDataService>();
+        builder.Services.AddSingleton<OfflinePackageService>();
+        builder.Services.AddSingleton<IOfflinePackageService>(sp => sp.GetRequiredService<OfflinePackageService>());
+        builder.Services.AddSingleton<FoodStreetApiDataService>();
+        builder.Services.AddSingleton<IFoodStreetDataService>(sp => sp.GetRequiredService<FoodStreetApiDataService>());
         builder.Services.AddSingleton<PoiAudioPlaybackService>();
         builder.Services.AddSingleton<IPoiAudioPlaybackService>(sp => sp.GetRequiredService<PoiAudioPlaybackService>());
+        builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<OfflinePackageService>());
+        builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<FoodStreetApiDataService>());
+        builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<PoiAudioPlaybackService>());
         builder.Services.AddSingleton<ILocationService, DeviceLocationService>();
         builder.Services.AddSingleton<IPoiProximityService, PoiProximityService>();
         builder.Services.AddSingleton<IRouteService, HttpRouteService>();

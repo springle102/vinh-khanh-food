@@ -62,7 +62,8 @@ internal static class LocalizationContentPolicy
             return false;
         }
 
-        return IsSourceLanguage(languageCode) || !LooksLikeVietnameseContent(value);
+        return IsSourceLanguage(languageCode) ||
+               (!LooksLikeVietnameseContent(value) && !LooksLikeTechnicalIdentifier(value));
     }
 
     public static string? CleanForLanguage(string? value, string? languageCode)
@@ -74,6 +75,52 @@ internal static class LocalizationContentPolicy
         }
 
         return IsUsableTextForLanguage(cleaned, languageCode) ? cleaned : null;
+    }
+
+    public static bool LooksLikeTechnicalIdentifier(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Any(char.IsWhiteSpace))
+        {
+            return false;
+        }
+
+        var normalized = trimmed.ToLowerInvariant();
+        var knownPrefixes = new[]
+        {
+            "runtime-",
+            "food-",
+            "poi-",
+            "route-",
+            "tour-",
+            "promotion-",
+            "promo-",
+            "audio-",
+            "media-",
+            "category-"
+        };
+
+        if (!knownPrefixes.Any(prefix => normalized.StartsWith(prefix, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        var hasSeparator = trimmed.IndexOfAny(['-', '_']) >= 0;
+        if (!hasSeparator)
+        {
+            return false;
+        }
+
+        var hasUppercase = trimmed.Any(character => character is >= 'A' and <= 'Z');
+        var isAsciiSlug = trimmed.All(character =>
+            char.IsLetterOrDigit(character) || character is '-' or '_');
+
+        return isAsciiSlug && !hasUppercase;
     }
 
     public static bool LooksLikeVietnameseContent(string value)

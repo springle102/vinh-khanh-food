@@ -215,8 +215,7 @@ public sealed record FoodItemUpsertRequest(
     string Name,
     string Description,
     string PriceRange,
-    string ImageUrl,
-    string SpicyLevel);
+    string ImageUrl);
 
 public sealed record TourRouteUpsertRequest(
     string Name,

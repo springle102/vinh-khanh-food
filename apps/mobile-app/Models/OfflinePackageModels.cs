@@ -112,3 +112,17 @@ public sealed class OfflinePackageState
 
     public int ProgressPercent => (int)Math.Round(ProgressFraction * 100d, MidpointRounding.AwayFromZero);
 }
+
+public sealed class OfflinePackageVerificationResult
+{
+    public bool IsValid { get; set; }
+    public int ManifestFileCount { get; set; }
+    public int MissingFileCount { get; set; }
+    public int InvalidAudioFileCount { get; set; }
+    public int InvalidImageFileCount { get; set; }
+    public int BootstrapPoiCount { get; set; }
+    public int BootstrapRouteCount { get; set; }
+    public int BootstrapAudioGuideCount { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public IReadOnlyList<string> Problems { get; set; } = Array.Empty<string>();
+}

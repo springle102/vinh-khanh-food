@@ -1111,6 +1111,8 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         };
 
         SetInlineFallbackText(detail.Name, poi.Title);
+        SetInlineFallbackText(detail.Summary, poi.ShortDescription);
+        SetInlineFallbackText(detail.Description, poi.ShortDescription);
         return detail;
     }
 

@@ -40,6 +40,56 @@ public static class MobileApiEndpointHelper
         return normalized.EndsWith("/", StringComparison.Ordinal) ? normalized : $"{normalized}/";
     }
 
+    public static string NormalizeAssetUrl(string? assetUrl, string? apiBaseUrl = null)
+    {
+        if (string.IsNullOrWhiteSpace(assetUrl))
+        {
+            return string.Empty;
+        }
+
+        var trimmedAssetUrl = assetUrl.Trim();
+        if (!Uri.TryCreate(trimmedAssetUrl, UriKind.Absolute, out var assetUri))
+        {
+            if (string.IsNullOrWhiteSpace(apiBaseUrl))
+            {
+                return trimmedAssetUrl;
+            }
+
+            return Uri.TryCreate(new Uri(EnsureTrailingSlash(apiBaseUrl), UriKind.Absolute), trimmedAssetUrl, out var combinedUri)
+                ? combinedUri.ToString()
+                : trimmedAssetUrl;
+        }
+
+        if (assetUri.IsFile)
+        {
+            return trimmedAssetUrl;
+        }
+
+        if (!IsLoopbackHost(assetUri.Host))
+        {
+            return NormalizeForCurrentPlatform(trimmedAssetUrl);
+        }
+
+        if (Uri.TryCreate(EnsureTrailingSlash(apiBaseUrl), UriKind.Absolute, out var apiBaseUri))
+        {
+            var builder = new UriBuilder(assetUri)
+            {
+                Scheme = apiBaseUri.Scheme,
+                Host = apiBaseUri.Host,
+                Port = apiBaseUri.Port
+            };
+
+            return builder.Uri.ToString();
+        }
+
+        return NormalizeForCurrentPlatform(trimmedAssetUrl);
+    }
+
+    public static Uri? NormalizeAssetUri(string? assetUrl, string? apiBaseUrl = null)
+        => Uri.TryCreate(NormalizeAssetUrl(assetUrl, apiBaseUrl), UriKind.Absolute, out var normalizedUri)
+            ? normalizedUri
+            : null;
+
     private static string NormalizeForCurrentPlatform(string? baseUrl)
     {
         var trimmed = baseUrl?.Trim() ?? string.Empty;
@@ -64,6 +114,10 @@ public static class MobileApiEndpointHelper
 
         return builder.Uri.ToString().TrimEnd('/');
     }
+
+    private static bool IsLoopbackHost(string host)
+        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase);
 
     private static string? GetVirtualPlatformKey(string platformKey)
     {
