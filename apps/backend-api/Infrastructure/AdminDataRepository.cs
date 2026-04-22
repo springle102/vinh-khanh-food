@@ -714,6 +714,9 @@ public sealed partial class AdminDataRepository
 
             IF COL_LENGTH(N'dbo.Pois', N'Priority') IS NULL
                 ALTER TABLE dbo.Pois ADD Priority INT NULL;
+
+            IF COL_LENGTH(N'dbo.Pois', N'PlaceTier') IS NULL
+                ALTER TABLE dbo.Pois ADD PlaceTier INT NULL;
             """);
 
         ExecuteNonQuery(
@@ -870,6 +873,23 @@ public sealed partial class AdminDataRepository
             connection,
             null,
             """
+            IF COL_LENGTH(N'dbo.Pois', N'PlaceTier') IS NOT NULL
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM sys.default_constraints defaultConstraint
+                   INNER JOIN sys.columns columnInfo
+                       ON columnInfo.object_id = defaultConstraint.parent_object_id
+                      AND columnInfo.column_id = defaultConstraint.parent_column_id
+                   WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.Pois')
+                     AND columnInfo.name = N'PlaceTier'
+               )
+                ALTER TABLE dbo.Pois ADD CONSTRAINT DF_Pois_PlaceTier DEFAULT ((0)) FOR PlaceTier;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
             IF OBJECT_ID(N'dbo.PoiTags', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.PoiTags (
@@ -912,7 +932,11 @@ public sealed partial class AdminDataRepository
                     WHEN TriggerRadius IS NULL OR TriggerRadius < 20 THEN 20
                     ELSE TriggerRadius
                 END,
-                Priority = COALESCE(Priority, 0);
+                Priority = COALESCE(Priority, 0),
+                PlaceTier = CASE
+                    WHEN PlaceTier = 1 THEN 1
+                    ELSE 0
+                END;
             """);
 
         foreach (var column in new[] { "Title", "ShortDescription", "Description", "AudioScript", "SourceLanguageCode" })
@@ -933,6 +957,22 @@ public sealed partial class AdminDataRepository
                 END;
                 """);
         }
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Pois')
+                  AND name = N'PlaceTier'
+                  AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.Pois ALTER COLUMN PlaceTier INT NOT NULL;
+            END;
+            """);
 
         ExecuteNonQuery(
             connection,

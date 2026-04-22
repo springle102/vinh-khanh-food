@@ -9,6 +9,7 @@ using Microsoft.Maui.Networking;
 using Microsoft.Maui.Storage;
 using Microsoft.Extensions.Logging;
 using VinhKhanh.Core.Mobile;
+using VinhKhanh.Core.Pois;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
@@ -93,6 +94,9 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             Latitude = 10.75803,
             Longitude = 106.70162,
             IsFeatured = true,
+            TriggerRadius = 40d,
+            Priority = 4,
+            PlaceTier = PoiPlaceTier.Premium,
             HeatIntensity = 1.0,
             DistanceText = "45 phút"
         },
@@ -108,6 +112,9 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             Latitude = 10.763724,
             Longitude = 106.701693,
             IsFeatured = true,
+            TriggerRadius = 35d,
+            Priority = 5,
+            PlaceTier = PoiPlaceTier.Premium,
             HeatIntensity = 0.86,
             DistanceText = "50 phút"
         },
@@ -123,6 +130,9 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             Latitude = 10.75712,
             Longitude = 106.70302,
             IsFeatured = false,
+            TriggerRadius = 30d,
+            Priority = 2,
+            PlaceTier = PoiPlaceTier.Basic,
             HeatIntensity = 0.62,
             DistanceText = "25 phút"
         }
@@ -2156,6 +2166,7 @@ public sealed partial class FoodStreetApiDataService
         public string PriceRange { get; set; } = string.Empty;
         public double TriggerRadius { get; set; }
         public int Priority { get; set; }
+        public PoiPlaceTier PlaceTier { get; set; } = PoiPlaceTier.Basic;
         public int AverageVisitDuration { get; set; }
         public int PopularityScore { get; set; }
         public List<string> Tags { get; set; } = [];

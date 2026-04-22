@@ -547,6 +547,7 @@ export const adminApi = {
     priceRange: string;
     triggerRadius: number;
     priority: number;
+    placeTier: Poi["placeTier"];
     tags: string[];
     ownerUserId: string | null;
     updatedBy: string;

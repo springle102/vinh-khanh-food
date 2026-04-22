@@ -233,6 +233,7 @@ def create_seed_db(output: Path, envelope: dict, manifest: dict, metadata: dict,
                 price_range TEXT NOT NULL,
                 trigger_radius REAL NOT NULL,
                 priority INTEGER NOT NULL,
+                place_tier INTEGER NOT NULL DEFAULT 0,
                 average_visit_duration INTEGER NOT NULL,
                 popularity_score INTEGER NOT NULL,
                 tags_json TEXT NOT NULL
@@ -338,9 +339,9 @@ def create_seed_db(output: Path, envelope: dict, manifest: dict, metadata: dict,
                 """
                 INSERT OR REPLACE INTO pois (
                     id, slug, address, lat, lng, category_id, status, featured, price_range,
-                    trigger_radius, priority, average_visit_duration, popularity_score, tags_json
+                    trigger_radius, priority, place_tier, average_visit_duration, popularity_score, tags_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     poi.get("id") or "",
@@ -354,6 +355,7 @@ def create_seed_db(output: Path, envelope: dict, manifest: dict, metadata: dict,
                     poi.get("priceRange") or "",
                     float(poi.get("triggerRadius") or 0),
                     int(poi.get("priority") or 0),
+                    int(poi.get("placeTier") or 0),
                     int(poi.get("averageVisitDuration") or 0),
                     int(poi.get("popularityScore") or 0),
                     json.dumps(poi.get("tags") or [], ensure_ascii=False),

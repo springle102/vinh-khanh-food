@@ -1,3 +1,5 @@
+using VinhKhanh.Core.Pois;
+
 namespace VinhKhanh.BackendApi.Models;
 
 public sealed class AdminUser
@@ -50,6 +52,7 @@ public sealed class Poi
     public string PriceRange { get; set; } = string.Empty;
     public int TriggerRadius { get; set; } = 20;
     public int Priority { get; set; }
+    public PoiPlaceTier PlaceTier { get; set; } = PoiPlaceTier.Basic;
     public List<string> Tags { get; set; } = [];
     public string? OwnerUserId { get; set; }
     public string UpdatedBy { get; set; } = string.Empty;

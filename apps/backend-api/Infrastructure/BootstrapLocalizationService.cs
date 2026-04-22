@@ -1,5 +1,6 @@
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
+using VinhKhanh.Core.Pois;
 
 namespace VinhKhanh.BackendApi.Infrastructure;
 
@@ -282,6 +283,7 @@ public sealed class BootstrapLocalizationService(
             PriceRange = poi.PriceRange,
             TriggerRadius = poi.TriggerRadius,
             Priority = poi.Priority,
+            PlaceTier = PoiPlaceTierCatalog.Normalize(poi.PlaceTier),
             Tags = [.. poi.Tags],
             OwnerUserId = poi.OwnerUserId,
             UpdatedBy = poi.UpdatedBy,

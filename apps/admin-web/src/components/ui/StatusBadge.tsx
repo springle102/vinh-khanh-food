@@ -13,6 +13,8 @@ const toneMap: Record<string, string> = {
   pending: "bg-amber-50 text-amber-700 ring-amber-100",
   invited: "bg-amber-50 text-amber-700 ring-amber-100",
   processing: "bg-sky-50 text-sky-700 ring-sky-100",
+  premium: "bg-amber-100 text-amber-900 ring-amber-200",
+  basic: "bg-sky-50 text-sky-700 ring-sky-100",
   archived: "bg-slate-100 text-slate-700 ring-slate-200",
   suspended: "bg-rose-50 text-rose-700 ring-rose-100",
   hidden: "bg-rose-50 text-rose-700 ring-rose-100",

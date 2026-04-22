@@ -2,6 +2,7 @@ using Microsoft.Data.SqlClient;
 using System.Linq;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
+using VinhKhanh.Core.Pois;
 
 namespace VinhKhanh.BackendApi.Infrastructure;
 
@@ -676,10 +677,10 @@ public sealed partial class AdminDataRepository
             INSERT INTO dbo.Pois (
                 Id, Slug, Title, ShortDescription, [Description], AudioScript, SourceLanguageCode,
                 AddressLine, Latitude, Longitude, CategoryId, [Status], IsFeatured, IsActive, LockedBySuperAdmin,
-                District, Ward, PriceRange, TriggerRadius, Priority, OwnerUserId,
+                District, Ward, PriceRange, TriggerRadius, Priority, PlaceTier, OwnerUserId,
                 ApprovedAt, RejectionReason, RejectedAt, UpdatedBy, CreatedAt, UpdatedAt
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             poiId,
             request.Slug,
@@ -701,6 +702,7 @@ public sealed partial class AdminDataRepository
             request.PriceRange,
             request.TriggerRadius,
             request.Priority,
+            (int)PoiPlaceTierCatalog.Normalize(request.PlaceTier),
             ownerUserId,
             approvedAt,
             rejectionReason,
@@ -745,6 +747,7 @@ public sealed partial class AdminDataRepository
                 PriceRange = ?,
                 TriggerRadius = ?,
                 Priority = ?,
+                PlaceTier = ?,
                 OwnerUserId = ?,
                 ApprovedAt = ?,
                 RejectionReason = ?,
@@ -767,6 +770,7 @@ public sealed partial class AdminDataRepository
             request.PriceRange,
             request.TriggerRadius,
             request.Priority,
+            (int)PoiPlaceTierCatalog.Normalize(request.PlaceTier),
             ownerUserId,
             approvedAt,
             rejectionReason,

@@ -46,11 +46,6 @@ public sealed class AutoNarrationService : IAutoNarrationService
     private string? _lastManualTriggeredPoiId;
     private DateTimeOffset _lastManualTriggeredTime = DateTimeOffset.MinValue;
 
-    private sealed record PoiTriggerCandidate(
-        PoiLocation Poi,
-        bool IsInCurrentTour,
-        double DistanceToUserMeters);
-
     public AutoNarrationService(
         IFoodStreetDataService dataService,
         IPoiProximityService poiProximityService,
@@ -125,9 +120,15 @@ public sealed class AutoNarrationService : IAutoNarrationService
         ArgumentNullException.ThrowIfNull(location);
         ArgumentNullException.ThrowIfNull(allPois);
 
-        var candidates = BuildCandidates(location, allPois, _activeRoutePlan);
-        var selectedCandidate = SelectAutoCandidate(candidates);
-        var snapshot = BuildSnapshot(location, candidates, selectedCandidate?.Poi);
+        var candidates = BuildCandidates(location, allPois);
+        var selectedCandidate = PoiOverlapSelectionHelper.SelectBestCandidate(candidates);
+        var snapshot = PoiOverlapSelectionHelper.BuildSnapshot(location, candidates, selectedCandidate);
+        var selectedPoi = selectedCandidate is PoiOverlapCandidate autoCandidate ? autoCandidate.Poi : null;
+        LogOverlapSelection(
+            isMockLocation ? "mock-stream" : "gps-stream",
+            location,
+            candidates,
+            selectedCandidate);
 
         if (!IsEnabled)
         {
@@ -155,7 +156,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
             {
                 decision = AutoNarrationDecision.Busy;
             }
-            else if (string.Equals(_currentPlayingPoiId, selectedCandidate.Poi.Id, StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(_currentPlayingPoiId, selectedPoi?.Id, StringComparison.OrdinalIgnoreCase))
             {
                 decision = AutoNarrationDecision.Busy;
             }
@@ -163,10 +164,10 @@ public sealed class AutoNarrationService : IAutoNarrationService
             {
                 decision = AutoNarrationDecision.Cooldown;
             }
-            else if (CanPlayCandidateLocked(selectedCandidate.Poi.Id))
+            else if (selectedPoi is not null && CanPlayCandidateLocked(selectedPoi.Id))
             {
-                nextPlaybackPoi = selectedCandidate.Poi;
-                ReserveForPlaybackLocked(selectedCandidate.Poi.Id);
+                nextPlaybackPoi = selectedPoi;
+                ReserveForPlaybackLocked(selectedPoi.Id);
                 decision = AutoNarrationDecision.Played;
             }
             else
@@ -187,7 +188,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
 
         if (nextPlaybackPoi is null)
         {
-            return CreateResult(snapshot, selectedCandidate?.Poi, null, decision, isMockLocation);
+            return CreateResult(snapshot, selectedPoi, null, decision, isMockLocation);
         }
 
         var detail = await LoadPoiDetailOrFallbackAsync(nextPlaybackPoi);
@@ -209,13 +210,15 @@ public sealed class AutoNarrationService : IAutoNarrationService
         ArgumentNullException.ThrowIfNull(location);
         ArgumentNullException.ThrowIfNull(allPois);
 
-        var candidates = BuildCandidates(location, allPois, _activeRoutePlan);
-        var selectedCandidate = SelectManualCandidate(candidates);
-        var snapshot = BuildSnapshot(location, candidates, selectedCandidate?.Poi);
+        var candidates = BuildCandidates(location, allPois);
+        var selectedCandidate = PoiOverlapSelectionHelper.SelectBestCandidate(candidates);
+        var snapshot = PoiOverlapSelectionHelper.BuildSnapshot(location, candidates, selectedCandidate);
+        var selectedPoi = selectedCandidate is PoiOverlapCandidate manualCandidate ? manualCandidate.Poi : null;
+        LogOverlapSelection("mock-tap", location, candidates, selectedCandidate);
 
         if (!IsEnabled)
         {
-            return CreateResult(snapshot, selectedCandidate?.Poi, null, AutoNarrationDecision.Disabled, isMockLocation: true);
+            return CreateResult(snapshot, selectedPoi, null, AutoNarrationDecision.Disabled, isMockLocation: true);
         }
 
         if (selectedCandidate is null)
@@ -233,20 +236,20 @@ public sealed class AutoNarrationService : IAutoNarrationService
             {
                 decision = AutoNarrationDecision.Busy;
             }
-            else if (IsManualReplayInCooldownLocked(selectedCandidate.Poi.Id))
+            else if (selectedPoi is not null && IsManualReplayInCooldownLocked(selectedPoi.Id))
             {
                 decision = AutoNarrationDecision.Cooldown;
             }
             else
             {
                 var now = DateTimeOffset.UtcNow;
-                ReserveForPlaybackLocked(selectedCandidate.Poi.Id);
-                _lastManualTriggeredPoiId = selectedCandidate.Poi.Id;
+                ReserveForPlaybackLocked(selectedPoi!.Id);
+                _lastManualTriggeredPoiId = selectedPoi.Id;
                 _lastManualTriggeredTime = now;
-                _lastInsidePoiId = selectedCandidate.Poi.Id;
-                _candidatePoiId = selectedCandidate.Poi.Id;
+                _lastInsidePoiId = selectedPoi.Id;
+                _candidatePoiId = selectedPoi.Id;
                 _candidateSince = now;
-                nextPlaybackPoi = selectedCandidate.Poi;
+                nextPlaybackPoi = selectedPoi;
                 decision = AutoNarrationDecision.Played;
             }
         }
@@ -257,7 +260,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
 
         if (nextPlaybackPoi is null)
         {
-            return CreateResult(snapshot, selectedCandidate.Poi, null, decision, isMockLocation: true);
+            return CreateResult(snapshot, selectedPoi, null, decision, isMockLocation: true);
         }
 
         var detail = await LoadPoiDetailOrFallbackAsync(nextPlaybackPoi);
@@ -280,10 +283,18 @@ public sealed class AutoNarrationService : IAutoNarrationService
             Latitude = poi.Latitude,
             Longitude = poi.Longitude
         };
-        var snapshot = BuildSnapshot(
+        var candidates = new List<PoiOverlapCandidate>
+        {
+            new(
+                poi,
+                0d,
+                PoiOverlapSelectionHelper.ResolveTriggerRadius(poi),
+                IsInsideTriggerRadius: true)
+        };
+        var snapshot = PoiOverlapSelectionHelper.BuildSnapshot(
             location,
-            [new PoiTriggerCandidate(poi, false, 0d)],
-            poi);
+            candidates,
+            candidates[0]);
         var detail = await LoadPoiDetailOrFallbackAsync(poi);
         if (detail is null)
         {
@@ -321,71 +332,27 @@ public sealed class AutoNarrationService : IAutoNarrationService
             IsMockLocation = isMockLocation
         };
 
-    private List<PoiTriggerCandidate> BuildCandidates(
+    private List<PoiOverlapCandidate> BuildCandidates(
         UserLocationPoint location,
-        IReadOnlyList<PoiLocation> allPois,
-        RouteNarrationPlan? routePlan)
-    {
-        var currentTourPoiIds = routePlan?.EligiblePois.Count > 0
-            ? routePlan.EligiblePois
-                .Select(item => item.Poi.Id)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase)
-            : null;
+        IReadOnlyList<PoiLocation> allPois)
+        => PoiOverlapSelectionHelper.BuildCandidates(
+            location,
+            allPois,
+            _poiProximityService.CalculateDistanceMeters);
 
-        return allPois
-            .Select(poi => new PoiTriggerCandidate(
-                poi,
-                currentTourPoiIds?.Contains(poi.Id) == true,
-                _poiProximityService.CalculateDistanceMeters(
-                    location.Latitude,
-                    location.Longitude,
-                    poi.Latitude,
-                    poi.Longitude)))
-            .ToList();
-    }
-
-    private static PoiTriggerCandidate? SelectAutoCandidate(IEnumerable<PoiTriggerCandidate> candidates)
-        => candidates
-            .Where(candidate => candidate.DistanceToUserMeters <= GetEffectiveTriggerRadius(candidate.Poi))
-            .OrderByDescending(candidate => candidate.IsInCurrentTour)
-            .ThenByDescending(candidate => candidate.Poi.Priority)
-            .ThenBy(candidate => candidate.DistanceToUserMeters)
-            .ThenBy(candidate => candidate.Poi.Id, StringComparer.Ordinal)
-            .FirstOrDefault();
-
-    private static PoiTriggerCandidate? SelectManualCandidate(IEnumerable<PoiTriggerCandidate> candidates)
-        => candidates
-            .Where(candidate => candidate.DistanceToUserMeters <= GetEffectiveTriggerRadius(candidate.Poi))
-            .OrderBy(candidate => candidate.DistanceToUserMeters)
-            .ThenByDescending(candidate => candidate.Poi.Priority)
-            .ThenBy(candidate => candidate.Poi.Id, StringComparer.Ordinal)
-            .FirstOrDefault();
-
-    private static PoiProximitySnapshot BuildSnapshot(
+    private void LogOverlapSelection(
+        string source,
         UserLocationPoint location,
-        IReadOnlyList<PoiTriggerCandidate> candidates,
-        PoiLocation? activePoi)
+        IReadOnlyList<PoiOverlapCandidate> candidates,
+        PoiOverlapCandidate? selectedCandidate)
     {
-        var nearestCandidate = candidates
-            .OrderBy(candidate => candidate.DistanceToUserMeters)
-            .ThenBy(candidate => candidate.Poi.Id, StringComparer.Ordinal)
-            .FirstOrDefault();
-        var activeCandidate = activePoi is null
-            ? null
-            : candidates.FirstOrDefault(candidate =>
-                string.Equals(candidate.Poi.Id, activePoi.Id, StringComparison.OrdinalIgnoreCase));
-
-        return new PoiProximitySnapshot
-        {
-            Location = location,
-            NearestPoi = nearestCandidate?.Poi,
-            NearestPoiDistanceMeters = nearestCandidate?.DistanceToUserMeters,
-            ActivePoi = activeCandidate?.Poi,
-            ActivePoiDistanceMeters = activeCandidate?.DistanceToUserMeters,
-            ActivationRadiusMeters = activeCandidate is null
-                ? 0d
-                : GetEffectiveTriggerRadius(activeCandidate.Poi)
-        };
+        _logger.LogDebug(
+            "[PoiOverlap] source={Source}; latitude={Latitude}; longitude={Longitude}; candidates={Candidates}; selected={Selected}",
+            source,
+            location.Latitude,
+            location.Longitude,
+            PoiOverlapSelectionHelper.DescribeCandidates(candidates),
+            PoiOverlapSelectionHelper.DescribeCandidate(selectedCandidate));
     }
 
     private void ResetRouteStateLocked()
@@ -548,8 +515,4 @@ public sealed class AutoNarrationService : IAutoNarrationService
         }
     }
 
-    private static double GetEffectiveTriggerRadius(PoiLocation poi)
-        => double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= 20d
-            ? poi.TriggerRadius
-            : 20d;
 }

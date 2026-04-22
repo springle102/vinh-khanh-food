@@ -13,6 +13,7 @@ export type PromotionStatus = "upcoming" | "active" | "expired" | "hidden" | "de
 export type DeviceType = "android" | "web";
 export type TtsProvider = "elevenlabs";
 export type UsageEventType = "poi_view" | "audio_play" | "qr_scan";
+export type PoiPlaceTier = 0 | 1;
 
 export interface GeocodingLocation {
   address: string;
@@ -76,6 +77,7 @@ export interface Poi {
   priceRange: string;
   triggerRadius: number;
   priority: number;
+  placeTier: PoiPlaceTier;
   tags: string[];
   ownerUserId: string | null;
   updatedBy: string;

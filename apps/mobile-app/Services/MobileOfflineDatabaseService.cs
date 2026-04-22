@@ -561,6 +561,7 @@ public sealed class MobileOfflineDatabaseService :
                 price_range TEXT NOT NULL,
                 trigger_radius REAL NOT NULL,
                 priority INTEGER NOT NULL,
+                place_tier INTEGER NOT NULL DEFAULT 0,
                 average_visit_duration INTEGER NOT NULL,
                 popularity_score INTEGER NOT NULL,
                 tags_json TEXT NOT NULL
@@ -649,6 +650,32 @@ public sealed class MobileOfflineDatabaseService :
             CREATE INDEX IF NOT EXISTS ix_sync_logs_queue_status
             ON sync_logs_queue (status, occurred_at_utc);
             """);
+
+        EnsureColumnExists(db, "pois", "place_tier", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private static void EnsureColumnExists(SQLiteDatabase db, string tableName, string columnName, string columnDefinition)
+    {
+        if (HasColumn(db, tableName, columnName))
+        {
+            return;
+        }
+
+        db.ExecSQL($"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};");
+    }
+
+    private static bool HasColumn(SQLiteDatabase db, string tableName, string columnName)
+    {
+        using var cursor = db.RawQuery($"PRAGMA table_info({tableName});", null);
+        while (cursor.MoveToNext())
+        {
+            if (string.Equals(GetCursorString(cursor, "name"), columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private string? TryReadMetadataValue(string key)

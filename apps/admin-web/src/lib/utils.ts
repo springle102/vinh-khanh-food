@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import type { ApprovalStatus, AuditActorRole, ContentStatus, LanguageCode, UserStatus } from "../data/types";
+import type { ApprovalStatus, AuditActorRole, ContentStatus, LanguageCode, PoiPlaceTier, UserStatus } from "../data/types";
 
 export const cn = (...values: Array<string | false | null | undefined>) => clsx(values);
 
@@ -41,6 +41,14 @@ export const poiActivityLabels = {
   active: "Đang hoạt động",
   inactive: "Ngừng hoạt động",
 } as const;
+
+export const poiPlaceTierLabels: Record<PoiPlaceTier, string> = {
+  0: "Basic",
+  1: "Premium",
+};
+
+export const normalizePoiPlaceTier = (value: number | null | undefined): PoiPlaceTier =>
+  value === 1 ? 1 : 0;
 
 export const formatDateTime = (value: string | null) => {
   if (!value) {

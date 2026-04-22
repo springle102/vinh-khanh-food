@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using VinhKhanh.Core.Pois;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
@@ -24,6 +25,9 @@ public sealed partial class FoodStreetApiDataService
             Latitude = poi.Latitude,
             Longitude = poi.Longitude,
             IsFeatured = poi.IsFeatured,
+            TriggerRadius = poi.TriggerRadius,
+            Priority = Math.Max(0, poi.Priority),
+            PlaceTier = PoiPlaceTierCatalog.Normalize(poi.PlaceTier),
             HeatIntensity = poi.HeatIntensity,
             DistanceText = LocalizeDistanceText(poi.DistanceText)
         };

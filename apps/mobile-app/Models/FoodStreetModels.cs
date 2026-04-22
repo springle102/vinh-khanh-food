@@ -1,4 +1,5 @@
 using VinhKhanh.MobileApp.Helpers;
+using VinhKhanh.Core.Pois;
 
 namespace VinhKhanh.MobileApp.Models;
 
@@ -90,6 +91,7 @@ public sealed class PoiLocation
     public bool IsFeatured { get; set; }
     public double TriggerRadius { get; set; } = 20d;
     public int Priority { get; set; }
+    public PoiPlaceTier PlaceTier { get; set; } = PoiPlaceTier.Basic;
     public double HeatIntensity { get; set; }
     public string DistanceText { get; set; } = string.Empty;
 }

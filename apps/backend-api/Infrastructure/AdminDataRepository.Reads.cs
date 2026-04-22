@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using VinhKhanh.BackendApi.Models;
+using VinhKhanh.Core.Pois;
 
 namespace VinhKhanh.BackendApi.Infrastructure;
 
@@ -77,6 +78,7 @@ public sealed partial class AdminDataRepository
                 PriceRange,
                 TriggerRadius,
                 Priority,
+                PlaceTier,
                 OwnerUserId,
                 ApprovedAt,
                 RejectionReason,
@@ -139,6 +141,7 @@ public sealed partial class AdminDataRepository
                     PriceRange = ReadString(poisReader, "PriceRange"),
                     TriggerRadius = ReadInt(poisReader, "TriggerRadius"),
                     Priority = ReadInt(poisReader, "Priority"),
+                    PlaceTier = PoiPlaceTierCatalog.FromInt(ReadInt(poisReader, "PlaceTier")),
                     Tags = tagMap.GetValueOrDefault(poiId, []),
                     OwnerUserId = ReadNullableString(poisReader, "OwnerUserId"),
                     ApprovedAt = ReadNullableDateTimeOffset(poisReader, "ApprovedAt"),

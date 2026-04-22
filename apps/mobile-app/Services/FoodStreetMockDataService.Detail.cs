@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
+using VinhKhanh.Core.Pois;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
 
@@ -102,6 +103,7 @@ public sealed partial class FoodStreetApiDataService
                 ? poi.TriggerRadius
                 : 20d,
             Priority = Math.Max(0, poi.Priority),
+            PlaceTier = PoiPlaceTierCatalog.Normalize(poi.PlaceTier),
             HeatIntensity = ResolveHeatIntensity(poi, []),
             DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))
         };
@@ -144,6 +146,7 @@ public sealed partial class FoodStreetApiDataService
                 ? poi.TriggerRadius
                 : 20d,
             Priority = Math.Max(0, poi.Priority),
+            PlaceTier = PoiPlaceTierCatalog.Normalize(poi.PlaceTier),
             HeatIntensity = ResolveHeatIntensity(poi, []),
             DistanceText = FormatVisitDuration(Math.Max(10, poi.AverageVisitDuration))
         };

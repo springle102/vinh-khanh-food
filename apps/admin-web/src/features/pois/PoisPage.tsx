@@ -14,7 +14,16 @@ import type { AdminDataState, AudioGuide, FoodItem, LanguageCode, MediaAsset, Po
 import { adminApi, getErrorMessage, type PoiAudioGenerationResult } from "../../lib/api";
 import { preventImplicitFormSubmit } from "../../lib/forms";
 import { getCategoryName, getEntityTranslationFromList, getOwnerName, searchPois } from "../../lib/selectors";
-import { contentStatusLabels, formatDateTime, formatNumber, languageLabels, poiActivityLabels, slugify } from "../../lib/utils";
+import {
+  contentStatusLabels,
+  formatDateTime,
+  formatNumber,
+  languageLabels,
+  normalizePoiPlaceTier,
+  poiActivityLabels,
+  poiPlaceTierLabels,
+  slugify,
+} from "../../lib/utils";
 import { useAuth } from "../auth/AuthContext";
 import { OpenStreetMapPicker, type PoiMapItem } from "./OpenStreetMapPicker";
 import { usePoiNarrationPlayback } from "./usePoiNarrationPlayback";
@@ -65,6 +74,7 @@ type PoiFormState = {
   priceRange: string;
   triggerRadius: string;
   priority: string;
+  placeTier: string;
   tags: string;
   ownerUserId: string;
   fullText: string;
@@ -103,6 +113,7 @@ const createDefaultForm = (status: Poi["status"] = "draft"): PoiFormState => ({
   priceRange: "",
   triggerRadius: "20",
   priority: "0",
+  placeTier: "0",
   tags: "",
   ownerUserId: "",
   fullText: "",
@@ -338,6 +349,7 @@ const buildPoiEditorContentSnapshot = (
     priceRange: form.priceRange.trim(),
     triggerRadius: form.triggerRadius.trim(),
     priority: form.priority.trim(),
+    placeTier: form.placeTier.trim(),
     ownerUserId: form.ownerUserId.trim(),
     tags: form.tags
       .split(",")
@@ -907,6 +919,7 @@ export const PoisPage = () => {
         priceRange: loadedPoi.priceRange,
         triggerRadius: String(loadedPoi.triggerRadius ?? 20),
         priority: String(loadedPoi.priority ?? 0),
+        placeTier: String(normalizePoiPlaceTier(loadedPoi.placeTier)),
         tags: loadedPoi.tags.join(", "),
         ownerUserId: isOwner ? user?.id ?? "" : loadedPoi.ownerUserId ?? "",
         fullText: translationFields.fullText,
@@ -1389,6 +1402,8 @@ export const PoisPage = () => {
       const lng = parseRequiredCoordinate(form.lng);
       const triggerRadius = Number.parseInt(form.triggerRadius.trim(), 10);
       const priority = Number.parseInt(form.priority.trim(), 10);
+      const parsedPlaceTier = Number.parseInt(form.placeTier.trim(), 10);
+      const placeTier = normalizePoiPlaceTier(parsedPlaceTier);
       if (lat === null || lng === null) {
         setFormError("Hãy nhập tọa độ Lat/Lng hợp lệ trước khi lưu POI.");
         setSaving(false);
@@ -1401,6 +1416,11 @@ export const PoisPage = () => {
       }
       if (!Number.isFinite(priority) || priority < 0) {
         setFormError("Độ ưu tiên POI phải là số nguyên từ 0 trở lên.");
+        setSaving(false);
+        return;
+      }
+      if (!Number.isFinite(parsedPlaceTier) || ![0, 1].includes(parsedPlaceTier)) {
+        setFormError("Loại quán chỉ được là Basic hoặc Premium.");
         setSaving(false);
         return;
       }
@@ -1499,6 +1519,7 @@ export const PoisPage = () => {
           priceRange: form.priceRange,
           triggerRadius,
           priority,
+          placeTier,
           tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
           ownerUserId: (isOwner ? user.id : form.ownerUserId) || null,
           translationLanguageCode: form.contentLanguageCode,
@@ -1868,6 +1889,10 @@ export const PoisPage = () => {
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-semibold text-ink-900">{translation?.title ?? poi.slug}</p>
               <StatusBadge status={statusBadge.status} label={statusBadge.label} />
+              <StatusBadge
+                status={normalizePoiPlaceTier(poi.placeTier) === 1 ? "premium" : "basic"}
+                label={poiPlaceTierLabels[normalizePoiPlaceTier(poi.placeTier)]}
+              />
             </div>
             <p className="mt-2 text-sm text-ink-500">{translation?.shortText || poi.address}</p>
             {poi.rejectionReason ? (
@@ -1881,6 +1906,19 @@ export const PoisPage = () => {
           </div>
         );
       },
+    },
+    {
+      key: "tier",
+      header: "Loại quán",
+      widthClassName: "min-w-[150px]",
+      render: (poi) => (
+        <div>
+          <p className="font-medium text-ink-800">
+            {poiPlaceTierLabels[normalizePoiPlaceTier(poi.placeTier)]}
+          </p>
+          <p className="mt-1 text-xs text-ink-500">Priority {poi.priority}</p>
+        </div>
+      ),
     },
     {
       key: "map",
@@ -2070,6 +2108,7 @@ export const PoisPage = () => {
                 {[
                   ["Slug", selectedPoi.slug],
                   ["Phân loại", getCategoryName(state, selectedPoi.categoryId)],
+                  ["Loại quán", poiPlaceTierLabels[normalizePoiPlaceTier(selectedPoi.placeTier)]],
                   ["Khoảng giá", selectedPoi.priceRange || "Chưa cập nhật"],
                   ["Bán kính kích hoạt", `${selectedPoi.triggerRadius}m`],
                   ["Chủ quản lý", getOwnerName(state, selectedPoi.ownerUserId)],
@@ -2442,6 +2481,17 @@ export const PoisPage = () => {
                     onChange={(event) => setForm((current) => ({ ...current, priceRange: event.target.value }))}
                     placeholder="Ví dụ: 50.000 - 150.000 VND"
                   />
+                </div>
+                <div>
+                  <label className="field-label">Loại quán</label>
+                  <Select
+                    value={form.placeTier}
+                    disabled={isPoiModalViewOnly}
+                    onChange={(event) => setForm((current) => ({ ...current, placeTier: event.target.value }))}
+                  >
+                    <option value="0">Basic</option>
+                    <option value="1">Premium</option>
+                  </Select>
                 </div>
                 <div>
                   <label className="field-label">Bán kính kích hoạt (m)</label>

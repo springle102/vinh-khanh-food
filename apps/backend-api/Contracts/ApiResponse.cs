@@ -1,3 +1,5 @@
+using VinhKhanh.Core.Pois;
+
 namespace VinhKhanh.BackendApi.Contracts;
 
 public sealed record ApiResponse<T>(bool Success, T? Data, string? Message = null)
@@ -43,6 +45,7 @@ public sealed record PoiUpsertRequest(
     string PriceRange,
     int TriggerRadius,
     int Priority,
+    PoiPlaceTier PlaceTier,
     List<string> Tags,
     string? OwnerUserId,
     string UpdatedBy,

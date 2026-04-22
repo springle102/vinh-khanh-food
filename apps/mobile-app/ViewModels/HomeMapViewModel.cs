@@ -867,51 +867,20 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 
     private PoiProximitySnapshot BuildPassiveLocationSnapshot(UserLocationPoint location)
     {
-        PoiLocation? nearestPoi = null;
-        double? nearestDistanceMeters = null;
-        PoiLocation? activePoi = null;
-        double? activeDistanceMeters = null;
+        var candidates = PoiOverlapSelectionHelper.BuildCandidates(
+            location,
+            Pois,
+            CalculateDistanceMeters);
+        var activeCandidate = PoiOverlapSelectionHelper.SelectBestCandidate(candidates);
 
-        foreach (var poi in Pois)
-        {
-            var distanceMeters = CalculateDistanceMeters(
-                location.Latitude,
-                location.Longitude,
-                poi.Latitude,
-                poi.Longitude);
+        _logger.LogDebug(
+            "[PoiOverlap] source=passive-snapshot; latitude={Latitude}; longitude={Longitude}; candidates={Candidates}; selected={Selected}",
+            location.Latitude,
+            location.Longitude,
+            PoiOverlapSelectionHelper.DescribeCandidates(candidates),
+            PoiOverlapSelectionHelper.DescribeCandidate(activeCandidate));
 
-            if (nearestDistanceMeters is null || distanceMeters < nearestDistanceMeters.Value)
-            {
-                nearestPoi = poi;
-                nearestDistanceMeters = distanceMeters;
-            }
-
-            if (distanceMeters > ResolveTriggerRadius(poi))
-            {
-                continue;
-            }
-
-            if (activePoi is null ||
-                distanceMeters < activeDistanceMeters.GetValueOrDefault(double.MaxValue) ||
-                (Math.Abs(distanceMeters - activeDistanceMeters.GetValueOrDefault()) < 0.01d &&
-                 (poi.Priority > activePoi.Priority ||
-                  (poi.Priority == activePoi.Priority &&
-                   string.CompareOrdinal(poi.Id, activePoi.Id) < 0))))
-            {
-                activePoi = poi;
-                activeDistanceMeters = distanceMeters;
-            }
-        }
-
-        return new PoiProximitySnapshot
-        {
-            Location = location,
-            NearestPoi = nearestPoi,
-            NearestPoiDistanceMeters = nearestDistanceMeters,
-            ActivePoi = activePoi,
-            ActivePoiDistanceMeters = activeDistanceMeters,
-            ActivationRadiusMeters = activePoi is null ? 0d : ResolveTriggerRadius(activePoi)
-        };
+        return PoiOverlapSelectionHelper.BuildSnapshot(location, candidates, activeCandidate);
     }
 
     private async Task PresentAutoNarratedPoiAsync(PoiLocation poi, PoiExperienceDetail detail, string usageSource)
@@ -983,11 +952,6 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             ? "route_simulation_auto"
             : "mock_location_test";
     }
-
-    private static double ResolveTriggerRadius(PoiLocation poi)
-        => double.IsFinite(poi.TriggerRadius) && poi.TriggerRadius >= 20d
-            ? poi.TriggerRadius
-            : 20d;
 
     private static double CalculateDistanceMeters(
         double latitude1,

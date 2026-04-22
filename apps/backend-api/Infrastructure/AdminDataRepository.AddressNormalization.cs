@@ -1,6 +1,7 @@
 using Microsoft.Data.SqlClient;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
+using VinhKhanh.Core.Pois;
 
 namespace VinhKhanh.BackendApi.Infrastructure;
 
@@ -15,6 +16,7 @@ public sealed partial class AdminDataRepository
             _ => request.TriggerRadius
         };
         var normalizedPriority = request.Priority < 0 ? 0 : request.Priority;
+        var normalizedPlaceTier = PoiPlaceTierCatalog.Normalize(request.PlaceTier);
         var normalized = PoiAddressNormalizer.NormalizeStoredPoiAddress(
             request.Address,
             request.District,
@@ -24,7 +26,8 @@ public sealed partial class AdminDataRepository
 
         if (!HasPoiAddressChanges(request.Address, request.District, request.Ward, normalized) &&
             normalizedTriggerRadius == request.TriggerRadius &&
-            normalizedPriority == request.Priority)
+            normalizedPriority == request.Priority &&
+            normalizedPlaceTier == request.PlaceTier)
         {
             return request;
         }
@@ -46,12 +49,14 @@ public sealed partial class AdminDataRepository
             District = normalized.District,
             Ward = normalized.Ward,
             TriggerRadius = normalizedTriggerRadius,
-            Priority = normalizedPriority
+            Priority = normalizedPriority,
+            PlaceTier = normalizedPlaceTier
         };
     }
 
     private Poi NormalizePoiForResponse(Poi poi)
     {
+        poi.PlaceTier = PoiPlaceTierCatalog.Normalize(poi.PlaceTier);
         var normalized = PoiAddressNormalizer.NormalizeStoredPoiAddress(
             poi.Address,
             poi.District,

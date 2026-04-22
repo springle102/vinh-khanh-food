@@ -320,46 +320,13 @@ public sealed class PoiProximityService : IPoiProximityService
         ArgumentNullException.ThrowIfNull(location);
         ArgumentNullException.ThrowIfNull(pois);
 
-        PoiLocation? nearestPoi = null;
-        PoiLocation? activePoi = null;
-        double? nearestDistanceMeters = null;
-        double? activeDistanceMeters = null;
-
-        foreach (var poi in pois)
-        {
-            var distanceMeters = CalculateDistanceMeters(
-                location.Latitude,
-                location.Longitude,
-                poi.Latitude,
-                poi.Longitude);
-
-            if (nearestDistanceMeters is null || distanceMeters < nearestDistanceMeters.Value)
-            {
-                nearestPoi = poi;
-                nearestDistanceMeters = distanceMeters;
-            }
-
-            if (distanceMeters > activationRadiusMeters)
-            {
-                continue;
-            }
-
-            if (activeDistanceMeters is null || distanceMeters < activeDistanceMeters.Value)
-            {
-                activePoi = poi;
-                activeDistanceMeters = distanceMeters;
-            }
-        }
-
-        return new PoiProximitySnapshot
-        {
-            Location = location,
-            NearestPoi = nearestPoi,
-            NearestPoiDistanceMeters = nearestDistanceMeters,
-            ActivePoi = activePoi,
-            ActivePoiDistanceMeters = activeDistanceMeters,
-            ActivationRadiusMeters = activationRadiusMeters
-        };
+        var candidates = PoiOverlapSelectionHelper.BuildCandidates(
+            location,
+            pois,
+            CalculateDistanceMeters,
+            activationRadiusMeters);
+        var activeCandidate = PoiOverlapSelectionHelper.SelectBestCandidate(candidates);
+        return PoiOverlapSelectionHelper.BuildSnapshot(location, candidates, activeCandidate);
     }
 
     public double CalculateDistanceMeters(double latitude1, double longitude1, double latitude2, double longitude2)
