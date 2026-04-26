@@ -66,7 +66,8 @@ public sealed partial class FoodStreetApiDataService
         _bootstrapSource = envelope.Data;
         _bootstrapSourceLanguageCode = AppLanguage.NormalizeCode(requestedLanguageCode);
         _syncState = envelope.Data.SyncState;
-        _lastSyncCheckAt = DateTimeOffset.UtcNow;
+        // A cached/offline snapshot is only a fallback source. Keep sync-check stale so
+        // the next online load can still verify whether the backend DB has newer POI data.
 
         _logger.LogInformation(
             "[OfflineDb] Bootstrap loaded from local SQLite. requestedLanguage={Language}; version={Version}; source={Source}; pois={PoiCount}; routes={RouteCount}",
@@ -107,7 +108,6 @@ public sealed partial class FoodStreetApiDataService
         _bootstrapSource = envelope.Data;
         _bootstrapSourceLanguageCode = AppLanguage.NormalizeCode(requestedLanguageCode);
         _syncState = envelope.Data.SyncState;
-        _lastSyncCheckAt = DateTimeOffset.UtcNow;
         return TryRebuildBootstrapSnapshotFromCache(requestedLanguageCode, "offline-package");
     }
 

@@ -72,8 +72,9 @@ public sealed partial class AdminDataRepository
     private IReadOnlyList<Promotion> GetPromotions(SqlConnection connection, SqlTransaction? transaction)
     {
         const string sql = """
-            SELECT Id, PoiId, Title, [Description], StartAt, EndAt, [Status]
+            SELECT Id, PoiId, Title, [Description], StartAt, EndAt, [Status], VisibleFrom, CreatedByUserId, OwnerUserId, IsDeleted
             FROM dbo.Promotions
+            WHERE COALESCE(IsDeleted, CAST(0 AS bit)) = CAST(0 AS bit)
             ORDER BY StartAt DESC, Id DESC;
             """;
 

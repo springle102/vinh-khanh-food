@@ -164,22 +164,25 @@ public sealed class PoisController(
             languageCode,
             actor,
             cancellationToken);
-        if (narration is not null)
+        var normalizedNarration = narration is null
+            ? null
+            : responseUrlNormalizer.Normalize(narration);
+        if (normalizedNarration is not null)
         {
-            Response.Headers["X-Ui-Playback-Key"] = narration.UiPlaybackKey;
-            Response.Headers["X-Audio-Cache-Key"] = narration.AudioCacheKey;
-            Response.Headers["X-Effective-Language-Code"] = narration.EffectiveLanguageCode;
-            if (narration.AudioGuide is not null)
+            Response.Headers["X-Ui-Playback-Key"] = normalizedNarration.UiPlaybackKey;
+            Response.Headers["X-Audio-Cache-Key"] = normalizedNarration.AudioCacheKey;
+            Response.Headers["X-Effective-Language-Code"] = normalizedNarration.EffectiveLanguageCode;
+            if (normalizedNarration.AudioGuide is not null)
             {
-                Response.Headers["X-Audio-Guide-Id"] = narration.AudioGuide.Id;
-                Response.Headers["X-Audio-Content-Version"] = narration.AudioGuide.ContentVersion;
-                Response.Headers["X-Audio-Source"] = narration.AudioGuide.SourceType;
+                Response.Headers["X-Audio-Guide-Id"] = normalizedNarration.AudioGuide.Id;
+                Response.Headers["X-Audio-Content-Version"] = normalizedNarration.AudioGuide.ContentVersion;
+                Response.Headers["X-Audio-Source"] = normalizedNarration.AudioGuide.SourceType;
             }
         }
 
-        return narration is null
+        return normalizedNarration is null
             ? NotFound(ApiResponse<PoiNarrationResponse>.Fail("POI was not found."))
-            : Ok(ApiResponse<PoiNarrationResponse>.Ok(narration));
+            : Ok(ApiResponse<PoiNarrationResponse>.Ok(normalizedNarration));
     }
 
     [HttpGet("{id}/audio")]
@@ -234,6 +237,7 @@ public sealed class PoisController(
             return NotFound(ApiResponse<string>.Fail(exception.Message));
         }
         catch (Exception exception) when (
+            exception is FileNotFoundException ||
             exception is HttpRequestException ||
             exception is TaskCanceledException ||
             exception is InvalidOperationException)
@@ -253,9 +257,9 @@ public sealed class PoisController(
     public async Task<ActionResult<ApiResponse<Poi>>> CreatePoi([FromBody] PoiUpsertRequest request, CancellationToken cancellationToken)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
-        if (actor.IsSuperAdmin)
+        if (!actor.IsSuperAdmin)
         {
-            throw new ApiForbiddenException("Super Admin không có quyền tạo hoặc chỉnh sửa nội dung POI.");
+            throw new ApiForbiddenException("Chu quan khong duoc tao POI moi.");
         }
 
         logger.LogInformation(
@@ -274,7 +278,7 @@ public sealed class PoisController(
 
         var sanitizedRequest = request with
         {
-            OwnerUserId = actor.IsPlaceOwner ? actor.UserId : request.OwnerUserId,
+            OwnerUserId = request.OwnerUserId,
             UpdatedBy = actor.Name,
             ActorRole = actor.Role,
             ActorUserId = actor.UserId
@@ -289,9 +293,9 @@ public sealed class PoisController(
     public async Task<ActionResult<ApiResponse<Poi>>> UpdatePoi(string id, [FromBody] PoiUpsertRequest request, CancellationToken cancellationToken)
     {
         var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
-        if (actor.IsSuperAdmin)
+        if (!actor.IsSuperAdmin)
         {
-            throw new ApiForbiddenException("Bạn không có quyền chỉnh sửa nội dung POI.");
+            throw new ApiForbiddenException("Chu quan phai gui yeu cau duyet truoc khi thay doi POI.");
         }
 
         logger.LogInformation(
@@ -312,7 +316,7 @@ public sealed class PoisController(
 
         var sanitizedRequest = request with
         {
-            OwnerUserId = actor.IsPlaceOwner ? actor.UserId : request.OwnerUserId,
+            OwnerUserId = request.OwnerUserId,
             UpdatedBy = actor.Name,
             ActorRole = actor.Role,
             ActorUserId = actor.UserId
@@ -347,7 +351,7 @@ public sealed class PoisController(
     [HttpPatch("{id}/toggle-active")]
     public ActionResult<ApiResponse<Poi>> TogglePoiActive(string id, [FromBody] PoiActiveToggleRequest request)
     {
-        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
+        var actor = adminRequestContextResolver.RequireSuperAdmin();
         var saved = repository.TogglePoiActive(id, request.IsActive, actor);
         return Ok(ApiResponse<Poi>.Ok(
             saved,
@@ -357,7 +361,7 @@ public sealed class PoisController(
     [HttpDelete("{id}")]
     public ActionResult<ApiResponse<string>> DeletePoi(string id)
     {
-        var deleted = repository.DeletePoi(id, adminRequestContextResolver.RequireAuthenticatedAdmin());
+        var deleted = repository.DeletePoi(id, adminRequestContextResolver.RequireSuperAdmin());
         return deleted
             ? Ok(ApiResponse<string>.Ok(id, "Xoa POI thanh cong."))
             : NotFound(ApiResponse<string>.Fail("Khong tim thay POI."));

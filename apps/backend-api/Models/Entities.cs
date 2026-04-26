@@ -164,6 +164,16 @@ public sealed class AppUsageEvent
     public string? IdempotencyKey { get; set; }
 }
 
+public sealed class AppPresence
+{
+    public string Id { get; set; } = string.Empty;
+    public string ClientId { get; set; } = string.Empty;
+    public DateTimeOffset LastSeenAtUtc { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public string Platform { get; set; } = "android";
+    public string AppVersion { get; set; } = string.Empty;
+}
+
 public sealed class TourRoute
 {
     public string Id { get; set; } = string.Empty;
@@ -191,6 +201,27 @@ public sealed class Promotion
     public DateTimeOffset StartAt { get; set; }
     public DateTimeOffset EndAt { get; set; }
     public string Status { get; set; } = "upcoming";
+    public DateTimeOffset? VisibleFrom { get; set; }
+    public string CreatedByUserId { get; set; } = string.Empty;
+    public string? OwnerUserId { get; set; }
+    public bool IsDeleted { get; set; }
+}
+
+public sealed class PoiChangeRequest
+{
+    public string Id { get; set; } = string.Empty;
+    public string PoiId { get; set; } = string.Empty;
+    public string SubmittedByUserId { get; set; } = string.Empty;
+    public string SubmittedByName { get; set; } = string.Empty;
+    public string Status { get; set; } = "pending";
+    public string BeforeJson { get; set; } = string.Empty;
+    public string AfterJson { get; set; } = string.Empty;
+    public string? RejectionReason { get; set; }
+    public DateTimeOffset SubmittedAt { get; set; }
+    public DateTimeOffset? ReviewedAt { get; set; }
+    public string? ReviewedByUserId { get; set; }
+    public string? ReviewedByName { get; set; }
+    public DateTimeOffset? AppliedAt { get; set; }
 }
 
 public sealed class AuditLog

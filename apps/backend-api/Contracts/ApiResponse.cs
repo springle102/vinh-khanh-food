@@ -96,6 +96,17 @@ public sealed record PoiDecisionRequest(
 public sealed record PoiActiveToggleRequest(
     bool IsActive);
 
+public sealed record PoiChangeRequestCreateRequest(
+    PoiUpsertRequest Poi,
+    string LanguageCode,
+    string Title,
+    string FullText,
+    string? SeoTitle,
+    string? SeoDescription);
+
+public sealed record PoiChangeRequestDecisionRequest(
+    string? Reason);
+
 public sealed record PlaceOwnerRegistrationResponse(
     string Id,
     string Name,
@@ -131,6 +142,21 @@ public sealed record AppUsageEventCreateRequest(
     int? DurationInSeconds,
     DateTimeOffset? OccurredAt,
     string? IdempotencyKey = null);
+
+public sealed record AppPresenceHeartbeatRequest(
+    string ClientId,
+    string? Platform,
+    string? AppVersion);
+
+public sealed record AppPresenceResponse(
+    string ClientId,
+    DateTimeOffset LastSeenAtUtc,
+    bool IsOnline);
+
+public sealed record OnlineUsersResponse(
+    int OnlineUsers,
+    DateTimeOffset CheckedAtUtc,
+    int TimeoutSeconds);
 
 public sealed record TextTranslationResponse(
     string TargetLanguageCode,
@@ -242,7 +268,8 @@ public sealed record PromotionUpsertRequest(
     DateTimeOffset EndAt,
     string Status,
     string ActorName,
-    string ActorRole);
+    string ActorRole,
+    DateTimeOffset? VisibleFrom = null);
 
 public sealed record SystemSettingUpsertRequest(
     string AppName,
@@ -258,12 +285,35 @@ public sealed record SystemSettingUpsertRequest(
     string ActorName,
     string ActorRole);
 
+public sealed record DashboardAudioLanguageMetricResponse(
+    string LanguageCode,
+    int TotalAudioPlays);
+
+public sealed record DashboardPoiViewMetricResponse(
+    string PoiId,
+    string PoiTitle,
+    int TotalPoiViews);
+
 public sealed record DashboardSummaryResponse(
-    int TotalViews,
-    int TotalListens,
+    int TotalPoiViews,
+    int TotalAudioPlays,
     int TotalQrScans,
-    int PublishedPois,
-    int MissingReadyAudio);
+    int TotalOfferViews,
+    int TotalPois,
+    int TotalTours,
+    int TotalOffers,
+    int OnlineUsers,
+    IReadOnlyList<DashboardAudioLanguageMetricResponse> AudioPlaysByLanguage,
+    IReadOnlyList<DashboardPoiViewMetricResponse> PoiViewsByPoi);
+
+public sealed record QrScanDiagnosticsResponse(
+    int QrScanCount,
+    int PublicDownloadQrScanCount,
+    int ApkDownloadAccessCount,
+    int DashboardQrTotal,
+    DateTimeOffset? LatestTrackedQrScanAt,
+    string DatabaseServer,
+    string DatabaseName);
 
 public sealed record DataSyncState(
     string Version,

@@ -217,10 +217,7 @@ public sealed class HttpRouteService : IRouteService
         }
 
         _client?.Dispose();
-        _client = new HttpClient(new HttpClientHandler
-        {
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-        })
+        _client = new HttpClient()
         {
             BaseAddress = new Uri(nextBaseUrl, UriKind.Absolute),
             Timeout = TimeSpan.FromSeconds(8)

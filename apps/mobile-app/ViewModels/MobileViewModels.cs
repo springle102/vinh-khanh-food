@@ -99,16 +99,14 @@ public sealed class HomeViewModel(
     public ICommand OpenMapCommand => new AsyncCommand(() => Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.Map)));
     public ICommand OpenListCommand => new AsyncCommand(OpenListAsync);
     public ICommand OpenSettingsCommand => new AsyncCommand(() => Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.Settings)));
-    public ICommand OpenQrCommand => new AsyncCommand(() => Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.QrScanner)));
     public ICommand OpenHeroCommand => new AsyncCommand(async () => await OpenPoiAsync(HeroPoi));
     public ICommand OpenFeaturedPoiCommand => new AsyncCommand<PoiSummaryModel>(OpenPoiAsync);
 
     public string WelcomeTitle => "WELCOME TO";
-    public string WelcomeDescription => "Khám phá thiên đường ẩm thực Vĩnh Khánh với bản đồ, QR và thuyết minh tự động.";
+    public string WelcomeDescription => "Khám phá thiên đường ẩm thực Vĩnh Khánh với bản đồ và thuyết minh tự động.";
     public string MapLabel => "BẢN ĐỒ";
     public string ListLabel => "KHÁM PHÁ GẦN BẠN";
     public string SettingsLabel => "CÀI ĐẶT";
-    public string QrLabel => "QUÉT QR";
     public string SearchPlaceholder => "Tìm kiếm...";
     public string FeaturedSectionTitle => "Món ăn nổi bật";
     public string FeaturedActionText => "Tất cả";
@@ -470,9 +468,9 @@ public sealed class PoiDetailViewModel(
     public string PlayText => localizationService.GetText("detail_play");
     public string PauseText => localizationService.GetText("detail_pause");
 
-    public async Task LoadByIdAsync(string? poiId, string? slug, string? qrCode)
+    public async Task LoadByIdAsync(string? poiId, string? slug)
     {
-        if (string.IsNullOrWhiteSpace(poiId) && string.IsNullOrWhiteSpace(slug) && string.IsNullOrWhiteSpace(qrCode))
+        if (string.IsNullOrWhiteSpace(poiId) && string.IsNullOrWhiteSpace(slug))
         {
             return;
         }
@@ -483,9 +481,7 @@ public sealed class PoiDetailViewModel(
             var settings = await settingsService.GetAsync();
             Detail = !string.IsNullOrWhiteSpace(poiId)
                 ? await guideApiService.GetPoiByIdAsync(poiId, settings.SelectedLanguage)
-                : !string.IsNullOrWhiteSpace(slug)
-                    ? await guideApiService.GetPoiBySlugAsync(slug, settings.SelectedLanguage)
-                    : await guideApiService.GetPoiByQrCodeAsync(qrCode!, settings.SelectedLanguage);
+                : await guideApiService.GetPoiBySlugAsync(slug!, settings.SelectedLanguage);
 
             if (Detail is not null)
             {
@@ -607,29 +603,5 @@ public sealed class SettingsViewModel(
             _ => [new VoiceOption { Id = "vi_default", DisplayName = "Tiếng Việt - Mặc định", Locale = "vi-VN" }]
         };
     }
-}
-
-public sealed class QrScannerViewModel : BaseViewModel
-{
-    private string _manualCode = string.Empty;
-
-    public string ManualCode
-    {
-        get => _manualCode;
-        set => SetProperty(ref _manualCode, value);
-    }
-
-    public ICommand CloseCommand => new AsyncCommand(() => Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.Home)));
-
-    public ICommand OpenManualCommand => new AsyncCommand(async () =>
-    {
-        if (!string.IsNullOrWhiteSpace(ManualCode))
-        {
-            await Shell.Current.GoToAsync($"{nameof(PoiDetailPage)}?qrCode={Uri.EscapeDataString(ManualCode)}");
-        }
-    });
-
-    public Task NavigateFromQrAsync(string qrCode)
-        => Shell.Current.GoToAsync($"{nameof(PoiDetailPage)}?qrCode={Uri.EscapeDataString(qrCode)}");
 }
 

@@ -92,15 +92,21 @@ public sealed class PoiNarrationService(
             effectiveLanguageCode = normalizedRequestedLanguage;
         }
 
-        var audioLanguageCode = translationFailedForTarget
-            ? sourceLanguageCode
-            : normalizedRequestedLanguage;
         var poiAudioGuides = repository.GetAudioGuides(actor)
             .Where(item =>
                 string.Equals(item.EntityType, "poi", StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(item.EntityId, poiId, StringComparison.OrdinalIgnoreCase))
             .ToList();
-        var selectedAudioGuide = FindPoiAudioGuide(poiAudioGuides, audioLanguageCode);
+        var selectedAudioGuide = SelectPoiAudioGuide(
+            poiAudioGuides,
+            normalizedRequestedLanguage,
+            effectiveLanguageCode,
+            sourceLanguageCode);
+        var selectedAudioLanguageCode = NormalizeLanguageCode(
+            selectedAudioGuide?.LanguageCode,
+            normalizedRequestedLanguage,
+            effectiveLanguageCode,
+            sourceLanguageCode);
         var foundPreparedAudio = selectedAudioGuide is not null && HasUsablePreparedAudio(selectedAudioGuide);
         var audioGuide = NormalizeAudioGuideForResponse(
             selectedAudioGuide);
@@ -132,12 +138,12 @@ public sealed class PoiNarrationService(
             GetLocale(effectiveLanguageCode));
 
         logger.LogInformation(
-            "[AudioRequest] poiId={PoiId}; requestedLang={RequestedLanguage}; normalizedLang={NormalizedLanguage}; effectiveLanguage={EffectiveLanguage}; audioLookupLanguage={AudioLookupLanguage}; foundAudio={FoundAudio}; audioGuideId={AudioGuideId}; audioGuideLanguage={AudioGuideLanguage}; generationStatus={GenerationStatus}; publicStatus={PublicStatus}; audioUrl={AudioUrl}; audioFilePath={AudioFilePath}; candidateCount={CandidateCount}",
+            "[AudioRequest] poiId={PoiId}; requestedLang={RequestedLanguage}; normalizedLang={NormalizedLanguage}; effectiveLanguage={EffectiveLanguage}; selectedAudioLanguage={SelectedAudioLanguage}; foundAudio={FoundAudio}; audioGuideId={AudioGuideId}; audioGuideLanguage={AudioGuideLanguage}; generationStatus={GenerationStatus}; publicStatus={PublicStatus}; audioUrl={AudioUrl}; audioFilePath={AudioFilePath}; candidateCount={CandidateCount}",
             poi.Id,
             requestedLanguageCode,
             normalizedRequestedLanguage,
             effectiveLanguageCode,
-            audioLanguageCode,
+            selectedAudioLanguageCode,
             foundPreparedAudio,
             selectedAudioGuide?.Id,
             selectedAudioGuide?.LanguageCode,
@@ -150,19 +156,47 @@ public sealed class PoiNarrationService(
         return resolved;
     }
 
+    private static AudioGuide? SelectPoiAudioGuide(
+        IReadOnlyList<AudioGuide> audioGuides,
+        string requestedLanguageCode,
+        string effectiveLanguageCode,
+        string sourceLanguageCode)
+    {
+        var candidateLanguages = new List<string>();
+        AddLanguageCandidate(candidateLanguages, requestedLanguageCode);
+        AddLanguageCandidate(candidateLanguages, effectiveLanguageCode);
+        AddLanguageCandidate(candidateLanguages, sourceLanguageCode);
+
+        foreach (var candidateLanguage in candidateLanguages)
+        {
+            var candidateGuide = FindPoiAudioGuide(audioGuides, candidateLanguage);
+            if (candidateGuide is not null && IsPlayableAudioGuide(candidateGuide))
+            {
+                return candidateGuide;
+            }
+        }
+
+        foreach (var candidateLanguage in candidateLanguages)
+        {
+            var candidateGuide = FindPoiAudioGuide(audioGuides, candidateLanguage);
+            if (candidateGuide is not null)
+            {
+                return candidateGuide;
+            }
+        }
+
+        return AudioGuideCatalog.SelectCanonical(audioGuides);
+    }
+
     private static AudioGuide? FindPoiAudioGuide(
         IEnumerable<AudioGuide> audioGuides,
         string languageCode)
     {
         var matchingGuides = audioGuides
             .Where(item => PremiumAccessCatalog.LanguageCodesMatch(item.LanguageCode, languageCode))
-            .OrderByDescending(item => item.UpdatedAt)
             .ToList();
 
-        return
-            matchingGuides.FirstOrDefault(IsPlayableAudioGuide) ??
-            matchingGuides.FirstOrDefault(HasUsablePreparedAudio) ??
-            matchingGuides.FirstOrDefault();
+        return AudioGuideCatalog.OrderByCanonicalPreference(matchingGuides).FirstOrDefault();
     }
 
     private static bool IsPlayableAudioGuide(AudioGuide audioGuide) =>
@@ -268,6 +302,18 @@ public sealed class PoiNarrationService(
         }
 
         return "vi";
+    }
+
+    private static void AddLanguageCandidate(ICollection<string> candidates, string? languageCode)
+    {
+        var normalizedLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(languageCode);
+        if (string.IsNullOrWhiteSpace(normalizedLanguageCode) ||
+            candidates.Any(candidate => string.Equals(candidate, normalizedLanguageCode, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        candidates.Add(normalizedLanguageCode);
     }
 
     private static string GetLocale(string languageCode)

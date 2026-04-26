@@ -8,10 +8,11 @@ import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAdminData } from "../../data/store";
 import { useAuth } from "../auth/AuthContext";
-import type { LanguageCode, Promotion } from "../../data/types";
+import type { Promotion } from "../../data/types";
 import { preventImplicitFormSubmit } from "../../lib/forms";
-import { formatDateTime, languageLabels } from "../../lib/utils";
-import { getEntityTranslation, getPoiTitle } from "../../lib/selectors";
+import { formatDateTime } from "../../lib/utils";
+import { getPoiTitle } from "../../lib/selectors";
+import { adminApi, getErrorMessage } from "../../lib/api";
 
 type PromotionForm = {
   id?: string;
@@ -20,8 +21,8 @@ type PromotionForm = {
   description: string;
   startAt: string;
   endAt: string;
+  visibleFrom: string;
   status: Promotion["status"];
-  languageCode: LanguageCode;
 };
 
 const defaultPromotionForm: PromotionForm = {
@@ -30,40 +31,33 @@ const defaultPromotionForm: PromotionForm = {
   description: "",
   startAt: "",
   endAt: "",
+  visibleFrom: "",
   status: "upcoming",
-  languageCode: "vi",
 };
 
 export const PromotionsPage = () => {
-  const { state, isBootstrapping, savePromotion, saveTranslation } = useAdminData();
+  const { state, isBootstrapping, refreshData, savePromotion } = useAdminData();
   const { user } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<PromotionForm>(defaultPromotionForm);
-
-  const resolvePromotionTranslationFields = (promotion: Promotion, languageCode: LanguageCode) => {
-    const translation = getEntityTranslation(state, "promotion", promotion.id, languageCode);
-
-    return {
-      title: translation?.title ?? promotion.title,
-      description: translation?.fullText || translation?.shortText || promotion.description,
-    };
-  };
+  const [formError, setFormError] = useState("");
 
   const openModal = (promotion?: Promotion) => {
-    const languageCode = state.settings.defaultLanguage;
     setForm(
       promotion
         ? {
-          id: promotion.id,
-          poiId: promotion.poiId,
-          ...resolvePromotionTranslationFields(promotion, languageCode),
-          startAt: promotion.startAt.slice(0, 16),
-          endAt: promotion.endAt.slice(0, 16),
-          status: promotion.status,
-          languageCode,
-        }
-        : { ...defaultPromotionForm, languageCode },
+            id: promotion.id,
+            poiId: promotion.poiId,
+            title: promotion.title,
+            description: promotion.description,
+            startAt: promotion.startAt.slice(0, 16),
+            endAt: promotion.endAt.slice(0, 16),
+            visibleFrom: (promotion.visibleFrom ?? promotion.startAt).slice(0, 16),
+            status: promotion.status,
+          }
+        : { ...defaultPromotionForm },
     );
+    setFormError("");
     setModalOpen(true);
   };
 
@@ -73,62 +67,45 @@ export const PromotionsPage = () => {
       return;
     }
 
-    const existingPromotion = form.id
-      ? state.promotions.find((item) => item.id === form.id)
-      : null;
-    const shouldWriteBaseText =
-      !existingPromotion ||
-      form.languageCode === state.settings.defaultLanguage;
-    const savedPromotion = await savePromotion(
-      {
-        id: form.id,
-        poiId: form.poiId,
-        title: shouldWriteBaseText ? form.title : existingPromotion?.title ?? form.title,
-        description: shouldWriteBaseText ? form.description : existingPromotion?.description ?? form.description,
-        startAt: new Date(form.startAt).toISOString(),
-        endAt: new Date(form.endAt).toISOString(),
-        status: form.status,
-      },
-      user,
-    );
-    const existingTranslation = state.translations.find(
-      (item) =>
-        item.entityType === "promotion" &&
-        item.entityId === savedPromotion.id &&
-        item.languageCode === form.languageCode,
-    );
-    await saveTranslation(
-      {
-        id: existingTranslation?.id,
-        entityType: "promotion",
-        entityId: savedPromotion.id,
-        languageCode: form.languageCode,
-        title: form.title,
-        shortText: form.description,
-        fullText: form.description,
-        seoTitle: form.title,
-        seoDescription: form.description || form.title,
-      },
-      user,
-    );
-    setModalOpen(false);
+    setFormError("");
+    if (form.status === "upcoming" && !form.visibleFrom && !form.startAt) {
+      setFormError("Ưu đãi ở trạng thái sắp diễn ra bắt buộc có thời gian áp dụng/hiển thị.");
+      return;
+    }
+
+    try {
+      await savePromotion(
+        {
+          id: form.id,
+          poiId: form.poiId,
+          title: form.title,
+          description: form.description,
+          startAt: new Date(form.startAt).toISOString(),
+          endAt: new Date(form.endAt).toISOString(),
+          visibleFrom: new Date(form.visibleFrom || form.startAt).toISOString(),
+          status: form.status,
+        },
+        user,
+      );
+
+      setModalOpen(false);
+    } catch (error) {
+      setFormError(getErrorMessage(error));
+    }
   };
 
-  const handlePromotionLanguageChange = (languageCode: LanguageCode) => {
-    setForm((current) => {
-      const promotion = current.id
-        ? state.promotions.find((item) => item.id === current.id)
-        : null;
-      if (!promotion) {
-        return { ...current, languageCode };
-      }
+  const handleDelete = async (promotion: Promotion) => {
+    if (!window.confirm(`Xóa ưu đãi "${promotion.title}"?`)) {
+      return;
+    }
 
-      return {
-        ...current,
-        languageCode,
-        ...resolvePromotionTranslationFields(promotion, languageCode),
-      };
-    });
+    try {
+      setFormError("");
+      await adminApi.deletePromotion(promotion.id);
+      await refreshData();
+    } catch (error) {
+      setFormError(getErrorMessage(error));
+    }
   };
 
   const columns: DataColumn<Promotion>[] = [
@@ -166,9 +143,14 @@ export const PromotionsPage = () => {
       key: "actions",
       header: "Thao tác",
       render: (item) => (
-        <Button variant="secondary" onClick={() => openModal(item)}>
-          Chỉnh sửa
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => openModal(item)}>
+            Chỉnh sửa
+          </Button>
+          <Button variant="danger" onClick={() => void handleDelete(item)}>
+            Xóa
+          </Button>
+        </div>
       ),
     },
   ];
@@ -178,7 +160,7 @@ export const PromotionsPage = () => {
       <Card>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">Promotions</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">Ưu đãi</p>
             <h1 className="mt-3 text-3xl font-bold text-ink-900">Quản lý ưu đãi, sự kiện và thông báo chiến dịch</h1>
           </div>
           <Button onClick={() => openModal()} disabled={isBootstrapping}>
@@ -195,7 +177,7 @@ export const PromotionsPage = () => {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={form.id ? "Cập nhật ưu đãi" : "Tạo ưu đãi mới"}
-        description="Thông tin khuyến mãi có thể dùng cho banner, push notification và poi detail."
+        description="Nhập một bộ nội dung gốc cho ưu đãi. Hệ thống sẽ tự dịch và hiển thị theo ngôn ngữ người dùng chọn trong app."
       >
         <form className="space-y-5" onSubmit={handleSubmit} onKeyDown={preventImplicitFormSubmit} autoComplete="off">
           <div>
@@ -213,26 +195,22 @@ export const PromotionsPage = () => {
               ))}
             </Select>
           </div>
-          <div>
-            <label className="field-label">Ngôn ngữ nội dung ưu đãi</label>
-            <Select
-              value={form.languageCode}
-              onChange={(event) => handlePromotionLanguageChange(event.target.value as LanguageCode)}
-            >
-              {Object.entries(languageLabels).map(([code, label]) => (
-                <option key={code} value={code}>
-                  {label}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid gap-5 md:grid-cols-3">
             <div>
               <label className="field-label">Tên ưu đãi</label>
               <Input
                 value={form.title}
                 onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
                 required
+              />
+            </div>
+            <div>
+              <label className="field-label">Hiển thị trên app từ</label>
+              <Input
+                type="datetime-local"
+                value={form.visibleFrom}
+                onChange={(event) => setForm((current) => ({ ...current, visibleFrom: event.target.value }))}
+                required={form.status === "upcoming"}
               />
             </div>
             <div>
@@ -243,9 +221,8 @@ export const PromotionsPage = () => {
                   setForm((current) => ({ ...current, status: event.target.value as Promotion["status"] }))
                 }
               >
-                <option value="upcoming">Upcoming</option>
-                <option value="active">Active</option>
-                <option value="expired">Expired</option>
+                <option value="upcoming">Sắp diễn ra</option>
+                <option value="active">Đang hoạt động</option>
               </Select>
             </div>
           </div>
@@ -278,8 +255,9 @@ export const PromotionsPage = () => {
               />
             </div>
           </div>
+          {formError ? <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{formError}</div> : null}
           <div className="flex justify-end gap-3 border-t border-sand-100 pt-5">
-            <Button variant="ghost" onClick={() => setModalOpen(false)}>
+            <Button variant="ghost" type="button" onClick={() => setModalOpen(false)}>
               Hủy
             </Button>
             <Button type="submit">Lưu ưu đãi</Button>

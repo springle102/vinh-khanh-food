@@ -70,6 +70,23 @@ public static class AudioGuideCatalog
            string.Equals(NormalizePublicStatus(audioGuide.Status), PublicStatusReady, StringComparison.OrdinalIgnoreCase) &&
            (!string.IsNullOrWhiteSpace(audioGuide.AudioUrl) || !string.IsNullOrWhiteSpace(audioGuide.AudioFilePath));
 
+    public static AudioGuide? SelectCanonical(IEnumerable<AudioGuide> audioGuides)
+        => OrderByCanonicalPreference(audioGuides).FirstOrDefault();
+
+    public static IReadOnlyList<AudioGuide> OrderByCanonicalPreference(IEnumerable<AudioGuide> audioGuides)
+    {
+        ArgumentNullException.ThrowIfNull(audioGuides);
+
+        return audioGuides
+            .Where(audioGuide => audioGuide is not null)
+            .OrderByDescending(GetCanonicalPreferenceScore)
+            .ThenByDescending(audioGuide => audioGuide.GeneratedAt ?? DateTimeOffset.MinValue)
+            .ThenByDescending(audioGuide => audioGuide.UpdatedAt)
+            .ThenByDescending(audioGuide => audioGuide.FileSizeBytes ?? 0L)
+            .ThenByDescending(audioGuide => audioGuide.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     public static string ResolvePublicStatus(string generationStatus, bool hasPlaybackAsset, bool isOutdated)
     {
         if (isOutdated || string.Equals(generationStatus, GenerationStatusOutdated, StringComparison.OrdinalIgnoreCase))
@@ -85,5 +102,59 @@ public static class AudioGuideCatalog
         return string.Equals(generationStatus, GenerationStatusSuccess, StringComparison.OrdinalIgnoreCase) && hasPlaybackAsset
             ? PublicStatusReady
             : PublicStatusMissing;
+    }
+
+    private static int GetCanonicalPreferenceScore(AudioGuide audioGuide)
+    {
+        var score = 0;
+        var generationStatus = NormalizeGenerationStatus(audioGuide.GenerationStatus);
+        var publicStatus = NormalizePublicStatus(audioGuide.Status);
+
+        if (IsReadyForPlayback(audioGuide))
+        {
+            score += 1_000;
+        }
+
+        if (string.Equals(generationStatus, GenerationStatusSuccess, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 250;
+        }
+
+        if (string.Equals(publicStatus, PublicStatusReady, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 150;
+        }
+
+        if (!audioGuide.IsOutdated)
+        {
+            score += 120;
+        }
+
+        if (!string.IsNullOrWhiteSpace(audioGuide.AudioFilePath))
+        {
+            score += 80;
+        }
+
+        if (!string.IsNullOrWhiteSpace(audioGuide.AudioUrl))
+        {
+            score += 40;
+        }
+
+        if (!string.IsNullOrWhiteSpace(audioGuide.ContentVersion))
+        {
+            score += 20;
+        }
+
+        if (!string.IsNullOrWhiteSpace(audioGuide.TextHash))
+        {
+            score += 10;
+        }
+
+        if (audioGuide.GeneratedAt.HasValue)
+        {
+            score += 5;
+        }
+
+        return score;
     }
 }

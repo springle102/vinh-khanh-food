@@ -74,9 +74,7 @@ public sealed partial class AdminDataRepository
             connection,
             transaction,
             actor,
-            isActive
-                ? actor.IsSuperAdmin ? "Super Admin bật hoạt động POI" : "Chủ quán bật hoạt động POI"
-                : actor.IsSuperAdmin ? "Super Admin tắt hoạt động POI" : "Chủ quán tắt hoạt động POI",
+            isActive ? "Admin bat hoat dong POI" : "Admin tat hoat dong POI",
             "POI",
             existing.Id,
             existing.Slug,
@@ -168,10 +166,9 @@ public sealed partial class AdminDataRepository
     {
         if (!actor.IsSuperAdmin)
         {
-            throw new ApiForbiddenException("Chỉ Super Admin mới được xét duyệt POI.");
+            throw new ApiForbiddenException("Chi Admin moi duoc bat/tat trang thai hoat dong cua POI.");
         }
     }
-
     private static void EnsurePendingPoiModerationAllowed(Poi poi, string nextStatus)
     {
         if (string.Equals(poi.Status, "pending", StringComparison.OrdinalIgnoreCase))
@@ -207,31 +204,11 @@ public sealed partial class AdminDataRepository
             throw new ApiBadRequestException("Super Admin chỉ có thể đổi trạng thái hoạt động của POI đã được duyệt.");
         }
 
-        if (!actor.IsPlaceOwner)
+        if (!actor.IsSuperAdmin)
         {
-            throw new ApiForbiddenException("Bạn không có quyền đổi trạng thái hoạt động của POI.");
+            throw new ApiForbiddenException("Chi Admin moi duoc bat/tat trang thai hoat dong cua POI.");
         }
-
-        var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actor.UserId);
-        if (!ownerPoiIds.Contains(poi.Id))
-        {
-            throw new ApiNotFoundException("Không tìm thấy POI.");
-        }
-
-        if (poi.LockedBySuperAdmin)
-        {
-            throw new ApiForbiddenException("POI này đang bị Super Admin ngừng hoạt động nên chủ quán không thể tự bật lại hoặc chỉnh sửa.");
-        }
-
-        if (string.Equals(poi.Status, "published", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(poi.Status, "draft", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        throw new ApiBadRequestException("Chủ quán chỉ có thể đổi trạng thái hoạt động của POI đã được duyệt.");
     }
-
     private static string NormalizePoiRejectionReason(string reason)
     {
         var normalizedReason = reason?.Trim() ?? string.Empty;

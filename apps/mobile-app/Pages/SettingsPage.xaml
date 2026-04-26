@@ -212,7 +212,7 @@
                                 FontFamily="OpenSansSemibold"
                                 FontSize="12"
                                 Grid.Column="1"
-                                IsVisible="{Binding ShowOfflinePackageInstalledActions}"
+                                IsVisible="{Binding ShowOfflinePackageUpdateButton}"
                                 Text="{Binding OfflinePackageUpdateButtonText}"
                                 TextColor="#A85D10" />
 

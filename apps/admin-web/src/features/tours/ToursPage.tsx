@@ -75,6 +75,7 @@ export const ToursPage = () => {
   const { state, isBootstrapping, saveRoute, deleteRoute } = useAdminData();
   const { user } = useAuth();
   const canFeatureRoute = canEditFeaturedRoute(user?.role);
+  const canManageTours = user?.role === "SUPER_ADMIN";
 
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
@@ -175,6 +176,10 @@ export const ToursPage = () => {
   }, [form.stopPoiIds, normalizedPoiKeyword, state]);
 
   const openModal = (route?: TourRoute) => {
+    if (!canManageTours) {
+      return;
+    }
+
     if (route && !canManageRoute(user, route)) {
       return;
     }
@@ -247,6 +252,11 @@ export const ToursPage = () => {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user) {
+      return;
+    }
+
+    if (!canManageTours) {
+      setFormError("Chu quan chi duoc xem tour, khong duoc them/sua/xoa tour.");
       return;
     }
 
@@ -396,6 +406,8 @@ export const ToursPage = () => {
       widthClassName: "min-w-[210px]",
       render: (route) => (
         <div className="flex flex-wrap gap-2">
+          {canManageTours ? (
+            <>
           <Button
             variant="secondary"
             onClick={() => openModal(route)}
@@ -410,6 +422,12 @@ export const ToursPage = () => {
           >
             Xóa
           </Button>
+            </>
+          ) : (
+            <span className="rounded-full bg-sand-50 px-3 py-2 text-xs font-semibold text-ink-500">
+              Chỉ xem
+            </span>
+          )}
         </div>
       ),
     },
@@ -427,9 +445,11 @@ export const ToursPage = () => {
               và cập nhật nhanh danh sách POI bất cứ khi nào cần.
             </p>
           </div>
+          {canManageTours ? (
           <Button onClick={() => openModal()} disabled={isBootstrapping || !state.pois.length}>
             {isBootstrapping ? "Đang tải dữ liệu..." : "Tạo tour"}
           </Button>
+          ) : null}
         </div>
       </Card>
 

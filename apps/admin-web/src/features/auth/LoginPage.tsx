@@ -15,7 +15,9 @@ const shouldRetryLoginOptions = (error: unknown) =>
   error instanceof ApiError &&
   (error.kind === "network" ||
     error.kind === "invalid_response" ||
-    [404, 502, 503, 504].includes(error.status));
+    [502, 503, 504].includes(error.status));
+
+const MAX_LOGIN_OPTIONS_AUTO_RETRIES = 3;
 
 const wait = (milliseconds: number) =>
   new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -26,7 +28,9 @@ export const LoginPage = () => {
   const { isInitializing, login, user } = useAuth();
   const [loginAccounts, setLoginAccounts] = useState<LoginAccountOption[]>([]);
   const [isLoadingAccounts, setLoadingAccounts] = useState(true);
+  const [isRetryingAccounts, setRetryingAccounts] = useState(false);
   const [accountsError, setAccountsError] = useState("");
+  const [accountsReloadKey, setAccountsReloadKey] = useState(0);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -50,33 +54,56 @@ export const LoginPage = () => {
 
   useEffect(() => {
     let isMounted = true;
+    const abortController = new AbortController();
 
     const loadLoginAccounts = async () => {
+      setLoginAccounts([]);
       setLoadingAccounts(true);
+      setRetryingAccounts(false);
       setAccountsError("");
 
       try {
-        for (let attempt = 1; attempt <= 8; attempt += 1) {
+        for (let attempt = 1; isMounted && attempt <= MAX_LOGIN_OPTIONS_AUTO_RETRIES; attempt += 1) {
           try {
-            const nextAccounts = await adminApi.getLoginOptions();
+            const nextAccounts = await adminApi.getLoginOptions(undefined, abortController.signal);
             if (!isMounted) {
               return;
             }
 
             setLoginAccounts(nextAccounts);
             setAccountsError("");
+            setRetryingAccounts(false);
             return;
           } catch (nextError) {
             if (!isMounted) {
               return;
             }
 
-            if (!shouldRetryLoginOptions(nextError) || attempt === 8) {
+            if (nextError instanceof Error && nextError.name === "AbortError") {
+              return;
+            }
+
+            if (!shouldRetryLoginOptions(nextError)) {
+              setAccountsError(getErrorMessage(nextError));
+              setRetryingAccounts(false);
+              return;
+            }
+
+            setLoadingAccounts(false);
+            const hasRemainingRetry = attempt < MAX_LOGIN_OPTIONS_AUTO_RETRIES;
+            setRetryingAccounts(hasRemainingRetry);
+            setAccountsError(
+              hasRemainingRetry
+                ? `${getErrorMessage(nextError)} Đang thử kết nối lại...`
+                : `${getErrorMessage(nextError)} Hãy đảm bảo backend đang chạy, hoặc dùng npm run dev rồi tải lại.`,
+            );
+
+            if (!hasRemainingRetry) {
               setAccountsError(getErrorMessage(nextError));
               return;
             }
 
-            await wait(Math.min(2500, 400 * attempt));
+            await wait(Math.min(5000, 500 * attempt));
           }
         }
       } finally {
@@ -90,8 +117,9 @@ export const LoginPage = () => {
 
     return () => {
       isMounted = false;
+      abortController.abort();
     };
-  }, []);
+  }, [accountsReloadKey]);
 
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -117,6 +145,10 @@ export const LoginPage = () => {
 
   const handleSelectDatabaseAccount = (account: LoginAccountOption) => {
     applyAccountCredentials(account);
+  };
+
+  const handleRetryLoadAccounts = () => {
+    setAccountsReloadKey((current) => current + 1);
   };
 
   return (
@@ -186,7 +218,17 @@ export const LoginPage = () => {
 
             {accountsError ? (
               <div className="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                {accountsError}
+                <div>{accountsError}</div>
+                <div className="mt-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleRetryLoadAccounts}
+                    disabled={isLoadingAccounts}
+                  >
+                    {isRetryingAccounts ? "Thử lại ngay" : "Tải lại danh sách"}
+                  </Button>
+                </div>
               </div>
             ) : null}
 

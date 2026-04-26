@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: vinh-khanh-admin-web
+    environment:
+      API_UPSTREAM: https://vinh-khanh-food-tour-f2ddbxcgbabmfehr.eastasia-01.azurewebsites.net
     ports:
       - "8080:80"
     restart: unless-stopped

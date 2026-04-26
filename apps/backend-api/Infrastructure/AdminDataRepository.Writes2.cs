@@ -16,13 +16,15 @@ public sealed partial class AdminDataRepository
     {
         if (actor.IsSuperAdmin)
         {
-            throw new ApiForbiddenException($"Super Admin không có quyền {action}.");
+            return;
         }
 
-        if (actor.IsPlaceOwner && poi?.LockedBySuperAdmin == true)
+        if (actor.IsPlaceOwner)
         {
-            throw new ApiForbiddenException("POI này đang bị Super Admin ngừng hoạt động nên chủ quán không thể chỉnh sửa hoặc tự bật lại.");
+            throw new ApiForbiddenException("Chu quan phai gui yeu cau duyet truoc khi thay doi noi dung POI.");
         }
+
+        throw new ApiForbiddenException($"Ban khong co quyen {action}.");
     }
 
     private void EnsureActorCanManagePoiContentEntity(
@@ -40,7 +42,31 @@ public sealed partial class AdminDataRepository
         }
 
         var relatedPoi = ResolvePoiForContentEntity(connection, transaction, normalizedEntityType, entityId);
+        if (string.Equals(normalizedEntityType, "promotion", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureActorCanManagePromotion(connection, transaction, actor, relatedPoi, action);
+            return;
+        }
+
         EnsureActorCanManagePoiContent(connection, transaction, actor, relatedPoi, action);
+    }
+
+    private void EnsureActorCanManagePromotion(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        AdminRequestContext actor,
+        Poi? poi,
+        string action)
+    {
+        if (actor.IsSuperAdmin)
+        {
+            return;
+        }
+
+        if (!actor.IsPlaceOwner || poi is null || !GetOwnerPoiIds(connection, transaction, actor.UserId).Contains(poi.Id))
+        {
+            throw new ApiForbiddenException($"Ban khong co quyen {action}.");
+        }
     }
 
     private Poi? ResolvePoiForContentEntity(
@@ -564,9 +590,33 @@ public sealed partial class AdminDataRepository
         var existing = !string.IsNullOrWhiteSpace(id) ? GetPromotionById(connection, transaction, id) : null;
         var targetPoi = GetPoiById(connection, transaction, request.PoiId)
             ?? (existing is null ? null : GetPoiById(connection, transaction, existing.PoiId));
-        EnsureActorCanManagePoiContent(connection, transaction, actor, targetPoi, "chinh sua uu dai cua POI");
+        if (targetPoi is null)
+        {
+            throw new ApiNotFoundException("Khong tim thay POI de quan ly uu dai.");
+        }
+
+        if (existing is not null)
+        {
+            EnsureActorCanManagePromotion(
+                connection,
+                transaction,
+                actor,
+                GetPoiById(connection, transaction, existing.PoiId),
+                "chinh sua uu dai cua POI");
+        }
+
+        EnsureActorCanManagePromotion(connection, transaction, actor, targetPoi, "chinh sua uu dai cua POI");
         var isNew = existing is null;
         var promotionId = existing?.Id ?? id ?? CreateId("promo");
+        var normalizedStatus = NormalizePromotionStatus(request.Status);
+        var visibleFrom = request.VisibleFrom ?? request.StartAt;
+        ValidatePromotionWindow(request.StartAt, request.EndAt, normalizedStatus, visibleFrom);
+        var ownerUserId = targetPoi?.OwnerUserId;
+        var createdByUserId = existing?.CreatedByUserId;
+        if (string.IsNullOrWhiteSpace(createdByUserId))
+        {
+            createdByUserId = actor.UserId;
+        }
 
         if (isNew)
         {
@@ -574,8 +624,11 @@ public sealed partial class AdminDataRepository
                 connection,
                 transaction,
                 """
-                INSERT INTO dbo.Promotions (Id, PoiId, Title, [Description], StartAt, EndAt, [Status])
-                VALUES (?, ?, ?, ?, ?, ?, ?);
+                INSERT INTO dbo.Promotions (
+                    Id, PoiId, Title, [Description], StartAt, EndAt, [Status],
+                    VisibleFrom, CreatedByUserId, OwnerUserId, IsDeleted
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 promotionId,
                 request.PoiId,
@@ -583,7 +636,11 @@ public sealed partial class AdminDataRepository
                 request.Description,
                 request.StartAt,
                 request.EndAt,
-                request.Status);
+                normalizedStatus,
+                visibleFrom,
+                createdByUserId,
+                ownerUserId,
+                false);
         }
         else
         {
@@ -597,7 +654,10 @@ public sealed partial class AdminDataRepository
                     [Description] = ?,
                     StartAt = ?,
                     EndAt = ?,
-                    [Status] = ?
+                    [Status] = ?,
+                    VisibleFrom = ?,
+                    OwnerUserId = ?,
+                    IsDeleted = CAST(0 AS bit)
                 WHERE Id = ?;
                 """,
                 request.PoiId,
@@ -605,7 +665,9 @@ public sealed partial class AdminDataRepository
                 request.Description,
                 request.StartAt,
                 request.EndAt,
-                request.Status,
+                normalizedStatus,
+                visibleFrom,
+                ownerUserId,
                 promotionId);
         }
 
@@ -618,7 +680,9 @@ public sealed partial class AdminDataRepository
             isNew ? "Tao uu dai" : "Cap nhat uu dai",
             "PROMOTION",
             promotionId,
-            request.Title);
+            request.Title,
+            existing is null ? null : $"status={existing.Status}",
+            $"status={normalizedStatus}; visibleFrom={visibleFrom:O}");
 
         var saved = GetPromotionById(connection, transaction, promotionId)
             ?? throw new InvalidOperationException("Không thể đọc lại ưu đãi sau khi lưu.");
@@ -634,11 +698,20 @@ public sealed partial class AdminDataRepository
 
         var now = DateTimeOffset.UtcNow;
         var existing = GetPromotionById(connection, transaction, id);
+        if (existing is not null)
+        {
+            EnsureActorCanManagePromotion(
+                connection,
+                transaction,
+                actor,
+                GetPoiById(connection, transaction, existing.PoiId),
+                "xoa uu dai cua POI");
+        }
+
         var deleted = ExecuteNonQuery(
             connection,
             transaction,
-            "UPDATE dbo.Promotions SET [Status] = ? WHERE Id = ?;",
-            "deleted",
+            "UPDATE dbo.Promotions SET IsDeleted = CAST(1 AS bit) WHERE Id = ?;",
             id) > 0;
         if (deleted)
         {
@@ -652,12 +725,37 @@ public sealed partial class AdminDataRepository
                 "PROMOTION",
                 existing?.Id ?? id,
                 existing?.Title ?? id,
-                existing is null ? null : $"status={existing.Status}",
-                "status=deleted");
+                existing is null ? null : $"status={existing.Status}; isDeleted={existing.IsDeleted.ToString().ToLowerInvariant()}",
+                "isDeleted=true");
         }
 
         transaction.Commit();
         return deleted;
+    }
+
+    private static string NormalizePromotionStatus(string? status)
+        => status?.Trim().ToLowerInvariant() switch
+        {
+            "active" => "active",
+            "upcoming" => "upcoming",
+            _ => throw new ApiBadRequestException("Trang thai uu dai chi duoc la upcoming hoac active.")
+        };
+
+    private static void ValidatePromotionWindow(
+        DateTimeOffset startAt,
+        DateTimeOffset endAt,
+        string status,
+        DateTimeOffset? visibleFrom)
+    {
+        if (endAt <= startAt)
+        {
+            throw new ApiBadRequestException("Thoi gian ket thuc uu dai phai sau thoi gian bat dau.");
+        }
+
+        if (string.Equals(status, "upcoming", StringComparison.OrdinalIgnoreCase) && visibleFrom is null)
+        {
+            throw new ApiBadRequestException("Uu dai upcoming bat buoc co thoi gian ap dung/VisibleFrom.");
+        }
     }
 
     public SystemSetting SaveSettings(SystemSettingUpsertRequest request, AdminRequestContext actor)

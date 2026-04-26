@@ -145,10 +145,36 @@ public sealed class GeneratedAudioStorageService(
 
         if (!string.IsNullOrWhiteSpace(options.AudioPublicBaseUrl))
         {
-            return $"{options.AudioPublicBaseUrl.TrimEnd('/')}{normalizedSuffix}";
+            return $"{BuildAbsolutePublicBaseUrl(options.AudioPublicBaseUrl, publicBasePath)}{normalizedSuffix}";
         }
 
         return $"{publicBasePath}{normalizedSuffix}";
+    }
+
+    private static string BuildAbsolutePublicBaseUrl(string baseUrl, string publicBasePath)
+    {
+        var trimmedBaseUrl = baseUrl.Trim().TrimEnd('/');
+        if (!Uri.TryCreate(trimmedBaseUrl, UriKind.Absolute, out var absoluteBaseUri))
+        {
+            return $"{trimmedBaseUrl}{publicBasePath}";
+        }
+
+        var absoluteBasePath = absoluteBaseUri.AbsolutePath.TrimEnd('/');
+        var combinedBasePath =
+            string.IsNullOrWhiteSpace(absoluteBasePath) || string.Equals(absoluteBasePath, "/", StringComparison.Ordinal)
+                ? publicBasePath
+                : absoluteBasePath.EndsWith(publicBasePath, StringComparison.OrdinalIgnoreCase)
+                    ? absoluteBasePath
+                    : $"{absoluteBasePath}{publicBasePath}";
+
+        var builder = new UriBuilder(absoluteBaseUri)
+        {
+            Path = combinedBasePath,
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+
+        return builder.Uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
     }
 
     private string ResolveAbsoluteDirectory(string relativeDirectory)

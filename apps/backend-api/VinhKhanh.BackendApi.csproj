@@ -8,12 +8,24 @@
     <UseAppHost>false</UseAppHost>
     <SpaRoot>..\admin-web\</SpaRoot>
     <SpaProxyServerUrl>http://localhost:5173</SpaProxyServerUrl>
-    <SpaProxyLaunchCommand Condition="$([MSBuild]::IsOSPlatform('Windows'))">npm.cmd run dev</SpaProxyLaunchCommand>
-    <SpaProxyLaunchCommand Condition="!$([MSBuild]::IsOSPlatform('Windows'))">npm run dev</SpaProxyLaunchCommand>
+    <SpaProxyLaunchCommand Condition="$([MSBuild]::IsOSPlatform('Windows'))">npm.cmd run dev:client</SpaProxyLaunchCommand>
+    <SpaProxyLaunchCommand Condition="!$([MSBuild]::IsOSPlatform('Windows'))">npm run dev:client</SpaProxyLaunchCommand>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\core\VinhKhanh.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="appsettings.Development.example.json" CopyToPublishDirectory="Never" />
+    <Content Remove="appsettings.local-backup-*.json" />
+    <Content Remove="publish\**" />
+    <Content Remove=".env" />
+    <Content Remove=".env.local" />
+    <None Remove="appsettings.local-backup-*.json" />
+    <None Remove="publish\**" />
+    <None Remove=".env" />
+    <None Remove=".env.local" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,4 +36,5 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.0.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="8.1.1" />
   </ItemGroup>
+
 </Project>

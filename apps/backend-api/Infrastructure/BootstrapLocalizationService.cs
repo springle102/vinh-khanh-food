@@ -339,7 +339,11 @@ public sealed class BootstrapLocalizationService(
             Description = GetText(textByKey, "promotion", promotion.Id, "description", promotion.Description),
             StartAt = promotion.StartAt,
             EndAt = promotion.EndAt,
-            Status = promotion.Status
+            Status = promotion.Status,
+            VisibleFrom = promotion.VisibleFrom,
+            CreatedByUserId = promotion.CreatedByUserId,
+            OwnerUserId = promotion.OwnerUserId,
+            IsDeleted = promotion.IsDeleted
         };
 
     private static RuntimeTranslationField Field(

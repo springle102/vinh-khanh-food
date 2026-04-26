@@ -28,7 +28,7 @@ public interface IFoodStreetDataService
     Task<string> RestoreToAllowedLanguageAsync();
     Task TrackPoiViewAsync(string poiId, string? languageCode = null, string source = "poi_detail");
     Task TrackAudioPlayAsync(string poiId, string? languageCode = null, string source = "audio_player", int? durationInSeconds = null);
-    Task TrackQrScanAsync(string poiId, string? qrCode = null, string? languageCode = null);
+    Task TrackOfferViewAsync(string poiId, string? promotionId = null, string? languageCode = null, string source = "poi_detail_promotions");
     Task<bool> RefreshDataIfChangedAsync();
     string GetBackdropImageUrl();
 }
@@ -44,6 +44,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private const string DefaultBackdropImageUrl = "coverdefault.svg";
     private const int DefaultPremiumPriceUsd = 10;
     private static readonly TimeSpan SyncCheckInterval = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan ImmediateUsageEventSyncTimeout = TimeSpan.FromSeconds(10);
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -159,6 +160,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private readonly IMobileDatasetRepository _mobileDatasetRepository;
     private readonly IMobileSyncQueueRepository _syncQueueRepository;
     private readonly ILogger<FoodStreetApiDataService> _logger;
+    private readonly SemaphoreSlim _usageEventFlushLock = new(1, 1);
     private AdminBootstrapDto? _bootstrapSource;
     private string? _bootstrapSourceLanguageCode;
     private BootstrapSnapshot? _bootstrapSnapshot;
@@ -400,17 +402,17 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
         => _bootstrapSnapshot?.BackdropImageUrl ?? DefaultBackdropImageUrl;
 
     public Task TrackPoiViewAsync(string poiId, string? languageCode = null, string source = "poi_detail")
-        => TrackUsageEventAsync("poi_view", poiId, languageCode, source, metadata: null, durationInSeconds: null);
+        => TrackUsageEventAsync(MobileUsageEventTypes.PoiView, poiId, languageCode, source, metadata: null, durationInSeconds: null);
 
     public Task TrackAudioPlayAsync(string poiId, string? languageCode = null, string source = "audio_player", int? durationInSeconds = null)
-        => TrackUsageEventAsync("audio_play", poiId, languageCode, source, metadata: null, durationInSeconds);
+        => TrackUsageEventAsync(MobileUsageEventTypes.AudioPlay, poiId, languageCode, source, metadata: null, durationInSeconds);
 
-    public Task TrackQrScanAsync(string poiId, string? qrCode = null, string? languageCode = null)
+    public Task TrackOfferViewAsync(string poiId, string? promotionId = null, string? languageCode = null, string source = "poi_detail_promotions")
     {
-        var metadata = string.IsNullOrWhiteSpace(qrCode)
+        var metadata = string.IsNullOrWhiteSpace(promotionId)
             ? null
-            : JsonSerializer.Serialize(new { qrCode = qrCode.Trim() });
-        return TrackUsageEventAsync("qr_scan", poiId, languageCode, "qr_scanner", metadata, durationInSeconds: null);
+            : $"promotion_id={promotionId.Trim()}";
+        return TrackUsageEventAsync(MobileUsageEventTypes.OfferView, poiId, languageCode, source, metadata, durationInSeconds: null);
     }
 
     public async Task<bool> RefreshDataIfChangedAsync()
@@ -459,25 +461,170 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
             DateTimeOffset.UtcNow);
 
         await _syncQueueRepository.EnqueueUsageEventAsync(usageEvent);
+        _logger.LogInformation(
+            "[Analytics] Mobile usage event queued. type={EventType}; poiId={PoiId}; language={LanguageCode}; source={Source}; key={IdempotencyKey}",
+            usageEvent.EventType,
+            usageEvent.PoiId ?? "none",
+            usageEvent.LanguageCode,
+            usageEvent.Source,
+            usageEvent.IdempotencyKey);
 
-        if (!HasAnyNetworkAccess())
+        ScheduleUsageEventFlush("usage_event_tracked", usageEvent);
+    }
+
+    private async Task TryFlushPendingUsageEventsAsync(
+        string reason,
+        QueuedMobileUsageEvent? prioritizedUsageEvent = null,
+        CancellationToken cancellationToken = default)
+    {
+        var lockTaken = false;
+        try
         {
-            return;
+            var client = await GetClientAsync();
+            if (client is null)
+            {
+                return;
+            }
+
+            await _usageEventFlushLock.WaitAsync(cancellationToken);
+            lockTaken = true;
+            if (prioritizedUsageEvent is not null)
+            {
+                var accepted = await TryPostUsageEventDirectAsync(client, prioritizedUsageEvent, cancellationToken);
+                if (accepted)
+                {
+                    await _syncQueueRepository.MarkUsageEventsSyncedAsync(
+                        [prioritizedUsageEvent.IdempotencyKey],
+                        cancellationToken);
+                }
+            }
+
+            await FlushUsageEventQueueAsync(client, cancellationToken);
         }
-
-        var client = await GetClientAsync();
-        if (client is not null)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            await FlushUsageEventQueueAsync(client);
+            _logger.LogDebug(
+                "[SyncQueue] Usage event flush canceled. reason={Reason}; prioritizedKey={IdempotencyKey}",
+                reason,
+                prioritizedUsageEvent?.IdempotencyKey ?? "none");
+        }
+        catch (Exception exception)
+        {
+            _logger.LogDebug(
+                exception,
+                "[SyncQueue] Unable to flush pending usage events. reason={Reason}; prioritizedKey={IdempotencyKey}",
+                reason,
+                prioritizedUsageEvent?.IdempotencyKey ?? "none");
+        }
+        finally
+        {
+            if (lockTaken)
+            {
+                _usageEventFlushLock.Release();
+            }
         }
     }
 
-    private async Task FlushUsageEventQueueAsync(HttpClient client)
+    private void ScheduleUsageEventFlush(string reason, QueuedMobileUsageEvent? prioritizedUsageEvent = null)
+    {
+        _ = Task.Run(async () =>
+        {
+            using var immediateSyncCancellation = new CancellationTokenSource(ImmediateUsageEventSyncTimeout);
+            try
+            {
+                await TryFlushPendingUsageEventsAsync(
+                    reason,
+                    prioritizedUsageEvent,
+                    immediateSyncCancellation.Token);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogDebug(
+                    exception,
+                    "[SyncQueue] Background usage event flush scheduling failed. reason={Reason}; prioritizedKey={IdempotencyKey}",
+                    reason,
+                    prioritizedUsageEvent?.IdempotencyKey ?? "none");
+            }
+        });
+    }
+
+    private async Task<bool> TryPostUsageEventDirectAsync(
+        HttpClient client,
+        QueuedMobileUsageEvent usageEvent,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await client.PostAsJsonAsync(
+                AppUsageEventsEndpoint,
+                new AppUsageEventCreateRequestDto
+                {
+                    EventType = usageEvent.EventType,
+                    PoiId = usageEvent.PoiId,
+                    LanguageCode = usageEvent.LanguageCode,
+                    Platform = usageEvent.Platform,
+                    SessionId = usageEvent.SessionId,
+                    Source = usageEvent.Source,
+                    Metadata = usageEvent.Metadata,
+                    DurationInSeconds = usageEvent.DurationInSeconds,
+                    OccurredAt = usageEvent.OccurredAt,
+                    IdempotencyKey = usageEvent.IdempotencyKey
+                },
+                JsonOptions,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogDebug(
+                    "[SyncQueue] Direct usage event sync returned status {StatusCode}. type={EventType}; poiId={PoiId}; key={IdempotencyKey}",
+                    (int)response.StatusCode,
+                    usageEvent.EventType,
+                    usageEvent.PoiId ?? "none",
+                    usageEvent.IdempotencyKey);
+                return false;
+            }
+
+            var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<object>>(JsonOptions, cancellationToken);
+            if (envelope?.Success == false)
+            {
+                _logger.LogDebug(
+                    "[SyncQueue] Direct usage event sync returned unsuccessful envelope. type={EventType}; poiId={PoiId}; key={IdempotencyKey}; message={Message}",
+                    usageEvent.EventType,
+                    usageEvent.PoiId ?? "none",
+                    usageEvent.IdempotencyKey,
+                    envelope.Message ?? "none");
+                return false;
+            }
+
+            _logger.LogInformation(
+                "[SyncQueue] Usage event synced immediately. type={EventType}; poiId={PoiId}; key={IdempotencyKey}",
+                usageEvent.EventType,
+                usageEvent.PoiId ?? "none",
+                usageEvent.IdempotencyKey);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogDebug(
+                exception,
+                "[SyncQueue] Direct usage event sync failed. type={EventType}; poiId={PoiId}; key={IdempotencyKey}",
+                usageEvent.EventType,
+                usageEvent.PoiId ?? "none",
+                usageEvent.IdempotencyKey);
+            return false;
+        }
+    }
+
+    private async Task FlushUsageEventQueueAsync(HttpClient client, CancellationToken cancellationToken = default)
     {
         IReadOnlyList<QueuedMobileUsageEvent> pending;
         try
         {
-            pending = await _syncQueueRepository.GetPendingUsageEventsAsync();
+            pending = await _syncQueueRepository.GetPendingUsageEventsAsync(cancellationToken: cancellationToken);
         }
         catch (Exception exception)
         {
@@ -505,7 +652,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
 
         try
         {
-            using var response = await client.PostAsJsonAsync(MobileSyncLogsEndpoint, request, JsonOptions);
+            using var response = await client.PostAsJsonAsync(MobileSyncLogsEndpoint, request, JsonOptions, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogDebug(
@@ -515,7 +662,7 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
                 return;
             }
 
-            var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<MobileUsageEventSyncResponse>>(JsonOptions);
+            var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<MobileUsageEventSyncResponse>>(JsonOptions, cancellationToken);
             if (envelope?.Success != true || envelope.Data is null)
             {
                 return;
@@ -532,8 +679,8 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
                     item => item.ErrorMessage ?? "rejected",
                     StringComparer.OrdinalIgnoreCase);
 
-            await _syncQueueRepository.MarkUsageEventsSyncedAsync(acceptedKeys);
-            await _syncQueueRepository.MarkUsageEventsFailedAsync(failed);
+            await _syncQueueRepository.MarkUsageEventsSyncedAsync(acceptedKeys, cancellationToken);
+            await _syncQueueRepository.MarkUsageEventsFailedAsync(failed, cancellationToken);
 
             _logger.LogInformation(
                 "[SyncQueue] Usage events flushed. accepted={AcceptedCount}; rejected={RejectedCount}; pendingBefore={PendingCount}",
@@ -910,6 +1057,13 @@ public sealed partial class FoodStreetApiDataService
                 detail?.Promotions.Count ?? 0,
                 detail?.AudioAssets.Values.Count ?? 0,
                 stopwatch.Elapsed.TotalMilliseconds.ToString("0.0", CultureInfo.InvariantCulture));
+            _logger.LogInformation(
+                "[PoiDetailAudio] detail audio metadata received. poiId={PoiId}; language={LanguageCode}; version={Version}; source={Source}; audioAssets={AudioAssets}",
+                poiId,
+                requestedLanguageCode,
+                version,
+                source,
+                DescribeAudioAssets(detail));
             return detail;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1078,6 +1232,16 @@ public sealed partial class FoodStreetApiDataService
             AppLanguage.NormalizeCode(languageCode).ToLowerInvariant(),
             string.IsNullOrWhiteSpace(version) ? "none" : version.Trim().ToLowerInvariant());
 
+    private static string DescribeAudioAssets(PoiExperienceDetail? detail)
+        => detail is null || detail.AudioAssets.Values.Count == 0
+            ? "none"
+            : string.Join(
+                " | ",
+                detail.AudioAssets.Values.Values
+                    .OrderBy(item => item.LanguageCode, StringComparer.OrdinalIgnoreCase)
+                    .Select(item =>
+                        $"{AppLanguage.NormalizeCode(item.LanguageCode)}:{item.SourceType}:{item.AudioGuideId}:{FirstNonEmpty(item.RemoteAudioUrl, item.AudioUrl)}"));
+
     private string SelectedLanguageCode => AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
 
     private bool IsSelectedLanguage(string languageCode)
@@ -1133,15 +1297,10 @@ public sealed partial class FoodStreetApiDataService
         }
 
         _httpClient?.Dispose();
-        var handler = new HttpClientHandler
-        {
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-        };
-
-        _httpClient = new HttpClient(handler)
+        _httpClient = new HttpClient()
         {
             BaseAddress = new Uri(nextBaseUrl, UriKind.Absolute),
-            Timeout = TimeSpan.FromSeconds(4)
+            Timeout = TimeSpan.FromSeconds(10)
         };
         _httpClient.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue
         {
@@ -1150,11 +1309,15 @@ public sealed partial class FoodStreetApiDataService
         };
         _httpClient.DefaultRequestHeaders.Pragma.ParseAdd("no-cache");
         _resolvedBaseUrl = nextBaseUrl;
+        _logger.LogInformation(
+            "[Network] Mobile API client initialized. baseUrl={BaseUrl}",
+            _resolvedBaseUrl);
         return _httpClient;
     }
 
     private static bool HasAnyNetworkAccess()
-        => Connectivity.Current.NetworkAccess == NetworkAccess.Internet;
+        => Connectivity.Current.NetworkAccess is not NetworkAccess.None
+            and not NetworkAccess.Unknown;
 
     private async Task<MobileRuntimeAppSettings> LoadRuntimeSettingsAsync()
     {
@@ -1690,8 +1853,7 @@ public sealed partial class FoodStreetApiDataService
             .ToList();
         var viewCount = poiEvents.Count(item => string.Equals(item.EventType, "poi_view", StringComparison.OrdinalIgnoreCase));
         var audioCount = poiEvents.Count(item => string.Equals(item.EventType, "audio_play", StringComparison.OrdinalIgnoreCase));
-        var qrCount = poiEvents.Count(item => string.Equals(item.EventType, "qr_scan", StringComparison.OrdinalIgnoreCase));
-        var activityBoost = Math.Min(0.24, (viewCount * 0.03) + (audioCount * 0.04) + (qrCount * 0.05));
+        var activityBoost = Math.Min(0.24, (viewCount * 0.03) + (audioCount * 0.04));
         var featuredBoost = poi.Featured ? 0.08 : 0;
 
         return Clamp((popularityScore * 0.72) + activityBoost + featuredBoost, 0.38, 1.0);
@@ -2126,6 +2288,8 @@ public sealed partial class FoodStreetApiDataService
         public string Source { get; set; } = "mobile_app";
         public string? Metadata { get; set; }
         public int? DurationInSeconds { get; set; }
+        public DateTimeOffset? OccurredAt { get; set; }
+        public string? IdempotencyKey { get; set; }
     }
 
     private sealed class CustomerUserDto

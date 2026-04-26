@@ -114,10 +114,17 @@ public sealed class BootstrapController(
         return Ok(ApiResponse<DataSyncState>.Ok(syncState));
     }
 
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     [HttpGet("dashboard/summary")]
     public ActionResult<ApiResponse<DashboardSummaryResponse>> GetDashboardSummary()
-        => Ok(ApiResponse<DashboardSummaryResponse>.Ok(
+    {
+        Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, proxy-revalidate";
+        Response.Headers.Pragma = "no-cache";
+        Response.Headers.Expires = "0";
+
+        return Ok(ApiResponse<DashboardSummaryResponse>.Ok(
             repository.GetDashboardSummary(adminRequestContextResolver.RequireAuthenticatedAdmin())));
+    }
 
     [HttpGet("categories")]
     public ActionResult<ApiResponse<IReadOnlyList<PoiCategory>>> GetCategories()

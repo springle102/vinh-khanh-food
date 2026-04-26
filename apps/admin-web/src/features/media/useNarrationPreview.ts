@@ -30,7 +30,7 @@ const DEFAULT_PREVIEW_STATE: PreviewState = {
 };
 
 const missingAudioMessage =
-  "Chua co audio pre-generated de nghe thu. Hay generate audio o backend truoc.";
+  "Chưa có audio tạo sẵn để nghe thử. Hãy tạo audio ở backend trước.";
 
 export const useNarrationPreview = (state: AdminDataState) => {
   const [previewState, setPreviewState] = useState<PreviewState>(DEFAULT_PREVIEW_STATE);
@@ -104,7 +104,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
         resetAudioElement();
         setPreviewState({
           ...DEFAULT_PREVIEW_STATE,
-          message: "Da phat xong audio.",
+          message: "Đã phát xong audio.",
         });
       };
 
@@ -118,7 +118,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
           audioGuideId,
           status: "error",
           kind: "audio",
-          message: "Khong the phat file audio tu URL hien tai.",
+          message: "Không thể phát file audio từ URL hiện tại.",
         });
       };
 
@@ -134,7 +134,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
         previewState.audioGuideId === guide.id &&
         previewState.status === "playing"
       ) {
-        stopPreview("Da dung phat thu.");
+        stopPreview("Đã dừng nghe thử.");
         return;
       }
 
@@ -188,8 +188,8 @@ export const useNarrationPreview = (state: AdminDataState) => {
           audioUrl: resolvedAudioUrl,
           requestId,
           startMessage: fallbackMessage
-            ? `Dang phat audio da generate. ${fallbackMessage}`
-            : "Dang phat audio da generate.",
+            ? `Đang phát audio tạo sẵn. ${fallbackMessage}`
+            : "Đang phát audio tạo sẵn.",
         });
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -200,7 +200,7 @@ export const useNarrationPreview = (state: AdminDataState) => {
           audioGuideId: guide.id,
           status: "error",
           kind: "audio",
-          message: "Khong the phat file audio tu URL hien tai.",
+          message: "Không thể phát file audio từ URL hiện tại.",
         });
       }
     },

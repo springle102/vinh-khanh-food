@@ -1,31 +1,60 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
+const {
+  parseBackendPorts,
+  resolveBackendListenerUrls,
+  resolveBackendPrimaryUrl,
+} = require("./backend-dev-config.cjs");
 
 const repoRoot = path.resolve(__dirname, "..");
 const dotnetHome = path.join(repoRoot, ".dotnet-home");
 const appData = path.join(dotnetHome, "AppData", "Roaming");
 const nugetPackages = path.join(dotnetHome, ".nuget", "packages");
 const buildOutput = path.join(repoRoot, ".artifacts", "backend-build");
-const backendDevPidFile = path.join(repoRoot, ".artifacts", "backend-dev.pid.json");
+const backendDevRuntimeRoot = path.join(repoRoot, ".artifacts", "backend-dev");
 const projectDir = path.join(repoRoot, "apps", "backend-api");
+const coreProjectDir = path.join(repoRoot, "apps", "core");
 const projectPath = path.join(
   projectDir,
   "VinhKhanh.BackendApi.csproj"
 );
+const publishOutput = path.join(projectDir, "publish");
+const backendDevPidFile = path.join(repoRoot, ".artifacts", "backend-dev.pid.json");
+const backendWatchRoots = [projectDir, coreProjectDir];
+const watchedBackendExtensions = new Set([
+  ".cs",
+  ".csproj",
+  ".json",
+  ".props",
+  ".targets",
+  ".config",
+  ".http",
+]);
+const backendRestartDebounceMs = Number.parseInt(
+  process.env.VK_BACKEND_RESTART_DEBOUNCE_MS ?? "700",
+  10
+);
 
-for (const dir of [dotnetHome, appData, nugetPackages, buildOutput, path.dirname(backendDevPidFile)]) {
+for (const dir of [dotnetHome, appData, nugetPackages, buildOutput, backendDevRuntimeRoot, path.dirname(backendDevPidFile)]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
 const command = process.argv[2] ?? "dev";
 const dotnetCommand = process.platform === "win32" ? "dotnet.exe" : "dotnet";
+const runModes = new Set(["dev", "serve"]);
+const buildModes = new Set(["build", "publish"]);
+const validCommands = new Set([...runModes, ...buildModes]);
+const requiresBackendCleanup = runModes.has(command);
+
+if (!validCommands.has(command)) {
+  console.error(`[backend] Unsupported command "${command}". Expected one of: ${[...validCommands].join(", ")}.`);
+  process.exit(1);
+}
+
 const enableSpaProxy = command !== "serve" && process.env.VK_DISABLE_SPA_PROXY !== "1";
-const defaultBackendUrls = "http://0.0.0.0:5080";
-const resolvedBackendUrls =
-  process.env.VK_BACKEND_URLS ??
-  process.env.ASPNETCORE_URLS ??
-  defaultBackendUrls;
+const resolvedBackendUrls = resolveBackendListenerUrls({ repoRoot, env: process.env });
+const primaryBackendUrl = resolveBackendPrimaryUrl({ repoRoot, env: process.env });
 const backendPorts = parseBackendPorts(resolvedBackendUrls);
 const baseEnv = {
   ...process.env,
@@ -34,27 +63,105 @@ const baseEnv = {
   APPDATA: appData,
   NUGET_PACKAGES: nugetPackages,
 };
+const backendRunSessionId = requiresBackendCleanup ? `${Date.now()}-${process.pid}` : null;
+const backendRuntimeOutputDir = backendRunSessionId
+  ? path.join(backendDevRuntimeRoot, backendRunSessionId)
+  : null;
 
-function parseBackendPorts(urls) {
-  return [...new Set(
-    String(urls)
-      .split(/[;,]/)
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .map((value) => {
-        try {
-          const parsed = new URL(value);
-          if (parsed.port) {
-            return Number.parseInt(parsed.port, 10);
-          }
+if (backendRuntimeOutputDir) {
+  fs.mkdirSync(backendRuntimeOutputDir, { recursive: true });
+}
 
-          return parsed.protocol === "https:" ? 443 : 80;
-        } catch {
-          return null;
-        }
-      })
-      .filter((value) => Number.isInteger(value) && value > 0)
-  )];
+function ensureTrailingPathSeparator(value) {
+  return value.endsWith(path.sep) ? value : `${value}${path.sep}`;
+}
+
+function createBackendRunEnv() {
+  return {
+    ...baseEnv,
+    ASPNETCORE_ENVIRONMENT: "Development",
+    ASPNETCORE_URLS: resolvedBackendUrls,
+    ...(enableSpaProxy
+      ? { ASPNETCORE_HOSTINGSTARTUPASSEMBLIES: "Microsoft.AspNetCore.SpaProxy" }
+      : {}),
+  };
+}
+
+function writeTrackedBackendProcess(details = {}) {
+  if (!requiresBackendCleanup) {
+    return;
+  }
+
+  fs.writeFileSync(
+    backendDevPidFile,
+    JSON.stringify(
+      {
+        managerPid: process.pid,
+        childPid: details.childPid ?? null,
+        command,
+        projectPath,
+        urls: resolvedBackendUrls,
+        outputDir: backendRuntimeOutputDir,
+        startedAt: new Date().toISOString(),
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
+function waitForChildExit(child, timeoutMs = 5000) {
+  if (!child || child.exitCode !== null) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const finalize = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeoutHandle);
+      child.removeListener("exit", onExit);
+      resolve();
+    };
+
+    const onExit = () => finalize();
+    const timeoutHandle = setTimeout(finalize, timeoutMs);
+
+    child.once("exit", onExit);
+  });
+}
+
+function isWithinDirectory(filePath, directoryPath) {
+  const relativePath = path.relative(directoryPath, filePath);
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+function shouldWatchBackendPath(filePath) {
+  if (!filePath) {
+    return false;
+  }
+
+  const normalizedPath = path.resolve(filePath);
+  const extension = path.extname(normalizedPath).toLowerCase();
+
+  if (!watchedBackendExtensions.has(extension)) {
+    return false;
+  }
+
+  if (!backendWatchRoots.some((root) => isWithinDirectory(normalizedPath, root))) {
+    return false;
+  }
+
+  const pathSegments = normalizedPath.split(path.sep).map((segment) => segment.toLowerCase());
+  return !pathSegments.includes("bin") &&
+    !pathSegments.includes("obj") &&
+    !pathSegments.includes("publish");
 }
 
 function isProcessAlive(pid) {
@@ -206,7 +313,7 @@ function cleanupOccupiedBackendPorts() {
       if (!isSafeBackendProcessName(processName)) {
         throw new Error(
           `[backend] Port ${port} is already in use by ${formatProcessLabel(pid)}. ` +
-          `Stop that process or change VK_BACKEND_URLS before starting the backend.`
+          `Stop that process so the backend can start on the configured URL ${primaryBackendUrl}.`
         );
       }
 
@@ -233,14 +340,14 @@ function readTrackedBackendProcess() {
   }
 }
 
-function clearTrackedBackendProcess(expectedPid) {
+function clearTrackedBackendProcess(expectedManagerPid) {
   const tracked = readTrackedBackendProcess();
   if (!tracked) {
     fs.rmSync(backendDevPidFile, { force: true });
     return;
   }
 
-  if (expectedPid !== undefined && tracked.pid !== expectedPid) {
+  if (expectedManagerPid !== undefined && tracked.managerPid !== expectedManagerPid) {
     return;
   }
 
@@ -249,22 +356,42 @@ function clearTrackedBackendProcess(expectedPid) {
 
 function cleanupTrackedBackendProcess() {
   const tracked = readTrackedBackendProcess();
-  if (!tracked || !Number.isInteger(tracked.pid)) {
+  if (!tracked) {
     clearTrackedBackendProcess();
     return;
   }
 
-  if (tracked.pid === process.pid || !isProcessAlive(tracked.pid)) {
-    clearTrackedBackendProcess(tracked.pid);
+  const trackedPids = [...new Set(
+    [tracked.managerPid, tracked.childPid]
+      .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid)
+  )];
+
+  if (trackedPids.length === 0) {
+    clearTrackedBackendProcess(tracked.managerPid);
     return;
   }
 
-  console.log(`[backend] Stopping previous tracked backend process ${tracked.pid}...`);
-  stopTree(tracked.pid);
-  clearTrackedBackendProcess(tracked.pid);
+  let stoppedAnyProcess = false;
+
+  for (const pid of trackedPids) {
+    if (!isProcessAlive(pid)) {
+      continue;
+    }
+
+    console.log(`[backend] Stopping previous tracked backend process ${formatProcessLabel(pid)}...`);
+    stopTree(pid);
+    stoppedAnyProcess = true;
+  }
+
+  if (!stoppedAnyProcess) {
+    clearTrackedBackendProcess(tracked.managerPid);
+    return;
+  }
+
+  clearTrackedBackendProcess(tracked.managerPid);
 }
 
-if (command !== "build") {
+if (requiresBackendCleanup) {
   try {
     cleanupTrackedBackendProcess();
     cleanupOccupiedBackendPorts();
@@ -274,85 +401,238 @@ if (command !== "build") {
   }
 }
 
-const args =
-  command === "build"
-    ? [
-        "build",
-        projectPath,
-        `-p:OutDir=${buildOutput}${path.sep}`,
-        "-p:AppendTargetFrameworkToOutputPath=true",
-        "-p:UseAppHost=false",
-      ]
-    : command === "serve"
-      ? [
-          "run",
-          "--project",
-          projectPath,
-          "--no-launch-profile",
-          "--no-restore",
-        ]
-    : [
-        "watch",
-        "--project",
-        projectPath,
-        "--non-interactive",
-        "run",
-        "--no-launch-profile",
-      ];
+function buildOneShotArgs() {
+  if (command === "build") {
+    return [
+      "build",
+      projectPath,
+      `-p:OutDir=${buildOutput}${path.sep}`,
+      "-p:AppendTargetFrameworkToOutputPath=true",
+      "-p:UseAppHost=false",
+    ];
+  }
 
-const child = spawn(dotnetCommand, args, {
-  cwd: command === "build" ? repoRoot : projectDir,
-  env: command === "build"
-    ? baseEnv
-    : {
-        ...baseEnv,
-        ASPNETCORE_ENVIRONMENT: "Development",
-        ASPNETCORE_URLS: resolvedBackendUrls,
-        ...(command === "serve"
-          ? {}
-          : {
-              DOTNET_WATCH_RESTART_ON_RUDE_EDIT: "1",
-              DOTNET_WATCH_SUPPRESS_MSBUILD_INCREMENTALISM: "1",
-            }),
-        ...(enableSpaProxy
-          ? { ASPNETCORE_HOSTINGSTARTUPASSEMBLIES: "Microsoft.AspNetCore.SpaProxy" }
-          : {}),
-      },
-  stdio: "inherit",
-});
+  if (command === "publish") {
+    return [
+      "publish",
+      projectPath,
+      "-c",
+      "Release",
+      "-o",
+      publishOutput,
+      "-p:UseAppHost=false",
+    ];
+  }
 
-if (command !== "build" && Number.isInteger(child.pid)) {
-  fs.writeFileSync(
-    backendDevPidFile,
-    JSON.stringify(
-      {
-        pid: child.pid,
-        projectPath,
-        urls: resolvedBackendUrls,
-        startedAt: new Date().toISOString(),
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
+  return [
+    "run",
+    "--project",
+    projectPath,
+    "--no-launch-profile",
+    "--no-restore",
+    `--property:OutDir=${ensureTrailingPathSeparator(backendRuntimeOutputDir)}`,
+    "--property:UseAppHost=false",
+  ];
 }
 
-child.on("exit", (code, signal) => {
-  if (command !== "build") {
-    clearTrackedBackendProcess(child.pid);
+function spawnBackendChild() {
+  const child = spawn(dotnetCommand, buildOneShotArgs(), {
+    cwd: command === "serve" ? projectDir : repoRoot,
+    env: runModes.has(command) ? createBackendRunEnv() : baseEnv,
+    stdio: "inherit",
+  });
+
+  if (requiresBackendCleanup) {
+    writeTrackedBackendProcess({
+      childPid: Number.isInteger(child.pid) ? child.pid : null,
+    });
   }
 
-  if (signal) {
-    process.kill(process.pid, signal);
-    return;
+  return child;
+}
+
+async function runBackendWatcher() {
+  let activeChild = null;
+  let isRestartInFlight = false;
+  let queuedRestartReason = null;
+  let restartTimer = null;
+  const watchers = [];
+
+  const closeWatchers = () => {
+    for (const watcher of watchers) {
+      watcher.close();
+    }
+  };
+
+  const scheduleRestart = (reason) => {
+    if (restartTimer) {
+      clearTimeout(restartTimer);
+    }
+
+    restartTimer = setTimeout(() => {
+      restartTimer = null;
+      queuedRestartReason = reason;
+      void restartBackendProcess();
+    }, backendRestartDebounceMs);
+  };
+
+  const restartBackendProcess = async () => {
+    if (isRestartInFlight || !queuedRestartReason) {
+      return;
+    }
+
+    isRestartInFlight = true;
+
+    while (queuedRestartReason) {
+      const currentReason = queuedRestartReason;
+      queuedRestartReason = null;
+
+      if (activeChild && activeChild.exitCode === null) {
+        console.log(`[backend] Restarting backend (${currentReason})...`);
+        stopTree(activeChild.pid);
+        await waitForChildExit(activeChild);
+      }
+      else {
+        console.log(`[backend] Starting backend (${currentReason})...`);
+      }
+
+      try {
+        cleanupOccupiedBackendPorts();
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        continue;
+      }
+
+      const nextChild = spawnBackendChild();
+      activeChild = nextChild;
+
+      nextChild.on("exit", (code, signal) => {
+        if (activeChild !== nextChild) {
+          return;
+        }
+
+        activeChild = null;
+        writeTrackedBackendProcess({ childPid: null });
+
+        if (signal) {
+          console.log(`[backend] Backend process stopped by signal ${signal}. Waiting for source changes to restart.`);
+          return;
+        }
+
+        if ((code ?? 0) !== 0) {
+          console.log(`[backend] Backend process exited with code ${code ?? 1}. Waiting for source changes to restart.`);
+        }
+      });
+
+      nextChild.on("error", (error) => {
+        console.error(`[backend] Failed to start backend process: ${error.message}`);
+      });
+    }
+
+    isRestartInFlight = false;
+  };
+
+  const shutdownWatcher = async (exitCode) => {
+    if (restartTimer) {
+      clearTimeout(restartTimer);
+      restartTimer = null;
+    }
+
+    closeWatchers();
+
+    if (activeChild && activeChild.exitCode === null) {
+      stopTree(activeChild.pid);
+      await waitForChildExit(activeChild);
+    }
+
+    clearTrackedBackendProcess(process.pid);
+    process.exit(exitCode);
+  };
+
+  for (const watchRoot of backendWatchRoots) {
+    if (!fs.existsSync(watchRoot)) {
+      continue;
+    }
+
+    const watcher = fs.watch(
+      watchRoot,
+      { recursive: process.platform === "win32" },
+      (_eventType, fileName) => {
+        if (!fileName) {
+          scheduleRestart(`change under ${path.relative(repoRoot, watchRoot)}`);
+          return;
+        }
+
+        const absolutePath = path.join(watchRoot, fileName.toString());
+        if (!shouldWatchBackendPath(absolutePath)) {
+          return;
+        }
+
+        scheduleRestart(`source change: ${path.relative(repoRoot, absolutePath)}`);
+      }
+    );
+
+    watcher.on("error", (error) => {
+      console.error(`[backend] File watcher error on ${watchRoot}: ${error.message}`);
+    });
+
+    watchers.push(watcher);
   }
 
-  process.exit(code ?? 1);
-});
+  console.log(`[backend] Watching ${backendWatchRoots.map((root) => path.relative(repoRoot, root)).join(", ")}.`);
+  console.log(`[backend] Using isolated dev output ${backendRuntimeOutputDir}.`);
 
-process.on("exit", () => {
-  if (command !== "build") {
-    clearTrackedBackendProcess(child.pid);
-  }
-});
+  writeTrackedBackendProcess({ childPid: null });
+  queuedRestartReason = "initial startup";
+  await restartBackendProcess();
+
+  process.on("SIGINT", () => {
+    void shutdownWatcher(0);
+  });
+
+  process.on("SIGTERM", () => {
+    void shutdownWatcher(0);
+  });
+
+  process.on("exit", () => {
+    closeWatchers();
+    if (activeChild && activeChild.exitCode === null) {
+      stopTree(activeChild.pid);
+    }
+
+    clearTrackedBackendProcess(process.pid);
+  });
+}
+
+if (command === "dev") {
+  runBackendWatcher().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    clearTrackedBackendProcess(process.pid);
+    process.exit(1);
+  });
+} else {
+  const child = spawnBackendChild();
+
+  child.on("exit", (code, signal) => {
+    if (requiresBackendCleanup) {
+      clearTrackedBackendProcess(process.pid);
+    }
+
+    if (signal) {
+      process.kill(process.pid, signal);
+      return;
+    }
+
+    process.exit(code ?? 1);
+  });
+
+  process.on("exit", () => {
+    if (requiresBackendCleanup) {
+      if (child.exitCode === null) {
+        stopTree(child.pid);
+      }
+
+      clearTrackedBackendProcess(process.pid);
+    }
+  });
+}

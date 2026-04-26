@@ -14,5 +14,5 @@ public sealed class ActivityController(
     [HttpGet("audit-logs")]
     public ActionResult<ApiResponse<IReadOnlyList<AuditLog>>> GetAuditLogs()
         => Ok(ApiResponse<IReadOnlyList<AuditLog>>.Ok(
-            repository.GetAuditLogs(adminRequestContextResolver.RequireAuthenticatedAdmin())));
+            repository.GetAuditLogs(adminRequestContextResolver.RequireSuperAdmin())));
 }

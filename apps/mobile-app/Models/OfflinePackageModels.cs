@@ -73,6 +73,8 @@ public sealed class OfflinePackageState
     public bool CanReachServer { get; set; }
     public string InstalledVersion { get; set; } = string.Empty;
     public string RemoteVersion { get; set; } = string.Empty;
+    public DateTimeOffset? InstalledLastChangedAtUtc { get; set; }
+    public DateTimeOffset? RemoteLastChangedAtUtc { get; set; }
     public long DownloadedBytes { get; set; }
     public long TotalBytes { get; set; }
     public int DownloadedFileCount { get; set; }

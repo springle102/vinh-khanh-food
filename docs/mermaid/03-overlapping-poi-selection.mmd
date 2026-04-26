@@ -1,0 +1,72 @@
+%% Sequence: xu li trung POI khi du khach dung ngay vung trung cua 2 POI
+%% Sources:
+%% - apps/mobile-app/ViewModels/HomeMapViewModel.cs
+%% - apps/mobile-app/Services/AutoNarrationServices.cs
+%% - apps/mobile-app/Services/PoiOverlapSelectionHelper.cs
+%% - apps/mobile-app/Services/VirtualLocationServices.cs
+
+sequenceDiagram
+    autonumber
+    actor Tourist as Du khách
+    participant Location as SimulationService/DeviceLocationService
+    participant MapVM as HomeMapViewModel
+    participant Auto as AutoNarrationService
+    participant Overlap as PoiOverlapSelectionHelper
+    participant Proximity as PoiProximityService
+    participant Data as FoodStreetApiDataService
+    participant AudioSvc as PoiAudioPlaybackService
+
+    Tourist->>Location: Đứng hoặc tap vào vùng giao nhau của POI A và POI B
+    Location-->>MapVM: LocationChanged(UserLocationPoint, isMock, isUserInitiated)
+    MapVM->>MapVM: ApplyLocationUpdateAsync() giữ _locationUpdateLock
+
+    alt Không có POI trên map
+        MapVM->>MapVM: Tạo snapshot chỉ có vị trí người dùng
+        MapVM-->>Tourist: Không chọn POI active
+    else Có danh sách POI
+        alt Mock passive trong manual mode
+            MapVM->>Overlap: BuildCandidates(location, Pois, CalculateDistanceMeters)
+            Overlap->>Proximity: Tính khoảng cách Haversine tới từng POI
+            Overlap->>Overlap: ResolveTriggerRadius(tối thiểu 20m)
+            Overlap->>Overlap: SelectBestCandidate()
+            Overlap-->>MapVM: Snapshot activePoi tốt nhất, chưa auto play
+        else GPS stream hoặc mock tap chủ động
+            MapVM->>Auto: ProcessLocationAsync hoặc ProcessMockLocationTapAsync()
+            Auto->>Overlap: BuildCandidates(location, allPois)
+            Overlap->>Proximity: CalculateDistanceMeters cho từng POI
+            Overlap->>Overlap: Gắn IsInsideTriggerRadius khi distance không vượt radius
+            Overlap->>Overlap: SelectBestCandidate()
+            Note over Overlap: Nếu nhiều POI cùng chứa vị trí: Premium trước, rồi priority cao hơn, rồi gần hơn, rồi Id nhỏ hơn.
+            Overlap-->>Auto: selectedCandidate + proximity snapshot
+
+            alt Không có POI trong bán kính
+                Auto->>Auto: Clear lastInside/candidate/currentPlaying
+                Auto->>AudioSvc: StopAsync nếu vừa rời vùng POI
+                Auto-->>MapVM: Decision=NoNearbyPoi
+            else Auto narration tắt
+                Auto-->>MapVM: Decision=Disabled, vẫn trả snapshot activePoi
+            else Audio đang dispatch hoặc đang phát cùng POI
+                Auto-->>MapVM: Decision=Busy
+            else Đang cooldown
+                Auto-->>MapVM: Decision=Cooldown
+            else Candidate hợp lệ
+                Auto->>Auto: CanPlayCandidateLocked()
+                Note over Auto: Anti-jump: phải rời POI cũ hoặc đứng ổn định trong POI mới ít nhất 2s; gap giữa lần phát là 3s; mock tap cùng POI cooldown 7s.
+                Auto->>Auto: ReserveForPlaybackLocked(selectedPoiId)
+                Auto->>Data: GetPoiDetailAsync(selectedPoiId)
+                Data-->>Auto: PoiExperienceDetail hoặc fallback inline
+                Auto->>AudioSvc: BeginBackgroundPlayback -> PlayAsync(trackAnalytics=false)
+                Auto-->>MapVM: Decision=Played + TriggeredPoi + TriggeredDetail
+            end
+        end
+
+        MapVM->>MapVM: ApplyUserLocationSnapshot(snapshot)
+        MapVM->>MapVM: CurrentActivePoiId = snapshot.ActivePoi.Id
+        MapVM->>AudioSvc: PreloadAsync(activePoi và nearestPoi nếu chưa preload)
+        alt Có playback started
+            MapVM->>MapVM: PresentAutoNarratedPoiAsync()
+            MapVM-->>Tourist: Bottom sheet hiển thị đúng POI đã chọn theo priority
+        else Không phát mới
+            MapVM-->>Tourist: Marker active/nearest cập nhật, không đổi audio
+        end
+    end

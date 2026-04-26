@@ -359,6 +359,7 @@ public sealed partial class FoodStreetApiDataService
         }
 
         return promotions
+            .Where(item => string.Equals(item.Status?.Trim(), "active", StringComparison.OrdinalIgnoreCase))
             .OrderBy(item => ResolvePromotionSortOrder(item.Status))
             .ThenBy(item => item.StartAt)
             .ThenBy(item => item.EndAt)
@@ -381,7 +382,7 @@ public sealed partial class FoodStreetApiDataService
                     Status = item.Status?.Trim() ?? string.Empty,
                     StartAt = item.StartAt,
                     EndAt = item.EndAt,
-                    StatusLabel = LocalizePromotionStatus(item.Status),
+                    StatusLabel = string.Empty,
                     PeriodText = FormatPromotionPeriod(item.StartAt, item.EndAt)
                 };
             })

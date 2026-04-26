@@ -55,11 +55,67 @@ public sealed class LocalizedAudioAssetSet
         asset.LanguageCode = AppLanguage.NormalizeCode(asset.LanguageCode);
         asset.AudioUrl = asset.AudioUrl.Trim();
         asset.RemoteAudioUrl = asset.RemoteAudioUrl?.Trim() ?? string.Empty;
+
+        if (_values.TryGetValue(asset.LanguageCode, out var existingAsset) &&
+            !ShouldReplace(existingAsset, asset))
+        {
+            return;
+        }
+
         _values[asset.LanguageCode] = asset;
     }
 
     public bool TryGetValue(string languageCode, out PoiAudioAsset asset)
         => _values.TryGetValue(AppLanguage.NormalizeCode(languageCode), out asset!);
+
+    private static bool ShouldReplace(PoiAudioAsset existingAsset, PoiAudioAsset candidateAsset)
+    {
+        var existingScore = GetPreferenceScore(existingAsset);
+        var candidateScore = GetPreferenceScore(candidateAsset);
+        if (candidateScore != existingScore)
+        {
+            return candidateScore > existingScore;
+        }
+
+        if (candidateAsset.UpdatedAt != existingAsset.UpdatedAt)
+        {
+            return candidateAsset.UpdatedAt > existingAsset.UpdatedAt;
+        }
+
+        if ((candidateAsset.FileSizeBytes ?? 0L) != (existingAsset.FileSizeBytes ?? 0L))
+        {
+            return (candidateAsset.FileSizeBytes ?? 0L) > (existingAsset.FileSizeBytes ?? 0L);
+        }
+
+        return string.Compare(candidateAsset.AudioGuideId, existingAsset.AudioGuideId, StringComparison.OrdinalIgnoreCase) > 0;
+    }
+
+    private static int GetPreferenceScore(PoiAudioAsset asset)
+    {
+        var score = 0;
+
+        if (!string.IsNullOrWhiteSpace(asset.AudioUrl))
+        {
+            score += 100;
+        }
+
+        if (!string.IsNullOrWhiteSpace(asset.RemoteAudioUrl))
+        {
+            score += 50;
+        }
+
+        if (!string.IsNullOrWhiteSpace(asset.ContentVersion))
+        {
+            score += 20;
+        }
+
+        if (!string.IsNullOrWhiteSpace(asset.TextHash))
+        {
+            score += 10;
+        }
+
+        return score;
+    }
 }
 
 public sealed class PoiAudioAsset
@@ -143,6 +199,7 @@ public sealed class PoiPromotionDetail
 
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
     public bool HasPeriod => !string.IsNullOrWhiteSpace(PeriodText);
+    public bool HasStatusLabel => !string.IsNullOrWhiteSpace(StatusLabel);
 
     public string StatusBackgroundColor => Status.Trim().ToLowerInvariant() switch
     {

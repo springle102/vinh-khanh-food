@@ -28,7 +28,7 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         _offlinePackageService = offlinePackageService;
         _selectLanguageCommand = new(SelectLanguageAsync);
         _downloadOfflinePackageCommand = new(DownloadOfflinePackageAsync, () => !_offlinePackageState.IsBusy && _offlinePackageState.CanReachServer);
-        _updateOfflinePackageCommand = new(UpdateOfflinePackageAsync, () => !_offlinePackageState.IsBusy && _offlinePackageState.IsInstalled && _offlinePackageState.CanReachServer);
+        _updateOfflinePackageCommand = new(UpdateOfflinePackageAsync, CanUpdateOfflinePackage);
         _deleteOfflinePackageCommand = new(DeleteOfflinePackageAsync, () => !_offlinePackageState.IsBusy && _offlinePackageState.IsInstalled);
         _cancelOfflinePackageCommand = new(CancelOfflinePackageAsync, () => _offlinePackageState.IsBusy);
         _offlinePackageService.StateChanged += OnOfflinePackageStateChanged;
@@ -118,6 +118,9 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
     public bool HasOfflinePackageUpdateHint => IsOfflinePackageInstalled || !_offlinePackageState.CanReachServer;
     public bool ShowOfflinePackageDownloadButton => !IsOfflinePackageInstalled;
     public bool ShowOfflinePackageInstalledActions => IsOfflinePackageInstalled;
+    public bool ShowOfflinePackageUpdateButton =>
+        IsOfflinePackageInstalled &&
+        (_offlinePackageState.IsUpdateAvailable || _offlinePackageState.Status == OfflinePackageLifecycleStatus.Error);
 
     public AsyncCommand<LanguageOption> SelectLanguageCommand => _selectLanguageCommand;
     public AsyncCommand DownloadOfflinePackageCommand => _downloadOfflinePackageCommand;
@@ -231,6 +234,12 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         _deleteOfflinePackageCommand.NotifyCanExecuteChanged();
         _cancelOfflinePackageCommand.NotifyCanExecuteChanged();
     }
+
+    private bool CanUpdateOfflinePackage()
+        => !_offlinePackageState.IsBusy &&
+           _offlinePackageState.IsInstalled &&
+           _offlinePackageState.CanReachServer &&
+           (_offlinePackageState.IsUpdateAvailable || _offlinePackageState.Status == OfflinePackageLifecycleStatus.Error);
 
     private string FormatFileSize(long bytes)
     {

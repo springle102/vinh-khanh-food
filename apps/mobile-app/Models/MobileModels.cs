@@ -103,7 +103,6 @@ public sealed class PoiSummaryModel
     public string OpeningHours { get; set; } = string.Empty;
     public bool IsFeatured { get; set; }
     public bool HasAudioGuide { get; set; }
-    public string QrCode { get; set; } = string.Empty;
     public string DeepLink { get; set; } = string.Empty;
     public double? DistanceMeters { get; set; }
     public List<string> Tags { get; set; } = [];
@@ -218,7 +217,6 @@ public sealed class PoiDetailModel
     public string OpeningHours { get; set; } = string.Empty;
     public string PriceRange { get; set; } = string.Empty;
     public bool IsFeatured { get; set; }
-    public string QrCode { get; set; } = string.Empty;
     public string DeepLink { get; set; } = string.Empty;
     public string ThumbnailUrl { get; set; } = string.Empty;
     public List<string> Tags { get; set; } = [];

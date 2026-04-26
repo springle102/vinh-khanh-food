@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.SqlClient;
 using System.Globalization;
 using System.Linq;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
+using VinhKhanh.Core.Mobile;
 
 namespace VinhKhanh.BackendApi.Infrastructure;
 
@@ -10,12 +12,23 @@ public sealed partial class AdminDataRepository
 {
     private const int MaxAuditLogs = 120;
     private const int MaxUserActivityLogs = 500;
+    private const string DefaultDevelopmentAdminUserId = "dev-super-admin";
+    private const string DefaultDevelopmentAdminName = "Development Super Admin";
+    private const string DefaultDevelopmentAdminEmail = "dev-admin@localhost";
+    private const string DefaultDevelopmentAdminPassword = "DevOnly!123";
+    private const string DefaultDevelopmentAdminAvatarColor = "#f97316";
     private readonly string _connectionString;
     private readonly string _seedSqlServerPath;
     private readonly bool _allowCreateDatabase;
     private readonly bool _allowSeedDatabase;
     private readonly bool _allowSchemaUpdates;
+    private readonly bool _isDevelopment;
     private readonly ILogger<AdminDataRepository> _logger;
+    private readonly object _databaseInitializationGate = new();
+    private bool _databaseInitialized;
+    private DateTimeOffset? _lastInitializationFailureAtUtc;
+    private string? _lastInitializationFailureMessage;
+    private static readonly TimeSpan DatabaseInitializationRetryDelay = TimeSpan.FromSeconds(5);
 
     public AdminDataRepository(
         IConfiguration configuration,
@@ -23,12 +36,63 @@ public sealed partial class AdminDataRepository
         ILogger<AdminDataRepository> logger)
     {
         _logger = logger;
+        _isDevelopment = environment.IsDevelopment();
         _connectionString = ResolveConnectionString(configuration);
         _seedSqlServerPath = ResolveSeedSqlPath(configuration, environment);
         _allowCreateDatabase = ResolveDatabaseInitializationFlag(configuration, "AllowCreateDatabase");
         _allowSeedDatabase = ResolveDatabaseInitializationFlag(configuration, "AllowSeedDatabase");
         _allowSchemaUpdates = ResolveDatabaseInitializationFlag(configuration, "AllowSchemaUpdates");
-        InitializeDatabase();
+    }
+
+    private void EnsureDatabaseInitialized()
+    {
+        if (_databaseInitialized)
+        {
+            return;
+        }
+
+        lock (_databaseInitializationGate)
+        {
+            if (_databaseInitialized)
+            {
+                return;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if (_lastInitializationFailureAtUtc is { } lastFailureAtUtc &&
+                now - lastFailureAtUtc < DatabaseInitializationRetryDelay &&
+                !string.IsNullOrWhiteSpace(_lastInitializationFailureMessage))
+            {
+                throw new ApiRequestException(
+                    StatusCodes.Status503ServiceUnavailable,
+                    _lastInitializationFailureMessage);
+            }
+
+            try
+            {
+                InitializeDatabase();
+                _databaseInitialized = true;
+                _lastInitializationFailureAtUtc = null;
+                _lastInitializationFailureMessage = null;
+            }
+            catch (Exception exception)
+            {
+                var failureMessage = string.IsNullOrWhiteSpace(exception.Message)
+                    ? "Backend chưa thể kết nối cơ sở dữ liệu. Vui lòng kiểm tra SQL Server rồi thử lại."
+                    : exception.Message;
+
+                _lastInitializationFailureAtUtc = now;
+                _lastInitializationFailureMessage = failureMessage;
+                _logger.LogError(
+                    exception,
+                    "Database initialization failed. The API will stay online and retry after {RetryDelaySeconds}s.",
+                    DatabaseInitializationRetryDelay.TotalSeconds);
+
+                throw new ApiRequestException(
+                    StatusCodes.Status503ServiceUnavailable,
+                    failureMessage);
+            }
+        }
     }
 
     public AdminRequestContext? GetAdminRequestContext(string accessToken)
@@ -244,7 +308,9 @@ public sealed partial class AdminDataRepository
             translations = BuildSourceTranslations(settings, pois, foodItems, routes, promotions);
             audioGuides = ApplyAudioGuideScope(connection, null, audioGuides, admin, pois, foodItems, routes);
             mediaAssets = ApplyMediaAssetScope(connection, null, mediaAssets, admin, pois, foodItems, routes, promotions);
-            auditLogs = ApplyAuditScope(connection, null, auditLogs, admin);
+            auditLogs = admin.IsSuperAdmin
+                ? ApplyAuditScope(connection, null, auditLogs, admin)
+                : [];
         }
         else
         {
@@ -457,11 +523,7 @@ public sealed partial class AdminDataRepository
                     EntityType: item.EntityType.Trim().ToLowerInvariant(),
                     EntityId: item.EntityId.Trim(),
                     LanguageCode: PremiumAccessCatalog.NormalizeLanguageCode(item.LanguageCode)))
-            .Select(group =>
-                group
-                    .OrderByDescending(item => item.UpdatedAt)
-                    .ThenByDescending(item => item.Id, StringComparer.OrdinalIgnoreCase)
-                    .First())
+            .Select(group => AudioGuideCatalog.SelectCanonical(group)!)
             .OrderByDescending(item => item.UpdatedAt)
             .ThenByDescending(item => item.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -480,24 +542,103 @@ public sealed partial class AdminDataRepository
     public DashboardSummaryResponse GetDashboardSummary(AdminRequestContext actor)
     {
         using var connection = OpenConnection();
+        var settings = GetSettings(connection, null);
         var pois = ApplyPoiScope(connection, null, GetPois(connection, null), actor);
-        var audioGuides = ApplyAudioGuideScope(
-            connection,
-            null,
-            GetAudioGuides(connection, null),
-            actor,
-            pois,
-            ApplyFoodItemScope(connection, null, GetFoodItems(connection, null), actor, pois),
-            ApplyRouteScope(connection, null, GetRoutes(connection, null), actor));
+        var routes = ApplyRouteScope(connection, null, GetRoutes(connection, null), actor);
+        var promotions = ApplyPromotionScope(connection, null, GetPromotions(connection, null), actor);
         var usageEvents = ApplyUsageEventScope(GetAppUsageEvents(connection, null), actor, pois);
+        var totalPoiViews = SumUsageEventMetric(
+            usageEvents,
+            item => string.Equals(item.EventType, MobileUsageEventTypes.PoiView, StringComparison.OrdinalIgnoreCase),
+            AnalyticsMetricWeights.PoiView);
+        var totalAudioPlays = SumUsageEventMetric(
+            usageEvents,
+            item => string.Equals(item.EventType, MobileUsageEventTypes.AudioPlay, StringComparison.OrdinalIgnoreCase),
+            AnalyticsMetricWeights.AudioListen);
+        var totalQrScans = SumUsageEventMetric(
+            usageEvents,
+            IsTrackedApkDownloadAccessEvent,
+            AnalyticsMetricWeights.QrScan);
+        var totalOfferViews = SumUsageEventMetric(
+            usageEvents,
+            item => string.Equals(item.EventType, MobileUsageEventTypes.OfferView, StringComparison.OrdinalIgnoreCase),
+            AnalyticsMetricWeights.OfferView);
+        var totalPois = SumMetricWeights(pois, AnalyticsMetricWeights.TotalPoi);
+        var totalTours = SumMetricWeights(routes, AnalyticsMetricWeights.TotalTour);
+        var totalOffers = SumMetricWeights(promotions, AnalyticsMetricWeights.TotalOffer);
+        var onlineUsers = GetOnlineUsersCount(connection, null, DateTimeOffset.UtcNow);
+        var poiViewCounts = usageEvents
+            .Where(item =>
+                string.Equals(item.EventType, MobileUsageEventTypes.PoiView, StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(item.PoiId))
+            .GroupBy(item => item.PoiId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => SumMetricWeights(group, AnalyticsMetricWeights.PoiView),
+                StringComparer.OrdinalIgnoreCase);
+        var audioPlayCountsByLanguage = usageEvents
+            .Where(item => string.Equals(item.EventType, MobileUsageEventTypes.AudioPlay, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(item => PremiumAccessCatalog.NormalizeLanguageCode(item.LanguageCode), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => SumMetricWeights(group, AnalyticsMetricWeights.AudioListen),
+                StringComparer.OrdinalIgnoreCase);
+        var visibleLanguageCodes = GetSupportedLanguageCodeSet(settings)
+            .Concat(audioPlayCountsByLanguage.Keys)
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(code => code, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var audioPlaysByLanguage = visibleLanguageCodes
+            .Select(languageCode => new DashboardAudioLanguageMetricResponse(
+                languageCode,
+                audioPlayCountsByLanguage.TryGetValue(languageCode, out var count) ? count : 0))
+            .ToList();
+        var poiViewsByPoi = pois
+            .Select(poi => new DashboardPoiViewMetricResponse(
+                poi.Id,
+                ResolveDashboardPoiTitle(poi),
+                poiViewCounts.TryGetValue(poi.Id, out var count) ? count : 0))
+            .OrderByDescending(item => item.TotalPoiViews)
+            .ThenBy(item => item.PoiTitle, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         return new DashboardSummaryResponse(
-            usageEvents.Count(item => string.Equals(item.EventType, "poi_view", StringComparison.OrdinalIgnoreCase)),
-            usageEvents.Count(item => string.Equals(item.EventType, "audio_play", StringComparison.OrdinalIgnoreCase)),
-            usageEvents.Count(item => string.Equals(item.EventType, "qr_scan", StringComparison.OrdinalIgnoreCase)),
-            pois.Count(item => string.Equals(item.Status, "published", StringComparison.OrdinalIgnoreCase)),
-            CollapseAudioGuides(audioGuides).Count(item => !AudioGuideCatalog.IsReadyForPlayback(item)));
+            totalPoiViews,
+            totalAudioPlays,
+            totalQrScans,
+            totalOfferViews,
+            totalPois,
+            totalTours,
+            totalOffers,
+            onlineUsers,
+            audioPlaysByLanguage,
+            poiViewsByPoi);
     }
+
+    private static int SumUsageEventMetric(
+        IEnumerable<AppUsageEvent> usageEvents,
+        Func<AppUsageEvent, bool> predicate,
+        int weight)
+        => SumMetricWeights(usageEvents.Where(predicate), weight);
+
+    private static int SumMetricWeights<T>(IEnumerable<T> items, int weight)
+        => items.Sum(_ => weight);
+
+    private static bool IsTrackedApkDownloadAccessEvent(AppUsageEvent usageEvent)
+    {
+        if (string.Equals(usageEvent.EventType, MobileUsageEventTypes.ApkDownloadAccess, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.Equals(usageEvent.EventType, MobileUsageEventTypes.QrScan, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveDashboardPoiTitle(Poi poi)
+        => string.IsNullOrWhiteSpace(poi.Title)
+            ? (!string.IsNullOrWhiteSpace(poi.Slug) ? poi.Slug.Trim() : poi.Id)
+            : poi.Title.Trim();
 
     private static IReadOnlyCollection<string> GetSupportedLanguageCodeSet(SystemSetting settings)
     {
@@ -520,7 +661,7 @@ public sealed partial class AdminDataRepository
     {
         try
         {
-            using var connection = OpenConnection();
+            using var connection = OpenConnectionCore(_connectionString);
             var hasCoreTables = HasCoreTables(connection);
 
             if (!hasCoreTables)
@@ -535,7 +676,7 @@ public sealed partial class AdminDataRepository
                 EnsureDatabaseSeeded();
             }
 
-            using var verifiedConnection = OpenConnection();
+            using var verifiedConnection = OpenConnectionCore(_connectionString);
             EnsureRuntimeCompatibilitySchema(verifiedConnection);
             NormalizePersistedPoiAddresses(verifiedConnection);
             NormalizeLegacyEntityTypes(verifiedConnection);
@@ -571,6 +712,8 @@ public sealed partial class AdminDataRepository
     {
         EnsureAdminUsersRuntimeSchema(connection);
         EnsurePoiRuntimeSchema(connection);
+        EnsurePromotionRuntimeSchema(connection);
+        EnsurePoiChangeRequestSchema(connection);
         EnsureTranslationRuntimeSchema(connection);
         EnsureAudioGuideRuntimeSchema(connection);
         EnsureRefreshSessionsTable(connection);
@@ -578,6 +721,7 @@ public sealed partial class AdminDataRepository
         RemoveLegacyReviewData(connection);
         EnsureSystemSettingsSchema(connection);
         EnsureAppUsageEventSchema(connection);
+        EnsureAppPresenceSchema(connection);
         EnsureTourManagementSchema(connection);
     }
 
@@ -668,6 +812,52 @@ public sealed partial class AdminDataRepository
                 END AS ApprovalStatus
             ) normalized;
             """);
+
+        EnsureDevelopmentAdminUserSeed(connection);
+    }
+
+    private void EnsureDevelopmentAdminUserSeed(SqlConnection connection)
+    {
+        if (!_isDevelopment)
+        {
+            return;
+        }
+
+        if (ExecuteScalarInt(connection, null, "SELECT COUNT(*) FROM dbo.AdminUsers;") > 0)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            INSERT INTO dbo.AdminUsers (
+                Id, Name, Email, Phone, Role, [Password], [Status], CreatedAt, LastLoginAt, AvatarColor,
+                ManagedPoiId, ApprovalStatus, RejectionReason, RegistrationSubmittedAt, RegistrationReviewedAt
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            DefaultDevelopmentAdminUserId,
+            DefaultDevelopmentAdminName,
+            DefaultDevelopmentAdminEmail,
+            string.Empty,
+            AdminRoleCatalog.SuperAdmin,
+            DefaultDevelopmentAdminPassword,
+            "active",
+            now,
+            null,
+            DefaultDevelopmentAdminAvatarColor,
+            null,
+            AdminApprovalCatalog.Approved,
+            null,
+            now,
+            now);
+
+        _logger.LogWarning(
+            "Seeded default development admin account because dbo.AdminUsers was empty. email={Email}",
+            DefaultDevelopmentAdminEmail);
     }
 
     private void EnsurePoiRuntimeSchema(SqlConnection connection)
@@ -1024,6 +1214,175 @@ public sealed partial class AdminDataRepository
                 IF COL_LENGTH(N'dbo.PoiTranslations', N'SourceUpdatedAt') IS NULL
                     ALTER TABLE dbo.PoiTranslations ADD SourceUpdatedAt DATETIMEOFFSET(7) NULL;
             END;
+            """);
+    }
+
+    private void EnsurePromotionRuntimeSchema(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.Promotions', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.Promotions (
+                    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
+                    PoiId NVARCHAR(50) NOT NULL,
+                    Title NVARCHAR(200) NOT NULL,
+                    [Description] NVARCHAR(MAX) NOT NULL,
+                    StartAt DATETIMEOFFSET(7) NOT NULL,
+                    EndAt DATETIMEOFFSET(7) NOT NULL,
+                    [Status] NVARCHAR(20) NOT NULL,
+                    VisibleFrom DATETIMEOFFSET(7) NULL,
+                    CreatedByUserId NVARCHAR(50) NOT NULL,
+                    OwnerUserId NVARCHAR(50) NULL,
+                    IsDeleted BIT NOT NULL CONSTRAINT DF_Promotions_IsDeleted DEFAULT ((0)),
+                    CONSTRAINT FK_Promotions_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id)
+                );
+            END;
+
+            IF COL_LENGTH(N'dbo.Promotions', N'VisibleFrom') IS NULL
+                ALTER TABLE dbo.Promotions ADD VisibleFrom DATETIMEOFFSET(7) NULL;
+
+            IF COL_LENGTH(N'dbo.Promotions', N'CreatedByUserId') IS NULL
+                ALTER TABLE dbo.Promotions ADD CreatedByUserId NVARCHAR(50) NULL;
+
+            IF COL_LENGTH(N'dbo.Promotions', N'OwnerUserId') IS NULL
+                ALTER TABLE dbo.Promotions ADD OwnerUserId NVARCHAR(50) NULL;
+
+            IF COL_LENGTH(N'dbo.Promotions', N'IsDeleted') IS NULL
+                ALTER TABLE dbo.Promotions ADD IsDeleted BIT NULL;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            UPDATE promotion
+            SET [Status] = CASE
+                    WHEN LOWER(COALESCE(LTRIM(RTRIM(promotion.[Status])), N'')) IN (N'active', N'published')
+                        THEN N'active'
+                    WHEN LOWER(COALESCE(LTRIM(RTRIM(promotion.[Status])), N'')) = N'expired'
+                        THEN N'active'
+                    ELSE N'upcoming'
+                END,
+                VisibleFrom = COALESCE(promotion.VisibleFrom, promotion.StartAt, SYSDATETIMEOFFSET()),
+                CreatedByUserId = COALESCE(NULLIF(LTRIM(RTRIM(promotion.CreatedByUserId)), N''), N'system'),
+                OwnerUserId = COALESCE(NULLIF(LTRIM(RTRIM(promotion.OwnerUserId)), N''), poi.OwnerUserId),
+                IsDeleted = CASE
+                    WHEN LOWER(COALESCE(LTRIM(RTRIM(promotion.[Status])), N'')) IN (N'deleted', N'hidden')
+                        THEN CAST(1 AS bit)
+                    ELSE COALESCE(promotion.IsDeleted, CAST(0 AS bit))
+                END
+            FROM dbo.Promotions promotion
+            LEFT JOIN dbo.Pois poi
+                ON poi.Id = promotion.PoiId;
+            """);
+
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.default_constraints defaultConstraint
+                INNER JOIN sys.columns columnInfo
+                    ON columnInfo.object_id = defaultConstraint.parent_object_id
+                   AND columnInfo.column_id = defaultConstraint.parent_column_id
+                WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.Promotions')
+                  AND columnInfo.name = N'IsDeleted'
+            )
+                ALTER TABLE dbo.Promotions ADD CONSTRAINT DF_Promotions_IsDeleted DEFAULT ((0)) FOR IsDeleted;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Promotions')
+                  AND name = N'CreatedByUserId'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.Promotions ALTER COLUMN CreatedByUserId NVARCHAR(50) NOT NULL;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.Promotions')
+                  AND name = N'IsDeleted'
+                  AND is_nullable = 1
+            )
+                ALTER TABLE dbo.Promotions ALTER COLUMN IsDeleted BIT NOT NULL;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_Promotions_PoiId_Status'
+                  AND object_id = OBJECT_ID(N'dbo.Promotions')
+            )
+                CREATE INDEX IX_Promotions_PoiId_Status
+                ON dbo.Promotions (PoiId, [Status], VisibleFrom, IsDeleted);
+            """);
+    }
+
+    private void EnsurePoiChangeRequestSchema(SqlConnection connection)
+    {
+        ExecuteNonQuery(
+            connection,
+            null,
+            """
+            IF OBJECT_ID(N'dbo.PoiChangeRequests', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.PoiChangeRequests (
+                    Id NVARCHAR(50) NOT NULL PRIMARY KEY,
+                    PoiId NVARCHAR(50) NOT NULL,
+                    SubmittedByUserId NVARCHAR(50) NOT NULL,
+                    SubmittedByName NVARCHAR(120) NOT NULL,
+                    BeforeJson NVARCHAR(MAX) NOT NULL,
+                    AfterJson NVARCHAR(MAX) NOT NULL,
+                    [Status] NVARCHAR(20) NOT NULL,
+                    RejectionReason NVARCHAR(1000) NULL,
+                    SubmittedAt DATETIMEOFFSET(7) NOT NULL,
+                    ReviewedAt DATETIMEOFFSET(7) NULL,
+                    ReviewedByUserId NVARCHAR(50) NULL,
+                    ReviewedByName NVARCHAR(120) NULL,
+                    AppliedAt DATETIMEOFFSET(7) NULL,
+                    CONSTRAINT FK_PoiChangeRequests_Pois FOREIGN KEY (PoiId) REFERENCES dbo.Pois(Id),
+                    CONSTRAINT FK_PoiChangeRequests_SubmittedBy FOREIGN KEY (SubmittedByUserId) REFERENCES dbo.AdminUsers(Id)
+                );
+            END;
+
+            IF COL_LENGTH(N'dbo.PoiChangeRequests', N'ReviewedByUserId') IS NULL
+                ALTER TABLE dbo.PoiChangeRequests ADD ReviewedByUserId NVARCHAR(50) NULL;
+
+            IF COL_LENGTH(N'dbo.PoiChangeRequests', N'ReviewedByName') IS NULL
+                ALTER TABLE dbo.PoiChangeRequests ADD ReviewedByName NVARCHAR(120) NULL;
+
+            IF COL_LENGTH(N'dbo.PoiChangeRequests', N'AppliedAt') IS NULL
+                ALTER TABLE dbo.PoiChangeRequests ADD AppliedAt DATETIMEOFFSET(7) NULL;
+
+            UPDATE dbo.PoiChangeRequests
+            SET [Status] = CASE
+                WHEN LOWER(COALESCE(LTRIM(RTRIM([Status])), N'')) IN (N'pending', N'approved', N'rejected')
+                    THEN LOWER(LTRIM(RTRIM([Status])))
+                ELSE N'pending'
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_PoiChangeRequests_Status_SubmittedAt'
+                  AND object_id = OBJECT_ID(N'dbo.PoiChangeRequests')
+            )
+                CREATE INDEX IX_PoiChangeRequests_Status_SubmittedAt
+                ON dbo.PoiChangeRequests ([Status], SubmittedAt DESC);
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_PoiChangeRequests_PoiId'
+                  AND object_id = OBJECT_ID(N'dbo.PoiChangeRequests')
+            )
+                CREATE INDEX IX_PoiChangeRequests_PoiId
+                ON dbo.PoiChangeRequests (PoiId);
             """);
     }
 
@@ -2015,7 +2374,13 @@ public sealed partial class AdminDataRepository
             return routes;
         }
 
-        return [];
+        var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actor.UserId);
+        return routes
+            .Where(route =>
+                route.IsSystemRoute &&
+                route.IsActive &&
+                route.StopPoiIds.Any(ownerPoiIds.Contains))
+            .ToList();
     }
 
     private static bool IsRouteEntityType(string? entityType) =>
@@ -2047,7 +2412,7 @@ public sealed partial class AdminDataRepository
 
         if (actor.IsSuperAdmin)
         {
-            return [];
+            return promotions;
         }
 
         var ownerPoiIds = GetOwnerPoiIds(connection, transaction, actor.UserId);
@@ -2059,14 +2424,44 @@ public sealed partial class AdminDataRepository
         IReadOnlyList<Poi> visiblePois)
     {
         var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var now = DateTimeOffset.UtcNow;
         return promotions
-            .Where(promotion =>
-                visiblePoiIds.Contains(promotion.PoiId) &&
-                !string.Equals(promotion.Status, "expired", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(promotion.Status, "deleted", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(promotion.Status, "hidden", StringComparison.OrdinalIgnoreCase))
+            .Where(promotion => visiblePoiIds.Contains(promotion.PoiId) && IsPromotionVisibleToPublic(promotion, now))
+            .Select(CopyPublicPromotion)
             .ToList();
     }
+
+    private static bool IsPromotionVisibleToPublic(Promotion promotion, DateTimeOffset now)
+    {
+        if (promotion.IsDeleted || promotion.EndAt <= now)
+        {
+            return false;
+        }
+
+        if (string.Equals(promotion.Status, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.Equals(promotion.Status, "upcoming", StringComparison.OrdinalIgnoreCase) &&
+            (promotion.VisibleFrom ?? promotion.StartAt) <= now;
+    }
+
+    private static Promotion CopyPublicPromotion(Promotion promotion)
+        => new()
+        {
+            Id = promotion.Id,
+            PoiId = promotion.PoiId,
+            Title = promotion.Title,
+            Description = promotion.Description,
+            StartAt = promotion.StartAt,
+            EndAt = promotion.EndAt,
+            Status = "active",
+            VisibleFrom = promotion.VisibleFrom,
+            CreatedByUserId = string.Empty,
+            OwnerUserId = null,
+            IsDeleted = false
+        };
 
     private IReadOnlyList<ViewLog> ApplyViewLogScope(
         SqlConnection _connection,

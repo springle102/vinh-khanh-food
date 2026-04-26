@@ -76,7 +76,7 @@
                     </Grid>
                 </Border>
 
-                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="14">
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
                     <Border Grid.Column="0" Padding="16,18" BackgroundColor="{StaticResource BrandPeachSoft}" StrokeThickness="0" StrokeShape="RoundRectangle 22">
                         <VerticalStackLayout HorizontalOptions="Center" Spacing="12">
                             <Grid WidthRequest="28" HeightRequest="28">
@@ -97,27 +97,7 @@
                         </Border.GestureRecognizers>
                     </Border>
 
-                    <Border Grid.Column="1" Padding="16,18" BackgroundColor="{StaticResource BrandRoseSoft}" StrokeThickness="0" StrokeShape="RoundRectangle 22">
-                        <VerticalStackLayout HorizontalOptions="Center" Spacing="12">
-                            <Grid WidthRequest="28" HeightRequest="28">
-                                <Path Data="M 2 2 H 10 V 10 H 2 Z M 18 2 H 26 V 10 H 18 Z M 2 18 H 10 V 26 H 2 Z"
-                                      Stroke="#FF4C67"
-                                      Fill="Transparent"
-                                      StrokeThickness="2"
-                                      StrokeLineJoin="Round" />
-                                <Path Data="M 21.5 21.5 H 21.7 M 16 16 H 20 M 20 20 H 24 M 16 20 H 16.2 M 16 24 H 16.2 M 24 16 H 24.2"
-                                      Stroke="#FF4C67"
-                                      StrokeThickness="3"
-                                      StrokeLineCap="Round" />
-                            </Grid>
-                            <Label Text="{Binding QrLabel}" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="Center" />
-                        </VerticalStackLayout>
-                        <Border.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding OpenQrCommand}" />
-                        </Border.GestureRecognizers>
-                    </Border>
-
-                    <Border Grid.Column="2" Padding="16,18" BackgroundColor="{StaticResource BrandBlueSoft}" StrokeThickness="0" StrokeShape="RoundRectangle 22">
+                    <Border Grid.Column="1" Padding="16,18" BackgroundColor="{StaticResource BrandBlueSoft}" StrokeThickness="0" StrokeShape="RoundRectangle 22">
                         <VerticalStackLayout HorizontalOptions="Center" Spacing="12">
                             <Grid WidthRequest="28" HeightRequest="28">
                                 <Path Data="M 4 6 L 10 3 L 18 6 L 24 3 V 21 L 18 24 L 10 21 L 4 24 Z"

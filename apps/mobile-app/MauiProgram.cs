@@ -2,9 +2,7 @@ using Microsoft.Extensions.Logging;
 using Plugin.Maui.Audio;
 using VinhKhanh.MobileApp.Services;
 using VinhKhanh.MobileApp.ViewModels;
-using ZXing.Net.Maui.Controls;
 #if ANDROID
-using Android.Webkit;
 using Microsoft.Maui.Handlers;
 #endif
 
@@ -18,7 +16,6 @@ public static class MauiProgram
         builder
             .UseMauiApp<App>()
             .AddAudio()
-            .UseBarcodeReader()
             .ConfigureFonts(fonts =>
             {
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -38,11 +35,6 @@ public static class MauiProgram
                 settings.BlockNetworkLoads = false;
                 settings.AllowContentAccess = true;
                 settings.AllowFileAccess = true;
-
-                if (OperatingSystem.IsAndroidVersionAtLeast(21))
-                {
-                    settings.MixedContentMode = MixedContentHandling.AlwaysAllow;
-                }
             });
         });
 #endif
@@ -60,8 +52,11 @@ public static class MauiProgram
         builder.Services.AddSingleton<IOfflinePackageService>(sp => sp.GetRequiredService<OfflinePackageService>());
         builder.Services.AddSingleton<FoodStreetApiDataService>();
         builder.Services.AddSingleton<IFoodStreetDataService>(sp => sp.GetRequiredService<FoodStreetApiDataService>());
+        builder.Services.AddSingleton<IMobileAnalyticsService, MobileAnalyticsService>();
+        builder.Services.AddSingleton<AppPresenceService>();
         builder.Services.AddSingleton<PoiAudioPlaybackService>();
         builder.Services.AddSingleton<IPoiAudioPlaybackService>(sp => sp.GetRequiredService<PoiAudioPlaybackService>());
+        builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<AppPresenceService>());
         builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<OfflinePackageService>());
         builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<FoodStreetApiDataService>());
         builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<PoiAudioPlaybackService>());
@@ -77,7 +72,6 @@ public static class MauiProgram
         builder.Services.AddTransient<HomeMapViewModel>();
         builder.Services.AddTransient<DiscoverToursViewModel>();
         builder.Services.AddTransient<MyTourViewModel>();
-        builder.Services.AddTransient<QrScannerViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
 
 #if DEBUG

@@ -17,7 +17,7 @@ public sealed class ToursController(
         [FromQuery] string? theme,
         [FromQuery] bool? isActive)
     {
-        var actor = RequireTourSuperAdmin();
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
         IEnumerable<TourRoute> query = repository.GetRoutes(actor);
 
         if (!string.IsNullOrWhiteSpace(theme))
@@ -39,7 +39,7 @@ public sealed class ToursController(
     [HttpGet("{id}")]
     public ActionResult<ApiResponse<TourRoute>> GetTourById(string id)
     {
-        var actor = RequireTourSuperAdmin();
+        var actor = adminRequestContextResolver.RequireAuthenticatedAdmin();
         var route = repository.GetRoutes(actor).FirstOrDefault(item => item.Id == id);
         if (route is null)
         {

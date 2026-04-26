@@ -40,7 +40,6 @@ namespace VinhKhanh.MobileApp.Interfaces
         Task<IReadOnlyList<TourRouteModel>> GetRoutesAsync(string languageCode);
         Task<PoiDetailModel?> GetPoiByIdAsync(string poiId, string languageCode);
         Task<PoiDetailModel?> GetPoiBySlugAsync(string slug, string languageCode);
-        Task<PoiDetailModel?> GetPoiByQrCodeAsync(string qrCode, string languageCode);
         Task TrackViewAsync(string poiId, TrackViewRequest request);
         Task TrackAudioAsync(string poiId, TrackAudioRequest request);
     }
@@ -92,7 +91,7 @@ namespace VinhKhanh.MobileApp.Services
                 : JsonSerializer.Deserialize<UserSettings>(json, _serializerOptions) ?? new UserSettings();
 
             if (!string.IsNullOrWhiteSpace(resolvedApiBaseUrl) &&
-                (string.IsNullOrWhiteSpace(settings.ApiBaseUrl) || IsLegacyDefaultApiBaseUrl(settings.ApiBaseUrl)))
+                string.IsNullOrWhiteSpace(settings.ApiBaseUrl))
             {
                 settings.ApiBaseUrl = resolvedApiBaseUrl;
             }
@@ -146,20 +145,6 @@ namespace VinhKhanh.MobileApp.Services
         private static string ResolveApiBaseUrl(MobileRuntimeAppSettings runtimeSettings)
             => MobileApiEndpointHelper.ResolveBaseUrl(runtimeSettings.ApiBaseUrl, runtimeSettings.PlatformApiBaseUrls);
 
-        private static bool IsLegacyDefaultApiBaseUrl(string apiBaseUrl)
-        {
-            if (string.IsNullOrWhiteSpace(apiBaseUrl))
-            {
-                return true;
-            }
-
-            return apiBaseUrl.Contains("localhost:7055", StringComparison.OrdinalIgnoreCase)
-                || apiBaseUrl.Contains("127.0.0.1:7055", StringComparison.OrdinalIgnoreCase)
-                || apiBaseUrl.Contains("localhost:5080", StringComparison.OrdinalIgnoreCase)
-                || apiBaseUrl.Contains("127.0.0.1:5080", StringComparison.OrdinalIgnoreCase)
-                || apiBaseUrl.Contains("10.0.2.2:7055", StringComparison.OrdinalIgnoreCase)
-                || apiBaseUrl.Contains("10.0.2.2:5080", StringComparison.OrdinalIgnoreCase);
-        }
     }
 
     public sealed class LocalizationService(IAppSettingsService settingsService, ILogger<LocalizationService> logger) : ILocalizationService
@@ -315,9 +300,6 @@ namespace VinhKhanh.MobileApp.Services
         public Task<PoiDetailModel?> GetPoiBySlugAsync(string slug, string languageCode)
             => GetPoiWithFallbackAsync($"poi-slug-{slug}-{languageCode}", $"api/guide/v1/pois/slug/{slug}?language={Uri.EscapeDataString(languageCode)}");
 
-        public Task<PoiDetailModel?> GetPoiByQrCodeAsync(string qrCode, string languageCode)
-            => GetPoiWithFallbackAsync($"poi-qr-{qrCode}-{languageCode}", $"api/guide/v1/pois/qr/{qrCode}?language={Uri.EscapeDataString(languageCode)}");
-
         public Task TrackViewAsync(string poiId, TrackViewRequest request)
             => PostAsync($"api/guide/v1/pois/{poiId}/events/view", request);
 
@@ -368,12 +350,7 @@ namespace VinhKhanh.MobileApp.Services
             }
 
             _httpClient?.Dispose();
-            var handler = new HttpClientHandler
-            {
-                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            };
-
-            _httpClient = new HttpClient(handler)
+            _httpClient = new HttpClient()
             {
                 BaseAddress = new Uri(nextBaseUrl)
             };

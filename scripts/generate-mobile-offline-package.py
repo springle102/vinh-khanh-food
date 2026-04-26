@@ -14,6 +14,101 @@ import urllib.parse
 import urllib.request
 
 
+def could_benefit_from_legacy_decode(value: str) -> bool:
+    for char in value:
+        codepoint = ord(char)
+        if char == "\ufffd":
+            return True
+        if 0x80 <= codepoint <= 0xFF:
+            return True
+        if char not in "\r\n\t" and char.isprintable() is False:
+            return True
+    return False
+
+
+def is_likely_mojibake_lead(char: str) -> bool:
+    return 0xC0 <= ord(char) <= 0xFF
+
+
+def is_likely_mojibake_trail(char: str) -> bool:
+    return 0x80 <= ord(char) <= 0xBF
+
+
+def suspicious_score(value: str) -> int:
+    score = 0
+    latin_supplement_count = 0
+    latin_supplement_run = 0
+
+    for index, char in enumerate(value):
+        codepoint = ord(char)
+
+        if char == "\ufffd":
+            score += 25
+            continue
+
+        if 0x80 <= codepoint <= 0xBF:
+            score += 4
+
+        if index + 1 < len(value) and is_likely_mojibake_lead(char) and is_likely_mojibake_trail(value[index + 1]):
+            score += 12
+
+        if 0xC0 <= codepoint <= 0xFF:
+            latin_supplement_count += 1
+            latin_supplement_run += 1
+            if latin_supplement_run >= 3:
+                score += 6
+            continue
+
+        latin_supplement_run = 0
+
+        if char not in "\r\n\t" and char.isprintable() is False:
+            score += 20
+
+    if latin_supplement_count >= 4:
+        score += latin_supplement_count * 2
+
+    return score
+
+
+def try_decode_legacy_utf8(value: str) -> str:
+    try:
+        return value.encode("cp1252").decode("utf-8")
+    except UnicodeError:
+        return value
+
+
+def normalize_display_text(value: str) -> str:
+    trimmed = value.strip()
+    if not trimmed:
+        return ""
+
+    if not could_benefit_from_legacy_decode(trimmed):
+        return trimmed
+
+    current = trimmed
+    for _ in range(3):
+        decoded = try_decode_legacy_utf8(current).strip()
+        if not decoded or decoded == current:
+            break
+        if suspicious_score(decoded) >= suspicious_score(current):
+            break
+        current = decoded
+        if not could_benefit_from_legacy_decode(current):
+            break
+
+    return current
+
+
+def normalize_json_text(value):
+    if isinstance(value, str):
+        return normalize_display_text(value)
+    if isinstance(value, list):
+        return [normalize_json_text(item) for item in value]
+    if isinstance(value, dict):
+        return {key: normalize_json_text(item) for key, item in value.items()}
+    return value
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate the MAUI bundled offline package from the real backend bootstrap projection."
@@ -29,6 +124,11 @@ def parse_args() -> argparse.Namespace:
         "--output",
         default=os.environ.get("VK_MOBILE_SEED_OUTPUT", "apps/mobile-app/Resources/Raw/seed/offline-package"),
     )
+    parser.add_argument(
+        "--max-images",
+        type=int,
+        default=int(os.environ["VK_MOBILE_SEED_MAX_IMAGES"]) if os.environ.get("VK_MOBILE_SEED_MAX_IMAGES") else None,
+    )
     return parser.parse_args()
 
 
@@ -38,14 +138,14 @@ def utc_now() -> str:
 
 def read_bootstrap(args: argparse.Namespace) -> dict:
     if args.bootstrap_file:
-        with open(args.bootstrap_file, "r", encoding="utf-8") as handle:
-            return json.load(handle)
+        with open(args.bootstrap_file, "r", encoding="utf-8-sig") as handle:
+            return normalize_json_text(json.load(handle))
 
-    endpoint = urllib.parse.urljoin(args.api_base_url.rstrip("/") + "/", "api/v1/bootstrap")
+    endpoint = urllib.parse.urljoin(args.api_base_url.rstrip("/") + "/", "api/mobile/offline-package")
     url = f"{endpoint}?languageCode={urllib.parse.quote(args.language)}"
     print(f"[mobile-seed] Fetching bootstrap: {url}")
     with urllib.request.urlopen(url, timeout=45) as response:
-        return json.loads(response.read().decode("utf-8"))
+        return normalize_json_text(json.loads(response.read().decode("utf-8")))
 
 
 def safe_reset_output(output: Path) -> None:
@@ -128,10 +228,15 @@ def read_asset_bytes(remote_url: str, args: argparse.Namespace) -> bytes | None:
 
 def collect_assets(data: dict, args: argparse.Namespace, output: Path) -> list[dict]:
     entries_by_key: dict[str, dict] = {}
+    image_count = 0
 
     def add(remote_url: str | None, kind: str, entity_type: str, entity_id: str, language_code: str = "") -> None:
+        nonlocal image_count
         key = (remote_url or "").strip()
         if not key or key in entries_by_key:
+            return
+
+        if kind == "image" and args.max_images is not None and image_count >= args.max_images:
             return
 
         asset_bytes = read_asset_bytes(key, args)
@@ -153,19 +258,21 @@ def collect_assets(data: dict, args: argparse.Namespace, output: Path) -> list[d
             "languageCode": language_code or "",
             "sizeBytes": len(asset_bytes),
         }
+        if kind == "image":
+            image_count += 1
 
     for asset in data.get("mediaAssets") or []:
         media_type = str(asset.get("type") or "").lower()
         if "image" in media_type:
             add(asset.get("url"), "image", asset.get("entityType") or "", asset.get("entityId") or "")
 
-    for food in data.get("foodItems") or []:
-        add(food.get("imageUrl"), "image", "food_item", food.get("id") or "")
-
     for route in data.get("routes") or []:
         add(route.get("coverImageUrl"), "image", "route", route.get("id") or "")
 
-    for audio in data.get("audioGuides") or []:
+    for food in data.get("foodItems") or []:
+        add(food.get("imageUrl"), "image", "food_item", food.get("id") or "")
+
+    for audio in iter_canonical_audio_guides(data.get("audioGuides") or []):
         if is_playable_audio(audio):
             add(
                 audio.get("audioUrl"),
@@ -176,6 +283,47 @@ def collect_assets(data: dict, args: argparse.Namespace, output: Path) -> list[d
             )
 
     return sorted(entries_by_key.values(), key=lambda item: (item["kind"], item["relativePath"]))
+
+
+def iter_canonical_audio_guides(audio_guides: list[dict]) -> list[dict]:
+    canonical_by_key: dict[str, dict] = {}
+    for audio in audio_guides:
+        entity_type = str(audio.get("entityType") or "").strip().lower()
+        entity_id = str(audio.get("entityId") or "").strip()
+        language_code = str(audio.get("languageCode") or "").strip()
+        if not entity_type or not entity_id or not language_code:
+            continue
+
+        key = f"{entity_type}|{entity_id}|{language_code}"
+        existing = canonical_by_key.get(key)
+        if existing is None or compare_audio_guides(audio, existing) > 0:
+            canonical_by_key[key] = audio
+
+    return list(canonical_by_key.values())
+
+
+def compare_audio_guides(left: dict, right: dict) -> int:
+    left_playable = is_playable_audio(left)
+    right_playable = is_playable_audio(right)
+    if left_playable != right_playable:
+        return 1 if left_playable else -1
+
+    left_updated_at = str(left.get("updatedAt") or "").strip()
+    right_updated_at = str(right.get("updatedAt") or "").strip()
+    if left_updated_at != right_updated_at:
+        return 1 if left_updated_at > right_updated_at else -1
+
+    left_content_version = str(left.get("contentVersion") or "").strip()
+    right_content_version = str(right.get("contentVersion") or "").strip()
+    if left_content_version != right_content_version:
+        return 1 if left_content_version > right_content_version else -1
+
+    left_id = str(left.get("id") or "").strip()
+    right_id = str(right.get("id") or "").strip()
+    if left_id == right_id:
+        return 0
+
+    return 1 if left_id > right_id else -1
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -405,7 +553,7 @@ def create_seed_db(output: Path, envelope: dict, manifest: dict, metadata: dict,
                     (route_id, poi_id, index),
                 )
 
-        for audio in data.get("audioGuides") or []:
+        for audio in iter_canonical_audio_guides(data.get("audioGuides") or []):
             if not is_playable_audio(audio):
                 continue
             remote_url = audio.get("audioUrl") or ""

@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useAdminData } from "../../data/store";
 import type { AdminUser } from "../../data/types";
-import { adminApi } from "../../lib/api";
+import { ADMIN_SESSION_INVALIDATED_EVENT, adminApi } from "../../lib/api";
 import { getHomePathForRole, type AuthPortal } from "./auth-routing";
 
 const SESSION_KEY = "vinh-khanh-admin-web:session";
@@ -141,6 +141,23 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
 
     void restoreSession();
   }, [refreshData, resolveUser]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleSessionInvalidated = () => {
+      clearSession();
+      setUser(null);
+      setInitializing(false);
+    };
+
+    window.addEventListener(ADMIN_SESSION_INVALIDATED_EVENT, handleSessionInvalidated);
+    return () => {
+      window.removeEventListener(ADMIN_SESSION_INVALIDATED_EVENT, handleSessionInvalidated);
+    };
+  }, []);
 
   const login = useCallback(
     async (email: string, password: string, portal?: AuthPortal) => {

@@ -442,7 +442,7 @@ public sealed class AutoNarrationService : IAutoNarrationService
     {
         try
         {
-            await _audioPlaybackService.PlayAsync(detail, languageCode);
+            await _audioPlaybackService.PlayAsync(detail, languageCode, trackAnalytics: false);
         }
         catch
         {

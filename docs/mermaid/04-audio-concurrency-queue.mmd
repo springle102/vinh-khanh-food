@@ -1,0 +1,95 @@
+%% Sequence: xu li hang doi/khoa audio khi nhieu du khach cung truy cap cung thoi diem, cung dia diem
+%% Sources:
+%% - apps/mobile-app/Services/AutoNarrationServices.cs
+%% - apps/mobile-app/Services/PoiAudioPlaybackService.cs
+%% - apps/mobile-app/Services/FoodStreetMockDataService.cs
+%% - apps/backend-api/Controllers/PoisController.cs
+%% - apps/backend-api/Infrastructure/PoiNarrationAudioService.cs
+
+sequenceDiagram
+    autonumber
+    actor GuestA as Du khách A
+    actor GuestB as Du khách B
+    participant MapA as HomeMapViewModel A
+    participant AutoA as AutoNarrationService A
+    participant AudioA as PoiAudioPlaybackService A
+    participant CacheA as Cache A
+    participant MapB as HomeMapViewModel B
+    participant AutoB as AutoNarrationService B
+    participant AudioB as PoiAudioPlaybackService B
+    participant CacheB as Cache B
+    participant Api as Backend PoisController
+    participant AudioLoader as PoiNarrationAudioService
+    participant Repo as AdminDataRepository
+    participant Storage as Backend audio storage/CDN
+
+    Note over GuestA,Storage: Code hiện tại không có hàng đợi audio toàn cục theo địa điểm. Mỗi thiết bị tự serialize playback bằng lock/session; backend phục vụ prepared audio đồng thời.
+
+    par Thiết bị A vào cùng vị trí
+        GuestA->>MapA: LocationChanged tại điểm gần POI X
+        MapA->>AutoA: ProcessLocationAsync/ProcessMockLocationTapAsync()
+        AutoA->>AutoA: _stateLock chọn POI X, reserve playback
+        AutoA->>AudioA: PlayAsync(detail POI X, language)
+        AudioA->>AudioA: TryBeginPlaybackSessionAsync(_stateLock)
+    and Thiết bị B vào cùng vị trí
+        GuestB->>MapB: LocationChanged tại điểm gần POI X
+        MapB->>AutoB: ProcessLocationAsync/ProcessMockLocationTapAsync()
+        AutoB->>AutoB: _stateLock chọn POI X, reserve playback
+        AutoB->>AudioB: PlayAsync(detail POI X, language)
+        AudioB->>AudioB: TryBeginPlaybackSessionAsync(_stateLock)
+    end
+
+    par Resolve audio trên thiết bị A
+        alt Audio A đang loading/playing cùng requestKey hoặc request lặp dưới 350 ms
+            AudioA-->>MapA: Bỏ qua duplicate hoặc resume paused
+        else Phiên mới trên A
+            AudioA->>CacheA: TryGetCachedAudioAsync()
+            alt A đã có local/offline cache
+                CacheA-->>AudioA: CachedAudioAsset
+            else A cần remote
+                AudioA->>AudioA: _inflightLoads.GetOrAdd(audioCacheKey)
+                AudioA->>Api: GET /api/v1/pois/POI-X/audio?languageCode=...
+            end
+        end
+    and Resolve audio trên thiết bị B
+        alt Audio B đang loading/playing cùng requestKey hoặc request lặp dưới 350 ms
+            AudioB-->>MapB: Bỏ qua duplicate hoặc resume paused
+        else Phiên mới trên B
+            AudioB->>CacheB: TryGetCachedAudioAsync()
+            alt B đã có local/offline cache
+                CacheB-->>AudioB: CachedAudioAsset
+            else B cần remote
+                AudioB->>AudioB: _inflightLoads.GetOrAdd(audioCacheKey)
+                AudioB->>Api: GET /api/v1/pois/POI-X/audio?languageCode=...
+            end
+        end
+    end
+
+    par Backend xử lý request A
+        Api->>AudioLoader: GetAudioAsync(POI-X, language)
+        AudioLoader->>Repo: Resolve narration + AudioGuide ready
+        AudioLoader->>Storage: Đọc file local hoặc proxy AudioUrl
+        Storage-->>AudioLoader: audio bytes
+        AudioLoader-->>Api: PoiNarrationAudioResult
+        Api-->>AudioA: File audio + ETag + Cache-Control max-age=86400
+        AudioA->>CacheA: Lưu file và cache index (_cacheLock)
+        AudioA->>AudioA: PlayLocalAudioAsync()
+    and Backend xử lý request B
+        Api->>AudioLoader: GetAudioAsync(POI-X, language)
+        AudioLoader->>Repo: Resolve narration + AudioGuide ready
+        AudioLoader->>Storage: Đọc file local hoặc proxy AudioUrl
+        Storage-->>AudioLoader: audio bytes
+        AudioLoader-->>Api: PoiNarrationAudioResult
+        Api-->>AudioB: File audio + ETag + Cache-Control max-age=86400
+        AudioB->>CacheB: Lưu file và cache index (_cacheLock)
+        AudioB->>AudioB: PlayLocalAudioAsync()
+    end
+
+    alt Một thiết bị nhận request POI khác khi audio cũ đang chạy
+        AudioA->>AudioA: Increment sessionId, cancel active token, dispose player
+        AudioA-->>MapA: Publish Loading cho request mới
+    else Cùng POI/cùng audio key trên thiết bị đó
+        AudioA-->>MapA: Không xếp thêm lượt phát, giữ phiên hiện tại
+    end
+
+    Note over AudioA,AudioB: _inflightLoads chỉ dedupe download trùng bên trong một thiết bị. Nhiều du khách khác nhau vẫn tải/phát độc lập, còn backend dựa vào prepared file + cache HTTP để chịu tải.

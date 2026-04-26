@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { DataTable, type DataColumn } from "../../components/ui/DataTable";
@@ -10,7 +10,7 @@ import { Select } from "../../components/ui/Select";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useSearchParams } from "react-router-dom";
 import { useAdminData } from "../../data/store";
-import type { AdminDataState, AudioGuide, FoodItem, LanguageCode, MediaAsset, Poi, PoiDetail, Translation } from "../../data/types";
+import type { AdminDataState, AudioGuide, FoodItem, LanguageCode, MediaAsset, Poi, PoiChangeRequest, PoiDetail, Translation } from "../../data/types";
 import { adminApi, getErrorMessage, type PoiAudioGenerationResult } from "../../lib/api";
 import { preventImplicitFormSubmit } from "../../lib/forms";
 import { getCategoryName, getEntityTranslationFromList, getOwnerName, searchPois } from "../../lib/selectors";
@@ -29,6 +29,7 @@ import { OpenStreetMapPicker, type PoiMapItem } from "./OpenStreetMapPicker";
 import { usePoiNarrationPlayback } from "./usePoiNarrationPlayback";
 import {
   languageLocales,
+  isPlayablePreparedAudioGuide,
   supportedNarrationLanguages,
   type ResolvedPoiNarration,
 } from "../../lib/narration";
@@ -408,7 +409,7 @@ const canToggleApprovedPoi = (
     return true;
   }
 
-  return role === "PLACE_OWNER" && !poi.lockedBySuperAdmin;
+  return false;
 };
 
 export const PoisPage = () => {
@@ -448,12 +449,16 @@ export const PoisPage = () => {
   const [visiblePoiIds, setVisiblePoiIds] = useState<string[]>([]);
   const [hasSlugBeenManuallyEdited, setHasSlugBeenManuallyEdited] = useState(false);
   const [selectedNarration, setSelectedNarration] = useState<ResolvedPoiNarration | null>(null);
+  const [narrationRefreshVersion, setNarrationRefreshVersion] = useState(0);
   const [isResolvingNarration, setResolvingNarration] = useState(false);
   const [poiIdBeingRejected, setPoiIdBeingRejected] = useState<string | null>(null);
   const [activeToggleTarget, setActiveToggleTarget] = useState<{
     poiId: string;
     nextIsActive: boolean;
   } | null>(null);
+  const [poiChangeRequests, setPoiChangeRequests] = useState<PoiChangeRequest[]>([]);
+  const [changeRequestError, setChangeRequestError] = useState("");
+  const [isReviewingChangeRequest, setReviewingChangeRequest] = useState(false);
   const [form, setForm] = useState<PoiFormState>(() =>
     createDefaultForm(getSubmissionStatus(user?.role, "draft")),
   );
@@ -500,6 +505,27 @@ export const PoisPage = () => {
     const searched = searchPois(state.pois, state, keyword);
     return statusFilter === "all" ? searched : searched.filter((item) => item.status === statusFilter);
   }, [keyword, state, statusFilter]);
+  const refreshPoiChangeRequests = useCallback(async () => {
+    if (!user) {
+      setPoiChangeRequests([]);
+      return;
+    }
+
+    try {
+      setChangeRequestError("");
+      setPoiChangeRequests(await adminApi.getPoiChangeRequests());
+    } catch (error) {
+      setChangeRequestError(getErrorMessage(error));
+      setPoiChangeRequests([]);
+    }
+  }, [user]);
+  useEffect(() => {
+    void refreshPoiChangeRequests();
+  }, [refreshPoiChangeRequests, syncVersion]);
+  const pendingPoiChangeRequests = useMemo(
+    () => poiChangeRequests.filter((request) => request.status === "pending"),
+    [poiChangeRequests],
+  );
   const pendingPois = useMemo(
     () => state.pois.filter((item) => item.status === "pending"),
     [state.pois],
@@ -600,11 +626,11 @@ export const PoisPage = () => {
   }, [currentFormPoiId, form.contentLanguageCode, selectedPoiDetail, state.audioGuides]);
   const currentFormAudioStatusLabel = currentFormAudioGuide
     ? currentFormAudioGuide.isOutdated || currentFormAudioGuide.generationStatus === "outdated"
-      ? "Outdated"
+      ? "Cần tạo lại"
       : currentFormAudioGuide.generationStatus === "failed"
         ? "Lỗi"
         : currentFormAudioGuide.generationStatus === "pending" || currentFormAudioGuide.status === "processing"
-          ? "Đang chờ generate"
+          ? "Đang chờ tạo"
           : currentFormAudioGuide.generationStatus === "success" && currentFormAudioGuide.status === "ready"
             ? "Thành công"
             : "Chưa có"
@@ -816,8 +842,8 @@ export const PoisPage = () => {
 
   const openActiveToggleModal = (poi: Poi, nextIsActive: boolean) => {
     if (!canToggleApprovedPoi(poi, user?.role)) {
-      if (isOwner && poi.lockedBySuperAdmin) {
-        setPageAlert("POI này đang bị Super Admin ngừng hoạt động nên bạn không thể tự bật lại hoặc chỉnh sửa.");
+      if (isOwner) {
+        setPageAlert("Chủ quán không có quyền bật hoặc tắt trạng thái hoạt động của POI.");
       }
 
       return;
@@ -835,19 +861,19 @@ export const PoisPage = () => {
   };
 
   const openEditModal = async (poi: Poi) => {
+    setPageAlert("");
+
     if (isOwner && poi.lockedBySuperAdmin) {
-      setPageAlert("POI này đang bị Super Admin ngừng hoạt động nên bạn không thể tự bật lại hoặc chỉnh sửa.");
-      return;
+      setPageAlert("POI này đang bị Admin ngừng hoạt động. Bạn vẫn có thể gửi yêu cầu sửa để Admin xem xét, nhưng không thể tự bật lại POI.");
     }
 
-    const modalMode = isSuperAdmin ? "view" : "edit";
+    const modalMode = "edit";
     stopCurrentAudio();
     const requestId = poiFormLoadRequestRef.current + 1;
     poiFormLoadRequestRef.current = requestId;
 
     setHasSlugBeenManuallyEdited(false);
     setFormError("");
-    setPageAlert("");
     setAddressSearchVersion(0);
     setPoiFormLoadState({ mode: modalMode, dataLoaded: false });
     setPoiImageForm(createDefaultPoiImageForm());
@@ -949,19 +975,6 @@ export const PoisPage = () => {
   };
 
   useEffect(() => {
-    const permissionError = searchParams.get("permissionError");
-    if (permissionError !== "poi-edit-forbidden" || !isSuperAdmin) {
-      return;
-    }
-
-    setPageAlert("Bạn không có quyền chỉnh sửa nội dung POI.");
-
-    const nextSearchParams = new URLSearchParams(searchParams);
-    nextSearchParams.delete("permissionError");
-    setSearchParams(nextSearchParams, { replace: true });
-  }, [isSuperAdmin, searchParams, setSearchParams]);
-
-  useEffect(() => {
     const editPoiId = searchParams.get("editPoiId");
     const viewPoiId = searchParams.get("viewPoiId");
 
@@ -973,7 +986,7 @@ export const PoisPage = () => {
       return;
     }
 
-    const requestedPoiId = isSuperAdmin ? viewPoiId : editPoiId;
+    const requestedPoiId = editPoiId ?? viewPoiId;
     if (!requestedPoiId) {
       return;
     }
@@ -1154,6 +1167,7 @@ export const PoisPage = () => {
       controller.abort();
     };
   }, [
+    narrationRefreshVersion,
     resolvePoiNarration,
     selectedNarrationLanguage,
     selectedPoi,
@@ -1227,7 +1241,7 @@ export const PoisPage = () => {
     primePlayback();
     setHasNarrationInteraction(true);
 
-    if (selectedNarration) {
+    if (selectedNarration && isPlayablePreparedAudioGuide(selectedNarration.audioGuide)) {
       void playResolvedNarration(selectedNarration);
       return;
     }
@@ -1306,7 +1320,7 @@ export const PoisPage = () => {
   const runPoiAudioAction = useCallback(
     async (mode: "generate" | "regenerate" | "generateAll") => {
       if (!currentFormPoiId) {
-        setFormError("Hãy lưu POI trước khi generate audio.");
+        setFormError("Hãy lưu POI trước khi tạo audio.");
         return;
       }
 
@@ -1341,7 +1355,7 @@ export const PoisPage = () => {
             forceRegenerate: false,
           });
           const succeeded = results.filter((item) => item.success).length;
-          setAudioActionMessage(`Đã xử lý generate audio cho ${results.length} ngôn ngữ, thành công ${succeeded}.`);
+          setAudioActionMessage(`Đã xử lý tạo audio cho ${results.length} ngôn ngữ, thành công ${succeeded}.`);
           const firstFailure = results.find((item) => !item.success);
           if (firstFailure) {
             setFormError(describeAudioGenerationResult(firstFailure));
@@ -1350,6 +1364,8 @@ export const PoisPage = () => {
 
         await refreshData();
         await refreshPoiAudioStatus(currentFormPoiId);
+        setSelectedNarration(null);
+        setNarrationRefreshVersion((current) => current + 1);
       } catch (error) {
         setFormError(getErrorMessage(error));
       } finally {
@@ -1420,7 +1436,7 @@ export const PoisPage = () => {
         return;
       }
       if (!Number.isFinite(parsedPlaceTier) || ![0, 1].includes(parsedPlaceTier)) {
-        setFormError("Loại quán chỉ được là Basic hoặc Premium.");
+        setFormError("Loại quán chỉ được là Cơ bản hoặc Cao cấp.");
         setSaving(false);
         return;
       }
@@ -1480,6 +1496,56 @@ export const PoisPage = () => {
       const hasPoiContentChanged = isOwnerEditingApprovedLifecyclePoi
         ? poiEditorInitialContentSnapshotRef.current !== currentContentSnapshot
         : true;
+
+      if (isOwner) {
+        if (!form.id || !originalPoi) {
+          setFormError("Chủ quán không được tạo POI mới.");
+          setSaving(false);
+          return;
+        }
+
+        if (!hasPoiContentChanged) {
+          setFormError("Bạn chưa thay đổi nội dung POI.");
+          setSaving(false);
+          return;
+        }
+
+        await adminApi.submitPoiChangeRequest(originalPoi.id, {
+          poi: {
+            id: originalPoi.id,
+            requestedId: originalPoi.id,
+            slug: nextSlug,
+            address: form.address,
+            lat,
+            lng,
+            categoryId: normalizedCategoryId,
+            status: originalPoi.status,
+            district: form.district,
+            ward: form.ward,
+            priceRange: form.priceRange,
+            triggerRadius,
+            priority,
+            placeTier,
+            tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
+            ownerUserId: originalPoi.ownerUserId,
+            updatedBy: user.name,
+            actorRole: user.role,
+            actorUserId: user.id,
+          },
+          languageCode: form.contentLanguageCode,
+          title: form.title,
+          fullText: form.fullText,
+          seoTitle: form.title,
+          seoDescription: form.fullText || form.title,
+        });
+
+        poiDetailCacheRef.current.delete(originalPoi.id);
+        closePoiModal();
+        setPageAlert("Đã gửi yêu cầu duyệt thay đổi POI. Admin sẽ xem và áp dụng nếu được duyệt.");
+        await refreshData();
+        await refreshPoiChangeRequests();
+        return;
+      }
 
       if (isOwnerEditingApprovedLifecyclePoi && !hasPoiContentChanged) {
         const originalVisibleStatus = getSubmissionStatus(
@@ -1782,27 +1848,16 @@ export const PoisPage = () => {
   );
   const isPoiModalViewOnly = poiFormLoadState.mode === "view";
   const editingApprovedLifecyclePoi = Boolean(editingPoi && isApprovedLifecyclePoi(editingPoi));
-  const ownerCanToggleEditingPoi = canToggleApprovedPoi(editingPoi, user?.role);
-  const poiStatusFieldDisabled = isPoiModalViewOnly
-    ? true
-    : isOwner
-      ? !editingApprovedLifecyclePoi || !ownerCanToggleEditingPoi
-      : false;
+  const poiStatusFieldDisabled = isPoiModalViewOnly || isOwner;
   const poiModalTitle = isOwner
-    ? poiFormLoadState.mode === "edit"
-      ? editingApprovedLifecyclePoi
-        ? "Quản lý POI đã duyệt"
-        : "Cập nhật POI để gửi duyệt"
-      : "Tạo POI để gửi duyệt"
+    ? "Gửi yêu cầu cập nhật POI"
     : isPoiModalViewOnly
       ? "Chi tiết POI"
       : poiFormLoadState.mode === "edit"
         ? "Cập nhật POI"
         : "Tạo POI";
   const poiModalDescription = isOwner
-    ? editingApprovedLifecyclePoi
-      ? "Bạn có thể bật hoặc tắt hoạt động của POI đã duyệt. Nếu sửa nội dung và lưu, POI sẽ quay lại chờ duyệt."
-      : "Điền thông tin POI và gửi cho super admin duyệt trước khi xuất bản."
+    ? "Chủ quán chỉ được chỉnh sửa POI của mình dưới dạng yêu cầu chờ Admin duyệt. Không thể tự tạo POI mới hoặc tự bật/tắt hoạt động."
     : isPoiModalViewOnly
       ? "Super Admin chỉ được xem chi tiết POI trong form này. Dùng các nút ngoài form để duyệt, từ chối hoặc đổi trạng thái hoạt động."
       : "Điền thông tin POI, chỉnh vị trí trên bản đồ và lưu nội dung thuyết minh theo ngôn ngữ đang sửa.";
@@ -1876,6 +1931,54 @@ export const PoisPage = () => {
     }
   }, [activeToggleTarget, poiBeingToggled, syncPoiAfterReviewAction, user]);
 
+  const handleApprovePoiChangeRequest = useCallback(
+    async (request: PoiChangeRequest) => {
+      if (!isSuperAdmin) {
+        return;
+      }
+
+      setReviewingChangeRequest(true);
+      setChangeRequestError("");
+      try {
+        const savedPoi = await adminApi.approvePoiChangeRequest(request.id);
+        await syncPoiAfterReviewAction(savedPoi.id);
+        await refreshPoiChangeRequests();
+        setPageAlert("Đã duyệt và áp dụng yêu cầu sửa POI.");
+      } catch (error) {
+        setChangeRequestError(getErrorMessage(error));
+      } finally {
+        setReviewingChangeRequest(false);
+      }
+    },
+    [isSuperAdmin, refreshPoiChangeRequests, syncPoiAfterReviewAction],
+  );
+
+  const handleRejectPoiChangeRequest = useCallback(
+    async (request: PoiChangeRequest) => {
+      if (!isSuperAdmin) {
+        return;
+      }
+
+      const reason = window.prompt("Nhập lý do từ chối yêu cầu sửa POI:");
+      if (reason === null) {
+        return;
+      }
+
+      setReviewingChangeRequest(true);
+      setChangeRequestError("");
+      try {
+        await adminApi.rejectPoiChangeRequest(request.id, reason);
+        await refreshPoiChangeRequests();
+        setPageAlert("Đã từ chối yêu cầu sửa POI.");
+      } catch (error) {
+        setChangeRequestError(getErrorMessage(error));
+      } finally {
+        setReviewingChangeRequest(false);
+      }
+    },
+    [isSuperAdmin, refreshPoiChangeRequests],
+  );
+
   const columns: DataColumn<Poi>[] = [
     {
       key: "poi",
@@ -1900,7 +2003,7 @@ export const PoisPage = () => {
             ) : null}
             {poi.lockedBySuperAdmin ? (
               <p className="mt-2 text-xs text-amber-700">
-                Super Admin đã ngừng hoạt động POI này. Chủ quán không thể tự bật lại hoặc chỉnh sửa.
+                Admin đã ngừng hoạt động POI này. Chủ quán không thể tự bật lại, nhưng vẫn có thể gửi yêu cầu sửa.
               </p>
             ) : null}
           </div>
@@ -1937,7 +2040,7 @@ export const PoisPage = () => {
       widthClassName: "min-w-[420px]",
       render: (poi) => {
         const canTogglePoi = canToggleApprovedPoi(poi, user?.role);
-        const canEditPoi = isOwner && !poi.lockedBySuperAdmin;
+        const canEditPoi = isSuperAdmin || isOwner;
 
         return (
           <div className="flex items-center gap-2 whitespace-nowrap">
@@ -1992,7 +2095,7 @@ export const PoisPage = () => {
                   void openEditModal(poi);
                 }}
               >
-                Sửa
+                {isOwner ? "Gửi yêu cầu duyệt" : "Sửa"}
               </Button>
             ) : null}
           </div>
@@ -2020,23 +2123,25 @@ export const PoisPage = () => {
               Khi chạm bất kỳ điểm nào gần marker trên bản đồ, hệ thống sẽ tự chọn POI gần nhất, hiện thông tin chi tiết và tự động phát thuyết minh của POI đó.
             </p>
           </div>
-          {isOwner ? (
-            <Button onClick={openCreateModal} disabled={isBootstrapping}>
-              {isBootstrapping ? "Đang tải dữ liệu..." : "Tạo POI"}
-            </Button>
-          ) : (
-            <Button
-              disabled={!pendingPois.length}
-              onClick={() => {
-                setStatusFilter("pending");
-                if (pendingPois[0]) {
-                  handlePoiSelect(pendingPois[0].id);
-                }
-              }}
-            >
-              {pendingPois.length ? `Duyệt ${pendingPois.length} POI` : "Không có POI chờ duyệt"}
-            </Button>
-          )}
+          {!isOwner ? (
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={openCreateModal} disabled={isBootstrapping}>
+                {isBootstrapping ? "Đang tải dữ liệu..." : "Tạo POI"}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={!pendingPois.length}
+                onClick={() => {
+                  setStatusFilter("pending");
+                  if (pendingPois[0]) {
+                    handlePoiSelect(pendingPois[0].id);
+                  }
+                }}
+              >
+                {pendingPois.length ? `Duyệt ${pendingPois.length} POI` : "Không có POI chờ duyệt"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       </Card>
 
@@ -2054,13 +2159,79 @@ export const PoisPage = () => {
         ))}
       </section>
 
+      {(isSuperAdmin || poiChangeRequests.length > 0 || changeRequestError) ? (
+        <Card className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="section-heading">Yêu cầu sửa POI</h2>
+              <p className="mt-2 text-sm text-ink-500">
+                Chủ quán gửi thay đổi vào đây; Admin duyệt thì POI public mới được cập nhật.
+              </p>
+            </div>
+            <Button variant="ghost" onClick={() => void refreshPoiChangeRequests()}>
+              Làm mới
+            </Button>
+          </div>
+          {changeRequestError ? (
+            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{changeRequestError}</div>
+          ) : null}
+          {poiChangeRequests.length ? (
+            <div className="grid gap-3">
+              {poiChangeRequests.slice(0, isSuperAdmin ? 8 : 4).map((request) => {
+                const poi = state.pois.find((item) => item.id === request.poiId);
+                return (
+                  <div key={request.id} className="rounded-3xl border border-sand-100 bg-sand-50 px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-ink-900">{poi ? getDisplayedPoiTranslation(poi)?.title ?? poi.slug : request.poiId}</p>
+                        <p className="mt-1 text-xs text-ink-500">
+                          {request.submittedByName} gửi lúc {formatDateTime(request.submittedAt)}
+                        </p>
+                        {request.rejectionReason ? (
+                          <p className="mt-2 text-xs text-rose-600">Lý do từ chối: {request.rejectionReason}</p>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge status={request.status} />
+                        {isSuperAdmin && request.status === "pending" ? (
+                          <>
+                            <Button
+                              disabled={isReviewingChangeRequest}
+                              onClick={() => void handleApprovePoiChangeRequest(request)}
+                            >
+                              Duyệt thay đổi
+                            </Button>
+                            <Button
+                              variant="danger"
+                              disabled={isReviewingChangeRequest}
+                              onClick={() => void handleRejectPoiChangeRequest(request)}
+                            >
+                              Từ chối
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState
+              title="Chưa có yêu cầu sửa POI"
+              description="Khi chủ quán gửi thay đổi, yêu cầu pending sẽ xuất hiện tại đây."
+            />
+          )}
+        </Card>
+      ) : null}
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_380px]">
         <Card className="space-y-5">
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
             <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Tìm POI..." />
             <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as Poi["status"] | "all")}>
               <option value="all">Tất cả trạng thái</option>
-              <option value="draft">Draft</option>
+              <option value="draft">Bản nháp</option>
               <option value="pending">Chờ duyệt</option>
               <option value="published">Đã duyệt</option>
               <option value="rejected">Từ chối</option>
@@ -2100,7 +2271,7 @@ export const PoisPage = () => {
                 <div className="rounded-3xl border border-amber-100 bg-amber-50 px-5 py-4">
                   <p className="text-sm font-semibold tracking-[0.12em] text-amber-700">POI đang bị khóa hoạt động</p>
                   <p className="mt-2 text-sm leading-6 text-amber-800">
-                    Super Admin đã đưa POI này về trạng thái ngừng hoạt động. Chủ quán không thể tự bật lại hoặc chỉnh sửa nội dung POI này.
+                    Admin đã đưa POI này về trạng thái ngừng hoạt động. Chủ quán không thể tự bật lại, nhưng vẫn có thể gửi yêu cầu sửa để Admin xem xét.
                   </p>
                 </div>
               ) : null}
@@ -2161,7 +2332,7 @@ export const PoisPage = () => {
                   {selectedDisplayText || "Chưa có bài thuyết minh cho POI này."}
                 </p>
                 <p className="mt-3 text-xs text-ink-500">
-                  Audio: {selectedAudio ? `${selectedAudio.sourceType} / ${selectedAudio.generationStatus} / ${selectedAudio.status}` : "Chưa có"}
+                  Audio hiện có: {selectedAudio ? `${selectedAudio.sourceType} / ${selectedAudio.generationStatus} / ${selectedAudio.status}` : "Chưa có"}
                 </p>
                 {selectedNarration?.fallbackMessage ? (
                   <p className="mt-2 text-xs text-amber-700">{selectedNarration.fallbackMessage}</p>
@@ -2169,7 +2340,7 @@ export const PoisPage = () => {
                 <p className="mt-2 text-xs text-ink-500">
                   {isResolvingNarration
                     ? "Đang đồng bộ nội dung và audio theo ngôn ngữ đã chọn..."
-                    : `Transcript để generate audio: ${selectedNarration?.ttsInputText ? "sẵn sàng" : "chưa có"}`}
+                    : `Nội dung dùng để tạo audio: ${selectedNarration?.ttsInputText ? "sẵn sàng" : "chưa có"}`}
                 </p>
                 <p className="mt-2 text-xs text-ink-500">
                   Ngôn ngữ phát: {selectedNarration?.ttsLocale ?? languageLocales[selectedNarrationLanguage]}
@@ -2248,14 +2419,14 @@ export const PoisPage = () => {
                     {selectedPoi.isActive ? "Chuyển sang ngừng hoạt động" : "Bật hoạt động POI này"}
                   </Button>
                 ) : null}
-                {isOwner && !selectedPoi.lockedBySuperAdmin ? (
+                {isOwner ? (
                   <Button
                     variant="secondary"
                     onClick={() => {
                       void openEditModal(selectedPoi);
                     }}
                   >
-                    {selectedPoi.status === "rejected" ? "Sửa để gửi duyệt lại" : "Sửa POI này"}
+                    {selectedPoi.status === "rejected" ? "Sửa để gửi duyệt lại" : "Gửi yêu cầu duyệt"}
                   </Button>
                 ) : null}
               </div>
@@ -2489,8 +2660,8 @@ export const PoisPage = () => {
                     disabled={isPoiModalViewOnly}
                     onChange={(event) => setForm((current) => ({ ...current, placeTier: event.target.value }))}
                   >
-                    <option value="0">Basic</option>
-                    <option value="1">Premium</option>
+                    <option value="0">Cơ bản</option>
+                    <option value="1">Cao cấp</option>
                   </Select>
                 </div>
                 <div>
@@ -2555,7 +2726,7 @@ export const PoisPage = () => {
                 <ImageSourceField
                   label="Ảnh đại diện quán"
                   value={poiImageForm.url}
-                  disabled={isPoiModalViewOnly}
+                  disabled={isPoiModalViewOnly || isOwner}
                   onChange={(value) =>
                     setPoiImageForm((current) => ({
                       ...current,
@@ -2577,7 +2748,7 @@ export const PoisPage = () => {
                           : "Thêm món mới và chỉnh sửa toàn bộ nội dung món ăn ngay trong màn sửa POI."}
                       </p>
                     </div>
-                    {!isPoiModalViewOnly ? (
+                    {!isPoiModalViewOnly && !isOwner ? (
                       <Button
                         variant="secondary"
                         className="shrink-0"
@@ -2606,7 +2777,7 @@ export const PoisPage = () => {
                                   : "Món mới sẽ được tạo khi bạn lưu POI."}
                               </p>
                             </div>
-                            {!foodItem.id && !isPoiModalViewOnly ? (
+                            {!foodItem.id && !isPoiModalViewOnly && !isOwner ? (
                               <Button
                                 variant="ghost"
                                 className="px-3 py-2 text-xs"
@@ -2622,7 +2793,7 @@ export const PoisPage = () => {
                               <label className="field-label">Tên món</label>
                               <Input
                                 value={foodItem.name}
-                                disabled={isPoiModalViewOnly}
+                                disabled={isPoiModalViewOnly || isOwner}
                                 onChange={(event) =>
                                   updatePoiFoodItemForm(foodItem.clientId, {
                                     name: event.target.value,
@@ -2635,7 +2806,7 @@ export const PoisPage = () => {
                               <label className="field-label">Khoảng giá</label>
                               <Input
                                 value={foodItem.priceRange}
-                                disabled={isPoiModalViewOnly}
+                                disabled={isPoiModalViewOnly || isOwner}
                                 onChange={(event) =>
                                   updatePoiFoodItemForm(foodItem.clientId, {
                                     priceRange: event.target.value,
@@ -2661,7 +2832,7 @@ export const PoisPage = () => {
                             <label className="field-label">Mô tả món ăn</label>
                             <Textarea
                               value={foodItem.description}
-                              disabled={isPoiModalViewOnly}
+                              disabled={isPoiModalViewOnly || isOwner}
                               onChange={(event) =>
                                 updatePoiFoodItemForm(foodItem.clientId, {
                                   description: event.target.value,
@@ -2674,7 +2845,7 @@ export const PoisPage = () => {
                           <ImageSourceField
                             label={`Ảnh món: ${foodItem.name.trim() || `Món ăn ${index + 1}`}`}
                             value={foodItem.imageUrl}
-                            disabled={isPoiModalViewOnly}
+                            disabled={isPoiModalViewOnly || isOwner}
                             onChange={(value) =>
                               updatePoiFoodItemForm(foodItem.clientId, { imageUrl: value })
                             }
@@ -2696,9 +2867,9 @@ export const PoisPage = () => {
               <div className="grid gap-5 md:grid-cols-2">
                 <div>
                   <label className="field-label">Nguồn audio</label>
-                  <Select disabled={isPoiModalViewOnly} value={form.audioSourceType} onChange={(event) => setForm((current) => ({ ...current, audioSourceType: event.target.value as AudioGuide["sourceType"] }))}>
-                    <option value="generated">Pre-generated từ backend</option>
-                    <option value="uploaded">Uploaded MP3</option>
+                  <Select disabled={isPoiModalViewOnly || isOwner} value={form.audioSourceType} onChange={(event) => setForm((current) => ({ ...current, audioSourceType: event.target.value as AudioGuide["sourceType"] }))}>
+                    <option value="generated">Audio tạo sẵn từ backend</option>
+                    <option value="uploaded">Tệp MP3 tải lên</option>
                   </Select>
                 </div>
                 <div>
@@ -2715,52 +2886,52 @@ export const PoisPage = () => {
                     <Button
                       type="button"
                       variant="secondary"
-                      disabled={isPoiModalViewOnly || !currentFormPoiId || isGeneratingAudio}
+                      disabled={isPoiModalViewOnly || isOwner || !currentFormPoiId || isGeneratingAudio}
                       onClick={() => {
                         void runPoiAudioAction("generate");
                       }}
                     >
-                      Generate audio ngôn ngữ này
+                      Tạo audio ngôn ngữ này
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
-                      disabled={isPoiModalViewOnly || !currentFormPoiId || isGeneratingAudio}
+                      disabled={isPoiModalViewOnly || isOwner || !currentFormPoiId || isGeneratingAudio}
                       onClick={() => {
                         void runPoiAudioAction("regenerate");
                       }}
                     >
-                      Regenerate audio
+                      Tạo lại audio
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
-                      disabled={isPoiModalViewOnly || !currentFormPoiId || isGeneratingAudio}
+                      disabled={isPoiModalViewOnly || isOwner || !currentFormPoiId || isGeneratingAudio}
                       onClick={() => {
                         void runPoiAudioAction("generateAll");
                       }}
                     >
-                      Generate tất cả ngôn ngữ
+                      Tạo audio tất cả ngôn ngữ
                     </Button>
                   </div>
                   <p className="text-xs text-ink-500">
-                    Khi bạn sửa nội dung thuyết minh, audio hiện tại sẽ được đánh dấu cũ và backend có thể generate lại theo cấu hình.
+                    Khi bạn sửa nội dung thuyết minh, audio hiện tại sẽ được đánh dấu cũ và backend có thể tạo lại theo cấu hình.
                   </p>
                   {isGeneratingAudio ? (
-                    <p className="text-sm text-ink-600">Đang generate audio pre-generated...</p>
+                    <p className="text-sm text-ink-600">Đang tạo audio trên backend...</p>
                   ) : null}
                   {audioActionMessage ? (
                     <p className="text-sm text-emerald-700">{audioActionMessage}</p>
                   ) : null}
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink-600">
-                      <p><span className="font-semibold text-ink-900">Audio URL:</span> {currentFormAudioGuide?.audioUrl || "Chưa có"}</p>
-                      <p className="mt-2"><span className="font-semibold text-ink-900">File path:</span> {currentFormAudioGuide?.audioFilePath || "Chưa có"}</p>
-                      <p className="mt-2"><span className="font-semibold text-ink-900">GeneratedAt:</span> {currentFormAudioGuide?.generatedAt ? formatDateTime(currentFormAudioGuide.generatedAt) : "Chưa có"}</p>
+                      <p><span className="font-semibold text-ink-900">URL audio:</span> {currentFormAudioGuide?.audioUrl || "Chưa có"}</p>
+                      <p className="mt-2"><span className="font-semibold text-ink-900">Đường dẫn tệp:</span> {currentFormAudioGuide?.audioFilePath || "Chưa có"}</p>
+                      <p className="mt-2"><span className="font-semibold text-ink-900">Thời điểm tạo:</span> {currentFormAudioGuide?.generatedAt ? formatDateTime(currentFormAudioGuide.generatedAt) : "Chưa có"}</p>
                     </div>
                     <div className="rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink-600">
-                      <p><span className="font-semibold text-ink-900">Voice / Model:</span> {currentFormAudioGuide ? `${currentFormAudioGuide.voiceId || "default"} / ${currentFormAudioGuide.modelId || "default"}` : "Chưa có"}</p>
-                      <p className="mt-2"><span className="font-semibold text-ink-900">Output:</span> {currentFormAudioGuide?.outputFormat || "mp3_44100_128"}</p>
+                      <p><span className="font-semibold text-ink-900">Giọng đọc / Mô hình:</span> {currentFormAudioGuide ? `${currentFormAudioGuide.voiceId || "default"} / ${currentFormAudioGuide.modelId || "default"}` : "Chưa có"}</p>
+                      <p className="mt-2"><span className="font-semibold text-ink-900">Định dạng xuất:</span> {currentFormAudioGuide?.outputFormat || "mp3_44100_128"}</p>
                       <p className="mt-2"><span className="font-semibold text-ink-900">Lỗi gần nhất:</span> {currentFormAudioGuide?.errorMessage || "Không có"}</p>
                     </div>
                   </div>
@@ -2768,7 +2939,7 @@ export const PoisPage = () => {
                     <audio controls src={currentFormAudioGuide.audioUrl} className="w-full" />
                   ) : (
                     <div className="rounded-2xl border border-dashed border-sand-200 bg-white px-4 py-3 text-sm text-ink-500">
-                      Chưa có file audio pre-generated cho ngôn ngữ này.
+                      Chưa có file audio tạo sẵn cho ngôn ngữ này.
                     </div>
                   )}
                 </div>
@@ -2781,7 +2952,7 @@ export const PoisPage = () => {
                     type="file"
                     accept=".mp3,audio/mpeg"
                     autoComplete="off"
-                    disabled={isPoiModalViewOnly}
+                    disabled={isPoiModalViewOnly || isOwner}
                     onChange={(event) => {
                       void handleAudioFileChange(event);
                     }}
@@ -2844,13 +3015,7 @@ export const PoisPage = () => {
                   : activeImageUploads > 0
                     ? "Đợi upload ảnh..."
                     : isOwner
-                        ? form.id
-                          ? editingPoi?.status === "rejected"
-                            ? "Sửa và gửi duyệt lại"
-                            : editingApprovedLifecyclePoi
-                              ? "Lưu thay đổi"
-                              : "Gửi cập nhật để duyệt lại"
-                          : "Gửi duyệt POI"
+                        ? "Gửi yêu cầu duyệt"
                         : form.id
                           ? "Lưu cập nhật POI"
                           : "Tạo POI"}
@@ -2864,11 +3029,7 @@ export const PoisPage = () => {
         open={!!activeToggleTarget && !!poiBeingToggled}
         onClose={closeActiveToggleModal}
         title="Đổi trạng thái hoạt động POI"
-        description={
-          isSuperAdmin
-            ? "Super Admin có thể bật hoặc tắt trạng thái hoạt động của POI đã được duyệt."
-            : "Chủ quán có thể tự bật hoặc tắt trạng thái hoạt động của POI đã được duyệt, trừ khi POI đã bị Super Admin khóa."
-        }
+        description="Chỉ Admin được bật hoặc tắt trạng thái hoạt động của POI đã được duyệt."
         maxWidthClassName="max-w-xl"
       >
         {activeToggleTarget && poiBeingToggled ? (

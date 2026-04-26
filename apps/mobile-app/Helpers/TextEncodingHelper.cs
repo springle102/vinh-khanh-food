@@ -54,7 +54,7 @@ public static class TextEncodingHelper
         }
 
         var trimmed = value.Trim();
-        if (!LooksMisencoded(trimmed))
+        if (!CouldBenefitFromLegacyDecode(trimmed))
         {
             return trimmed;
         }
@@ -75,13 +75,36 @@ public static class TextEncodingHelper
             }
 
             current = decoded.Trim();
-            if (!LooksMisencoded(current))
+            if (!CouldBenefitFromLegacyDecode(current))
             {
                 break;
             }
         }
 
         return current;
+    }
+
+    private static bool CouldBenefitFromLegacyDecode(string value)
+    {
+        foreach (var character in value)
+        {
+            if (character == '\uFFFD')
+            {
+                return true;
+            }
+
+            if (character is >= '\u0080' and <= '\u00FF')
+            {
+                return true;
+            }
+
+            if (char.IsControl(character) && character is not '\r' and not '\n' and not '\t')
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string TryDecodeLegacyUtf8(string value)
@@ -120,12 +143,25 @@ public static class TextEncodingHelper
             }
         }
 
-        foreach (var character in value)
+        for (var index = 0; index < value.Length; index += 1)
         {
+            var character = value[index];
             if (character == '\uFFFD')
             {
                 score += 25;
                 continue;
+            }
+
+            if (character is >= '\u0080' and <= '\u00BF')
+            {
+                score += 4;
+            }
+
+            if (index + 1 < value.Length &&
+                IsLikelyMojibakeLead(character) &&
+                IsLikelyMojibakeTrail(value[index + 1]))
+            {
+                score += 12;
             }
 
             if (character is >= '\u00C0' and <= '\u00FF')
@@ -156,4 +192,10 @@ public static class TextEncodingHelper
 
         return score;
     }
+
+    private static bool IsLikelyMojibakeLead(char value)
+        => value is >= '\u00C0' and <= '\u00FF';
+
+    private static bool IsLikelyMojibakeTrail(char value)
+        => value is >= '\u0080' and <= '\u00BF';
 }

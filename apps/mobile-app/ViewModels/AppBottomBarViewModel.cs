@@ -16,7 +16,6 @@ public sealed class AppBottomBarViewModel : ObservableObject
     {
         _poiAudioPlaybackService = poiAudioPlaybackService;
         NavigateToPoiCommand = new(() => NavigateToAsync(AppRoutes.HomeMap));
-        NavigateToQrCommand = new(() => NavigateToAsync(AppRoutes.QrScanner));
         NavigateToSettingsCommand = new(() => NavigateToAsync(AppRoutes.Settings));
     }
 
@@ -33,8 +32,6 @@ public sealed class AppBottomBarViewModel : ObservableObject
     }
 
     public AsyncCommand NavigateToPoiCommand { get; }
-
-    public AsyncCommand NavigateToQrCommand { get; }
 
     public AsyncCommand NavigateToSettingsCommand { get; }
 

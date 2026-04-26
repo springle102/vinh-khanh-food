@@ -24,7 +24,7 @@ public interface IOfflinePackageService
 public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycleAwareService
 {
     private const string AppSettingsFileName = "appsettings.json";
-    private const string BootstrapEndpoint = "api/v1/bootstrap";
+    private const string OfflinePackageEndpoint = "api/mobile/offline-package";
     private const string SyncStateEndpoint = "api/v1/sync-state";
 
     private readonly SemaphoreSlim _operationLock = new(1, 1);
@@ -113,10 +113,13 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
         await _operationLock.WaitAsync(cancellationToken);
 
         string? stagingRoot = null;
+        RemoteSyncState? remoteSyncState = null;
+        OfflinePackageFileEntry? activeFile = null;
         try
         {
             var existingInstallation = await _bundledSeedService.EnsureInstalledAsync(cancellationToken)
                                      ?? await _storageService.LoadInstallationAsync(cancellationToken);
+            var existingVerification = VerifyInstallation(existingInstallation, "pre-download");
             if (!HasAnyNetworkAccess())
             {
                 var offlineState = BuildState(
@@ -129,21 +132,45 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
                 return offlineState;
             }
 
+            remoteSyncState = await TryFetchSyncStateAsync(cancellationToken);
+            if (ShouldSkipRemoteDownload(existingInstallation, existingVerification, remoteSyncState))
+            {
+                _logger.LogInformation(
+                    "[OfflinePackage] Skip download because installed package already matches newest remote version. version={Version}; source={Source}; files={FileCount}",
+                    existingInstallation?.Metadata.Version,
+                    existingInstallation?.Metadata.InstallationSource,
+                    existingInstallation?.Metadata.FileCount);
+
+                var readyState = BuildState(
+                    existingInstallation,
+                    remoteSyncState,
+                    OfflinePackageLifecycleStatus.Ready,
+                    canReachServer: true,
+                    errorMessage: string.Empty);
+                PublishState(readyState);
+                return readyState;
+            }
+
             var operationCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             ReplaceOperationCancellationSource(operationCancellationSource);
             var operationToken = operationCancellationSource.Token;
 
             PublishState(BuildState(
                 existingInstallation,
-                remoteSyncState: null,
+                remoteSyncState,
                 OfflinePackageLifecycleStatus.Preparing,
                 canReachServer: true,
                 errorMessage: string.Empty));
 
             var bootstrapEnvelopeJson = await DownloadBootstrapEnvelopeAsync(operationToken);
             var packageDraft = ParsePackageDraft(bootstrapEnvelopeJson);
+            remoteSyncState ??= new RemoteSyncState(
+                packageDraft.Metadata.Version,
+                packageDraft.Metadata.GeneratedAtUtc,
+                packageDraft.Metadata.ServerLastChangedAtUtc);
             _logger.LogInformation(
-                "Offline package draft prepared. version={Version}; files={FileCount}; audios={AudioCount}; images={ImageCount}",
+                "[OfflinePackage] Draft prepared. baseUrl={BaseUrl}; version={Version}; files={FileCount}; audios={AudioCount}; images={ImageCount}",
+                _resolvedBaseUrl,
                 packageDraft.Metadata.Version,
                 packageDraft.Manifest.Files.Count,
                 packageDraft.Metadata.AudioCount,
@@ -152,7 +179,7 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
 
             PublishState(BuildState(
                 existingInstallation,
-                new RemoteSyncState(packageDraft.Metadata.Version, packageDraft.Metadata.GeneratedAtUtc, packageDraft.Metadata.ServerLastChangedAtUtc),
+                remoteSyncState,
                 OfflinePackageLifecycleStatus.Downloading,
                 canReachServer: true,
                 downloadedBytes: 0,
@@ -167,6 +194,7 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
             {
                 operationToken.ThrowIfCancellationRequested();
 
+                activeFile = file;
                 var bytes = await DownloadFileBytesAsync(file.Key, operationToken);
                 var targetPath = Path.Combine(stagingRoot, file.RelativePath.Replace('/', Path.DirectorySeparatorChar));
                 var targetDirectory = Path.GetDirectoryName(targetPath);
@@ -194,10 +222,11 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
                 file.SizeBytes = bytes.LongLength;
                 downloadedBytes += bytes.LongLength;
                 downloadedFileCount++;
+                activeFile = null;
 
                 PublishState(BuildState(
                     existingInstallation,
-                    new RemoteSyncState(packageDraft.Metadata.Version, packageDraft.Metadata.GeneratedAtUtc, packageDraft.Metadata.ServerLastChangedAtUtc),
+                    remoteSyncState,
                     OfflinePackageLifecycleStatus.Downloading,
                     canReachServer: true,
                     downloadedBytes: downloadedBytes,
@@ -209,7 +238,7 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
 
             PublishState(BuildState(
                 existingInstallation,
-                new RemoteSyncState(packageDraft.Metadata.Version, packageDraft.Metadata.GeneratedAtUtc, packageDraft.Metadata.ServerLastChangedAtUtc),
+                remoteSyncState,
                 OfflinePackageLifecycleStatus.Validating,
                 canReachServer: true,
                 downloadedBytes: downloadedBytes,
@@ -246,7 +275,7 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
             {
                 var errorState = BuildState(
                     existingInstallation,
-                    new RemoteSyncState(packageDraft.Metadata.Version, packageDraft.Metadata.GeneratedAtUtc, packageDraft.Metadata.ServerLastChangedAtUtc),
+                    remoteSyncState,
                     OfflinePackageLifecycleStatus.Error,
                     canReachServer: true,
                     downloadedBytes: downloadedBytes,
@@ -261,7 +290,7 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
 
             PublishState(BuildState(
                 existingInstallation,
-                new RemoteSyncState(packageDraft.Metadata.Version, packageDraft.Metadata.GeneratedAtUtc, packageDraft.Metadata.ServerLastChangedAtUtc),
+                remoteSyncState,
                 OfflinePackageLifecycleStatus.Installing,
                 canReachServer: true,
                 downloadedBytes: packageDraft.Metadata.PackageSizeBytes,
@@ -279,10 +308,7 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
             {
                 var errorState = BuildState(
                     installed,
-                    new RemoteSyncState(
-                        installed?.Metadata.Version ?? packageDraft.Metadata.Version,
-                        installed?.Metadata.GeneratedAtUtc ?? packageDraft.Metadata.GeneratedAtUtc,
-                        installed?.Metadata.ServerLastChangedAtUtc ?? packageDraft.Metadata.ServerLastChangedAtUtc),
+                    remoteSyncState,
                     OfflinePackageLifecycleStatus.Error,
                     canReachServer: true,
                     downloadedBytes: installed?.Metadata.PackageSizeBytes ?? packageDraft.Metadata.PackageSizeBytes,
@@ -309,10 +335,7 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
 
             var completedState = BuildState(
                 installed,
-                new RemoteSyncState(
-                    installed?.Metadata.Version ?? packageDraft.Metadata.Version,
-                    installed?.Metadata.GeneratedAtUtc ?? packageDraft.Metadata.GeneratedAtUtc,
-                    installed?.Metadata.ServerLastChangedAtUtc ?? packageDraft.Metadata.ServerLastChangedAtUtc),
+                remoteSyncState,
                 OfflinePackageLifecycleStatus.Completed,
                 canReachServer: true,
                 downloadedBytes: installed?.Metadata.PackageSizeBytes ?? packageDraft.Metadata.PackageSizeBytes,
@@ -334,7 +357,7 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
             var existingInstallation = await SafeLoadInstallationAsync();
             var canceledState = BuildState(
                 existingInstallation,
-                remoteSyncState: null,
+                remoteSyncState,
                 OfflinePackageLifecycleStatus.Canceled,
                 canReachServer: _state.CanReachServer,
                 errorMessage: string.Empty);
@@ -344,15 +367,37 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
         }
         catch (Exception exception)
         {
-            _logger.LogWarning(exception, "Offline package download failed.");
+            if (activeFile is not null)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "[OfflinePackage] Download failed while fetching asset. baseUrl={BaseUrl}; requestUri={RequestUri}; kind={Kind}; entityType={EntityType}; entityId={EntityId}; languageCode={LanguageCode}; remoteVersion={RemoteVersion}",
+                    _resolvedBaseUrl,
+                    activeFile.Key,
+                    activeFile.Kind,
+                    activeFile.EntityType,
+                    activeFile.EntityId,
+                    activeFile.LanguageCode,
+                    remoteSyncState?.Version ?? _state.RemoteVersion);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    exception,
+                    "[OfflinePackage] Download failed before asset copy completed. baseUrl={BaseUrl}; remoteVersion={RemoteVersion}; installedVersion={InstalledVersion}",
+                    _resolvedBaseUrl,
+                    remoteSyncState?.Version ?? _state.RemoteVersion,
+                    _state.InstalledVersion);
+            }
             var existingInstallation = await SafeLoadInstallationAsync();
             var errorState = BuildState(
                 existingInstallation,
-                remoteSyncState: null,
+                remoteSyncState,
                 OfflinePackageLifecycleStatus.Error,
-                canReachServer: _state.CanReachServer,
+                canReachServer: remoteSyncState is not null || _state.CanReachServer,
                 errorMessage: "Không thể tải gói dữ liệu lúc này. Vui lòng thử lại.");
 
+            errorState.ErrorMessage = "Khong the tai goi du lieu luc nay. Vui long thu lai.";
             PublishState(errorState);
             return errorState;
         }
@@ -506,7 +551,13 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
         var client = await GetClientAsync(cancellationToken)
                      ?? throw new InvalidOperationException("The mobile app has no API base URL configured.");
         var languageCode = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
-        return await GetStringWithRetryAsync(client, BuildBootstrapEndpoint(languageCode), cancellationToken);
+        var endpoint = BuildOfflinePackageEndpoint(languageCode);
+        _logger.LogInformation(
+            "[OfflinePackage] Downloading bootstrap envelope. baseUrl={BaseUrl}; languageCode={LanguageCode}; endpoint={Endpoint}",
+            _resolvedBaseUrl,
+            languageCode,
+            endpoint);
+        return await GetStringWithRetryAsync(client, endpoint, cancellationToken);
     }
 
     private async Task<byte[]> DownloadFileBytesAsync(string requestUri, CancellationToken cancellationToken)
@@ -569,10 +620,16 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
                 return null;
             }
 
-            return new RemoteSyncState(
+            var syncState = new RemoteSyncState(
                 GetString(dataElement, "version"),
                 GetDateTimeOffset(dataElement, "generatedAt"),
                 GetNullableDateTimeOffset(dataElement, "lastChangedAt"));
+            _logger.LogInformation(
+                "[OfflinePackage] Remote sync-state fetched. version={Version}; generatedAt={GeneratedAt}; lastChangedAt={LastChangedAt}",
+                syncState.Version,
+                syncState.GeneratedAtUtc,
+                syncState.LastChangedAtUtc);
+            return syncState;
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
         {
@@ -595,18 +652,24 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
         var metadata = installation?.Metadata;
         var installedVersion = metadata?.Version ?? string.Empty;
         var remoteVersion = remoteSyncState?.Version ?? string.Empty;
+        var installedLastChangedAtUtc = metadata?.ServerLastChangedAtUtc ?? metadata?.GeneratedAtUtc;
+        var remoteLastChangedAtUtc = remoteSyncState?.LastChangedAtUtc ?? remoteSyncState?.GeneratedAtUtc;
 
         return new OfflinePackageState
         {
             Status = status,
             IsInstalled = installation is not null,
-            IsUpdateAvailable =
-                installation is not null &&
-                !string.IsNullOrWhiteSpace(remoteVersion) &&
-                !string.Equals(installedVersion, remoteVersion, StringComparison.OrdinalIgnoreCase),
+            IsUpdateAvailable = installation is not null &&
+                                HasRemotePackageChanged(
+                                    installedVersion,
+                                    installedLastChangedAtUtc,
+                                    remoteVersion,
+                                    remoteLastChangedAtUtc),
             CanReachServer = canReachServer,
             InstalledVersion = installedVersion,
             RemoteVersion = remoteVersion,
+            InstalledLastChangedAtUtc = installedLastChangedAtUtc,
+            RemoteLastChangedAtUtc = remoteLastChangedAtUtc,
             DownloadedBytes = downloadedBytes,
             TotalBytes = totalBytes,
             DownloadedFileCount = downloadedFileCount,
@@ -614,6 +677,32 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
             ErrorMessage = errorMessage,
             Metadata = metadata
         };
+    }
+
+    private bool ShouldSkipRemoteDownload(
+        OfflinePackageInstallation? existingInstallation,
+        OfflinePackageVerificationResult? existingVerification,
+        RemoteSyncState? remoteSyncState)
+    {
+        if (existingInstallation is null ||
+            existingVerification is not { IsValid: true } ||
+            remoteSyncState is null)
+        {
+            return false;
+        }
+
+        var installedLastChangedAtUtc =
+            existingInstallation.Metadata.ServerLastChangedAtUtc ??
+            existingInstallation.Metadata.GeneratedAtUtc;
+        var remoteLastChangedAtUtc =
+            remoteSyncState.LastChangedAtUtc ??
+            remoteSyncState.GeneratedAtUtc;
+
+        return !HasRemotePackageChanged(
+            existingInstallation.Metadata.Version,
+            installedLastChangedAtUtc,
+            remoteSyncState.Version,
+            remoteLastChangedAtUtc);
     }
 
     private void PublishState(OfflinePackageState nextState)
@@ -639,10 +728,7 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
         }
 
         _httpClient?.Dispose();
-        _httpClient = new HttpClient(new HttpClientHandler
-        {
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-        })
+        _httpClient = new HttpClient()
         {
             BaseAddress = new Uri(nextBaseUrl, UriKind.Absolute),
             Timeout = TimeSpan.FromSeconds(30)
@@ -785,7 +871,7 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
         if (dataElement.TryGetProperty("audioGuides", out var audioGuidesElement) &&
             audioGuidesElement.ValueKind == JsonValueKind.Array)
         {
-            foreach (var audioGuideElement in audioGuidesElement.EnumerateArray())
+            foreach (var audioGuideElement in EnumerateCanonicalOfflineAudioGuides(audioGuidesElement))
             {
                 var url = GetString(audioGuideElement, "audioUrl");
                 if (string.IsNullOrWhiteSpace(url))
@@ -900,8 +986,8 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
     private static bool HasAnyNetworkAccess()
         => Connectivity.Current.NetworkAccess == NetworkAccess.Internet;
 
-    private static string BuildBootstrapEndpoint(string languageCode)
-        => $"{BootstrapEndpoint}?languageCode={Uri.EscapeDataString(AppLanguage.NormalizeCode(languageCode))}";
+    private static string BuildOfflinePackageEndpoint(string languageCode)
+        => $"{OfflinePackageEndpoint}?languageCode={Uri.EscapeDataString(AppLanguage.NormalizeCode(languageCode))}";
 
     private async Task<OfflinePackageInstallation?> SafeLoadInstallationAsync()
     {
@@ -984,6 +1070,98 @@ public sealed class OfflinePackageService : IOfflinePackageService, IAppLifecycl
 
         return !string.Equals(sourceType, "generated", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(generationStatus, "success", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<JsonElement> EnumerateCanonicalOfflineAudioGuides(JsonElement audioGuidesElement)
+    {
+        var canonicalGuides = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var audioGuideElement in audioGuidesElement.EnumerateArray())
+        {
+            var key = BuildOfflineAudioGuideKey(audioGuideElement);
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            var candidate = audioGuideElement.Clone();
+            if (!canonicalGuides.TryGetValue(key, out var existing) ||
+                CompareOfflineAudioGuide(candidate, existing) > 0)
+            {
+                canonicalGuides[key] = candidate;
+            }
+        }
+
+        return canonicalGuides.Values;
+    }
+
+    private static bool HasRemotePackageChanged(
+        string installedVersion,
+        DateTimeOffset? installedLastChangedAtUtc,
+        string remoteVersion,
+        DateTimeOffset? remoteLastChangedAtUtc)
+    {
+        if (string.IsNullOrWhiteSpace(remoteVersion) && !remoteLastChangedAtUtc.HasValue)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(remoteVersion) &&
+            !string.Equals(installedVersion, remoteVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!remoteLastChangedAtUtc.HasValue)
+        {
+            return false;
+        }
+
+        if (!installedLastChangedAtUtc.HasValue)
+        {
+            return true;
+        }
+
+        return remoteLastChangedAtUtc.Value.UtcDateTime != installedLastChangedAtUtc.Value.UtcDateTime;
+    }
+
+    private static string BuildOfflineAudioGuideKey(JsonElement audioGuideElement)
+    {
+        var entityType = GetString(audioGuideElement, "entityType");
+        var entityId = GetString(audioGuideElement, "entityId");
+        var languageCode = AppLanguage.NormalizeCode(GetString(audioGuideElement, "languageCode"));
+        return string.IsNullOrWhiteSpace(entityType) ||
+               string.IsNullOrWhiteSpace(entityId) ||
+               string.IsNullOrWhiteSpace(languageCode)
+            ? string.Empty
+            : $"{entityType.Trim().ToLowerInvariant()}|{entityId.Trim()}|{languageCode}";
+    }
+
+    private static int CompareOfflineAudioGuide(JsonElement left, JsonElement right)
+    {
+        var leftPlayable = IsPlayableOfflineAudioGuide(left);
+        var rightPlayable = IsPlayableOfflineAudioGuide(right);
+        if (leftPlayable != rightPlayable)
+        {
+            return leftPlayable ? 1 : -1;
+        }
+
+        var leftUpdatedAt = GetDateTimeOffset(left, "updatedAt");
+        var rightUpdatedAt = GetDateTimeOffset(right, "updatedAt");
+        var updatedAtComparison = leftUpdatedAt.CompareTo(rightUpdatedAt);
+        if (updatedAtComparison != 0)
+        {
+            return updatedAtComparison;
+        }
+
+        var leftContentVersion = GetString(left, "contentVersion");
+        var rightContentVersion = GetString(right, "contentVersion");
+        var contentVersionComparison = string.Compare(leftContentVersion, rightContentVersion, StringComparison.OrdinalIgnoreCase);
+        if (contentVersionComparison != 0)
+        {
+            return contentVersionComparison;
+        }
+
+        return string.Compare(GetString(left, "id"), GetString(right, "id"), StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeGenerationStatus(string? generationStatus)

@@ -41,6 +41,16 @@ export const isPlaceholderAudioUrl = (value: string | null | undefined) => {
   }
 };
 
+export const isPlayablePreparedAudioGuide = (audioGuide: AudioGuide | null | undefined) =>
+  Boolean(
+    audioGuide &&
+      audioGuide.status === "ready" &&
+      !audioGuide.isOutdated &&
+      hasValidAudioUrl(audioGuide.audioUrl) &&
+      !isPlaceholderAudioUrl(audioGuide.audioUrl) &&
+      (audioGuide.sourceType === "uploaded" || audioGuide.generationStatus === "success"),
+  );
+
 export const buildUiPlaybackKey = (
   poiId: string,
   language: LanguageCode,
@@ -81,14 +91,7 @@ export const findPoiAudioGuide = (
   );
 
   return (
-    matchingGuides.find(
-      (item) =>
-        item.status === "ready" &&
-        item.generationStatus === "success" &&
-        !item.isOutdated &&
-        hasValidAudioUrl(item.audioUrl) &&
-        !isPlaceholderAudioUrl(item.audioUrl),
-    ) ??
+    matchingGuides.find(isPlayablePreparedAudioGuide) ??
     matchingGuides[0] ??
     null
   );

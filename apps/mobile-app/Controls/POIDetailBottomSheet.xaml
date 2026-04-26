@@ -317,6 +317,7 @@
                                                         <Border
                                                             Grid.Column="1"
                                                             BackgroundColor="{Binding StatusBackgroundColor}"
+                                                            IsVisible="{Binding HasStatusLabel}"
                                                             Padding="8,4"
                                                             StrokeThickness="0"
                                                             StrokeShape="RoundRectangle 12">

@@ -52,8 +52,7 @@ public sealed partial class HomeMapViewModel
 
         var shouldReload =
             reloadDataIfNeeded &&
-            (_offlinePackageState.IsInstalled != state.IsInstalled ||
-             !string.Equals(_offlinePackageState.InstalledVersion, state.InstalledVersion, StringComparison.OrdinalIgnoreCase));
+            HasInstalledPackageChanged(_offlinePackageState, state);
 
         _offlinePackageState = state;
         RefreshOfflineNoticeBindings();
@@ -92,5 +91,20 @@ public sealed partial class HomeMapViewModel
         _dismissOfflineNoticeForSession = true;
         RefreshOfflineNoticeBindings();
         return Task.CompletedTask;
+    }
+
+    private static bool HasInstalledPackageChanged(OfflinePackageState previous, OfflinePackageState current)
+    {
+        if (previous.IsInstalled != current.IsInstalled)
+        {
+            return true;
+        }
+
+        if (!string.Equals(previous.InstalledVersion, current.InstalledVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return previous.InstalledLastChangedAtUtc != current.InstalledLastChangedAtUtc;
     }
 }

@@ -5,4 +5,13 @@
     <Nullable>enable</Nullable>
     <RootNamespace>VinhKhanh.Core</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Mobile\**" />
+    <EmbeddedResource Remove="Mobile\**" />
+    <None Remove="Mobile\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Mobile\MobileDatasetContracts.cs" />
+    <Compile Include="Mobile\MobileSyncContracts.cs" />
+  </ItemGroup>
 </Project>

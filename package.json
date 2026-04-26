@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "postinstall": "npm run install:admin",
-    "dev": "node ./scripts/run-admin-script.cjs dev",
+    "dev": "node ./scripts/dev-all.cjs",
     "dev:admin": "node ./scripts/run-admin-script.cjs dev",
-    "dev:all": "node ./scripts/dev-all.cjs",
+    "dev:all": "node ./scripts/dev-all.cjs --with-mobile",
     "dev:backend": "node ./scripts/run-backend.cjs dev",
     "serve:backend": "node ./scripts/run-backend.cjs serve",
     "dev:mobile:android": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-mobile-android.ps1",

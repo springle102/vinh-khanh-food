@@ -53,6 +53,7 @@ public sealed class PoiPregeneratedAudioService(
         var transcriptText = narration.TtsInputText?.Trim() ?? string.Empty;
         var existing = GetPoiAudioGuides(poiId, actor)
             .FirstOrDefault(item => PremiumAccessCatalog.LanguageCodesMatch(item.LanguageCode, normalizedLanguageCode));
+        var previousAudioFilePath = existing?.AudioFilePath;
         var options = optionsAccessor.Value;
         var effectiveLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(narration.EffectiveLanguageCode);
         var ttsProviderLanguageCode = LanguageRegistry.GetTtsProviderCode(effectiveLanguageCode);
@@ -292,6 +293,13 @@ public sealed class PoiPregeneratedAudioService(
                 savedGuide.AudioUrl,
                 generatedAudioStorageService.Exists(savedGuide.AudioFilePath));
 
+            CleanupSupersededAudioFile(
+                previousAudioFilePath,
+                savedGuide.AudioFilePath,
+                poiId,
+                normalizedLanguageCode,
+                "generate");
+
             return new PoiAudioGenerationResult(
                 poiId,
                 normalizedLanguageCode,
@@ -399,6 +407,133 @@ public sealed class PoiPregeneratedAudioService(
         return results;
     }
 
+    public async Task<PoiNarrationAudioResult?> RecoverMissingPoiAudioAsync(
+        PoiNarrationResponse narration,
+        AdminRequestContext? preferredActor,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(narration);
+
+        var existingGuide = narration.AudioGuide;
+        if (existingGuide is null ||
+            !string.Equals(existingGuide.EntityType, "poi", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var guideLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(existingGuide.LanguageCode);
+        if (string.IsNullOrWhiteSpace(guideLanguageCode))
+        {
+            logger.LogWarning(
+                "[AudioRepair] Skipping POI audio recovery because the guide language is empty. poiId={PoiId}; audioGuideId={AudioGuideId}",
+                narration.PoiId,
+                existingGuide.Id);
+            return null;
+        }
+
+        var transcriptText = narration.TtsInputText?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(transcriptText))
+        {
+            logger.LogWarning(
+                "[AudioRepair] Skipping POI audio recovery because narration text is empty. poiId={PoiId}; requestedLanguage={RequestedLanguage}; audioGuideId={AudioGuideId}",
+                narration.PoiId,
+                narration.RequestedLanguageCode,
+                existingGuide.Id);
+            return null;
+        }
+
+        var effectiveLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(narration.EffectiveLanguageCode);
+        var providerLanguageCode = LanguageRegistry.GetTtsProviderCode(effectiveLanguageCode);
+        var storageLanguageCode = LanguageRegistry.GetStorageCode(guideLanguageCode);
+        var options = optionsAccessor.Value;
+        var voiceCandidates = MergePreferredCandidate(
+            existingGuide.VoiceId,
+            options.ResolveVoiceCandidates(effectiveLanguageCode));
+        var modelCandidates = MergePreferredCandidate(
+            existingGuide.ModelId,
+            options.ResolveModelCandidates(effectiveLanguageCode));
+        var outputFormat = string.IsNullOrWhiteSpace(existingGuide.OutputFormat)
+            ? options.OutputFormat
+            : existingGuide.OutputFormat.Trim();
+        var textHash = CreateTextHash(effectiveLanguageCode, transcriptText);
+
+        try
+        {
+            logger.LogWarning(
+                "[AudioRepair] Recovering missing prepared POI audio. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; guideLanguage={GuideLanguage}; audioGuideId={AudioGuideId}; voiceId={VoiceId}; modelId={ModelId}",
+                narration.PoiId,
+                narration.RequestedLanguageCode,
+                effectiveLanguageCode,
+                guideLanguageCode,
+                existingGuide.Id,
+                existingGuide.VoiceId,
+                existingGuide.ModelId);
+
+            var ttsAudio = await GenerateTtsWithFallbackAsync(
+                transcriptText,
+                effectiveLanguageCode,
+                providerLanguageCode,
+                outputFormat,
+                voiceCandidates,
+                modelCandidates,
+                cancellationToken);
+
+            var refreshedNarration = await TryPersistRecoveredPoiAudioAsync(
+                narration,
+                existingGuide,
+                preferredActor,
+                guideLanguageCode,
+                storageLanguageCode,
+                transcriptText,
+                textHash,
+                ttsAudio,
+                cancellationToken);
+
+            var responseNarration = refreshedNarration ?? narration;
+            var responseGuide = refreshedNarration?.AudioGuide ?? existingGuide;
+            var source = refreshedNarration is null
+                ? "prepared_audio_recovered_transient"
+                : "prepared_audio_recovered";
+            var updatedAt = responseGuide.UpdatedAt == default
+                ? DateTimeOffset.UtcNow
+                : responseGuide.UpdatedAt;
+            var contentVersion = string.IsNullOrWhiteSpace(responseGuide.ContentVersion)
+                ? textHash
+                : responseGuide.ContentVersion;
+
+            return new PoiNarrationAudioResult(
+                ttsAudio.Content,
+                ttsAudio.ContentType,
+                source,
+                responseNarration.UiPlaybackKey,
+                responseNarration.AudioCacheKey,
+                responseGuide.Id,
+                contentVersion,
+                updatedAt,
+                responseNarration.EffectiveLanguageCode,
+                responseNarration.TtsLocale,
+                responseNarration.TtsInputText.Length,
+                ttsAudio.SegmentCount,
+                ttsAudio.EstimatedDurationSeconds);
+        }
+        catch (Exception exception) when (
+            exception is TextToSpeechConfigurationException ||
+            exception is TextToSpeechGenerationException ||
+            exception is HttpRequestException ||
+            exception is TaskCanceledException ||
+            exception is InvalidOperationException)
+        {
+            logger.LogWarning(
+                exception,
+                "[AudioRepair] Unable to recover missing prepared POI audio. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioGuideId={AudioGuideId}",
+                narration.PoiId,
+                narration.RequestedLanguageCode,
+                effectiveLanguageCode,
+                existingGuide.Id);
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<PoiAudioGenerationResult>> GenerateBulkAsync(
         PoiAudioBulkGenerationRequest request,
         AdminRequestContext actor,
@@ -433,6 +568,186 @@ public sealed class PoiPregeneratedAudioService(
 
         return results;
     }
+
+    private async Task<PoiNarrationResponse?> TryPersistRecoveredPoiAudioAsync(
+        PoiNarrationResponse narration,
+        AudioGuide existingGuide,
+        AdminRequestContext? preferredActor,
+        string guideLanguageCode,
+        string storageLanguageCode,
+        string transcriptText,
+        string textHash,
+        TextToSpeechResult ttsAudio,
+        CancellationToken cancellationToken)
+    {
+        var recoveryActor = TryResolveRecoveryActor(narration.PoiId, preferredActor);
+        if (recoveryActor is null)
+        {
+            logger.LogWarning(
+                "[AudioRepair] Recovered POI audio will be streamed without persisting because no content actor could be resolved. poiId={PoiId}; requestedLanguage={RequestedLanguage}; audioGuideId={AudioGuideId}",
+                narration.PoiId,
+                narration.RequestedLanguageCode,
+                existingGuide.Id);
+            return null;
+        }
+
+        try
+        {
+            var previousAudioFilePath = existingGuide.AudioFilePath;
+            var storedFile = await generatedAudioStorageService.SavePoiAudioAsync(
+                narration.PoiId,
+                storageLanguageCode,
+                textHash,
+                ttsAudio.OutputFormat,
+                ttsAudio.ContentType,
+                ttsAudio.Content,
+                cancellationToken);
+            var savedGuide = SaveGuide(
+                existingGuide.Id,
+                recoveryActor,
+                new AudioGuideUpsertRequest(
+                    "poi",
+                    narration.PoiId,
+                    guideLanguageCode,
+                    storedFile.PublicUrl,
+                    AudioGuideCatalog.SourceTypeGenerated,
+                    AudioGuideCatalog.PublicStatusReady,
+                    recoveryActor.Name,
+                    TranscriptText: transcriptText,
+                    AudioFilePath: storedFile.RelativePath,
+                    AudioFileName: storedFile.FileName,
+                    Provider: ttsAudio.Provider,
+                    VoiceId: ttsAudio.VoiceId,
+                    ModelId: ttsAudio.ModelId,
+                    OutputFormat: ttsAudio.OutputFormat,
+                    DurationInSeconds: ttsAudio.EstimatedDurationSeconds,
+                    FileSizeBytes: storedFile.SizeBytes,
+                    TextHash: textHash,
+                    ContentVersion: textHash,
+                    GeneratedAt: DateTimeOffset.UtcNow,
+                    GenerationStatus: AudioGuideCatalog.GenerationStatusSuccess,
+                    ErrorMessage: null,
+                    IsOutdated: false,
+                    VoiceType: string.IsNullOrWhiteSpace(existingGuide.VoiceType)
+                        ? "standard"
+                        : existingGuide.VoiceType));
+
+            logger.LogInformation(
+                "[AudioRepair] Persisted recovered POI audio. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioGuideId={AudioGuideId}; filePath={FilePath}; audioUrl={AudioUrl}",
+                narration.PoiId,
+                narration.RequestedLanguageCode,
+                narration.EffectiveLanguageCode,
+                savedGuide.Id,
+                savedGuide.AudioFilePath,
+                savedGuide.AudioUrl);
+
+            CleanupSupersededAudioFile(
+                previousAudioFilePath,
+                savedGuide.AudioFilePath,
+                narration.PoiId,
+                guideLanguageCode,
+                "repair");
+
+            return await poiNarrationService.ResolveAsync(
+                       narration.PoiId,
+                       narration.RequestedLanguageCode,
+                       preferredActor,
+                       cancellationToken)
+                   ?? narration with { AudioGuide = savedGuide };
+        }
+        catch (Exception exception) when (
+            exception is ApiRequestException ||
+            exception is InvalidOperationException)
+        {
+            logger.LogWarning(
+                exception,
+                "[AudioRepair] Generated POI audio could not be persisted; streaming transient payload instead. poiId={PoiId}; requestedLanguage={RequestedLanguage}; audioGuideId={AudioGuideId}",
+                narration.PoiId,
+                narration.RequestedLanguageCode,
+                existingGuide.Id);
+            return null;
+        }
+    }
+
+    private void CleanupSupersededAudioFile(
+        string? previousAudioFilePath,
+        string? currentAudioFilePath,
+        string poiId,
+        string languageCode,
+        string reason)
+    {
+        var normalizedPreviousPath = previousAudioFilePath?.Trim();
+        var normalizedCurrentPath = currentAudioFilePath?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedPreviousPath) ||
+            string.IsNullOrWhiteSpace(normalizedCurrentPath) ||
+            string.Equals(normalizedPreviousPath, normalizedCurrentPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (!generatedAudioStorageService.DeleteIfExists(normalizedPreviousPath))
+        {
+            return;
+        }
+
+        logger.LogInformation(
+            "[AudioCleanup] Removed superseded POI audio file. poiId={PoiId}; languageCode={LanguageCode}; reason={Reason}; deletedPath={DeletedPath}; activePath={ActivePath}",
+            poiId,
+            languageCode,
+            reason,
+            normalizedPreviousPath,
+            normalizedCurrentPath);
+    }
+
+    private AdminRequestContext? TryResolveRecoveryActor(string poiId, AdminRequestContext? preferredActor)
+    {
+        var poi = (preferredActor is null
+                ? Enumerable.Empty<Poi>()
+                : repository.GetPois(preferredActor))
+            .Concat(repository.GetPois())
+            .FirstOrDefault(item => string.Equals(item.Id, poiId, StringComparison.OrdinalIgnoreCase));
+        if (poi is null || poi.LockedBySuperAdmin)
+        {
+            return null;
+        }
+
+        if (CanManageRecoveredPoi(preferredActor, poi))
+        {
+            return preferredActor;
+        }
+
+        if (string.IsNullOrWhiteSpace(poi.OwnerUserId))
+        {
+            return null;
+        }
+
+        var ownerUser = repository.GetUsers()
+            .FirstOrDefault(user =>
+                string.Equals(user.Id, poi.OwnerUserId, StringComparison.OrdinalIgnoreCase) &&
+                AdminRoleCatalog.IsPlaceOwner(user.Role) &&
+                string.Equals(user.Status, "active", StringComparison.OrdinalIgnoreCase) &&
+                AdminApprovalCatalog.IsApproved(user.ApprovalStatus));
+        if (ownerUser is null)
+        {
+            return null;
+        }
+
+        return new AdminRequestContext(
+            ownerUser.Id,
+            ownerUser.Name,
+            ownerUser.Email,
+            AdminRoleCatalog.NormalizeKnownRoleOrOriginal(ownerUser.Role),
+            ownerUser.Status,
+            ownerUser.ManagedPoiId);
+    }
+
+    private static bool CanManageRecoveredPoi(AdminRequestContext? actor, Poi poi)
+        => actor is not null &&
+           actor.IsPlaceOwner &&
+           ((!string.IsNullOrWhiteSpace(poi.OwnerUserId) &&
+             string.Equals(poi.OwnerUserId, actor.UserId, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(actor.ManagedPoiId) &&
+             string.Equals(actor.ManagedPoiId, poi.Id, StringComparison.OrdinalIgnoreCase)));
 
     private async Task<TextToSpeechResult> GenerateTtsWithFallbackAsync(
         string transcriptText,
@@ -493,6 +808,20 @@ public sealed class PoiPregeneratedAudioService(
 
         throw lastProviderException ??
               new TextToSpeechGenerationException("Khong the tao audio TTS bang bat ky voice/model candidate nao.");
+    }
+
+    private static IReadOnlyList<string> MergePreferredCandidate(
+        string? preferredValue,
+        IReadOnlyList<string> fallbackValues)
+    {
+        var candidates = new List<string>();
+        AddDistinctCandidate(candidates, preferredValue);
+        foreach (var fallbackValue in fallbackValues)
+        {
+            AddDistinctCandidate(candidates, fallbackValue);
+        }
+
+        return candidates;
     }
 
     private static IReadOnlyList<TtsGenerationAttempt> BuildTtsAttempts(
@@ -578,6 +907,18 @@ public sealed class PoiPregeneratedAudioService(
 
     private static bool ContainsAny(string value, params string[] markers)
         => markers.Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
+    private static void AddDistinctCandidate(ICollection<string> candidates, string? value)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) ||
+            candidates.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        candidates.Add(normalized);
+    }
 
     private static bool ShouldGenerate(AudioGuide? existing, PoiAudioBulkGenerationRequest request)
     {

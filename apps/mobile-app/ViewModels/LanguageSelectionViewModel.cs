@@ -8,7 +8,6 @@ namespace VinhKhanh.MobileApp.ViewModels;
 public sealed class LanguageSelectionViewModel : LocalizedViewModelBase
 {
     private readonly IFoodStreetDataService _dataService;
-    private string? _pendingQrCode;
 
     public LanguageSelectionViewModel(
         IFoodStreetDataService dataService,
@@ -22,16 +21,9 @@ public sealed class LanguageSelectionViewModel : LocalizedViewModelBase
 
     public string BackgroundImageUrl => _dataService.GetBackdropImageUrl();
     public string BrandTitleText => LanguageService.GetText("brand_title");
-    public string ScanSuccessText => HasPendingQrCode
-        ? LanguageService.GetText("qr_success_title")
-        : LanguageService.GetText("language_selection_title");
-    public string ChooseLanguageText => HasPendingQrCode
-        ? LanguageService.GetText("qr_choose_language")
-        : LanguageService.GetText("language_selection_subtitle");
-    public string ContinueText => LanguageService.GetText("qr_continue");
-    public string PendingLabelText => LanguageService.GetText("language_selection_pending_label");
-    public bool HasPendingQrCode => !string.IsNullOrWhiteSpace(_pendingQrCode);
-    public string PendingQrCodeText => _pendingQrCode ?? string.Empty;
+    public string TitleText => LanguageService.GetText("language_selection_title");
+    public string SubtitleText => LanguageService.GetText("language_selection_subtitle");
+    public string ContinueText => LanguageService.GetText("common_continue");
 
     public AsyncCommand<LanguageOption> SelectLanguageCommand => new(SelectLanguageAsync);
     public AsyncCommand ContinueCommand => new(ContinueAsync);
@@ -40,14 +32,6 @@ public sealed class LanguageSelectionViewModel : LocalizedViewModelBase
     {
         await RefreshAsync();
         OnPropertyChanged(nameof(BackgroundImageUrl));
-    }
-
-    public void SetPendingQrCode(string? qrCode)
-    {
-        _pendingQrCode = string.IsNullOrWhiteSpace(qrCode)
-            ? null
-            : Uri.UnescapeDataString(qrCode.Trim());
-        RefreshLocalizedBindings();
     }
 
     protected override Task ReloadLocalizedStateAsync()
@@ -87,14 +71,7 @@ public sealed class LanguageSelectionViewModel : LocalizedViewModelBase
             await LanguageService.SetLanguageAsync(selectedLanguageCode);
         }
 
-        var route = AppRoutes.Root(AppRoutes.HomeMap);
-        var poiId = ResolvePoiId(_pendingQrCode);
-        if (!string.IsNullOrWhiteSpace(poiId))
-        {
-            route = $"{AppRoutes.Root(AppRoutes.HomeMap)}?poiId={Uri.EscapeDataString(poiId)}";
-        }
-
-        await Shell.Current.GoToAsync(route);
+        await Shell.Current.GoToAsync(AppRoutes.Root(AppRoutes.HomeMap));
     }
 
     private void SyncSelectedLanguage()
@@ -107,31 +84,5 @@ public sealed class LanguageSelectionViewModel : LocalizedViewModelBase
                 currentLanguageCode,
                 StringComparison.OrdinalIgnoreCase);
         }
-    }
-
-    private static string? ResolvePoiId(string? qrCode)
-    {
-        if (string.IsNullOrWhiteSpace(qrCode))
-        {
-            return null;
-        }
-
-        var trimmed = qrCode.Trim();
-        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
-        {
-            return trimmed;
-        }
-
-        var query = uri.Query.TrimStart('?')
-            .Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .Select(part => part.Split('=', 2))
-            .FirstOrDefault(part => part.Length == 2 && string.Equals(part[0], "poiId", StringComparison.OrdinalIgnoreCase));
-        if (query is not null)
-        {
-            return Uri.UnescapeDataString(query[1]);
-        }
-
-        var lastSegment = uri.Segments.LastOrDefault()?.Trim('/');
-        return string.IsNullOrWhiteSpace(lastSegment) ? trimmed : lastSegment;
     }
 }

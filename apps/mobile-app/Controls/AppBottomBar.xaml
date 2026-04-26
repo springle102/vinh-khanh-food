@@ -7,13 +7,12 @@
     x:DataType="viewModels:AppBottomBarViewModel">
 
     <Grid
-        HeightRequest="104"
+        HeightRequest="92"
         Padding="16,4,16,10"
-        ColumnDefinitions="*,92,*">
+        ColumnDefinitions="*,*">
 
         <Border
-            Grid.ColumnSpan="3"
-            Margin="0,18,0,0"
+            Grid.ColumnSpan="2"
             BackgroundColor="#FFFDFC"
             Padding="10,8,10,10"
             Stroke="#EEE4D8"
@@ -23,12 +22,11 @@
                 <Shadow Brush="{StaticResource BrandShadow}" Offset="0,6" Radius="18" Opacity="0.10" />
             </Border.Shadow>
 
-            <Grid ColumnDefinitions="*,92,*" ColumnSpacing="4">
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                 <Border
                     x:Name="PoiTab"
                     Grid.Column="0"
                     HeightRequest="54"
-                    Margin="0,0,4,0"
                     Padding="10,7,10,6"
                     BackgroundColor="Transparent"
                     StrokeThickness="0"
@@ -55,9 +53,8 @@
 
                 <Border
                     x:Name="SettingsTab"
-                    Grid.Column="2"
+                    Grid.Column="1"
                     HeightRequest="54"
-                    Margin="4,0,0,0"
                     Padding="10,7,10,6"
                     BackgroundColor="Transparent"
                     StrokeThickness="0"
@@ -81,41 +78,6 @@
                     </Border.GestureRecognizers>
                 </Border>
             </Grid>
-        </Border>
-
-        <Border
-            x:Name="QrTab"
-            Grid.Column="1"
-            WidthRequest="74"
-            HeightRequest="74"
-            BackgroundColor="{StaticResource BrandPrimary}"
-            HorizontalOptions="Center"
-            Padding="0"
-            StrokeThickness="0"
-            StrokeShape="RoundRectangle 37"
-            TranslationY="-2"
-            VerticalOptions="Start">
-            <Border.Shadow>
-                <Shadow Brush="#24F48A22" Offset="0,8" Radius="18" Opacity="0.24" />
-            </Border.Shadow>
-            <VerticalStackLayout HorizontalOptions="Center" Spacing="3" VerticalOptions="Center">
-                <Grid WidthRequest="24" HeightRequest="24">
-                    <Path x:Name="QrPath1" Data="M 2 2 H 11 V 11 H 2 Z M 17 2 H 26 V 11 H 17 Z M 2 17 H 11 V 26 H 2 Z" Stroke="White" StrokeThickness="1.9" StrokeLineJoin="Round" />
-                    <Path x:Name="QrPath2" Data="M 6 6 H 6.2 M 20 6 H 20.2 M 6 20 H 6.2 M 17 17 H 21 M 21 21 H 26 M 21 26 H 26 M 17 21 H 17.2 M 17 26 H 17.2 M 26 17 H 26.2" Stroke="White" StrokeThickness="3" StrokeLineCap="Round" />
-                </Grid>
-                <Label
-                    x:Name="QrLabel"
-                    FontFamily="OpenSansSemibold"
-                    FontSize="10"
-                    HorizontalTextAlignment="Center"
-                    LineBreakMode="NoWrap"
-                    MaxLines="1"
-                    Text=""
-                    TextColor="White" />
-            </VerticalStackLayout>
-            <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding NavigateToQrCommand}" />
-            </Border.GestureRecognizers>
         </Border>
     </Grid>
 </ContentView>

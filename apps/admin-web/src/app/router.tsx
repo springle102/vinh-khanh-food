@@ -61,7 +61,7 @@ const PoiEditRedirect = () => {
   }
 
   if (user.role === "SUPER_ADMIN") {
-    return <Navigate to={`/admin/pois?viewPoiId=${encodeURIComponent(poiId)}`} replace />;
+    return <Navigate to={`/admin/pois?editPoiId=${encodeURIComponent(poiId)}`} replace />;
   }
 
   return <Navigate to={`/restaurant/pois?editPoiId=${encodeURIComponent(poiId)}`} replace />;
@@ -107,6 +107,7 @@ export const router = createBrowserRouter([
           { path: "dashboard", element: <DashboardPage /> },
           { path: "pois", element: <PoisPage /> },
           { path: "tours", element: <ToursPage /> },
+          { path: "promotions", element: <PromotionsPage /> },
           { path: "content", element: <Navigate to="/admin/pois" replace /> },
           { path: "media", element: <Navigate to="/admin/pois" replace /> },
           { path: "users", element: <UsersPage /> },
@@ -128,13 +129,13 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="dashboard" replace /> },
           { path: "dashboard", element: <DashboardPage /> },
           { path: "pois", element: <PoisPage /> },
-          { path: "tours", element: <Navigate to="/restaurant/dashboard" replace /> },
+          { path: "tours", element: <ToursPage /> },
           { path: "content", element: <Navigate to="/restaurant/pois" replace /> },
           { path: "media", element: <Navigate to="/restaurant/pois" replace /> },
           { path: "users", element: <Navigate to="/restaurant/profile" replace /> },
           { path: "promotions", element: <PromotionsPage /> },
           { path: "analytics", element: <Navigate to="/restaurant/dashboard" replace /> },
-          { path: "activity", element: <ActivityPage /> },
+          { path: "activity", element: <Navigate to="/restaurant/dashboard" replace /> },
           { path: "profile", element: <UsersPage /> },
           { path: "settings", element: <Navigate to="/restaurant/profile" replace /> },
         ],

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node ../../scripts/dev-all.cjs",
+    "dev:client": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "lint": "tsc --noEmit"
@@ -12,7 +13,6 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "leaflet": "^1.9.4",
-    "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-leaflet": "^5.0.0",
@@ -21,7 +21,6 @@
   },
   "devDependencies": {
     "@types/leaflet": "^1.9.17",
-    "@types/qrcode": "^1.5.5",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",

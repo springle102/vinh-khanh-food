@@ -4,9 +4,11 @@ import type {
   AudioGuide,
   FoodItem,
   GeocodingLocation,
+  DashboardSummary,
   LanguageCode,
   MediaAsset,
   Poi,
+  PoiChangeRequest,
   PoiDetail,
   PlaceOwnerRegistrationRecord,
   Promotion,
@@ -92,6 +94,28 @@ export type PoiAudioGenerationResult = {
   outputFormat?: string | null;
 };
 
+type PoiSavePayload = {
+  id?: string;
+  requestedId?: string;
+  slug: string;
+  address: string;
+  lat: number;
+  lng: number;
+  categoryId: string;
+  status: Poi["status"];
+  district: string;
+  ward: string;
+  priceRange: string;
+  triggerRadius: number;
+  priority: number;
+  placeTier: Poi["placeTier"];
+  tags: string[];
+  ownerUserId: string | null;
+  updatedBy: string;
+  actorRole: AdminUser["role"];
+  actorUserId: string;
+};
+
 export class ApiError extends Error {
   status: number;
   kind: "backend" | "invalid_response" | "network";
@@ -114,12 +138,20 @@ export class ApiError extends Error {
 const ABSOLUTE_URL_PATTERN = /^[a-z]+:\/\//i;
 const INVALID_RESPONSE_MESSAGE = "Backend trả về phản hồi không hợp lệ.";
 const NETWORK_ERROR_MESSAGE =
-  "Không thể kết nối tới backend. Hãy kiểm tra API base URL, proxy /api, CORS, hoặc backend có đang chạy trên cổng 5080 hay không.";
+  "Không thể kết nối tới API. Nếu đang chạy local, hãy kiểm tra backend, CORS và dev proxy /api.";
+const API_DIAGNOSTIC_LABEL = "[admin-api]";
 const SESSION_KEY = "vinh-khanh-admin-web:session";
-const API_BASE_URL_KEY = "vinh-khanh-admin-web:api-base-url";
-const DEFAULT_LOCAL_API_PORT = "5080";
-const DIRECT_LOCALHOST_API_BASE_URL = `http://localhost:${DEFAULT_LOCAL_API_PORT}/api/v1`;
-const DIRECT_LOOPBACK_API_BASE_URL = `http://127.0.0.1:${DEFAULT_LOCAL_API_PORT}/api/v1`;
+const LEGACY_API_BASE_URL_KEY = "vinh-khanh-admin-web:api-base-url";
+const DEFAULT_API_BASE_PATH = "/api/v1";
+export const ADMIN_SESSION_INVALIDATED_EVENT = "vinh-khanh-admin-web:session-invalidated";
+
+type StoredSession = {
+  userId: string;
+  role: AdminUser["role"];
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string;
+};
 
 const normalizeConfiguredBaseUrl = (value: string | undefined) => {
   const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
@@ -144,89 +176,15 @@ const resolveConfiguredBasePath = (baseUrl: string) => {
   }
 };
 
-const normalizeDirectApiBaseUrl = (value: string | undefined) => {
-  const normalized = normalizeConfiguredBaseUrl(value);
-  if (!normalized) {
-    return "";
-  }
-
-  return normalized.endsWith("/api/v1") ? normalized : `${normalized}/api/v1`;
-};
-
-const readStoredApiBaseUrl = () => {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  return normalizeConfiguredBaseUrl(localStorage.getItem(API_BASE_URL_KEY) ?? undefined);
-};
-
-const API_BASE_URL = normalizeConfiguredBaseUrl(import.meta.env.VITE_API_BASE_URL);
-const DIRECT_PROXY_API_BASE_URL = normalizeDirectApiBaseUrl(import.meta.env.VITE_API_PROXY_TARGET);
-let preferredApiBaseUrl: string | null = readStoredApiBaseUrl() || API_BASE_URL || null;
-
-const rememberApiBaseUrl = (baseUrl: string) => {
-  preferredApiBaseUrl = baseUrl;
-
+const clearLegacyApiBaseUrlPreference = () => {
   if (typeof window === "undefined") {
     return;
   }
 
-  if (baseUrl) {
-    localStorage.setItem(API_BASE_URL_KEY, baseUrl);
-    return;
-  }
-
-  localStorage.removeItem(API_BASE_URL_KEY);
+  localStorage.removeItem(LEGACY_API_BASE_URL_KEY);
 };
 
-const getPrimaryApiBaseUrl = () => preferredApiBaseUrl ?? API_BASE_URL;
-
-const inferLocalApiBaseUrl = () => {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  try {
-    const url = new URL(window.location.origin);
-    if (!url.hostname) {
-      return "";
-    }
-
-    url.port = DEFAULT_LOCAL_API_PORT;
-    return `${url.origin}/api/v1`;
-  } catch {
-    return "";
-  }
-};
-
-const buildApiBaseCandidates = (method: string) => {
-  const candidates: string[] = [];
-  const isReadRequest = method === "GET" || method === "HEAD";
-
-  const pushCandidate = (value: string | null | undefined) => {
-    const candidate = value ?? "";
-    if (!candidates.includes(candidate)) {
-      candidates.push(candidate);
-    }
-  };
-
-  pushCandidate(getPrimaryApiBaseUrl());
-
-  if (isReadRequest) {
-    pushCandidate("");
-    pushCandidate(DIRECT_PROXY_API_BASE_URL);
-    pushCandidate(inferLocalApiBaseUrl());
-    pushCandidate(DIRECT_LOCALHOST_API_BASE_URL);
-    pushCandidate(DIRECT_LOOPBACK_API_BASE_URL);
-  }
-
-  if (candidates.length === 0) {
-    pushCandidate("");
-  }
-
-  return candidates;
-};
+clearLegacyApiBaseUrlPreference();
 
 const buildApiUrl = (path: string, baseUrl: string) => {
   if (!baseUrl || ABSOLUTE_URL_PATTERN.test(path)) {
@@ -243,7 +201,37 @@ const buildApiUrl = (path: string, baseUrl: string) => {
   return `${baseUrl}${nextPath || "/"}`;
 };
 
-const readSession = () => {
+const buildNetworkErrorMessage = (requestUrl: string) =>
+  `Không thể kết nối tới backend qua ${requestUrl}. ` +
+  "Nếu đang chạy local, hãy kiểm tra backend có đang listen đúng port, CORS và dev proxy /api.";
+
+const PRIMARY_API_BASE_URL = normalizeConfiguredBaseUrl(
+  import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_PATH,
+) || DEFAULT_API_BASE_PATH;
+
+const logApiConnectionIssue = (
+  message: string,
+  details: Record<string, unknown>,
+) => {
+  if (typeof console === "undefined") {
+    return;
+  }
+
+  console.error(API_DIAGNOSTIC_LABEL, message, {
+    configuredApiBaseUrl: PRIMARY_API_BASE_URL,
+    ...details,
+  });
+};
+
+const dispatchSessionInvalidated = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new Event(ADMIN_SESSION_INVALIDATED_EVENT));
+};
+
+const readStoredSession = (): StoredSession | null => {
   if (typeof window === "undefined") {
     return null;
   }
@@ -254,35 +242,81 @@ const readSession = () => {
   }
 
   try {
-    const parsed = JSON.parse(rawValue) as Partial<{ accessToken: string }>;
-    if (!parsed.accessToken) {
+    const parsed = JSON.parse(rawValue) as Partial<StoredSession>;
+    if (!parsed.userId || !parsed.role || !parsed.refreshToken) {
       return null;
     }
 
     return {
-      accessToken: parsed.accessToken,
+      userId: parsed.userId,
+      role: parsed.role,
+      accessToken: parsed.accessToken ?? "",
+      refreshToken: parsed.refreshToken,
+      expiresAt: parsed.expiresAt ?? "",
     };
   } catch {
     return null;
   }
 };
 
-const buildHeaders = (headers?: HeadersInit) => {
+const readSession = () => {
+  const session = readStoredSession();
+  if (!session?.accessToken) {
+    return null;
+  }
+
+  return {
+    accessToken: session.accessToken,
+  };
+};
+
+const writeSession = (session: AuthSessionResponse) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({
+      userId: session.userId,
+      role: session.role,
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      expiresAt: session.expiresAt,
+    } satisfies StoredSession),
+  );
+};
+
+const clearSession = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.removeItem(SESSION_KEY);
+};
+
+const buildHeaders = (
+  headers?: HeadersInit,
+  options?: {
+    accessToken?: string | null;
+    forceAccessToken?: boolean;
+  },
+) => {
   const nextHeaders = new Headers(headers);
   if (!nextHeaders.has("Accept")) {
     nextHeaders.set("Accept", "application/json");
   }
 
-  const session = readSession();
-  if (session?.accessToken && !nextHeaders.has("Authorization")) {
-    nextHeaders.set("Authorization", `Bearer ${session.accessToken}`);
+  const accessToken = options?.accessToken ?? readSession()?.accessToken ?? "";
+  if (accessToken && (options?.forceAccessToken || !nextHeaders.has("Authorization"))) {
+    nextHeaders.set("Authorization", `Bearer ${accessToken}`);
   }
 
   return nextHeaders;
 };
 
 export const resolveApiUrl = (path: string) => {
-  return buildApiUrl(path, getPrimaryApiBaseUrl());
+  return buildApiUrl(path, PRIMARY_API_BASE_URL);
 };
 
 const isJsonResponse = (contentType: string) => {
@@ -297,17 +331,24 @@ const buildInvalidResponseMessage = (response: Response, requestUrl: string, bod
     normalizedContentType.includes("text/html") ||
     normalizedPreview.startsWith("<!doctype html") ||
     normalizedPreview.startsWith("<html");
+  const looksLikeProxyError =
+    normalizedPreview.includes("proxy error") ||
+    normalizedPreview.includes("error occurred while trying to proxy");
 
   if (looksLikeHtml) {
-    return `Frontend đang nhận HTML thay vì JSON từ ${requestUrl}. Hãy kiểm tra proxy /api hoặc VITE_API_BASE_URL.`;
+    return `Frontend đang nhận HTML thay vì JSON từ ${requestUrl}. Hãy kiểm tra VITE_API_BASE_URL hoặc Vite proxy /api.`;
+  }
+
+  if (looksLikeProxyError) {
+    return `Không thể kết nối tới backend dev qua ${requestUrl}. Hãy bật backend hoặc dùng npm run dev để chạy cả backend và admin-web.`;
   }
 
   if (response.status === 404) {
-    return `Không tìm thấy endpoint ${requestUrl}. Hãy kiểm tra API base URL hoặc proxy /api.`;
+    return `Không tìm thấy endpoint ${requestUrl}. Hãy kiểm tra VITE_API_BASE_URL hoặc route backend.`;
   }
 
   if ([502, 503, 504].includes(response.status)) {
-    return `Không kết nối được tới backend qua ${requestUrl}. Hãy kiểm tra backend có đang chạy và proxy có trỏ đúng cổng 5080 không.`;
+    return `Không kết nối được tới backend qua ${requestUrl}. Nếu đang chạy local, hãy kiểm tra backend và dev proxy /api.`;
   }
 
   return INVALID_RESPONSE_MESSAGE;
@@ -352,62 +393,113 @@ const parseResponse = async <T>(response: Response, requestUrl: string) => {
   return payload.data;
 };
 
-const request = async <T>(path: string, init?: RequestInit) => {
-  const method = init?.method?.toUpperCase() ?? "GET";
-  const candidateBaseUrls = buildApiBaseCandidates(method);
-  let lastError: unknown = null;
+const isAuthenticationRequest = (path: string) => {
+  const normalizedPath = path.trim().toLowerCase();
+  return normalizedPath.includes("/api/v1/auth/login") ||
+    normalizedPath.includes("/api/v1/auth/refresh") ||
+    normalizedPath.includes("/api/v1/auth/logout");
+};
 
-  for (let index = 0; index < candidateBaseUrls.length; index += 1) {
-    const baseUrl = candidateBaseUrls[index] ?? "";
-    const requestUrl = buildApiUrl(path, baseUrl);
+let refreshAccessTokenPromise: Promise<string | null> | null = null;
+
+const refreshAccessToken = async (baseUrl: string) => {
+  if (refreshAccessTokenPromise) {
+    return refreshAccessTokenPromise;
+  }
+
+  refreshAccessTokenPromise = (async () => {
+    const session = readStoredSession();
+    if (!session?.refreshToken) {
+      clearSession();
+      dispatchSessionInvalidated();
+      return null;
+    }
+
+    const requestUrl = buildApiUrl("/api/v1/auth/refresh", baseUrl);
 
     try {
       const response = await fetch(requestUrl, {
+        method: "POST",
+        cache: "no-store",
+        headers: buildHeaders(
+          {
+            "Content-Type": "application/json",
+          },
+          {
+            accessToken: "",
+            forceAccessToken: true,
+          },
+        ),
+        body: JSON.stringify({
+          refreshToken: session.refreshToken,
+        }),
+      });
+      const refreshedSession = await parseResponse<AuthSessionResponse>(response, requestUrl);
+      writeSession(refreshedSession);
+      return refreshedSession.accessToken;
+    } catch {
+      clearSession();
+      dispatchSessionInvalidated();
+      return null;
+    }
+  })();
+
+  try {
+    return await refreshAccessTokenPromise;
+  } finally {
+    refreshAccessTokenPromise = null;
+  }
+};
+
+const requestWithBase = async <T>(path: string, baseUrl: string, init?: RequestInit) => {
+  const requestUrl = buildApiUrl(path, baseUrl);
+
+  try {
+    const sendRequest = (accessToken?: string | null) =>
+      fetch(requestUrl, {
         ...init,
         cache: "no-store",
-        headers: buildHeaders(init?.headers),
+        headers: buildHeaders(init?.headers, {
+          accessToken,
+          forceAccessToken: true,
+        }),
       });
 
-      const data = await parseResponse<T>(response, requestUrl);
-      rememberApiBaseUrl(baseUrl);
-      return data;
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw error;
+    let response = await sendRequest();
+    if (response.status === 401 && !isAuthenticationRequest(path)) {
+      const refreshedAccessToken = await refreshAccessToken(baseUrl);
+      if (refreshedAccessToken) {
+        response = await sendRequest(refreshedAccessToken);
       }
-
-      const apiError =
-        error instanceof ApiError
-          ? error
-          : new ApiError(NETWORK_ERROR_MESSAGE, 0, "network", requestUrl);
-      const canTryAnotherCandidate =
-        (method === "GET" || method === "HEAD") &&
-        index < candidateBaseUrls.length - 1 &&
-        (apiError.kind === "network" || apiError.kind === "invalid_response");
-
-      if (canTryAnotherCandidate) {
-        console.warn("Retrying API request with alternate base URL", {
-          path,
-          failedUrl: requestUrl,
-          message: apiError.message,
-        });
-        lastError = apiError;
-        continue;
-      }
-
-      throw apiError;
     }
-  }
 
-  throw (lastError instanceof ApiError
-    ? lastError
-    : new ApiError(
-        NETWORK_ERROR_MESSAGE,
-        0,
-        "network",
-        buildApiUrl(path, getPrimaryApiBaseUrl()),
-      ));
+    return await parseResponse<T>(response, requestUrl);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
+
+    const apiError =
+      error instanceof ApiError
+        ? error
+        : new ApiError(buildNetworkErrorMessage(requestUrl), 0, "network", requestUrl);
+
+    if (apiError.kind !== "backend") {
+      logApiConnectionIssue("API request failed", {
+        method: init?.method ?? "GET",
+        requestUrl,
+        status: apiError.status,
+        kind: apiError.kind,
+        message: apiError.message,
+      });
+    }
+
+    throw apiError;
+  }
 };
+
+const request = async <T>(path: string, init?: RequestInit) =>
+  requestWithBase<T>(path, PRIMARY_API_BASE_URL, init);
 
 const jsonRequest = async <T>(
   path: string,
@@ -429,9 +521,10 @@ export const getErrorMessage = (error: unknown) =>
 
 export const adminApi = {
   getBootstrap: () => request<AdminDataState>("/api/v1/bootstrap"),
-  getLoginOptions: (portal?: AuthPortal) => {
+  getDashboardSummary: () => request<DashboardSummary>("/api/v1/dashboard/summary"),
+  getLoginOptions: (portal?: AuthPortal, signal?: AbortSignal) => {
     const query = portal ? `?portal=${encodeURIComponent(portal)}` : "";
-    return request<LoginAccountOption[]>(`/api/v1/auth/login-options${query}`);
+    return request<LoginAccountOption[]>(`/api/v1/auth/login-options${query}`, { signal });
   },
   login: (email: string, password: string, portal?: AuthPortal) =>
     jsonRequest<AuthSessionResponse>("/api/v1/auth/login", "POST", { email, password, portal }),
@@ -533,28 +626,23 @@ export const adminApi = {
   ) => jsonRequest<PoiAudioGenerationResult[]>(`/api/v1/audio-guides/poi/${poiId}/generate-all`, "POST", payload),
   generateBulkPoiAudio: (payload: PoiAudioBulkGenerationRequest = {}) =>
     jsonRequest<PoiAudioGenerationResult[]>(`/api/v1/audio-guides/bulk/generate`, "POST", payload),
-  savePoi: (poi: {
-    id?: string;
-    requestedId?: string;
-    slug: string;
-    address: string;
-    lat: number;
-    lng: number;
-    categoryId: string;
-    status: Poi["status"];
-    district: string;
-    ward: string;
-    priceRange: string;
-    triggerRadius: number;
-    priority: number;
-    placeTier: Poi["placeTier"];
-    tags: string[];
-    ownerUserId: string | null;
-    updatedBy: string;
-    actorRole: AdminUser["role"];
-    actorUserId: string;
-  }) =>
+  savePoi: (poi: PoiSavePayload) =>
     jsonRequest<Poi>(poi.id ? `/api/v1/pois/${poi.id}` : "/api/v1/pois", poi.id ? "PUT" : "POST", poi),
+  submitPoiChangeRequest: (poiId: string, payload: {
+    poi: PoiSavePayload;
+    languageCode: LanguageCode;
+    title: string;
+    fullText: string;
+    seoTitle?: string | null;
+    seoDescription?: string | null;
+  }) =>
+    jsonRequest<PoiChangeRequest>(`/api/v1/poi-change-requests/poi/${poiId}`, "POST", payload),
+  getPoiChangeRequests: () =>
+    request<PoiChangeRequest[]>("/api/v1/poi-change-requests"),
+  approvePoiChangeRequest: (requestId: string) =>
+    jsonRequest<Poi>(`/api/v1/poi-change-requests/${requestId}/approve`, "POST", {}),
+  rejectPoiChangeRequest: (requestId: string, reason: string) =>
+    jsonRequest<PoiChangeRequest>(`/api/v1/poi-change-requests/${requestId}/reject`, "POST", { reason }),
   saveUser: (account: {
     id?: string;
     name: string;
@@ -583,6 +671,7 @@ export const adminApi = {
     startAt: string;
     endAt: string;
     status: Promotion["status"];
+    visibleFrom?: string | null;
     actorName: string;
     actorRole: AdminUser["role"];
   }) =>
@@ -591,6 +680,10 @@ export const adminApi = {
       promotion.id ? "PUT" : "POST",
       promotion,
     ),
+  deletePromotion: (promotionId: string) =>
+    request<string>(`/api/v1/promotions/${promotionId}`, {
+      method: "DELETE",
+    }),
   saveRoute: (route: {
     id?: string;
     name: string;

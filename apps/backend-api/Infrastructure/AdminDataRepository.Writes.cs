@@ -890,6 +890,11 @@ public bool DeletePoi(string id, AdminRequestContext actor)
             return false;
         }
 
+        if (!actor.IsSuperAdmin)
+        {
+            throw new ApiForbiddenException("Chi Admin moi duoc xoa POI.");
+        }
+
         if (actor.IsPlaceOwner && !GetOwnerPoiIds(connection, transaction, actor.UserId).Contains(poi.Id))
         {
             throw new ApiNotFoundException("Khong tim thay POI.");
@@ -1250,10 +1255,10 @@ public bool DeletePoi(string id, AdminRequestContext actor)
         var isNew = existing is null;
         var audioId = existing?.Id ?? id ?? CreateId("audio");
         var normalizedSourceType = AudioGuideCatalog.NormalizeSourceType(request.SourceType);
-        var normalizedAudioUrl = (request.AudioUrl ?? string.Empty).Trim();
         var normalizedVoiceType = NormalizeAudioGuideVoiceType(request.VoiceType, existing);
         var transcriptText = NormalizeAudioGuideOptionalString(request.TranscriptText, existing?.TranscriptText);
         var audioFilePath = NormalizeAudioGuideOptionalString(request.AudioFilePath, existing?.AudioFilePath);
+        var normalizedAudioUrl = NormalizeAudioGuideUrl(request.AudioUrl, audioFilePath, existing);
         var audioFileName = ResolveAudioGuideFileName(request.AudioFileName, audioFilePath, normalizedAudioUrl, existing);
         var provider = ResolveAudioGuideProvider(request.Provider, existing?.Provider, normalizedSourceType);
         var voiceId = NormalizeAudioGuideOptionalString(request.VoiceId, existing?.VoiceId);
@@ -1485,6 +1490,93 @@ public bool DeletePoi(string id, AdminRequestContext actor)
 
     private static string NormalizeAudioGuideVoiceType(string? requestedValue, AudioGuide? existing)
         => NormalizeAudioGuideOptionalString(requestedValue, existing?.VoiceType, "standard");
+
+    private static string NormalizeAudioGuideUrl(string? requestedValue, string? audioFilePath, AudioGuide? existing)
+    {
+        var candidate = NormalizeAudioGuideNullableString(requestedValue);
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            candidate = NormalizeAudioGuideNullableString(existing?.AudioUrl);
+        }
+
+        return NormalizeAudioGuideUrlCandidate(candidate, audioFilePath);
+    }
+
+    private static string NormalizeAudioGuideUrlCandidate(string? candidateValue, string? audioFilePath)
+    {
+        var normalizedAudioFilePath = NormalizeAudioGuideNullableString(audioFilePath)
+            ?.Replace('\\', '/')
+            .TrimStart('/');
+        var candidate = NormalizeAudioGuideNullableString(candidateValue);
+
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return string.IsNullOrWhiteSpace(normalizedAudioFilePath)
+                ? string.Empty
+                : $"/{normalizedAudioFilePath}";
+        }
+
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out var absoluteUri))
+        {
+            if (ShouldUseAudioFilePathForUrlCandidate(absoluteUri.AbsolutePath, normalizedAudioFilePath))
+            {
+                return $"/{normalizedAudioFilePath}";
+            }
+
+            return candidate;
+        }
+
+        var normalizedCandidate = candidate.Replace('\\', '/');
+        if (normalizedCandidate.StartsWith("/", StringComparison.Ordinal))
+        {
+            return normalizedCandidate;
+        }
+
+        if (normalizedCandidate.StartsWith("storage/", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"/{normalizedCandidate.TrimStart('/')}";
+        }
+
+        if (!normalizedCandidate.Contains('/') && !string.IsNullOrWhiteSpace(normalizedAudioFilePath))
+        {
+            return $"/{normalizedAudioFilePath}";
+        }
+
+        if (ShouldUseAudioFilePathForUrlCandidate(normalizedCandidate, normalizedAudioFilePath))
+        {
+            return $"/{normalizedAudioFilePath}";
+        }
+
+        return normalizedCandidate;
+    }
+
+    private static bool ShouldUseAudioFilePathForUrlCandidate(string? candidatePath, string? normalizedAudioFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(candidatePath) || string.IsNullOrWhiteSpace(normalizedAudioFilePath))
+        {
+            return false;
+        }
+
+        var normalizedCandidatePath = candidatePath.Trim().Replace('\\', '/').TrimStart('/');
+        if (string.IsNullOrWhiteSpace(normalizedCandidatePath))
+        {
+            return false;
+        }
+
+        if (string.Equals(normalizedCandidatePath, normalizedAudioFilePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        const string storageRootPrefix = "storage/audio/";
+        if (!normalizedAudioFilePath.StartsWith(storageRootPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var expectedSuffix = normalizedAudioFilePath[storageRootPrefix.Length..];
+        return string.Equals(normalizedCandidatePath, expectedSuffix, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string ResolveAudioGuideProvider(string? requestedValue, string? existingValue, string sourceType)
     {

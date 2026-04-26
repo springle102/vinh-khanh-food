@@ -1,4 +1,5 @@
 using VinhKhanh.BackendApi.Contracts;
+using VinhKhanh.BackendApi.Infrastructure;
 
 namespace VinhKhanh.BackendApi.Middlewares;
 
@@ -14,9 +15,12 @@ public sealed class ApiExceptionMiddleware(RequestDelegate next, ILogger<ApiExce
         {
             logger.LogError(exception, "Unhandled exception while processing {Path}", context.Request.Path);
 
-            var statusCode = exception is InvalidOperationException
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status500InternalServerError;
+            var statusCode = exception switch
+            {
+                ApiRequestException apiRequestException => apiRequestException.StatusCode,
+                InvalidOperationException => StatusCodes.Status400BadRequest,
+                _ => StatusCodes.Status500InternalServerError,
+            };
             var message = string.IsNullOrWhiteSpace(exception.Message)
                 ? ApiResponseHttpWriter.GetDefaultMessage(statusCode)
                 : exception.Message;

@@ -460,7 +460,7 @@ export const MediaPage = () => {
       render: (item) => (
         <div>
           <p className="font-medium text-ink-800">
-            {item.sourceType === "generated" ? "Pre-generated audio" : "Uploaded audio"}
+            {item.sourceType === "generated" ? "Audio tạo sẵn" : "Audio tải lên"}
           </p>
           <p className="mt-1 truncate text-xs text-ink-500">
             {item.audioUrl || "Chưa có file audio"}
@@ -524,7 +524,7 @@ export const MediaPage = () => {
             </div>
           )}
           <div>
-            <p className="font-semibold text-ink-900">{item.altText || "Chưa có alt text"}</p>
+            <p className="font-semibold text-ink-900">{item.altText || "Chưa có mô tả ảnh"}</p>
             <p className="mt-1 text-xs text-ink-500">ID: {item.id}</p>
           </div>
         </div>
@@ -576,16 +576,16 @@ export const MediaPage = () => {
     <div className="space-y-6">
       <Card>
         <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">
-          Audio & media
+          Âm thanh và media
         </p>
         <h1 className="mt-3 text-3xl font-bold text-ink-900">Quản lý audio và nội dung</h1>
       </Card>
 
       <section className="grid gap-4 md:grid-cols-3">
         {[
-          ["Audio records", state.audioGuides.length],
-          ["Narration ready", audioRecordsWithNarration],
-          ["Media assets", state.mediaAssets.length],
+          ["Bản ghi audio", state.audioGuides.length],
+          ["Bản ghi sẵn nội dung", audioRecordsWithNarration],
+          ["Tài nguyên media", state.mediaAssets.length],
         ].map(([label, value]) => (
           <Card key={label}>
             <p className="text-sm text-ink-500">{label}</p>
@@ -630,13 +630,13 @@ export const MediaPage = () => {
       <Card>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <h2 className="section-heading">Media assets</h2>
+            <h2 className="section-heading">Tài nguyên media</h2>
             <p className="mt-2 text-sm text-ink-500">
-              Hiển thị đầy đủ các cột của bảng media asset để admin không bỏ sót dữ liệu liên kết.
+              Hiển thị đầy đủ các cột của bảng tài nguyên media để admin không bỏ sót dữ liệu liên kết.
             </p>
           </div>
           <Button onClick={() => openMediaModal()} disabled={isBootstrapping}>
-            {isBootstrapping ? "Đang tải dữ liệu..." : "Thêm media asset"}
+            {isBootstrapping ? "Đang tải dữ liệu..." : "Thêm tài nguyên media"}
           </Button>
         </div>
         <div className="mt-6">
@@ -709,8 +709,8 @@ export const MediaPage = () => {
                       }))
                     }
                   >
-                    <option value="uploaded">Uploaded</option>
-                    <option value="generated">Pre-generated</option>
+                    <option value="uploaded">Tải lên</option>
+                    <option value="generated">Tạo sẵn</option>
                   </Select>
                 </div>
               </div>
@@ -745,7 +745,7 @@ export const MediaPage = () => {
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-sand-200 bg-sand-50 px-4 py-3 text-sm text-ink-500">
-                  Audio generate trước được tạo ở backend. Nếu chưa có file, hãy dùng màn POI để generate hoặc regenerate audio theo ngôn ngữ.
+                  Audio tạo sẵn được backend xử lý trước. Nếu chưa có file, hãy dùng màn POI để tạo hoặc tạo lại audio theo ngôn ngữ.
                 </div>
               )}
 
@@ -761,9 +761,9 @@ export const MediaPage = () => {
                       }))
                     }
                   >
-                    <option value="ready">Ready</option>
-                    <option value="processing">Processing</option>
-                    <option value="missing">Missing</option>
+                    <option value="ready">Sẵn sàng</option>
+                    <option value="processing">Đang xử lý</option>
+                    <option value="missing">Thiếu file</option>
                   </Select>
                 </div>
               </div>
@@ -851,7 +851,7 @@ export const MediaPage = () => {
                 />
               </div>
               <div>
-                <label className="field-label">Short text</label>
+                <label className="field-label">Mô tả ngắn</label>
                 <Textarea
                   value={narrationForm.shortText}
                   onChange={(event) =>
@@ -927,7 +927,7 @@ export const MediaPage = () => {
       <Modal
         open={mediaModalOpen}
         onClose={() => setMediaModalOpen(false)}
-        title={mediaForm.id ? "Cập nhật media asset" : "Tạo media asset"}
+        title={mediaForm.id ? "Cập nhật tài nguyên media" : "Tạo tài nguyên media"}
         description="Hiển thị và lưu đầy đủ các cột đang có trong bảng MediaAssets."
         maxWidthClassName="max-w-4xl"
       >
@@ -1007,8 +1007,8 @@ export const MediaPage = () => {
             previewType={mediaForm.type === "image" ? "image" : "video"}
             helperText={
               mediaForm.type === "image"
-                ? "Ảnh từ thiết bị sẽ được upload lên backend storage trước khi lưu media asset."
-                : "Video từ thiết bị sẽ được upload lên backend storage trước khi lưu media asset."
+                ? "Ảnh từ thiết bị sẽ được tải lên backend storage trước khi lưu tài nguyên media."
+                : "Video từ thiết bị sẽ được tải lên backend storage trước khi lưu tài nguyên media."
             }
             emptyText={
               mediaForm.type === "image"
@@ -1039,7 +1039,7 @@ export const MediaPage = () => {
               Hủy
             </Button>
             <Button type="submit" disabled={isSavingMedia || !mediaForm.entityId || !mediaForm.url.trim()}>
-              {isSavingMedia ? "Đang lưu..." : "Lưu media asset"}
+              {isSavingMedia ? "Đang lưu..." : "Lưu tài nguyên media"}
             </Button>
           </div>
         </form>

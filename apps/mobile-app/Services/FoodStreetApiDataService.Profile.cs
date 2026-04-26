@@ -51,14 +51,14 @@ public sealed partial class FoodStreetApiDataService : IAppLifecycleAwareService
     public Task<string> RestoreToAllowedLanguageAsync()
         => EnsureAllowedLanguageSelectionAsync();
 
-    public Task HandleAppResumedAsync(CancellationToken cancellationToken = default)
+    public async Task HandleAppResumedAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
             "[Network] App resumed. Invalidating mobile data caches. currentLanguage={LanguageCode}; networkAccess={NetworkAccess}",
             SelectedLanguageCode,
             Connectivity.Current.NetworkAccess);
         InvalidateBootstrapSnapshot();
-        return Task.CompletedTask;
+        await TryFlushPendingUsageEventsAsync("app_resumed", cancellationToken: cancellationToken);
     }
 
     private void InvalidateBootstrapSnapshot()
@@ -81,5 +81,10 @@ public sealed partial class FoodStreetApiDataService : IAppLifecycleAwareService
             e.NetworkAccess,
             string.Join(",", e.ConnectionProfiles));
         InvalidateBootstrapSnapshot();
+
+        if (HasAnyNetworkAccess())
+        {
+            _ = TryFlushPendingUsageEventsAsync("connectivity_changed");
+        }
     }
 }

@@ -38,20 +38,8 @@
                     </Border.Shadow>
 
                     <VerticalStackLayout Spacing="18">
-                        <Label HorizontalTextAlignment="Center" Style="{StaticResource SectionTitleStyle}" Text="{Binding ScanSuccessText}" />
-                        <Label HorizontalTextAlignment="Center" FontSize="14" Text="{Binding ChooseLanguageText}" TextColor="{StaticResource BrandTextSecondary}" />
-
-                        <Border
-                            Padding="14,12"
-                            BackgroundColor="{StaticResource BrandPrimaryPale}"
-                            IsVisible="{Binding HasPendingQrCode}"
-                            Stroke="{StaticResource BrandStrokeStrong}"
-                            StrokeShape="RoundRectangle 16">
-                            <VerticalStackLayout Spacing="6">
-                                <Label FontFamily="OpenSansSemibold" Text="{Binding PendingLabelText}" TextColor="{StaticResource BrandPrimary}" />
-                                <Label LineBreakMode="TailTruncation" MaxLines="2" Text="{Binding PendingQrCodeText}" TextColor="{StaticResource BrandTextSecondary}" />
-                            </VerticalStackLayout>
-                        </Border>
+                        <Label HorizontalTextAlignment="Center" Style="{StaticResource SectionTitleStyle}" Text="{Binding TitleText}" />
+                        <Label HorizontalTextAlignment="Center" FontSize="14" Text="{Binding SubtitleText}" TextColor="{StaticResource BrandTextSecondary}" />
 
                         <FlexLayout
                             Wrap="Wrap"

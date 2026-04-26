@@ -70,12 +70,10 @@ public partial class AppBottomBar : ContentView
     {
         ApplyItemState(_viewModel.SelectedTab == AppBottomBarTab.Poi, PoiTab, PoiLabel, PoiPath1, PoiPath2, PoiPath3);
         ApplyItemState(_viewModel.SelectedTab == AppBottomBarTab.Settings, SettingsTab, SettingsLabel, SettingsPath1, SettingsPath2);
-        ApplyQrState(_viewModel.SelectedTab == AppBottomBarTab.QrScanner);
     }
 
     private void ApplyLocalization()
     {
-        QrLabel.Text = _languageService.GetText("bottom_qr");
         PoiLabel.Text = _languageService.GetText("bottom_poi");
         SettingsLabel.Text = _languageService.GetText("bottom_settings");
     }
@@ -93,14 +91,5 @@ public partial class AppBottomBar : ContentView
         {
             path.Stroke = new SolidColorBrush(color);
         }
-    }
-
-    private void ApplyQrState(bool isActive)
-    {
-        QrTab.BackgroundColor = isActive ? Color.FromArgb("#D87410") : ActiveColor;
-        QrTab.Stroke = isActive ? new SolidColorBrush(Color.FromArgb("#FFD9B3")) : new SolidColorBrush(Colors.Transparent);
-        QrTab.StrokeThickness = isActive ? 1.2 : 0;
-        QrTab.Scale = 1.0;
-        QrLabel.FontAttributes = FontAttributes.Bold;
     }
 }

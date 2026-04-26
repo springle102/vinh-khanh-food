@@ -1,160 +1,447 @@
-# Vinh Khanh Food — Tổng quan dự án
+# Vinh Khanh Food
 
-Repository này là monorepo chứa toàn bộ mã nguồn cho đồ án Vinh Khanh Food: Admin web (quản trị), Backend API (ASP.NET Core) và Mobile app (MAUI). Tài liệu này tóm tắt kiến trúc, cấu trúc thư mục, cách chạy và các điểm cần biết khi phát triển.
+Monorepo cho đồ án hệ thống quản lý và trải nghiệm tham quan ẩm thực khu phố Vĩnh Khánh.
 
-## Nội dung chính
-- Admin web: `apps/admin-web` (React + TypeScript + Vite) — giao diện quản trị nội dung, POI, tour, media và người dùng.
-- Backend API: `apps/backend-api` (ASP.NET Core, .NET 10) — nguồn dữ liệu trung tâm, authentication, TTS proxy, geocoding, premium.
-- Mobile app: `apps/mobile-app` (.NET MAUI) — trải nghiệm khách hàng trên Android (bản đồ, POI, thuyết minh, tour, QR).
-- Tools: `tools` — các console app để chạy smoke tests (TTS, localization, POI normalization).
-- Scripts: `scripts` — tiện ích để chạy môi trường dev, khởi động nhiều service cùng lúc.
-- `sql/` — script DB hỗ trợ seed/patch.
+Repository này đang chứa đầy đủ 4 phần chính:
 
-## Cấu trúc thư mục (chính)
+- `apps/admin-web`: web quản trị cho Super Admin và Chủ quán.
+- `apps/backend-api`: ASP.NET Core API dùng chung cho admin web, mobile app và public bootstrap.
+- `apps/mobile-app`: ứng dụng .NET MAUI cho người dùng cuối.
+- `apps/core`: thư viện dùng chung cho contract mobile và logic fallback ngôn ngữ.
 
-- `apps/admin-web/` — frontend quản trị (Vite, Tailwind, React).
-- `apps/backend-api/` — ASP.NET Core API (Program.cs, Controllers, Infrastructure).
-- `apps/mobile-app/` — .NET MAUI mobile app (Android focus).
-- `tools/` — dự án nhỏ để kiểm tra TTS, localization, POI normalization.
-- `scripts/` — lệnh tiện ích (PowerShell/Node) để chạy dev environment.
-- `sql/` — các script DB hỗ trợ seed/patch.
+## 1. Mục tiêu hệ thống
 
-## Yêu cầu môi trường (Local)
+Hệ thống phục vụ 2 nhóm người dùng:
 
-- Windows (phát triển MAUI) với Visual Studio + MAUI workload.
-- .NET 10 SDK (để build backend & mobile).
-- Node.js (LTS) và npm/yarn (cho admin-web và scripts).
-- Docker (tuỳ chọn, để chạy docker-compose cho admin/nginx).
+- Nhóm vận hành nội bộ:
+  - Super Admin quản lý toàn bộ POI, tour, ưu đãi, nội dung, media, audio, log, cài đặt và duyệt thay đổi POI.
+  - Chủ quán chỉ được làm việc trong phạm vi quán/POI của mình.
+- Nhóm người dùng cuối:
+  - Xem POI trên bản đồ.
+  - Xem chi tiết quán, món ăn, ưu đãi, tour.
+  - Nghe audio thuyết minh đa ngôn ngữ.
+  - Dùng gói dữ liệu offline trên mobile.
 
-## Chạy nhanh trên máy dev
+## 2. Kiến trúc tổng thể
 
-Tại root repo (PowerShell trên Windows):
+```mermaid
+flowchart LR
+    A["Admin Web\nReact + TypeScript + Vite"] --> B["Backend API\nASP.NET Core .NET 10"]
+    M["Mobile App\n.NET MAUI"] --> B
+    B --> D["SQL Server"]
+    B --> S["Storage\nwwwroot/storage + audio files"]
+    B --> T["External Services\nElevenLabs / Translation / Geocoding"]
+    B --> P["Public APK Download\nwwwroot/downloads"]
+```
+
+### Kiến trúc theo vai trò
+
+- `admin-web` là lớp giao diện quản trị.
+- `backend-api` là trung tâm xử lý nghiệp vụ, phân quyền, bootstrap dữ liệu, audio, localization, offline package và analytics.
+- `SQL Server` là nơi lưu dữ liệu quản trị, POI, route, promotion, audit, app presence.
+- `mobile-app` tiêu thụ bootstrap/offline package và gửi ngược heartbeat, analytics, trạng thái sử dụng.
+- `core` giữ contract và rule dùng chung để tránh lệch logic giữa backend và mobile.
+
+## 3. Các module nghiệp vụ hiện có
+
+- Quản lý POI, món ăn, media, audio guide.
+- Quản lý tour tham quan.
+- Quản lý ưu đãi với 2 trạng thái `upcoming` và `active`.
+- Duyệt thay đổi POI do chủ quán gửi (`PoiChangeRequests`).
+- Dashboard admin và thống kê online users từ mobile heartbeat.
+- Bootstrap dữ liệu public/admin.
+- Dịch runtime theo ngôn ngữ client.
+- Tạo/gọi audio narration qua TTS và audio guide pregenerated.
+- Đồng bộ analytics từ mobile.
+- Tải gói offline package cho mobile.
+- Theo dõi QR download APK public.
+
+## 4. Luồng kiến trúc hiện tại
+
+### 4.1. Luồng admin web
+
+1. Admin hoặc Chủ quán đăng nhập qua `POST /api/v1/auth/login`.
+2. Frontend lấy token và nạp bootstrap từ `GET /api/v1/bootstrap`.
+3. Toàn bộ state quản trị được đưa vào `AdminDataProvider` trong `apps/admin-web/src/data/store.tsx`.
+4. Các màn hình như POI, Tour, Ưu đãi, Media, Dashboard gọi API CRUD tương ứng.
+5. Backend kiểm tra quyền bằng `AdminRequestContextResolver` trước khi ghi dữ liệu.
+
+### 4.2. Luồng backend và dữ liệu
+
+1. `Program.cs` đăng ký controller, storage, localization, narration, offline package builder, translation/TTS client.
+2. `AdminDataRepository` là lớp truy cập dữ liệu trung tâm.
+3. Repository dùng ADO.NET + SQL Server trực tiếp, không dùng EF Core.
+4. Schema được kiểm tra/cập nhật theo pattern `Ensure...Schema()` trong repository, không dùng EF Migration.
+5. `GetBootstrap()` trả dữ liệu tổng hợp cho admin hoặc public/mobile tùy ngữ cảnh.
+
+### 4.3. Luồng mobile app
+
+1. App khởi động từ `App.xaml.cs`, nạp ngôn ngữ và seed offline bundle nếu có.
+2. `MauiProgram.cs` đăng ký các service chính: data service, offline package, app presence, audio playback, route/tour state.
+3. App lấy dữ liệu từ backend theo ngôn ngữ đang chọn.
+4. Khi app foreground, `AppPresenceService` gửi heartbeat định kỳ.
+5. Khi app background/stop, app cố gửi offline event và dừng heartbeat.
+6. Mobile có thể chạy online-first hoặc offline-first tùy trạng thái dữ liệu cục bộ.
+
+### 4.4. Luồng localization
+
+1. Backend chỉ lưu nội dung gốc cho entity chính.
+2. `BootstrapLocalizationService` tự dịch runtime khi public/mobile yêu cầu ngôn ngữ khác.
+3. Bản dịch runtime được trả kèm bootstrap.
+4. Mobile/admin dùng fallback policy từ `apps/core/Localization/LanguageFallbackPolicy.cs`.
+5. Ưu đãi hiện tại đi theo mô hình này: chỉ lưu một bộ nội dung gốc, hệ thống tự trả nội dung theo ngôn ngữ người dùng.
+
+### 4.5. Luồng audio narration
+
+1. Nội dung POI được resolve theo ngôn ngữ yêu cầu.
+2. Nếu đã có `AudioGuides` sẵn sàng phát thì dùng luôn.
+3. Nếu chưa có, backend có thể gọi TTS service để sinh audio.
+4. Khi nội dung nguồn POI thay đổi, backend đánh dấu audio cũ là outdated để regenerate.
+
+### 4.6. Luồng offline package
+
+1. Backend dựng gói offline tại `GET /api/mobile/offline-package`.
+2. Gói này dùng chung contract bootstrap, đã rút gọn để mobile lưu cục bộ.
+3. Mobile tải manifest, audio, hình ảnh và metadata về local storage/database.
+4. `OfflinePackageService` kiểm tra version, sync-state và chỉ cập nhật khi cần.
+
+### 4.7. Luồng phân quyền và moderation
+
+- `SUPER_ADMIN`
+  - Toàn quyền hệ thống.
+  - Quản lý POI, tour, promotion, users, settings, logs.
+  - Duyệt hoặc từ chối thay đổi POI.
+- `PLACE_OWNER`
+  - Chỉ thấy dữ liệu thuộc phạm vi của mình.
+  - Không được tạo POI mới.
+  - Sửa POI theo cơ chế gửi yêu cầu duyệt.
+  - Được quản lý ưu đãi trong POI của mình.
+  - Chỉ xem tour, không được sửa tour.
+
+### 4.8. Luồng online users
+
+1. Mobile tạo `anonymousClientId` và giữ ổn định trong preferences.
+2. Foreground gửi `POST /api/app-presence/heartbeat`.
+3. Background/stop gửi `POST /api/app-presence/offline` nếu có thể.
+4. Backend coi app offline nếu quá timeout heartbeat.
+5. Dashboard admin lấy số online qua `GET /api/admin/dashboard/online-users`.
+
+## 5. Cấu trúc thư mục
+
+```text
+.
+├─ apps/
+│  ├─ admin-web/      # React + TypeScript + Vite
+│  ├─ backend-api/    # ASP.NET Core API + SQL Server access
+│  ├─ core/           # Shared contracts / localization fallback
+│  └─ mobile-app/     # .NET MAUI app
+├─ docs/              # Tài liệu bổ sung
+├─ scripts/           # Script dev/build/package
+├─ tools/             # Smoke tools
+├─ publish/           # Output publish nếu có
+└─ README.md
+```
+
+## 6. Các điểm vào code quan trọng
+
+### Backend
+
+- `apps/backend-api/Program.cs`
+- `apps/backend-api/Infrastructure/AdminDataRepository.cs`
+- `apps/backend-api/Infrastructure/BootstrapLocalizationService.cs`
+- `apps/backend-api/Infrastructure/MobileOfflinePackageBuilder.cs`
+- `apps/backend-api/Infrastructure/PoiNarrationService.cs`
+
+### Controller đáng chú ý
+
+- `apps/backend-api/Controllers/AuthController.cs`
+- `apps/backend-api/Controllers/BootstrapController.cs`
+- `apps/backend-api/Controllers/PoisController.cs`
+- `apps/backend-api/Controllers/PoiChangeRequestsController.cs`
+- `apps/backend-api/Controllers/PromotionsController.cs`
+- `apps/backend-api/Controllers/ToursController.cs`
+- `apps/backend-api/Controllers/AudioGuidesController.cs`
+- `apps/backend-api/Controllers/MobileSyncController.cs`
+- `apps/backend-api/Controllers/AppPresenceController.cs`
+- `apps/backend-api/Controllers/AdminDashboardController.cs`
+
+### Admin web
+
+- `apps/admin-web/src/app/router.tsx`
+- `apps/admin-web/src/data/store.tsx`
+- `apps/admin-web/src/lib/api.ts`
+- `apps/admin-web/src/lib/rbac.ts`
+
+### Mobile app
+
+- `apps/mobile-app/App.xaml.cs`
+- `apps/mobile-app/MauiProgram.cs`
+- `apps/mobile-app/Services/FoodStreetMockDataService.cs`
+- `apps/mobile-app/Services/OfflinePackageService.cs`
+- `apps/mobile-app/Services/AppPresenceService.cs`
+- `apps/mobile-app/ViewModels/HomeMapViewModel*.cs`
+
+## 7. Stack công nghệ
+
+### Admin web
+
+- React 19
+- TypeScript
+- Vite
+- Tailwind CSS
+- Recharts
+- Leaflet / OpenStreetMap
+
+### Backend
+
+- ASP.NET Core .NET 10
+- SQL Server
+- ADO.NET (`Microsoft.Data.SqlClient`)
+- Swagger/OpenAPI
+- Memory Cache
+
+### Mobile
+
+- .NET MAUI
+- Preferences / FileSystem / WebView
+- Plugin.Maui.Audio
+
+### Tích hợp ngoài
+
+- ElevenLabs TTS
+- Translation proxy/runtime translation
+- Geocoding proxy
+- OSRM routing
+
+## 8. Cách chạy local
+
+## 8.1. Yêu cầu môi trường
+
+- Windows là môi trường thuận tiện nhất nếu cần chạy MAUI Android.
+- .NET 10 SDK
+- Node.js + npm
+- Android SDK + emulator nếu chạy mobile
+
+## 8.2. Cài dependency
 
 ```powershell
 cd D:\vinh-khanh-food
+npm install
 ```
 
-1) Cài dependency cho admin web và chạy dev server
+`npm install` ở root sẽ bootstrap luôn `apps/admin-web`.
+
+## 8.3. Chạy admin web + backend cùng lúc
 
 ```powershell
-cd apps\admin-web
-npm install
 npm run dev
 ```
 
-Admin web mặc định chạy trên `http://localhost:5173`.
+Mặc định:
 
-2) Chạy Backend API (local)
+- Admin web: `http://localhost:5173`
+- Backend API: `http://localhost:5080`
+
+## 8.4. Chạy riêng từng phần
 
 ```powershell
-cd D:\vinh-khanh-food
+npm run dev:admin
+npm run dev:backend
+```
+
+Hoặc:
+
+```powershell
 dotnet run --project apps\backend-api\VinhKhanh.BackendApi.csproj
 ```
 
-Backend mặc định lắng nghe `http://localhost:5080` (kiểm tra Swagger tại `/swagger`).
+## 8.5. Cấu hình mobile để gọi backend local
 
-3) Chạy Mobile (Android emulator)
-
-- Mở Visual Studio (MAUI) hoặc dùng CLI để chạy trên emulator/thiết bị.
-- Nếu backend chạy trên máy dev và mobile chạy trên emulator, tạo file override:
-
-```text
-Copy apps/mobile-app/appsettings.android.sample.json -> .android-settings/appsettings.json
-Sửa API base URL sang IP máy dev (ví dụ http://192.168.1.10:5080)
-```
-
-4) Chạy toàn bộ môi trường (script tiện ích)
+Sinh file override cho Android debug:
 
 ```powershell
-scripts\dev-backend.cmd        # chạy backend trên Windows
-node scripts\dev-all.cjs      # chạy nhiều service cùng lúc (nếu có)
+npm run configure:mobile-api
 ```
 
-Hoặc dùng docker-compose cho admin/nginx:
+Script này sẽ tạo:
+
+- `.android-settings/appsettings.json`
+
+Mobile debug Android sẽ ưu tiên file này thay cho cấu hình mặc định trong app package.
+
+Nếu muốn tự chỉnh tay, có thể dùng file mẫu:
+
+- `apps/mobile-app/appsettings.android.sample.json`
+
+## 8.6. Chạy mobile Android
 
 ```powershell
-docker compose -f apps\admin-web\docker-compose.yml up --build
+npm run dev:mobile:android
 ```
 
-## Luồng chính của hệ thống
-
-Dưới đây là các luồng chính (flow) giúp hiểu cách các thành phần tương tác trong hệ thống.
-
-- Luồng Admin Web (quản trị):
-	1. Admin đăng nhập tại `/admin/login` hoặc `/restaurant/login`.
-	2. Frontend gọi `POST /api/v1/auth/login` để lấy access/refresh token và roles.
-	3. Sau login, AdminDataProvider gọi `GET /api/v1/bootstrap` để nạp dữ liệu khởi tạo.
-	4. Khi tạo/cập nhật POI, media, tour hoặc translation, frontend gọi các endpoint tương ứng (`/api/v1/pois`, `/api/v1/media-assets`, `/api/v1/translations`, ...).
-	5. Backend kiểm tra quyền theo `AdminRequestContextResolver`; nếu thành công thì lưu và trả về kết quả để frontend cập nhật state hoặc refresh bootstrap.
-
-- Luồng Backend (API & dữ liệu):
-	1. Backend nhận yêu cầu từ admin hoặc mobile.
-	2. Với các yêu cầu nội dung, backend truy vấn DB (POIs, Translations, Media, AudioGuides) và resolve dữ liệu theo `languageCode` và quyền premium.
-	3. Nếu cần tts/audio, backend dùng `ElevenLabsTextToSpeechService` hoặc trả URL audio đã upload.
-	4. Các proxy (geocoding, translate) được gọi khi backend cần normalize address hoặc auto-translate nội dung thiếu.
-
-- Luồng Mobile (khách hàng):
-	1. App khởi động, `AppLanguageService` load language từ preferences.
-	2. App gọi `GET /api/v1/bootstrap?customerUserId=...&languageCode=...` để lấy dữ liệu theo user và ngôn ngữ.
-	3. HomeMapPage hiển thị POI trên bản đồ (WebView + Leaflet tiles). Khi chọn POI, app hiển thị popup/detail và cung cấp nút phát thuyết minh.
-	4. Nếu audio có sẵn (uploaded), app phát trực tiếp; nếu không, app gọi endpoint TTS backend để nhận/stream audio.
-	5. Các tương tác như lưu tour, quét QR, mua premium được chuyển thành các request tương ứng đến backend.
-
-- Luồng Localization / Bootstrap:
-	1. Bootstrap service trả payload đã chuẩn hóa gồm các bản dịch, media và audio metadata.
-	2. Nếu trường dịch thiếu, `BootstrapLocalizationService` có thể gọi Google Translate proxy để sinh bản dịch tạm thời (chỉ khi khách có quyền ngôn ngữ đó).
-	3. Mobile và admin dùng policy `LocalizationFallbackPolicy` để quyết định fallback theo từng field.
-
-- Luồng Narration / TTS:
-	1. Khi cần narration, frontend gọi `GET /api/v1/pois/{id}/narration?languageCode=...&voiceType=...`.
-	2. `PoiNarrationService` resolve nội dung theo thứ tự: uploaded audio (ready) → stored translation → auto-translate → fallback.
-	3. Nếu dùng TTS, backend chia text thành đoạn nhỏ, gọi `GET /api/v1/tts` (proxy ElevenLabs), cache kết quả, và trả URL/stream để client phát.
-
-- Luồng Premium (quyền ngôn ngữ / nội dung):
-	1. Backend quản lý catalog ngôn ngữ premium (`PremiumAccessCatalog`).
-	2. Khi client yêu cầu nội dung premium (ví dụ `zh-CN`), bootstrap trả flag quyền; nếu chưa mua, mobile chuyển sang `PremiumCheckout`.
-	3. Sau purchase (mock/demo hoặc thực), backend cập nhật trạng thái premium của user và client xóa cache/bootstrap để tải lại.
-
-Các luồng này là bản tóm tắt; nếu bạn muốn tôi mở rộng bằng sequence diagram, sơ đồ tuần tự, hoặc thêm các endpoint chi tiết cho từng bước, tôi có thể bổ sung.
-
-## Build & kiểm tra
-
-- Build solution:
+Hoặc chạy cả backend + admin + mobile:
 
 ```powershell
-dotnet build vinh-khanh-food.sln -c Release
+npm run dev:all
 ```
 
-- Build admin web production:
+## 9. Build
+
+### Admin web
 
 ```powershell
-cd apps\admin-web
 npm run build
 ```
 
-- Chạy smoke tests:
+### Backend
+
+```powershell
+npm run build:backend
+```
+
+Hoặc:
+
+```powershell
+dotnet build apps\backend-api\VinhKhanh.BackendApi.csproj
+```
+
+### Toàn solution .NET
+
+```powershell
+dotnet build vinh-khanh-food.sln
+```
+
+## 10. Package và deploy backend lên Azure App Service
+
+Project đã có script package backend để deploy dạng zip:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-azure-backend.ps1
+```
+
+Script này sẽ:
+
+- publish backend,
+- nhúng APK mobile vào `wwwroot/downloads`,
+- kiểm tra package output,
+- tạo file zip sẵn cho Azure App Service.
+
+Ngoài ra có thể dùng:
+
+```powershell
+scripts\publish-backend.cmd
+```
+
+## 11. Cấu hình quan trọng
+
+### Backend
+
+- `apps/backend-api/appsettings.json`
+- `.env`
+- `.env.local`
+
+Các nhóm cấu hình chính:
+
+- connection strings SQL Server,
+- CORS,
+- audio/TTS,
+- mobile distribution,
+- đường dẫn seed SQL.
+
+### Mobile
+
+- `apps/mobile-app/Resources/Raw/appsettings.json`
+- `.android-settings/appsettings.json`
+
+### Lưu ý bảo mật
+
+- Không nên commit secret thật vào tài liệu hoặc môi trường production.
+- Với môi trường deploy, ưu tiên cấu hình qua Azure App Settings / environment variables.
+
+## 12. Database và seed dữ liệu
+
+- Seed SQL mẫu nằm tại:
+  - `apps/admin-web/src/data/sql/admin-seed-sqlserver.sql`
+- Repository backend tự kiểm tra việc khởi tạo schema/dữ liệu theo cờ cấu hình:
+  - `DatabaseInitialization:AllowCreateDatabase`
+  - `DatabaseInitialization:AllowSeedDatabase`
+  - `DatabaseInitialization:AllowSchemaUpdates`
+
+Mặc định production nên để các cờ này tắt.
+
+## 13. Các API chính
+
+### Admin / Auth / Bootstrap
+
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/bootstrap`
+- `GET /api/v1/sync-state`
+- `GET /api/v1/dashboard/summary`
+
+### Nội dung quản trị
+
+- `GET/POST/PUT/DELETE /api/v1/pois`
+- `GET/POST/PUT/DELETE /api/v1/food-items`
+- `GET/POST/PUT/DELETE /api/v1/promotions`
+- `GET/POST/PUT/DELETE /api/v1/tours`
+- `GET/POST/PUT/DELETE /api/v1/audio-guides`
+- `GET/POST/PUT/DELETE /api/v1/media-assets`
+- `GET/POST/PUT/DELETE /api/v1/translations`
+
+### Moderation / Presence / Analytics
+
+- `GET /api/v1/poi-change-requests`
+- `POST /api/v1/poi-change-requests/poi/{poiId}`
+- `POST /api/v1/poi-change-requests/{id}/approve`
+- `POST /api/v1/poi-change-requests/{id}/reject`
+- `POST /api/app-presence/heartbeat`
+- `POST /api/app-presence/offline`
+- `GET /api/admin/dashboard/online-users`
+- `POST /api/mobile/sync/logs`
+
+### Public/mobile data
+
+- `GET /api/mobile/bootstrap-package-version`
+- `GET /api/mobile/offline-package`
+- `GET /api/v1/tts`
+
+## 14. Công cụ kiểm thử nhanh
+
+Các smoke tool hiện có trong `tools/`:
+
+- `tools/LocalizationFallbackSmoke`
+- `tools/PoiAddressNormalizationSmoke`
+- `tools/TtsPlaybackSmoke`
+
+Ví dụ:
 
 ```powershell
 dotnet run --project tools\LocalizationFallbackSmoke\LocalizationFallbackSmoke.csproj
-dotnet run --project tools\TtsPlaybackSmoke\TtsPlaybackSmoke.csproj
 dotnet run --project tools\PoiAddressNormalizationSmoke\PoiAddressNormalizationSmoke.csproj
+dotnet run --project tools\TtsPlaybackSmoke\TtsPlaybackSmoke.csproj
 ```
 
-## Cấu hình & biến môi trường quan trọng
+## 15. Gợi ý thứ tự đọc code
 
-- `apps/backend-api/appsettings.json` và `apps/backend-api/appsettings.Development.json` — connection string, CORS, cấu hình TTS.
-- `.android-settings/appsettings.json` — override cấu hình mobile chạy trên emulator/thiết bị.
-- `ELEVENLABS_API_KEY` — key dùng bởi backend để tạo TTS (bảo mật tại env/secrets).
+Nếu cần onboard nhanh vào dự án, nên đọc theo thứ tự này:
 
-## Điểm bắt đầu khi bảo trì (entry points)
+1. `apps/backend-api/Program.cs`
+2. `apps/backend-api/Controllers/BootstrapController.cs`
+3. `apps/backend-api/Infrastructure/AdminDataRepository.cs`
+4. `apps/admin-web/src/data/store.tsx`
+5. `apps/admin-web/src/lib/api.ts`
+6. `apps/mobile-app/MauiProgram.cs`
+7. `apps/mobile-app/Services/FoodStreetMockDataService.cs`
+8. `apps/mobile-app/Services/OfflinePackageService.cs`
 
-- Backend: [apps/backend-api/Program.cs](apps/backend-api/Program.cs)
-- Bootstrap API: [apps/backend-api/Controllers/BootstrapController.cs](apps/backend-api/Controllers/BootstrapController.cs)
-- POI/Narration: [apps/backend-api/Controllers/PoisController.cs](apps/backend-api/Controllers/PoisController.cs)
-- TTS service: [apps/backend-api/Infrastructure/ElevenLabsTextToSpeechService.cs](apps/backend-api/Infrastructure/ElevenLabsTextToSpeechService.cs)
-- Admin router/state: [apps/admin-web/src/app/router.tsx](apps/admin-web/src/app/router.tsx), [apps/admin-web/src/data/store.tsx](apps/admin-web/src/data/store.tsx)
-- Mobile entry: [apps/mobile-app/App.xaml.cs](apps/mobile-app/App.xaml.cs), [apps/mobile-app/MauiProgram.cs](apps/mobile-app/MauiProgram.cs)
+## 16. Tóm tắt ngắn
 
----
+Đây là một monorepo full-stack cho bài toán quản lý và trải nghiệm tham quan ẩm thực:
 
-Nếu bạn muốn tôi mở rộng phần nào (ví dụ: hướng dẫn cấu hình ElevenLabs, cách build CI/CD, hoặc kịch bản dev-all chi tiết), cho biết mục tiêu cụ thể để tôi bổ sung.
+- admin web để vận hành,
+- backend ASP.NET Core làm trung tâm nghiệp vụ,
+- SQL Server lưu dữ liệu,
+- mobile MAUI phục vụ người dùng cuối,
+- localization + audio + offline package là các trục kỹ thuật quan trọng nhất của hệ thống hiện tại.

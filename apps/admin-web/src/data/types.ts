@@ -9,10 +9,11 @@ export type AudioSourceType = "uploaded" | "generated";
 export type AudioStatus = "ready" | "processing" | "missing";
 export type AudioGenerationStatus = "none" | "pending" | "success" | "failed" | "outdated";
 export type MediaType = "image" | "video";
-export type PromotionStatus = "upcoming" | "active" | "expired" | "hidden" | "deleted";
+export type PromotionStatus = "upcoming" | "active";
+export type PoiChangeRequestStatus = "pending" | "approved" | "rejected";
 export type DeviceType = "android" | "web";
 export type TtsProvider = "elevenlabs";
-export type UsageEventType = "poi_view" | "audio_play" | "qr_scan";
+export type UsageEventType = "poi_view" | "audio_play" | "qr_scan" | "apk_download_access" | "offer_view";
 export type PoiPlaceTier = 0 | 1;
 
 export interface GeocodingLocation {
@@ -208,6 +209,26 @@ export interface Promotion {
   startAt: string;
   endAt: string;
   status: PromotionStatus;
+  visibleFrom: string | null;
+  createdByUserId: string;
+  ownerUserId: string | null;
+  isDeleted: boolean;
+}
+
+export interface PoiChangeRequest {
+  id: string;
+  poiId: string;
+  submittedByUserId: string;
+  submittedByName: string;
+  status: PoiChangeRequestStatus;
+  beforeJson: string;
+  afterJson: string;
+  rejectionReason: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
+  reviewedByUserId: string | null;
+  reviewedByName: string | null;
+  appliedAt: string | null;
 }
 
 export interface ViewLog {
@@ -273,6 +294,30 @@ export interface DataSyncState {
   version: string;
   generatedAt: string;
   lastChangedAt: string;
+}
+
+export interface DashboardAudioLanguageMetric {
+  languageCode: string;
+  totalAudioPlays: number;
+}
+
+export interface DashboardPoiViewMetric {
+  poiId: string;
+  poiTitle: string;
+  totalPoiViews: number;
+}
+
+export interface DashboardSummary {
+  totalPoiViews: number;
+  totalAudioPlays: number;
+  totalQrScans: number;
+  totalOfferViews: number;
+  totalPois: number;
+  totalTours: number;
+  totalOffers: number;
+  onlineUsers: number;
+  audioPlaysByLanguage: DashboardAudioLanguageMetric[];
+  poiViewsByPoi: DashboardPoiViewMetric[];
 }
 
 export interface AdminDataState {

@@ -8,6 +8,8 @@ public sealed partial class AdminDataRepository
 {
     private SqlConnection OpenConnection()
     {
+        EnsureDatabaseInitialized();
+
         try
         {
             return OpenConnectionCore(_connectionString);

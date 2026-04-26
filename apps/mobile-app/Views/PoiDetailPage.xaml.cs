@@ -5,13 +5,11 @@ namespace VinhKhanh.MobileApp;
 
 [QueryProperty(nameof(PoiId), "poiId")]
 [QueryProperty(nameof(Slug), "slug")]
-[QueryProperty(nameof(QrCode), "qrCode")]
 public partial class PoiDetailPage : ContentPage
 {
     private readonly PoiDetailViewModel _viewModel;
     private string? _poiId;
     private string? _slug;
-    private string? _qrCode;
 
     public string? PoiId
     {
@@ -25,12 +23,6 @@ public partial class PoiDetailPage : ContentPage
         set => _slug = Uri.UnescapeDataString(value ?? string.Empty);
     }
 
-    public string? QrCode
-    {
-        get => _qrCode;
-        set => _qrCode = Uri.UnescapeDataString(value ?? string.Empty);
-    }
-
     public PoiDetailPage()
     {
         InitializeComponent();
@@ -41,7 +33,7 @@ public partial class PoiDetailPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
-        await _viewModel.LoadByIdAsync(_poiId, _slug, _qrCode);
+        await _viewModel.LoadByIdAsync(_poiId, _slug);
     }
 
     private async void OnBackTapped(object? sender, TappedEventArgs e)

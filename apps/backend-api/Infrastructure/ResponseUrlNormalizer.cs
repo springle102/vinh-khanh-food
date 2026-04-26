@@ -64,7 +64,7 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
 
     public AudioGuide Normalize(AudioGuide audioGuide)
     {
-        var absoluteUrl = ToAbsoluteUrl(audioGuide.AudioUrl);
+        var absoluteUrl = ToAbsoluteUrl(ResolveAudioGuideResponseUrl(audioGuide));
         if (string.Equals(absoluteUrl, audioGuide.AudioUrl, StringComparison.Ordinal))
         {
             return audioGuide;
@@ -99,6 +99,18 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
             UpdatedAt = audioGuide.UpdatedAt
         };
     }
+
+    public PoiNarrationResponse Normalize(PoiNarrationResponse response)
+        => response with
+        {
+            AudioGuide = response.AudioGuide is null ? null : Normalize(response.AudioGuide)
+        };
+
+    public PoiAudioGenerationResult Normalize(PoiAudioGenerationResult response)
+        => response with
+        {
+            AudioGuide = response.AudioGuide is null ? null : Normalize(response.AudioGuide)
+        };
 
     public FoodItem Normalize(FoodItem item)
     {
@@ -162,6 +174,103 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
             FoodItems = response.FoodItems.Select(Normalize).ToList(),
             MediaAssets = response.MediaAssets.Select(Normalize).ToList()
         };
+
+    private string ResolveAudioGuideResponseUrl(AudioGuide audioGuide)
+    {
+        // Audio elements do not send the admin Bearer token, so expose the concrete
+        // static asset URL when it exists instead of an authenticated API stream.
+        return ResolveAudioGuideUrl(audioGuide.AudioUrl, audioGuide.AudioFilePath);
+    }
+
+    private string ResolveAudioGuideUrl(string? audioUrl, string? audioFilePath)
+    {
+        var normalizedAudioFilePath = audioFilePath?.Trim().Replace('\\', '/').TrimStart('/') ?? string.Empty;
+        var normalizedAudioUrl = audioUrl?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedAudioFilePath))
+        {
+            return normalizedAudioUrl;
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedAudioUrl) ||
+            ShouldPreferAudioFilePath(normalizedAudioUrl, normalizedAudioFilePath))
+        {
+            return normalizedAudioFilePath;
+        }
+
+        return normalizedAudioUrl;
+    }
+
+    private bool ShouldPreferAudioFilePath(string audioUrl, string normalizedAudioFilePath)
+    {
+        if (!Uri.TryCreate(audioUrl, UriKind.Absolute, out var absoluteUri))
+        {
+            if (!audioUrl.StartsWith("/", StringComparison.Ordinal) &&
+                !audioUrl.Contains('/') &&
+                !audioUrl.Contains('\\'))
+            {
+                return true;
+            }
+
+            return HasMissingStoragePrefix(audioUrl, normalizedAudioFilePath);
+        }
+
+        var request = httpContextAccessor.HttpContext?.Request;
+        if (request is not null &&
+            !string.IsNullOrWhiteSpace(request.Host.Value) &&
+            DoesRequestHostDiffer(absoluteUri, request) &&
+            MatchesStorageAssetPath(absoluteUri.AbsolutePath, normalizedAudioFilePath))
+        {
+            return true;
+        }
+
+        return HasMissingStoragePrefix(absoluteUri.AbsolutePath, normalizedAudioFilePath);
+    }
+
+    private static bool HasMissingStoragePrefix(string candidatePath, string normalizedAudioFilePath)
+    {
+        var normalizedCandidatePath = candidatePath.Trim().Replace('\\', '/').TrimStart('/');
+        if (string.IsNullOrWhiteSpace(normalizedCandidatePath) ||
+            string.Equals(normalizedCandidatePath, normalizedAudioFilePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return MatchesStorageAssetPath(normalizedCandidatePath, normalizedAudioFilePath);
+    }
+
+    private static bool MatchesStorageAssetPath(string candidatePath, string normalizedAudioFilePath)
+    {
+        var normalizedCandidatePath = candidatePath.Trim().Replace('\\', '/').TrimStart('/');
+        if (string.IsNullOrWhiteSpace(normalizedCandidatePath) ||
+            string.IsNullOrWhiteSpace(normalizedAudioFilePath))
+        {
+            return false;
+        }
+
+        if (string.Equals(normalizedCandidatePath, normalizedAudioFilePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        const string storageRootPrefix = "storage/audio/";
+        if (!normalizedAudioFilePath.StartsWith(storageRootPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var expectedSuffix = normalizedAudioFilePath[storageRootPrefix.Length..];
+        return string.Equals(normalizedCandidatePath, expectedSuffix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool DoesRequestHostDiffer(Uri absoluteUri, HttpRequest request)
+    {
+        var requestPort = request.Host.Port ?? GetDefaultPort(request.Scheme);
+        var absolutePort = absoluteUri.IsDefaultPort ? GetDefaultPort(absoluteUri.Scheme) : absoluteUri.Port;
+
+        return !string.Equals(absoluteUri.Host, request.Host.Host, StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(absoluteUri.Scheme, request.Scheme, StringComparison.OrdinalIgnoreCase) ||
+               absolutePort != requestPort;
+    }
 
     private static bool ShouldRewriteToRequestHost(Uri absoluteUri, HttpRequest request)
     {

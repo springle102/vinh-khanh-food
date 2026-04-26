@@ -7,6 +7,7 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 
 public sealed class PoiNarrationAudioService(
     PoiNarrationService poiNarrationService,
+    PoiPregeneratedAudioService poiPregeneratedAudioService,
     IWebHostEnvironment environment,
     IHttpClientFactory httpClientFactory,
     ILogger<PoiNarrationAudioService> logger)
@@ -49,7 +50,24 @@ public sealed class PoiNarrationAudioService(
             throw new PoiNarrationAudioUnavailableException("Chua co audio pre-generated cho POI/ngon ngu nay.");
         }
 
-        return await LoadPreparedAudioAsync(narration, cancellationToken);
+        try
+        {
+            return await LoadPreparedAudioAsync(narration, cancellationToken);
+        }
+        catch (Exception exception) when (CanAttemptPreparedAudioRecovery(exception))
+        {
+            var recoveredAudio = await TryRecoverPreparedAudioAsync(
+                narration,
+                actor,
+                exception,
+                cancellationToken);
+            if (recoveredAudio is not null)
+            {
+                return recoveredAudio;
+            }
+
+            throw;
+        }
     }
 
     private async Task<PoiNarrationAudioResult> LoadPreparedAudioAsync(
@@ -115,12 +133,14 @@ public sealed class PoiNarrationAudioService(
             throw new InvalidOperationException("Prepared audio tra ve 0 byte.");
         }
 
+        var audioLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(audioGuide.LanguageCode);
         var durationSeconds = EstimateAudioDurationSeconds(contentType, content.Length);
         logger.LogInformation(
-            "Prepared POI narration audio ready. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioGuideId={AudioGuideId}; audioBytes={AudioBytes}; durationSeconds={DurationSeconds}; storage={StorageReference}; cacheKey={CacheKey}",
+            "Prepared POI narration audio ready. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioLanguage={AudioLanguage}; audioGuideId={AudioGuideId}; audioBytes={AudioBytes}; durationSeconds={DurationSeconds}; storage={StorageReference}; cacheKey={CacheKey}",
             narration.PoiId,
             narration.RequestedLanguageCode,
             narration.EffectiveLanguageCode,
+            audioLanguageCode,
             audioGuide.Id,
             content.Length,
             durationSeconds.ToString("0.00"),
@@ -136,11 +156,47 @@ public sealed class PoiNarrationAudioService(
             audioGuide.Id,
             audioGuide.ContentVersion,
             audioGuide.UpdatedAt,
-            narration.EffectiveLanguageCode,
+            audioLanguageCode,
             narration.TtsLocale,
             narration.TtsInputText.Length,
             1,
             durationSeconds);
+    }
+
+    private async Task<PoiNarrationAudioResult?> TryRecoverPreparedAudioAsync(
+        PoiNarrationResponse narration,
+        AdminRequestContext? actor,
+        Exception failure,
+        CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            failure,
+            "[AudioRepair] Prepared POI audio is missing or invalid; attempting recovery. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioGuideId={AudioGuideId}; cacheKey={CacheKey}",
+            narration.PoiId,
+            narration.RequestedLanguageCode,
+            narration.EffectiveLanguageCode,
+            narration.AudioGuide?.Id,
+            narration.AudioCacheKey);
+
+        var recoveredAudio = await poiPregeneratedAudioService.RecoverMissingPoiAudioAsync(
+            narration,
+            actor,
+            cancellationToken);
+        if (recoveredAudio is null)
+        {
+            return null;
+        }
+
+        logger.LogInformation(
+            "[AudioRepair] Prepared POI audio recovered successfully. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioGuideId={AudioGuideId}; source={Source}; cacheKey={CacheKey}",
+            narration.PoiId,
+            narration.RequestedLanguageCode,
+            recoveredAudio.EffectiveLanguageCode,
+            recoveredAudio.AudioGuideId,
+            recoveredAudio.Source,
+            recoveredAudio.AudioCacheKey);
+
+        return recoveredAudio;
     }
 
     private bool TryResolveLocalStoragePath(string audioUrl, out string localPath)
@@ -223,12 +279,30 @@ public sealed class PoiNarrationAudioService(
         return "ready";
     }
 
-    private static string? ResolveAudioLocation(AudioGuide audioGuide)
-        => !string.IsNullOrWhiteSpace(audioGuide.AudioUrl)
-            ? audioGuide.AudioUrl.Trim()
-            : string.IsNullOrWhiteSpace(audioGuide.AudioFilePath)
-                ? null
-                : audioGuide.AudioFilePath.Trim();
+    private string? ResolveAudioLocation(AudioGuide audioGuide)
+    {
+        var audioFilePath = string.IsNullOrWhiteSpace(audioGuide.AudioFilePath)
+            ? null
+            : audioGuide.AudioFilePath.Trim();
+        if (!string.IsNullOrWhiteSpace(audioFilePath) &&
+            TryResolveLocalStoragePath(audioFilePath, out _))
+        {
+            return audioFilePath;
+        }
+
+        var audioUrl = string.IsNullOrWhiteSpace(audioGuide.AudioUrl)
+            ? null
+            : audioGuide.AudioUrl.Trim();
+        if (!string.IsNullOrWhiteSpace(audioUrl) &&
+            TryResolveLocalStoragePath(audioUrl, out _))
+        {
+            return audioUrl;
+        }
+
+        return !string.IsNullOrWhiteSpace(audioUrl)
+            ? audioUrl
+            : audioFilePath;
+    }
 
     private static string InferContentType(string value)
     {
@@ -304,6 +378,24 @@ public sealed class PoiNarrationAudioService(
         => content.Length == 0
             ? string.Empty
             : WebUtility.HtmlDecode(Encoding.UTF8.GetString(content)).Trim();
+
+    private static bool CanAttemptPreparedAudioRecovery(Exception exception)
+    {
+        if (exception is FileNotFoundException)
+        {
+            return true;
+        }
+
+        if (exception is not InvalidOperationException invalidOperation)
+        {
+            return false;
+        }
+
+        return invalidOperation.Message.Contains("Khong tim thay file audio guide", StringComparison.OrdinalIgnoreCase) ||
+               invalidOperation.Message.Contains("khong the tai prepared audio", StringComparison.OrdinalIgnoreCase) ||
+               invalidOperation.Message.Contains("khong phai audio", StringComparison.OrdinalIgnoreCase) ||
+               invalidOperation.Message.Contains("0 byte", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static double EstimateAudioDurationSeconds(string? contentType, int audioBytes)
     {

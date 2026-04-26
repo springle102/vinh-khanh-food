@@ -1,0 +1,81 @@
+%% Sequence: ghi nhan tong luot xem POI va luot xem tung POI cua du khach
+%% Sources:
+%% - apps/mobile-app/ViewModels/HomeMapViewModel.cs
+%% - apps/mobile-app/Services/MobileAnalyticsService.cs
+%% - apps/mobile-app/Services/FoodStreetMockDataService.cs
+%% - apps/mobile-app/Services/MobileOfflineDatabaseService.cs
+%% - apps/backend-api/Controllers/AppUsageEventsController.cs
+%% - apps/backend-api/Controllers/MobileSyncController.cs
+%% - apps/backend-api/Infrastructure/AdminDataRepository.UsageEvents.cs
+%% - apps/backend-api/Infrastructure/AdminDataRepository.cs
+%% - apps/admin-web/src/features/dashboard/DashboardPage.tsx
+
+sequenceDiagram
+    autonumber
+    actor Tourist as Du khách
+    participant MapVM as HomeMapViewModel
+    participant Analytics as MobileAnalyticsService
+    participant Data as FoodStreetApiDataService
+    participant LocalQueue as MobileOfflineDatabaseService
+    participant UsageApi as AppUsageEventsController
+    participant SyncApi as MobileSyncController
+    participant Repo as AdminDataRepository
+    database Sql as SQL Server AppUsageEvents
+    actor Admin as Admin dashboard
+    participant DashboardApi as BootstrapController
+
+    Tourist->>MapVM: Chọn marker hoặc mở chi tiết POI
+    MapVM->>MapVM: LoadPoiDetailCoreAsync(trackPoiView=true)
+    MapVM->>Analytics: TrackPoiViewAsync(poiId, language, source)
+    Analytics->>Analytics: Chuẩn hóa poiId/language/source
+    Analytics->>Analytics: Reserve dedupe key poi_view:poiId:source
+
+    alt Trùng trong cửa sổ 900 ms
+        Analytics-->>MapVM: Bỏ qua lượt xem lặp nhanh
+    else Lượt xem hợp lệ
+        Analytics->>Data: TrackPoiViewAsync(poiId, language, source)
+        Data->>Data: Tạo QueuedMobileUsageEvent(eventType=poi_view, sessionId, idempotencyKey)
+        Data->>LocalQueue: EnqueueUsageEventAsync()
+        LocalQueue->>LocalQueue: INSERT sync_logs_queue(status=pending, conflict ignore)
+        Data->>Data: ScheduleUsageEventFlush(prioritized event)
+        Data->>Data: Giữ _usageEventFlushLock để tránh flush chồng nhau
+
+        alt Có mạng và gửi trực tiếp thành công
+            Data->>UsageApi: POST /api/v1/app-usage-events
+            UsageApi->>Repo: TrackAppUsageEvent(request)
+            Repo->>Sql: SELECT by IdempotencyKey
+            alt IdempotencyKey đã tồn tại
+                Sql-->>Repo: Existing event
+                Repo-->>UsageApi: Reuse existing event
+            else Sự kiện mới
+                Repo->>Repo: Normalize eventType/language/platform
+                Repo->>Sql: INSERT AppUsageEvents(eventType=poi_view, poiId, ...)
+                Sql-->>Repo: Saved
+                Repo-->>UsageApi: New event
+            end
+            UsageApi-->>Data: 200 OK
+            Data->>LocalQueue: MarkUsageEventsSyncedAsync(idempotencyKey)
+        else Mất mạng hoặc direct post lỗi
+            Data-->>LocalQueue: Giữ pending để đồng bộ sau
+            Note over Data,SyncApi: Khi app resume/connectivity changed hoặc flush sau, queue được gửi theo batch tối đa 200 event.
+            Data->>LocalQueue: GetPendingUsageEventsAsync()
+            LocalQueue-->>Data: pending/failed events
+            Data->>SyncApi: POST /api/mobile/sync/logs
+            loop Mỗi event trong batch
+                SyncApi->>Repo: TrackAppUsageEvent(AppUsageEventCreateRequest)
+                Repo->>Sql: Reuse theo IdempotencyKey hoặc INSERT mới
+            end
+            SyncApi-->>Data: accepted/rejected results
+            Data->>LocalQueue: Mark synced hoặc failed
+        end
+    end
+
+    Admin->>DashboardApi: GET /api/v1/dashboard/summary
+    DashboardApi->>Repo: GetDashboardSummary(actor)
+    Repo->>Sql: Đọc AppUsageEvents
+    Repo->>Repo: ApplyUsageEventScope theo quyền admin/chủ quán
+    Repo->>Repo: TotalPoiViews = count(eventType=poi_view)
+    Repo->>Repo: PoiViewsByPoi = group by PoiId, join danh sách POI
+    DashboardApi-->>Admin: totalPoiViews và poiViewsByPoi
+
+    Note over Repo: Nếu chưa có modern poi_view/audio_play, GetAppUsageEvents có thể dựng dữ liệu legacy từ ViewLogs/AudioListenLogs.

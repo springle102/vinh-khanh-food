@@ -5,6 +5,8 @@ public static class MobileUsageEventTypes
     public const string PoiView = "poi_view";
     public const string AudioPlay = "audio_play";
     public const string QrScan = "qr_scan";
+    public const string ApkDownloadAccess = "apk_download_access";
+    public const string OfferView = "offer_view";
 
     public static string Normalize(string? eventType)
     {
@@ -13,6 +15,8 @@ public static class MobileUsageEventTypes
             PoiView => PoiView,
             AudioPlay => AudioPlay,
             QrScan => QrScan,
+            ApkDownloadAccess => ApkDownloadAccess,
+            OfferView => OfferView,
             _ => string.Empty
         };
     }

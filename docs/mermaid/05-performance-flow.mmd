@@ -1,0 +1,107 @@
+%% Sequence: xu li performance cho map, POI detail, audio va analytics
+%% Sources:
+%% - apps/mobile-app/ViewModels/HomeMapViewModel.cs
+%% - apps/mobile-app/Services/FoodStreetMockDataService.cs
+%% - apps/mobile-app/Services/FoodStreetApiDataService.Offline.cs
+%% - apps/mobile-app/Services/PoiAudioPlaybackService.cs
+%% - apps/backend-api/Controllers/BootstrapController.cs
+%% - apps/backend-api/Controllers/PoisController.cs
+%% - apps/backend-api/Controllers/MobileSyncController.cs
+%% - apps/backend-api/Infrastructure/MobileOfflinePackageBuilder.cs
+
+sequenceDiagram
+    autonumber
+    actor Tourist as Du khách
+    participant MapVM as HomeMapViewModel
+    participant Data as FoodStreetApiDataService
+    participant SQLite as Local SQLite/offline package
+    participant BootstrapApi as BootstrapController
+    participant PoiApi as PoisController
+    participant MemoryCache as Backend IMemoryCache
+    participant Repo as AdminDataRepository
+    participant Translator as BootstrapLocalizationService
+    participant AudioSvc as PoiAudioPlaybackService
+    participant UsageSync as Mobile usage sync
+
+    Tourist->>MapVM: Mở màn bản đồ
+    MapVM->>MapVM: LoadAsync() và ReloadCurrentStateAsync(_stateReloadLock)
+    MapVM->>Data: GetPoisAsync()
+    Data->>Data: GetBootstrapSnapshotAsync(_bootstrapLock)
+
+    alt Có local SQLite hoặc offline package
+        Data->>SQLite: LoadBootstrapEnvelopeAsync hoặc LoadInstallationAsync
+        SQLite-->>Data: Bootstrap envelope + asset map
+        Data->>Data: ApplyOfflineAssetMap và TryRebuildBootstrapSnapshotFromCache()
+    else Chưa có local cache
+        Data-->>Data: Chờ remote bootstrap
+    end
+
+    alt Offline hoặc chưa đến SyncCheckInterval 60s
+        Data-->>MapVM: Trả snapshot hiện có/fallback
+    else Cần kiểm tra version
+        Data->>BootstrapApi: GET /api/v1/sync-state
+        BootstrapApi->>Repo: GetSyncState()
+        Repo-->>BootstrapApi: DataSyncState(version)
+        BootstrapApi-->>Data: X-Data-Version/version
+
+        alt Version không đổi
+            Data-->>MapVM: Reuse _bootstrapSnapshot
+        else Initial load, đổi ngôn ngữ, thiếu localized content, hoặc version changed
+            Data->>BootstrapApi: GET /api/v1/bootstrap?languageCode=...&scope=map
+            BootstrapApi->>MemoryCache: TryGet public-bootstrap:scope:language:version
+            alt Backend cache hit 45s
+                MemoryCache-->>BootstrapApi: AdminBootstrapResponse đã trim/localized
+                BootstrapApi-->>Data: 200 OK, X-Bootstrap-Cache=hit
+            else Backend cache miss
+                BootstrapApi->>Repo: GetBootstrap(public actor)
+                Repo-->>BootstrapApi: Public data
+                BootstrapApi->>BootstrapApi: TrimForPublicMapBootstrap()
+                BootstrapApi->>Translator: ApplyAutoTranslationsAsync(language)
+                Translator-->>BootstrapApi: Localized bootstrap
+                BootstrapApi->>MemoryCache: Set cache TTL 45s, Size estimate
+                BootstrapApi-->>Data: 200 OK, X-Bootstrap-Cache=miss
+            end
+            Data->>Data: CreateSnapshot(), set _syncState, _lastSyncCheckAt
+            Data->>SQLite: SaveBootstrapEnvelopeAsync(downloaded)
+            Data-->>MapVM: POI list + routes + heat points
+        end
+    end
+
+    Tourist->>MapVM: Chọn POI
+    MapVM->>Data: GetPoiDetailAsync(poiId)
+    Data->>Data: Cache key = poiId + language + sync version
+    alt Có _poiDetailCache
+        Data-->>MapVM: Detail cache hit
+    else Có request detail cùng key đang chạy
+        Data->>Data: _inflightPoiDetailLoads.GetOrAdd()
+        Data-->>MapVM: Await cùng Task, không gọi API lặp
+    else Cần tải detail
+        Data->>PoiApi: GET /api/v1/pois/{id}/detail?languageCode=...
+        PoiApi->>MemoryCache: TryGet public-poi-detail:id:language:version
+        alt Detail cache hit 2 phút
+            MemoryCache-->>PoiApi: PoiDetailResponse
+        else Detail cache miss
+            PoiApi->>Repo: Build detail bootstrap cho POI
+            PoiApi->>Translator: Auto translate nếu public
+            PoiApi->>MemoryCache: Set detail cache TTL 2 phút
+        end
+        PoiApi-->>Data: Detail + X-Poi-Detail-Cache
+        Data->>Data: Store _poiDetailCache và clear inflight task
+        Data-->>MapVM: Detail
+    end
+
+    MapVM->>AudioSvc: PreloadAsync(active/nearest POI)
+    AudioSvc->>AudioSvc: BuildPlaybackRequest()
+    alt Audio đã cached hoặc offline package có file
+        AudioSvc-->>MapVM: Bỏ qua tải remote
+    else Cần remote prepared audio
+        AudioSvc->>AudioSvc: _inflightLoads dedupe theo AudioCacheKey
+        AudioSvc->>PoiApi: GET /api/v1/pois/{id}/audio?languageCode=...
+        PoiApi-->>AudioSvc: File audio + ETag + Cache-Control
+        AudioSvc->>AudioSvc: Save file/cache index bằng _cacheLock
+    end
+
+    MapVM->>UsageSync: Track POI view/audio play
+    UsageSync->>SQLite: Enqueue pending event trước
+    UsageSync->>UsageSync: Flush async có _usageEventFlushLock, direct event trước rồi batch pending
+    Note over MapVM,UsageSync: UI không chờ analytics sync hoàn tất; lỗi mạng chỉ làm event nằm lại queue để flush sau.

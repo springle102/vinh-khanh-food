@@ -39,9 +39,10 @@ public sealed partial class AdminDataRepository
     private Promotion? GetPromotionById(SqlConnection connection, SqlTransaction? transaction, string id)
     {
         const string sql = """
-            SELECT TOP 1 Id, PoiId, Title, [Description], StartAt, EndAt, [Status]
+            SELECT TOP 1 Id, PoiId, Title, [Description], StartAt, EndAt, [Status], VisibleFrom, CreatedByUserId, OwnerUserId, IsDeleted
             FROM dbo.Promotions
-            WHERE Id = ?;
+            WHERE Id = ?
+              AND COALESCE(IsDeleted, CAST(0 AS bit)) = CAST(0 AS bit);
             """;
 
         using var command = CreateCommand(connection, transaction, sql, id);
@@ -172,7 +173,11 @@ public sealed partial class AdminDataRepository
             Description = ReadString(reader, "Description"),
             StartAt = ReadDateTimeOffset(reader, "StartAt"),
             EndAt = ReadDateTimeOffset(reader, "EndAt"),
-            Status = ReadString(reader, "Status")
+            Status = ReadString(reader, "Status"),
+            VisibleFrom = ReadNullableDateTimeOffset(reader, "VisibleFrom"),
+            CreatedByUserId = ReadString(reader, "CreatedByUserId"),
+            OwnerUserId = ReadNullableString(reader, "OwnerUserId"),
+            IsDeleted = ReadBool(reader, "IsDeleted")
         };
     }
 

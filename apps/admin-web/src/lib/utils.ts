@@ -1,5 +1,12 @@
 import clsx from "clsx";
-import type { ApprovalStatus, AuditActorRole, ContentStatus, LanguageCode, PoiPlaceTier, UserStatus } from "../data/types";
+import type {
+  ApprovalStatus,
+  AuditActorRole,
+  ContentStatus,
+  LanguageCode,
+  PoiPlaceTier,
+  UserStatus,
+} from "../data/types";
 
 export const cn = (...values: Array<string | false | null | undefined>) => clsx(values);
 
@@ -43,8 +50,8 @@ export const poiActivityLabels = {
 } as const;
 
 export const poiPlaceTierLabels: Record<PoiPlaceTier, string> = {
-  0: "Basic",
-  1: "Premium",
+  0: "Cơ bản",
+  1: "Cao cấp",
 };
 
 export const normalizePoiPlaceTier = (value: number | null | undefined): PoiPlaceTier =>

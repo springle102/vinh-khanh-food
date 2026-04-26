@@ -9,6 +9,7 @@ import {
   buildUiPlaybackKey,
   findPoiAudioGuide,
   hasValidAudioUrl,
+  isPlayablePreparedAudioGuide,
   isPlaceholderAudioUrl,
   logNarrationDebug,
   resolvePoiNarration,
@@ -69,16 +70,6 @@ const DEFAULT_PLAYBACK_STATE: PoiNarrationPlaybackState = {
 
 const SILENT_AUDIO_DATA_URI =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
-
-const isPlayablePreparedAudioGuide = (audioGuide: AudioGuide | null | undefined) =>
-  Boolean(
-    audioGuide &&
-      audioGuide.status === "ready" &&
-      !audioGuide.isOutdated &&
-      hasValidAudioUrl(audioGuide.audioUrl) &&
-      !isPlaceholderAudioUrl(audioGuide.audioUrl) &&
-      (audioGuide.sourceType === "uploaded" || audioGuide.generationStatus === "success"),
-  );
 
 const createAudioSourceFromResolvedNarration = (
   narration: ResolvedPoiNarration,
@@ -141,22 +132,22 @@ const getPlaybackMessage = (
     : "";
 
   if (mode === "loading") {
-    return `Dang tai audio da generate cho ${requestedLabel}.${fallbackSuffix}`;
+    return `Đang tải audio tạo sẵn cho ${requestedLabel}.${fallbackSuffix}`;
   }
 
   if (mode === "playing") {
-    return `Dang phat audio da generate (${effectiveLabel}).${fallbackSuffix}`;
+    return `Đang phát audio tạo sẵn (${effectiveLabel}).${fallbackSuffix}`;
   }
 
   if (mode === "paused") {
-    return "Da tam dung bai thuyet minh.";
+    return "Đã tạm dừng bài thuyết minh.";
   }
 
   if (mode === "finished") {
-    return "Da phat xong bai thuyet minh.";
+    return "Đã phát xong bài thuyết minh.";
   }
 
-  return "Khong the phat audio da generate cho POI nay.";
+  return "Không thể phát audio tạo sẵn cho POI này.";
 };
 
 export const usePoiNarrationPlayback = (state: AdminDataState) => {
@@ -391,7 +382,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           kind: "audio",
           message:
             error instanceof DOMException && error.name === "NotAllowedError"
-              ? "Trinh duyet da chan tu dong phat audio. Hay bam Phat lai de nghe thuyet minh."
+              ? "Trình duyệt đã chặn tự động phát audio. Hãy bấm Phát lại để nghe thuyết minh."
               : getPlaybackMessage(audioSource, "error"),
           isLoadingPOI: false,
           isGeneratingTTS: false,
@@ -415,7 +406,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         setPlaybackState((current) => ({
           ...current,
           status: "paused",
-          message: "Da tam dung bai thuyet minh.",
+          message: "Đã tạm dừng bài thuyết minh.",
           isPlayingAudio: false,
         }));
         return true;
@@ -429,7 +420,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           setPlaybackState((current) => ({
             ...current,
             status: "error",
-            message: "Khong the tiep tuc phat bai thuyet minh.",
+            message: "Không thể tiếp tục phát bài thuyết minh.",
             isLoadingPOI: false,
             isGeneratingTTS: false,
             isPlayingAudio: false,
@@ -468,7 +459,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
         audioGuideId: null,
         status: "loading",
         kind: null,
-        message: "Dang dong bo metadata audio theo ngon ngu hien tai...",
+        message: "Đang đồng bộ metadata audio theo ngôn ngữ hiện tại...",
         isLoadingPOI: true,
         isGeneratingTTS: false,
         isPlayingAudio: false,
@@ -511,8 +502,8 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           kind: null,
           message:
             error instanceof Error && error.message === "NO_PREGENERATED_AUDIO"
-              ? "POI nay chua co audio pre-generated cho ngon ngu da chon."
-              : "Khong the phat bai thuyet minh cho POI nay.",
+              ? "POI này chưa có audio tạo sẵn cho ngôn ngữ đã chọn."
+              : "Không thể phát bài thuyết minh cho POI này.",
           isLoadingPOI: false,
           isGeneratingTTS: false,
           isPlayingAudio: false,
@@ -548,7 +539,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           audioGuideId: narration.audioGuide?.id ?? null,
           status: "error",
           kind: null,
-          message: "POI nay chua co audio pre-generated cho ngon ngu da chon.",
+          message: "POI này chưa có audio tạo sẵn cho ngôn ngữ đã chọn.",
           isLoadingPOI: false,
           isGeneratingTTS: false,
           isPlayingAudio: false,
@@ -591,7 +582,7 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           audioGuideId: guide.id,
           status: "error",
           kind: hasValidAudioUrl(guide.audioUrl) ? "audio" : null,
-          message: "Khong tim thay POI cho audio nay.",
+          message: "Không tìm thấy POI cho audio này.",
           isLoadingPOI: false,
           isGeneratingTTS: false,
           isPlayingAudio: false,
@@ -656,8 +647,8 @@ export const usePoiNarrationPlayback = (state: AdminDataState) => {
           kind: hasValidAudioUrl(guide.audioUrl) ? "audio" : null,
           message:
             error instanceof Error && error.message === "NO_PREGENERATED_AUDIO"
-              ? "Chua co audio pre-generated de nghe thu."
-              : "Khong the phat thu audio nay.",
+              ? "Chưa có audio tạo sẵn để nghe thử."
+              : "Không thể phát thử audio này.",
           isLoadingPOI: false,
           isGeneratingTTS: false,
           isPlayingAudio: false,

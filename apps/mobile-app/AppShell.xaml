@@ -12,10 +12,6 @@
         ContentTemplate="{DataTemplate pages:HomeMapPage}" />
 
     <ShellContent
-        Route="QrScannerPage"
-        ContentTemplate="{DataTemplate pages:QrScannerPage}" />
-
-    <ShellContent
         Route="SettingsPage"
         ContentTemplate="{DataTemplate pages:SettingsPage}" />
 </Shell>

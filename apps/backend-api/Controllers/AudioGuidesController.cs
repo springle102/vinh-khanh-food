@@ -11,6 +11,8 @@ public sealed class AudioGuidesController(
     AdminDataRepository repository,
     AdminRequestContextResolver adminRequestContextResolver,
     PoiPregeneratedAudioService poiPregeneratedAudioService,
+    GeneratedAudioStorageService generatedAudioStorageService,
+    ResponseUrlNormalizer responseUrlNormalizer,
     ILogger<AudioGuidesController> logger) : ControllerBase
 {
     [HttpGet]
@@ -56,7 +58,12 @@ public sealed class AudioGuidesController(
             query = query.Where(item => item.IsOutdated == isOutdated.Value);
         }
 
-        return Ok(ApiResponse<IReadOnlyList<AudioGuide>>.Ok(query.OrderByDescending(item => item.UpdatedAt).ToList()));
+        var items = query
+            .OrderByDescending(item => item.UpdatedAt)
+            .Select(responseUrlNormalizer.Normalize)
+            .ToList();
+
+        return Ok(ApiResponse<IReadOnlyList<AudioGuide>>.Ok(items));
     }
 
     [HttpGet("metadata/{id}")]
@@ -67,7 +74,7 @@ public sealed class AudioGuidesController(
         var audioGuide = repository.GetAudioGuides(actor).FirstOrDefault(item => item.Id == id);
         return audioGuide is null
             ? NotFound(ApiResponse<AudioGuide>.Fail("Khong tim thay audio guide."))
-            : Ok(ApiResponse<AudioGuide>.Ok(audioGuide));
+            : Ok(ApiResponse<AudioGuide>.Ok(responseUrlNormalizer.Normalize(audioGuide)));
     }
 
     [HttpGet("poi/{poiId}/status")]
@@ -79,7 +86,10 @@ public sealed class AudioGuidesController(
             return NotFound(ApiResponse<IReadOnlyList<AudioGuide>>.Fail("Khong tim thay POI de xem trang thai audio."));
         }
 
-        var items = poiPregeneratedAudioService.GetPoiAudioGuides(poiId, actor);
+        var items = poiPregeneratedAudioService
+            .GetPoiAudioGuides(poiId, actor)
+            .Select(responseUrlNormalizer.Normalize)
+            .ToList();
         return Ok(ApiResponse<IReadOnlyList<AudioGuide>>.Ok(items));
     }
 
@@ -114,7 +124,7 @@ public sealed class AudioGuidesController(
             cancellationToken);
 
         return Ok(ApiResponse<PoiAudioGenerationResult>.Ok(
-            result,
+            responseUrlNormalizer.Normalize(result),
             result.Success ? result.Message : $"Generate that bai: {result.Message}"));
     }
 
@@ -153,7 +163,8 @@ public sealed class AudioGuidesController(
             actor,
             cancellationToken);
 
-        return Ok(ApiResponse<IReadOnlyList<PoiAudioGenerationResult>>.Ok(results));
+        return Ok(ApiResponse<IReadOnlyList<PoiAudioGenerationResult>>.Ok(
+            results.Select(responseUrlNormalizer.Normalize).ToList()));
     }
 
     [HttpPost("bulk/generate")]
@@ -178,7 +189,8 @@ public sealed class AudioGuidesController(
             actor,
             cancellationToken);
 
-        return Ok(ApiResponse<IReadOnlyList<PoiAudioGenerationResult>>.Ok(results));
+        return Ok(ApiResponse<IReadOnlyList<PoiAudioGenerationResult>>.Ok(
+            results.Select(responseUrlNormalizer.Normalize).ToList()));
     }
 
     [HttpPost]
@@ -197,7 +209,9 @@ public sealed class AudioGuidesController(
         }
 
         var saved = repository.SaveAudioGuide(null, request with { UpdatedBy = actor.Name }, actor);
-        return Ok(ApiResponse<AudioGuide>.Ok(saved, "Tao audio guide thanh cong."));
+        return Ok(ApiResponse<AudioGuide>.Ok(
+            responseUrlNormalizer.Normalize(saved),
+            "Tao audio guide thanh cong."));
     }
 
     [HttpPut("{id}")]
@@ -212,7 +226,10 @@ public sealed class AudioGuidesController(
         }
 
         var saved = repository.SaveAudioGuide(id, request with { UpdatedBy = actor.Name }, actor);
-        return Ok(ApiResponse<AudioGuide>.Ok(saved, "Cap nhat audio guide thanh cong."));
+        CleanupSupersededManagedAudioFile(existing, saved, "update");
+        return Ok(ApiResponse<AudioGuide>.Ok(
+            responseUrlNormalizer.Normalize(saved),
+            "Cap nhat audio guide thanh cong."));
     }
 
     [HttpDelete("{id}")]
@@ -227,6 +244,11 @@ public sealed class AudioGuidesController(
         }
 
         var deleted = repository.DeleteAudioGuide(id, actor);
+        if (deleted)
+        {
+            CleanupDeletedManagedAudioFile(existing);
+        }
+
         return deleted
             ? Ok(ApiResponse<string>.Ok(id, "Xoa audio guide thanh cong."))
             : NotFound(ApiResponse<string>.Fail("Khong tim thay audio guide."));
@@ -287,4 +309,49 @@ public sealed class AudioGuidesController(
 
     private static bool IsRouteEntityType(string? entityType) =>
         string.Equals(entityType?.Trim(), "route", StringComparison.OrdinalIgnoreCase);
+
+    private void CleanupSupersededManagedAudioFile(AudioGuide previous, AudioGuide current, string reason)
+    {
+        var previousPath = previous.AudioFilePath?.Trim();
+        var currentPath = current.AudioFilePath?.Trim();
+        if (string.IsNullOrWhiteSpace(previousPath) ||
+            string.IsNullOrWhiteSpace(currentPath) ||
+            string.Equals(previousPath, currentPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (!generatedAudioStorageService.DeleteIfExists(previousPath))
+        {
+            return;
+        }
+
+        logger.LogInformation(
+            "[AudioCleanup] Removed superseded managed audio file. audioGuideId={AudioGuideId}; entityType={EntityType}; entityId={EntityId}; languageCode={LanguageCode}; reason={Reason}; deletedPath={DeletedPath}; activePath={ActivePath}",
+            current.Id,
+            current.EntityType,
+            current.EntityId,
+            current.LanguageCode,
+            reason,
+            previousPath,
+            currentPath);
+    }
+
+    private void CleanupDeletedManagedAudioFile(AudioGuide deletedAudioGuide)
+    {
+        var deletedPath = deletedAudioGuide.AudioFilePath?.Trim();
+        if (string.IsNullOrWhiteSpace(deletedPath) ||
+            !generatedAudioStorageService.DeleteIfExists(deletedPath))
+        {
+            return;
+        }
+
+        logger.LogInformation(
+            "[AudioCleanup] Removed deleted managed audio file. audioGuideId={AudioGuideId}; entityType={EntityType}; entityId={EntityId}; languageCode={LanguageCode}; deletedPath={DeletedPath}",
+            deletedAudioGuide.Id,
+            deletedAudioGuide.EntityType,
+            deletedAudioGuide.EntityId,
+            deletedAudioGuide.LanguageCode,
+            deletedPath);
+    }
 }

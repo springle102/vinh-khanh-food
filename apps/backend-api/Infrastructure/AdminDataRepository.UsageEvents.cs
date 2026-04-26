@@ -59,6 +59,9 @@ public sealed partial class AdminDataRepository
     }
 
     public AppUsageEvent TrackAppUsageEvent(AppUsageEventCreateRequest request)
+        => TrackAppUsageEventWithResult(request).Event;
+
+    public AppUsageEventTrackResult TrackAppUsageEventWithResult(AppUsageEventCreateRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -69,7 +72,15 @@ public sealed partial class AdminDataRepository
             var existing = GetAppUsageEventByIdempotencyKey(connection, null, idempotencyKey);
             if (existing is not null)
             {
-                return existing;
+                _logger.LogInformation(
+                    "[Analytics] Reused existing app usage event by idempotency key. eventId={EventId}; type={EventType}; poiId={PoiId}; language={LanguageCode}; source={Source}; key={IdempotencyKey}",
+                    existing.Id,
+                    existing.EventType,
+                    existing.PoiId ?? "none",
+                    existing.LanguageCode,
+                    existing.Source,
+                    existing.IdempotencyKey ?? "none");
+                return new AppUsageEventTrackResult(existing, WasCreated: false);
             }
         }
 
@@ -88,28 +99,145 @@ public sealed partial class AdminDataRepository
             IdempotencyKey = idempotencyKey
         };
 
-        ExecuteNonQuery(
-            connection,
-            null,
-            """
-            INSERT INTO dbo.AppUsageEvents (
-                Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt, IdempotencyKey
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """,
+        try
+        {
+            ExecuteNonQuery(
+                connection,
+                null,
+                """
+                INSERT INTO dbo.AppUsageEvents (
+                    Id, EventType, PoiId, LanguageCode, Platform, SessionId, Source, Metadata, DurationInSeconds, OccurredAt, IdempotencyKey
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                usageEvent.Id,
+                usageEvent.EventType,
+                usageEvent.PoiId,
+                usageEvent.LanguageCode,
+                usageEvent.Platform,
+                usageEvent.SessionId,
+                usageEvent.Source,
+                usageEvent.Metadata,
+                usageEvent.DurationInSeconds,
+                usageEvent.OccurredAt,
+                usageEvent.IdempotencyKey);
+        }
+        catch (SqlException exception) when (
+            IsUniqueConstraintViolation(exception) &&
+            !string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            var existing = GetAppUsageEventByIdempotencyKey(connection, null, idempotencyKey);
+            if (existing is not null)
+            {
+                _logger.LogDebug(
+                    exception,
+                    "[Analytics] Reused existing app usage event after unique key race. eventId={EventId}; type={EventType}; key={IdempotencyKey}",
+                    existing.Id,
+                    existing.EventType,
+                    existing.IdempotencyKey ?? "none");
+                return new AppUsageEventTrackResult(existing, WasCreated: false);
+            }
+
+            throw;
+        }
+
+        _logger.LogInformation(
+            "[Analytics] Saved app usage event. eventId={EventId}; type={EventType}; poiId={PoiId}; language={LanguageCode}; platform={Platform}; source={Source}; key={IdempotencyKey}",
             usageEvent.Id,
             usageEvent.EventType,
-            usageEvent.PoiId,
+            usageEvent.PoiId ?? "none",
             usageEvent.LanguageCode,
             usageEvent.Platform,
-            usageEvent.SessionId,
             usageEvent.Source,
-            usageEvent.Metadata,
-            usageEvent.DurationInSeconds,
-            usageEvent.OccurredAt,
-            usageEvent.IdempotencyKey);
+            usageEvent.IdempotencyKey ?? "none");
 
-        return usageEvent;
+        return new AppUsageEventTrackResult(usageEvent, WasCreated: true);
+    }
+
+    public AppUsageEvent TrackQrScan(string source, string? metadata = null, string? idempotencyKey = null)
+        => TrackQrScanWithResult(source, metadata, idempotencyKey).Event;
+
+    public AppUsageEventTrackResult TrackQrScanWithResult(string source, string? metadata = null, string? idempotencyKey = null)
+        => TrackAppUsageEventWithResult(new AppUsageEventCreateRequest(
+            MobileUsageEventTypes.QrScan,
+            PoiId: null,
+            LanguageCode: null,
+            Platform: "web",
+            SessionId: Guid.NewGuid().ToString("N"),
+            Source: string.IsNullOrWhiteSpace(source) ? "public_download_apk" : source.Trim(),
+            Metadata: metadata,
+            DurationInSeconds: null,
+            OccurredAt: DateTimeOffset.UtcNow,
+            IdempotencyKey: idempotencyKey));
+
+    public AppUsageEvent TrackApkDownloadAccess(string? metadata = null, string? idempotencyKey = null)
+        => TrackApkDownloadAccessWithResult(metadata, idempotencyKey).Event;
+
+    public AppUsageEventTrackResult TrackApkDownloadAccessWithResult(string? metadata = null, string? idempotencyKey = null)
+        => TrackAppUsageEventWithResult(new AppUsageEventCreateRequest(
+            MobileUsageEventTypes.ApkDownloadAccess,
+            PoiId: null,
+            LanguageCode: null,
+            Platform: "web",
+            SessionId: Guid.NewGuid().ToString("N"),
+            Source: "public_download_apk",
+            Metadata: metadata,
+            DurationInSeconds: null,
+            OccurredAt: DateTimeOffset.UtcNow,
+            IdempotencyKey: idempotencyKey));
+
+    public QrScanDiagnosticsResponse GetQrScanDiagnostics()
+    {
+        using var connection = OpenConnection();
+        var databaseServer = connection.DataSource;
+        var databaseName = connection.Database;
+        if (!TableExists(connection, null, "AppUsageEvents"))
+        {
+            return new QrScanDiagnosticsResponse(
+                QrScanCount: 0,
+                PublicDownloadQrScanCount: 0,
+                ApkDownloadAccessCount: 0,
+                DashboardQrTotal: 0,
+                LatestTrackedQrScanAt: null,
+                DatabaseServer: databaseServer,
+                DatabaseName: databaseName);
+        }
+
+        const string sql = """
+            SELECT
+                COALESCE(SUM(CASE WHEN LOWER(EventType) = N'qr_scan' THEN ? ELSE 0 END), 0) AS QrScanCount,
+                COALESCE(SUM(CASE WHEN LOWER(EventType) = N'qr_scan'
+                           AND LOWER(Source) = N'public_download_apk' THEN ? ELSE 0 END), 0) AS PublicDownloadQrScanCount,
+                COALESCE(SUM(CASE WHEN LOWER(EventType) = N'apk_download_access' THEN ? ELSE 0 END), 0) AS ApkDownloadAccessCount,
+                COALESCE(SUM(CASE WHEN LOWER(EventType) = N'apk_download_access'
+                           OR LOWER(EventType) = N'qr_scan' THEN ? ELSE 0 END), 0) AS DashboardQrTotal,
+                MAX(CASE WHEN LOWER(EventType) = N'apk_download_access'
+                           OR LOWER(EventType) = N'qr_scan' THEN OccurredAt ELSE NULL END) AS LatestTrackedQrScanAt
+            FROM dbo.AppUsageEvents;
+            """;
+
+        using var command = CreateCommand(
+            connection,
+            null,
+            sql,
+            AnalyticsMetricWeights.QrScan,
+            AnalyticsMetricWeights.QrScan,
+            AnalyticsMetricWeights.QrScan,
+            AnalyticsMetricWeights.QrScan);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return new QrScanDiagnosticsResponse(0, 0, 0, 0, null, databaseServer, databaseName);
+        }
+
+        return new QrScanDiagnosticsResponse(
+            QrScanCount: ReadInt(reader, "QrScanCount"),
+            PublicDownloadQrScanCount: ReadInt(reader, "PublicDownloadQrScanCount"),
+            ApkDownloadAccessCount: ReadInt(reader, "ApkDownloadAccessCount"),
+            DashboardQrTotal: ReadInt(reader, "DashboardQrTotal"),
+            LatestTrackedQrScanAt: ReadNullableDateTimeOffset(reader, "LatestTrackedQrScanAt"),
+            DatabaseServer: databaseServer,
+            DatabaseName: databaseName);
     }
 
     private IReadOnlyList<AppUsageEvent> GetAppUsageEvents(SqlConnection connection, SqlTransaction? transaction)
@@ -135,9 +263,20 @@ public sealed partial class AdminDataRepository
             }
         }
 
+        var hasModernPoiOrAudioUsage = items.Any(item =>
+            string.Equals(item.EventType, MobileUsageEventTypes.PoiView, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(item.EventType, MobileUsageEventTypes.AudioPlay, StringComparison.OrdinalIgnoreCase));
+        if (!hasModernPoiOrAudioUsage)
+        {
+            items.AddRange(BuildLegacyUsageEvents(connection, transaction));
+        }
+
         if (items.Count > 0)
         {
-            return items;
+            return items
+                .OrderByDescending(item => item.OccurredAt)
+                .ThenByDescending(item => item.Id, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         return BuildLegacyUsageEvents(connection, transaction);
@@ -189,8 +328,13 @@ public sealed partial class AdminDataRepository
     private static string NormalizeUsageEventType(string? eventType)
     {
         var normalized = MobileUsageEventTypes.Normalize(eventType);
-        return string.IsNullOrWhiteSpace(normalized)
-            ? throw new ArgumentException("Unsupported app usage event type.", nameof(eventType))
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new ArgumentException("Unsupported app usage event type.", nameof(eventType));
+        }
+
+        return string.Equals(normalized, MobileUsageEventTypes.ApkDownloadAccess, StringComparison.OrdinalIgnoreCase)
+            ? MobileUsageEventTypes.QrScan
             : normalized;
     }
 
@@ -213,6 +357,11 @@ public sealed partial class AdminDataRepository
 
         return value.Length <= 100 ? value : value[..100];
     }
+
+    private static bool IsUniqueConstraintViolation(SqlException exception)
+        => exception.Errors
+            .Cast<SqlError>()
+            .Any(error => error.Number is 2601 or 2627);
 
     private static AppUsageEvent MapAppUsageEvent(SqlDataReader reader)
         => new()
@@ -247,3 +396,5 @@ public sealed partial class AdminDataRepository
         return reader.Read() ? MapAppUsageEvent(reader) : null;
     }
 }
+
+public sealed record AppUsageEventTrackResult(AppUsageEvent Event, bool WasCreated);

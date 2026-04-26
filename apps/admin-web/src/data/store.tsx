@@ -98,6 +98,11 @@ type RouteDraft = Pick<TourRoute, "name" | "description" | "stopPoiIds" | "isFea
   id?: string;
 };
 
+type PromotionDraft = Pick<Promotion, "poiId" | "title" | "description" | "startAt" | "endAt" | "status"> & {
+  id?: string;
+  visibleFrom?: string | null;
+};
+
 type AudioGuideDraft = {
   id?: string;
   entityType: AudioGuide["entityType"];
@@ -134,7 +139,7 @@ type AdminDataContextValue = {
     actor: AdminUser,
   ) => Promise<void>;
   savePromotion: (
-    promotion: Omit<Promotion, "id"> & { id?: string },
+    promotion: PromotionDraft,
     actor: AdminUser,
   ) => Promise<Promotion>;
   saveRoute: (
@@ -342,7 +347,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
   );
 
   const savePromotion = useCallback(
-    async (promotion: Omit<Promotion, "id"> & { id?: string }, actor: AdminUser) => {
+    async (promotion: PromotionDraft, actor: AdminUser) => {
       const saved = await adminApi.savePromotion({
         id: promotion.id,
         poiId: promotion.poiId,
@@ -351,6 +356,7 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
         startAt: promotion.startAt,
         endAt: promotion.endAt,
         status: promotion.status,
+        visibleFrom: promotion.visibleFrom ?? promotion.startAt,
         actorName: actor.name,
         actorRole: actor.role,
       });

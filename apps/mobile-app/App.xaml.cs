@@ -31,6 +31,9 @@ public partial class App : Application
         window.Created += OnWindowCreated;
         window.Activated += OnWindowActivated;
         window.Resumed += OnWindowResumed;
+        window.Deactivated += OnWindowDeactivated;
+        window.Stopped += OnWindowStopped;
+        window.Destroying += OnWindowDestroying;
         return window;
     }
 
@@ -58,6 +61,15 @@ public partial class App : Application
 
     private void OnWindowResumed(object? sender, EventArgs e)
         => _ = RefreshRuntimeStateAsync("resumed");
+
+    private void OnWindowDeactivated(object? sender, EventArgs e)
+        => _ = PauseRuntimeStateAsync("deactivated");
+
+    private void OnWindowStopped(object? sender, EventArgs e)
+        => _ = PauseRuntimeStateAsync("stopped");
+
+    private void OnWindowDestroying(object? sender, EventArgs e)
+        => _ = PauseRuntimeStateAsync("destroying");
 
     private async Task InitializeLanguageAsync()
     {
@@ -90,6 +102,22 @@ public partial class App : Application
         catch (Exception exception)
         {
             _logger?.LogWarning(exception, "[AppState] Failed to refresh runtime services after window {Reason}.", reason);
+        }
+    }
+
+    private async Task PauseRuntimeStateAsync(string reason)
+    {
+        try
+        {
+            _logger?.LogInformation("[AppState] Pausing runtime services after window {Reason}.", reason);
+            foreach (var service in _lifecycleAwareServices)
+            {
+                await service.HandleAppStoppedAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger?.LogWarning(exception, "[AppState] Failed to pause runtime services after window {Reason}.", reason);
         }
     }
 }

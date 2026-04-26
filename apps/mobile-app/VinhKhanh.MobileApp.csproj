@@ -42,7 +42,7 @@
     <MauiAsset Include="Resources\Localization\**" LogicalName="Localization\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
-  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' and Exists('$(AppSettingsDirectory)appsettings.json')">
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' and '$(Configuration)' == 'Debug' and Exists('$(AppSettingsDirectory)appsettings.json')">
     <MauiAsset Remove="Resources\Raw\appsettings.json" />
     <MauiAsset Include="$(AppSettingsDirectory)appsettings.json" LogicalName="appsettings.json" />
   </ItemGroup>
@@ -63,7 +63,6 @@
     <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
     <PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
-    <PackageReference Include="ZXing.Net.Maui.Controls" Version="0.6.0" />
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">

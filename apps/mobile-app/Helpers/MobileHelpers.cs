@@ -24,7 +24,6 @@ public static class AppRoutes
     public const string HomeMap = "HomeMapPage";
     public const string DiscoverTours = "DiscoverToursPage";
     public const string MyTour = "MyTourPage";
-    public const string QrScanner = "QrScannerPage";
     public const string LanguageSelection = "LanguageSelectionPage";
     public const string Settings = "SettingsPage";
 
@@ -60,7 +59,6 @@ public static class AppRoutes
         return normalizedRoute switch
         {
             HomeMap or DiscoverTours or "HomePage" or "MapPage" or "PoiListPage" or "PoiDetailPage" => AppBottomBarTab.Poi,
-            QrScanner => AppBottomBarTab.QrScanner,
             Settings => AppBottomBarTab.Settings,
             _ => AppBottomBarTab.None
         };
@@ -71,7 +69,6 @@ public enum AppBottomBarTab
 {
     None,
     Poi,
-    QrScanner,
     Settings
 }
 

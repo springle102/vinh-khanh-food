@@ -1,0 +1,94 @@
+%% Sequence: ghi nhan tong luot nghe audio cua du khach
+%% Sources:
+%% - apps/mobile-app/ViewModels/HomeMapViewModel.cs
+%% - apps/mobile-app/Services/PoiAudioPlaybackService.cs
+%% - apps/mobile-app/Services/MobileAnalyticsService.cs
+%% - apps/mobile-app/Services/FoodStreetMockDataService.cs
+%% - apps/backend-api/Controllers/AppUsageEventsController.cs
+%% - apps/backend-api/Controllers/MobileSyncController.cs
+%% - apps/backend-api/Infrastructure/AdminDataRepository.UsageEvents.cs
+%% - apps/backend-api/Infrastructure/AdminDataRepository.cs
+%% - apps/admin-web/src/features/dashboard/DashboardPage.tsx
+
+sequenceDiagram
+    autonumber
+    actor Tourist as Du khách
+    participant MapVM as HomeMapViewModel
+    participant AudioSvc as PoiAudioPlaybackService
+    participant Cache as Audio cache/offline package
+    participant PoiAudioApi as PoisController
+    participant AudioLoader as PoiNarrationAudioService
+    participant Player as Plugin.Maui.Audio
+    participant Analytics as MobileAnalyticsService
+    participant Data as FoodStreetApiDataService
+    participant LocalQueue as MobileOfflineDatabaseService
+    participant UsageApi as AppUsageEventsController
+    participant SyncApi as MobileSyncController
+    participant Repo as AdminDataRepository
+    database Sql as SQL Server AppUsageEvents
+    actor Admin as Admin dashboard
+    participant DashboardApi as BootstrapController
+
+    Tourist->>MapVM: Bấm nghe hoặc chọn POI có autoPlayNarration
+    MapVM->>AudioSvc: ToggleAsync/PlayAsync(detail, language, trackAnalytics=true)
+    AudioSvc->>AudioSvc: BuildPlaybackRequest(poiId, requestedLanguage, audio candidates)
+    AudioSvc->>AudioSvc: TryBeginPlaybackSessionAsync(_stateLock)
+
+    alt Audio cùng key đang loading/playing hoặc request lặp dưới 350 ms
+        AudioSvc-->>MapVM: Bỏ qua hoặc resume paused audio
+    else Phiên nghe mới
+        AudioSvc->>AudioSvc: Cancel phiên cũ, publish Loading snapshot
+        AudioSvc->>Cache: TryGetCachedAudioAsync(audioCacheKey)
+        alt Có file cache cục bộ hợp lệ
+            Cache-->>AudioSvc: CachedAudioAsset(source=local_cache)
+        else Có offline package asset
+            AudioSvc->>Cache: TryResolvePackagedAudioAssetAsync()
+            Cache-->>AudioSvc: CachedAudioAsset(source=offline_package)
+        else Cần tải prepared audio
+            AudioSvc->>PoiAudioApi: GET /api/v1/pois/{poiId}/audio?languageCode=...
+            PoiAudioApi->>AudioLoader: GetAudioAsync(poiId, language)
+            AudioLoader->>Repo: Resolve POI narration và AudioGuide sẵn sàng
+            AudioLoader->>AudioLoader: Đọc file local hoặc proxy AudioUrl
+            AudioLoader-->>PoiAudioApi: bytes + headers X-Audio-Cache-Key, X-Effective-Language-Code
+            PoiAudioApi-->>AudioSvc: File(audio/*), Cache-Control, ETag
+            AudioSvc->>Cache: Save file + cache index
+            Cache-->>AudioSvc: CachedAudioAsset(source=remote_pre_generated_endpoint)
+        end
+
+        AudioSvc->>Player: CreatePlayer(local file stream) và Play()
+        AudioSvc-->>MapVM: Publish Playing snapshot
+
+        alt trackAnalytics=true
+            AudioSvc->>Analytics: TrackAudioListenAsync(poiId, effectiveLanguage, source, duration, playbackKey=audioCacheKey)
+            Analytics->>Analytics: Reserve dedupe key audio_play:poiId:language:source:playbackKey
+            alt Trùng trong cửa sổ 1200 ms
+                Analytics-->>AudioSvc: Bỏ qua lượt nghe lặp nhanh
+            else Lượt nghe hợp lệ
+                Analytics->>Data: TrackAudioPlayAsync(poiId, language, source, duration)
+                Data->>LocalQueue: EnqueueUsageEventAsync(eventType=audio_play)
+                Data->>UsageApi: POST /api/v1/app-usage-events ưu tiên event mới
+                alt Direct post thành công
+                    UsageApi->>Repo: TrackAppUsageEvent()
+                    Repo->>Sql: Reuse idempotencyKey hoặc INSERT audio_play
+                    UsageApi-->>Data: 200 OK
+                    Data->>LocalQueue: Mark synced
+                else Direct post lỗi
+                    Data->>LocalQueue: Giữ pending
+                    Data->>SyncApi: POST /api/mobile/sync/logs khi flush batch
+                    SyncApi->>Repo: Track từng event trong batch
+                    Repo->>Sql: Reuse hoặc INSERT theo IdempotencyKey
+                    SyncApi-->>Data: accepted/rejected
+                    Data->>LocalQueue: Mark synced/failed
+                end
+            end
+        else trackAnalytics=false
+            Note over AudioSvc,Analytics: Theo code hiện tại, auto narration GPS gọi PlayAsync(trackAnalytics=false) nên không tạo audio_play.
+        end
+    end
+
+    Admin->>DashboardApi: GET /api/v1/dashboard/summary
+    DashboardApi->>Repo: GetDashboardSummary(actor)
+    Repo->>Sql: Đọc AppUsageEvents
+    Repo->>Repo: TotalAudioPlays = count(eventType=audio_play)
+    Repo->>Repo: AudioPlaysByLanguage = group by normalized LanguageCode
+    DashboardApi-->>Admin: totalAudioPlays và audioPlaysByLanguage
