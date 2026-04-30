@@ -265,12 +265,18 @@ public sealed class SystemSetting
 {
     public string AppName { get; set; } = string.Empty;
     public string SupportEmail { get; set; } = string.Empty;
+    public string SupportPhone { get; set; } = string.Empty;
+    public string ContactAddress { get; set; } = string.Empty;
+    public string SupportInstructions { get; set; } = string.Empty;
+    public string SupportHours { get; set; } = string.Empty;
+    public DateTimeOffset ContactUpdatedAtUtc { get; set; }
     public string DefaultLanguage { get; set; } = "vi";
     public string FallbackLanguage { get; set; } = "en";
     public List<string> SupportedLanguages { get; set; } = [];
-    public string MapProvider { get; set; } = "openstreetmap";
     public string StorageProvider { get; set; } = "cloudinary";
-    public string TtsProvider { get; set; } = "elevenlabs";
     public int GeofenceRadiusMeters { get; set; }
     public int AnalyticsRetentionDays { get; set; }
+    public bool OfflinePackageDownloadsEnabled { get; set; }
+    public int OfflinePackageMaxSizeMb { get; set; }
+    public string OfflinePackageDescription { get; set; } = string.Empty;
 }

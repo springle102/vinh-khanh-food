@@ -1,4 +1,5 @@
 using System.Threading;
+using Microsoft.Extensions.Logging;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Services;
 
@@ -7,14 +8,18 @@ namespace VinhKhanh.MobileApp.ViewModels;
 public sealed class AppBottomBarViewModel : ObservableObject
 {
     private readonly IPoiAudioPlaybackService _poiAudioPlaybackService;
+    private readonly ILogger<AppBottomBarViewModel> _logger;
     private readonly SemaphoreSlim _navigationLock = new(1, 1);
     private Shell? _attachedShell;
     private string _currentRoute = string.Empty;
     private AppBottomBarTab _selectedTab = AppBottomBarTab.None;
 
-    public AppBottomBarViewModel(IPoiAudioPlaybackService poiAudioPlaybackService)
+    public AppBottomBarViewModel(
+        IPoiAudioPlaybackService poiAudioPlaybackService,
+        ILogger<AppBottomBarViewModel> logger)
     {
         _poiAudioPlaybackService = poiAudioPlaybackService;
+        _logger = logger;
         NavigateToPoiCommand = new(() => NavigateToAsync(AppRoutes.HomeMap));
         NavigateToSettingsCommand = new(() => NavigateToAsync(AppRoutes.Settings));
     }
@@ -85,6 +90,15 @@ public sealed class AppBottomBarViewModel : ObservableObject
 
             await _poiAudioPlaybackService.StopAsync();
             await shell.GoToAsync(AppRoutes.Root(route));
+            ApplyRoute(shell.CurrentState?.Location?.OriginalString);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(
+                exception,
+                "Bottom bar navigation failed. targetRoute={TargetRoute}; currentRoute={CurrentRoute}",
+                route,
+                shell.CurrentState?.Location?.OriginalString ?? string.Empty);
             ApplyRoute(shell.CurrentState?.Location?.OriginalString);
         }
         finally

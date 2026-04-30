@@ -6,7 +6,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Maui.Storage;
 using VinhKhanh.Core.Mobile;
 using VinhKhanh.MobileApp.Helpers;
-using VinhKhanh.MobileApp.Models;
 
 namespace VinhKhanh.MobileApp.Services;
 
@@ -62,18 +61,11 @@ public sealed class MobileOfflineDatabaseService :
     IMobileDatasetRepository,
     IMobileSyncQueueRepository
 {
-    private const string PackageSeedDatabasePath = "seed/offline-package/seed.db";
-    private const string PackageSeedMetadataPath = "seed/offline-package/metadata.json";
     private const string DatabaseFolderName = "mobile-offline";
     private const string DatabaseFileName = "mobile.db";
 
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly ILogger<MobileOfflineDatabaseService> _logger;
-    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
     private bool _initialized;
 
     public MobileOfflineDatabaseService(ILogger<MobileOfflineDatabaseService> logger)
@@ -103,46 +95,17 @@ public sealed class MobileOfflineDatabaseService :
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
-            var packagedVersion = await ReadPackagedSeedVersionAsync(cancellationToken);
-            var shouldCopySeed = await ShouldInstallPackagedSeedAsync(packagedVersion, cancellationToken);
-            var pendingQueue = shouldCopySeed
-                ? await TryReadPendingQueueWithoutInitializationAsync(cancellationToken)
-                : [];
-
-            if (shouldCopySeed)
-            {
-                var copied = await TryCopyPackagedSeedDatabaseAsync(cancellationToken);
-                if (!copied)
-                {
-                    _logger.LogWarning(
-                        "[OfflineDb] No packaged seed.db found. Creating an empty local SQLite database at {DatabasePath}.",
-                        DatabasePath);
-                }
-            }
 
             using var db = OpenDatabase();
             EnsureSchema(db);
 
-            if (!string.IsNullOrWhiteSpace(packagedVersion))
-            {
-                PutMetadata(db, "dataset_version", packagedVersion);
-            }
-
             PutMetadata(db, "database_path", DatabasePath);
             PutMetadata(db, "initialized_at_utc", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-            if (shouldCopySeed)
-            {
-                PutMetadata(db, "installation_source", MobileDatasetConstants.SeedInstallationSource);
-                RestorePendingQueue(db, pendingQueue);
-            }
 
             _initialized = true;
             _logger.LogInformation(
-                "[OfflineDb] Local mobile SQLite initialized. path={DatabasePath}; packagedVersion={PackagedVersion}; copiedSeed={CopiedSeed}; restoredQueue={QueueCount}",
-                DatabasePath,
-                packagedVersion ?? "none",
-                shouldCopySeed,
-                pendingQueue.Count);
+                "[OfflineDb] Local mobile SQLite initialized. path={DatabasePath}",
+                DatabasePath);
         }
         finally
         {
@@ -358,155 +321,6 @@ public sealed class MobileOfflineDatabaseService :
         }
     }
 
-    private async Task<bool> ShouldInstallPackagedSeedAsync(string? packagedVersion, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (!File.Exists(DatabasePath))
-        {
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(packagedVersion))
-        {
-            return false;
-        }
-
-        var existingVersion = TryReadMetadataValue("dataset_version");
-        var existingSource = TryReadMetadataValue("installation_source");
-        if (string.Equals(existingVersion, packagedVersion, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return string.IsNullOrWhiteSpace(existingSource) ||
-               string.Equals(existingSource, MobileDatasetConstants.SeedInstallationSource, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private async Task<string?> ReadPackagedSeedVersionAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await using var stream = await FileSystem.OpenAppPackageFileAsync(PackageSeedMetadataPath);
-            var metadata = await JsonSerializer.DeserializeAsync<OfflinePackageMetadata>(
-                stream,
-                _jsonOptions,
-                cancellationToken);
-            return string.IsNullOrWhiteSpace(metadata?.Version) ? null : metadata.Version.Trim();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private async Task<bool> TryCopyPackagedSeedDatabaseAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var tempPath = Path.Combine(Path.GetDirectoryName(DatabasePath)!, $"seed-{Guid.NewGuid():N}.db");
-            await using (var input = await FileSystem.OpenAppPackageFileAsync(PackageSeedDatabasePath))
-            await using (var output = File.Create(tempPath))
-            {
-                await input.CopyToAsync(output, cancellationToken);
-            }
-
-            if (File.Exists(DatabasePath))
-            {
-                File.Delete(DatabasePath);
-            }
-
-            File.Move(tempPath, DatabasePath);
-            return true;
-        }
-        catch (FileNotFoundException)
-        {
-            return false;
-        }
-        catch (Exception exception)
-        {
-            _logger.LogWarning(exception, "[OfflineDb] Failed to copy packaged seed database.");
-            return false;
-        }
-    }
-
-    private async Task<IReadOnlyList<QueuedMobileUsageEvent>> TryReadPendingQueueWithoutInitializationAsync(CancellationToken cancellationToken)
-    {
-        if (!File.Exists(DatabasePath))
-        {
-            return [];
-        }
-
-        try
-        {
-            using var db = OpenDatabase();
-            EnsureSchema(db);
-            var items = new List<QueuedMobileUsageEvent>();
-            using var cursor = db.RawQuery(
-                """
-                SELECT idempotency_key, event_type, poi_id, language_code, platform, session_id, source,
-                       metadata, duration_in_seconds, occurred_at_utc
-                FROM sync_logs_queue
-                WHERE status = 'pending' OR status = 'failed'
-                ORDER BY occurred_at_utc ASC;
-                """,
-                []);
-
-            while (cursor.MoveToNext())
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                items.Add(new QueuedMobileUsageEvent(
-                    GetCursorString(cursor, "idempotency_key"),
-                    GetCursorString(cursor, "event_type"),
-                    GetCursorNullableString(cursor, "poi_id"),
-                    GetCursorString(cursor, "language_code"),
-                    GetCursorString(cursor, "platform"),
-                    GetCursorString(cursor, "session_id"),
-                    GetCursorString(cursor, "source"),
-                    GetCursorNullableString(cursor, "metadata"),
-                    GetCursorNullableInt(cursor, "duration_in_seconds"),
-                    ParseDateTimeOffset(GetCursorString(cursor, "occurred_at_utc")) ?? DateTimeOffset.UtcNow));
-            }
-
-            return items;
-        }
-        catch (Exception exception)
-        {
-            _logger.LogWarning(exception, "[OfflineDb] Unable to preserve existing sync queue before seed replacement.");
-            return [];
-        }
-    }
-
-    private void RestorePendingQueue(SQLiteDatabase db, IReadOnlyList<QueuedMobileUsageEvent> pendingQueue)
-    {
-        foreach (var usageEvent in pendingQueue)
-        {
-            var values = new ContentValues();
-            values.Put("idempotency_key", usageEvent.IdempotencyKey);
-            values.Put("event_type", usageEvent.EventType);
-            PutNullable(values, "poi_id", usageEvent.PoiId);
-            values.Put("language_code", usageEvent.LanguageCode);
-            values.Put("platform", usageEvent.Platform);
-            values.Put("session_id", usageEvent.SessionId);
-            values.Put("source", usageEvent.Source);
-            PutNullable(values, "metadata", usageEvent.Metadata);
-            if (usageEvent.DurationInSeconds > 0)
-            {
-                values.Put("duration_in_seconds", usageEvent.DurationInSeconds.Value);
-            }
-            else
-            {
-                values.PutNull("duration_in_seconds");
-            }
-
-            values.Put("occurred_at_utc", usageEvent.OccurredAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
-            values.Put("status", "pending");
-            values.Put("retry_count", 0);
-            values.PutNull("last_error");
-            values.PutNull("last_attempt_at_utc");
-            db.InsertWithOnConflict("sync_logs_queue", null, values, Conflict.Ignore);
-        }
-    }
-
     private SQLiteDatabase OpenDatabase()
         => SQLiteDatabase.OpenDatabase(
             DatabasePath,
@@ -676,23 +490,6 @@ public sealed class MobileOfflineDatabaseService :
         }
 
         return false;
-    }
-
-    private string? TryReadMetadataValue(string key)
-    {
-        try
-        {
-            using var db = OpenDatabase();
-            EnsureSchema(db);
-            using var cursor = db.RawQuery(
-                "SELECT value FROM mobile_metadata WHERE key = ? LIMIT 1;",
-                [key]);
-            return cursor.MoveToFirst() ? cursor.GetString(0) : null;
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static void PutMetadata(SQLiteDatabase db, string key, string? value)

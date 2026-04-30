@@ -8,6 +8,10 @@
     Shell.NavBarIsVisible="False">
 
     <ShellContent
+        Route="StartupPage"
+        ContentTemplate="{DataTemplate pages:StartupPage}" />
+
+    <ShellContent
         Route="HomeMapPage"
         ContentTemplate="{DataTemplate pages:HomeMapPage}" />
 

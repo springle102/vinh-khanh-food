@@ -7,14 +7,13 @@
 %% - apps/backend-api/Controllers/BootstrapController.cs
 %% - apps/backend-api/Controllers/PoisController.cs
 %% - apps/backend-api/Controllers/MobileSyncController.cs
-%% - apps/backend-api/Infrastructure/MobileOfflinePackageBuilder.cs
 
 sequenceDiagram
     autonumber
     actor Tourist as Du khách
     participant MapVM as HomeMapViewModel
     participant Data as FoodStreetApiDataService
-    participant SQLite as Local SQLite/offline package
+    participant SQLite as Local SQLite cache
     participant BootstrapApi as BootstrapController
     participant PoiApi as PoisController
     participant MemoryCache as Backend IMemoryCache
@@ -28,10 +27,10 @@ sequenceDiagram
     MapVM->>Data: GetPoisAsync()
     Data->>Data: GetBootstrapSnapshotAsync(_bootstrapLock)
 
-    alt Có local SQLite hoặc offline package
-        Data->>SQLite: LoadBootstrapEnvelopeAsync hoặc LoadInstallationAsync
-        SQLite-->>Data: Bootstrap envelope + asset map
-        Data->>Data: ApplyOfflineAssetMap và TryRebuildBootstrapSnapshotFromCache()
+    alt Có local SQLite cache
+        Data->>SQLite: LoadBootstrapEnvelopeAsync
+        SQLite-->>Data: Bootstrap envelope
+        Data->>Data: TryRebuildBootstrapSnapshotFromCache()
     else Chưa có local cache
         Data-->>Data: Chờ remote bootstrap
     end
@@ -92,7 +91,7 @@ sequenceDiagram
 
     MapVM->>AudioSvc: PreloadAsync(active/nearest POI)
     AudioSvc->>AudioSvc: BuildPlaybackRequest()
-    alt Audio đã cached hoặc offline package có file
+    alt Audio đã cached
         AudioSvc-->>MapVM: Bỏ qua tải remote
     else Cần remote prepared audio
         AudioSvc->>AudioSvc: _inflightLoads dedupe theo AudioCacheKey

@@ -758,90 +758,78 @@ public sealed partial class AdminDataRepository
         }
     }
 
-    public SystemSetting SaveSettings(SystemSettingUpsertRequest request, AdminRequestContext actor)
+    public SystemSetting SaveLanguageSettings(AppLanguageSettingsUpdateRequest request, AdminRequestContext actor)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
 
-        var normalizedRequest = request with
+        var enabledLanguages = (request.EnabledLanguages ?? [])
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Select(PremiumAccessCatalog.NormalizeLanguageCode)
+            .Where(LanguageRegistry.IsSupported)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var defaultLanguage = PremiumAccessCatalog.NormalizeLanguageCode(request.DefaultLanguage);
+        if (!enabledLanguages.Contains(defaultLanguage, StringComparer.OrdinalIgnoreCase))
         {
-            DefaultLanguage = PremiumAccessCatalog.NormalizeLanguageCode(request.DefaultLanguage),
-            FallbackLanguage = PremiumAccessCatalog.NormalizeLanguageCode(request.FallbackLanguage),
-            SupportedLanguages = request.SupportedLanguages
-                .Where(code => !string.IsNullOrWhiteSpace(code))
-                .Select(PremiumAccessCatalog.NormalizeLanguageCode)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList(),
-            TtsProvider = NormalizeTtsProvider(request.TtsProvider)
-        };
-
-        if (normalizedRequest.SupportedLanguages.Count == 0)
-        {
-            normalizedRequest = normalizedRequest with
-            {
-                SupportedLanguages =
-                [
-                    normalizedRequest.DefaultLanguage,
-                    normalizedRequest.FallbackLanguage
-                ]
-            };
+            throw new ApiBadRequestException("Ngon ngu mac dinh phai nam trong danh sach ngon ngu dang bat.");
         }
 
-        var exists = ExecuteScalarInt(connection, transaction, "SELECT COUNT(*) FROM dbo.SystemSettings WHERE Id = 1;") > 0;
-        if (exists)
-        {
-            ExecuteNonQuery(
-                connection,
-                transaction,
-                """
-                UPDATE dbo.SystemSettings
-                SET AppName = ?,
-                    SupportEmail = ?,
-                    DefaultLanguage = ?,
-                    FallbackLanguage = ?,
-                    MapProvider = ?,
-                    StorageProvider = ?,
-                    TtsProvider = ?,
-                    GeofenceRadiusMeters = ?,
-                    AnalyticsRetentionDays = ?
-                WHERE Id = 1;
-                """,
-                normalizedRequest.AppName,
-                normalizedRequest.SupportEmail,
-                normalizedRequest.DefaultLanguage,
-                normalizedRequest.FallbackLanguage,
-                normalizedRequest.MapProvider,
-                normalizedRequest.StorageProvider,
-                normalizedRequest.TtsProvider,
-                normalizedRequest.GeofenceRadiusMeters,
-                normalizedRequest.AnalyticsRetentionDays);
-        }
-        else
-        {
-            ExecuteNonQuery(
-                connection,
-                transaction,
-                """
-                INSERT INTO dbo.SystemSettings (
-                    Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage,
-                    MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, AnalyticsRetentionDays
-                )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                normalizedRequest.AppName,
-                normalizedRequest.SupportEmail,
-                normalizedRequest.DefaultLanguage,
-                normalizedRequest.FallbackLanguage,
-                normalizedRequest.MapProvider,
-                normalizedRequest.StorageProvider,
-                normalizedRequest.TtsProvider,
-                normalizedRequest.GeofenceRadiusMeters,
-                normalizedRequest.AnalyticsRetentionDays);
-        }
+        var current = GetSettings(connection, transaction);
+        var fallbackLanguage = enabledLanguages.Contains(current.FallbackLanguage, StringComparer.OrdinalIgnoreCase)
+            ? current.FallbackLanguage
+            : defaultLanguage;
 
-        ReplaceSettingLanguages(connection, transaction, "supported", normalizedRequest.SupportedLanguages);
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.SystemSettings
+            SET DefaultLanguage = ?,
+                FallbackLanguage = ?
+            WHERE Id = 1;
+            """,
+            defaultLanguage,
+            fallbackLanguage);
 
-        AppendAdminAuditLog(connection, transaction, actor, "Cap nhat cai dat he thong", "SETTINGS", "system", request.AppName);
+        ReplaceSettingLanguages(connection, transaction, "supported", enabledLanguages);
+        AppendAdminAuditLog(connection, transaction, actor, "Cap nhat ngon ngu ung dung", "SETTINGS", "system", string.Join(",", enabledLanguages));
+
+        var saved = GetSettings(connection, transaction);
+        transaction.Commit();
+        return saved;
+    }
+
+    public SystemSetting SaveContactSettings(SystemContactSettingsUpdateRequest request, AdminRequestContext actor)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+
+        ExecuteNonQuery(
+            connection,
+            transaction,
+            """
+            UPDATE dbo.SystemSettings
+            SET AppName = ?,
+                SupportPhone = ?,
+                SupportEmail = ?,
+                ContactAddress = ?,
+                SupportInstructions = ?,
+                SupportHours = ?,
+                ContactUpdatedAtUtc = ?
+            WHERE Id = 1;
+            """,
+            NormalizeSettingString(request.AppName, "Vinh Khanh Food Guide"),
+            NormalizeSettingString(request.SupportPhone, "0900000000"),
+            request.SupportEmail?.Trim() ?? string.Empty,
+            request.ContactAddress?.Trim() ?? string.Empty,
+            NormalizeSettingString(
+                request.SupportInstructions,
+                "Vui long lien he bo phan ho tro neu ban can khieu nai hoac can tro giup."),
+            request.SupportHours?.Trim() ?? string.Empty,
+            DateTimeOffset.UtcNow);
+
+        AppendAdminAuditLog(connection, transaction, actor, "Cap nhat thong tin lien he", "SETTINGS", "system", request.AppName);
 
         var saved = GetSettings(connection, transaction);
         transaction.Commit();

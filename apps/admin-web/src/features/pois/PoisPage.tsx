@@ -1332,6 +1332,7 @@ export const PoisPage = () => {
         if (mode === "generate") {
           const result = await adminApi.generatePoiAudio(currentFormPoiId, {
             languageCode: form.contentLanguageCode,
+            forceRegenerate: true,
           });
           const nextMessage = describeAudioGenerationResult(result);
           if (result.success) {
@@ -1352,7 +1353,7 @@ export const PoisPage = () => {
           }
         } else {
           const results = await adminApi.generatePoiAllLanguagesAudio(currentFormPoiId, {
-            forceRegenerate: false,
+            forceRegenerate: true,
           });
           const succeeded = results.filter((item) => item.success).length;
           setAudioActionMessage(`Đã xử lý tạo audio cho ${results.length} ngôn ngữ, thành công ${succeeded}.`);

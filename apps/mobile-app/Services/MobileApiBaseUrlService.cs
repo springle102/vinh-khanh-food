@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using VinhKhanh.MobileApp.Helpers;
 
 namespace VinhKhanh.MobileApp.Services;
@@ -8,7 +9,7 @@ public interface IMobileApiBaseUrlService
     Task<string?> GetBaseUrlAsync(CancellationToken cancellationToken = default);
 }
 
-public sealed class MobileApiBaseUrlService : IMobileApiBaseUrlService
+public sealed class MobileApiBaseUrlService(ILogger<MobileApiBaseUrlService> logger) : IMobileApiBaseUrlService
 {
     private const string AppSettingsFileName = "appsettings.json";
 
@@ -27,8 +28,8 @@ public sealed class MobileApiBaseUrlService : IMobileApiBaseUrlService
             runtimeSettings.PlatformApiBaseUrls);
 
         return string.IsNullOrWhiteSpace(resolvedBaseUrl)
-            ? null
-            : resolvedBaseUrl.Trim();
+            ? LogMissingBaseUrl()
+            : LogResolvedBaseUrl(resolvedBaseUrl.Trim());
     }
 
     private async Task<RuntimeAppSettings> LoadRuntimeSettingsAsync(CancellationToken cancellationToken)
@@ -46,13 +47,27 @@ public sealed class MobileApiBaseUrlService : IMobileApiBaseUrlService
             _runtimeSettings = JsonSerializer.Deserialize<RuntimeAppSettings>(content, _jsonOptions)
                                ?? new RuntimeAppSettings();
         }
-        catch
+        catch (Exception exception)
         {
+            logger.LogWarning(exception, "[MobileApiBaseUrl] Unable to load packaged appsettings.json. API calls will be disabled until a valid ApiBaseUrl is configured.");
             _runtimeSettings = new RuntimeAppSettings();
         }
 
         return _runtimeSettings;
     }
+
+    private string? LogMissingBaseUrl()
+    {
+        logger.LogWarning("[MobileApiBaseUrl] ApiBaseUrl resolved to empty. Check Resources/Raw/appsettings.json or generated .android-settings/appsettings.json.");
+        return null;
+    }
+
+    private string LogResolvedBaseUrl(string baseUrl)
+    {
+        logger.LogInformation("[MobileApiBaseUrl] ApiBaseUrl resolved. baseUrl={BaseUrl}", baseUrl);
+        return baseUrl;
+    }
+
     private sealed class RuntimeAppSettings
     {
         public string? ApiBaseUrl { get; set; }

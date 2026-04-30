@@ -23,7 +23,9 @@ public sealed class SplashViewModel(
             await localizationService.InitializeAsync();
             var mobileSettings = await guideApiService.GetMobileSettingsAsync();
 
-            settings.ApiBaseUrl = string.IsNullOrWhiteSpace(settings.ApiBaseUrl) ? "http://localhost:5080" : settings.ApiBaseUrl;
+            settings.ApiBaseUrl = string.IsNullOrWhiteSpace(settings.ApiBaseUrl)
+                ? "https://vinh-khanh-food-tour-f2ddbxcgbabmfehr.eastasia-01.azurewebsites.net"
+                : settings.ApiBaseUrl;
             settings.GeofenceRadiusMeters = mobileSettings.GeofenceRadiusMeters > 0 ? mobileSettings.GeofenceRadiusMeters : settings.GeofenceRadiusMeters;
             await settingsService.SaveAsync(settings);
 

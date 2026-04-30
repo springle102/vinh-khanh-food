@@ -1293,7 +1293,7 @@ public bool DeletePoi(string id, AdminRequestContext actor)
             now);
 
         _logger.LogInformation(
-            "SaveAudioGuide request received. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, sourceType={SourceType}, generationStatus={GenerationStatus}, status={Status}, isNew={IsNew}",
+            "SaveAudioGuide request received. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, sourceType={SourceType}, generationStatus={GenerationStatus}, status={Status}, isNew={IsNew}, audioUrl={AudioUrl}, audioFilePath={AudioFilePath}",
             audioId,
             normalizedEntityType,
             request.EntityId,
@@ -1301,7 +1301,9 @@ public bool DeletePoi(string id, AdminRequestContext actor)
             normalizedSourceType,
             generationStatus,
             normalizedStatus,
-            isNew);
+            isNew,
+            normalizedAudioUrl,
+            audioFilePath);
 
         if (isNew)
         {
@@ -1438,13 +1440,15 @@ public bool DeletePoi(string id, AdminRequestContext actor)
             ?? throw new InvalidOperationException("Không thể đọc lại audio guide sau khi lưu.");
 
         _logger.LogInformation(
-            "SaveAudioGuide completed. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, generationStatus={GenerationStatus}, status={Status}, updatedAt={UpdatedAt}",
+            "SaveAudioGuide completed. audioId={AudioId}, entityType={EntityType}, entityId={EntityId}, languageCode={LanguageCode}, generationStatus={GenerationStatus}, status={Status}, audioUrl={AudioUrl}, audioFilePath={AudioFilePath}, updatedAt={UpdatedAt}",
             saved.Id,
             saved.EntityType,
             saved.EntityId,
             saved.LanguageCode,
             saved.GenerationStatus,
             saved.Status,
+            saved.AudioUrl,
+            saved.AudioFilePath,
             saved.UpdatedAt);
 
         transaction.Commit();
@@ -1493,11 +1497,9 @@ public bool DeletePoi(string id, AdminRequestContext actor)
 
     private static string NormalizeAudioGuideUrl(string? requestedValue, string? audioFilePath, AudioGuide? existing)
     {
-        var candidate = NormalizeAudioGuideNullableString(requestedValue);
-        if (string.IsNullOrWhiteSpace(candidate))
-        {
-            candidate = NormalizeAudioGuideNullableString(existing?.AudioUrl);
-        }
+        var candidate = requestedValue is null
+            ? NormalizeAudioGuideNullableString(existing?.AudioUrl)
+            : NormalizeAudioGuideNullableString(requestedValue);
 
         return NormalizeAudioGuideUrlCandidate(candidate, audioFilePath);
     }

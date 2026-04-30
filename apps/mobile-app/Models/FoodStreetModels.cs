@@ -12,6 +12,23 @@ public sealed class LanguageOption : ObservableObject
     public string DisplayName { get; set; } = string.Empty;
     public bool IsPremium { get; set; }
     public bool IsLocked { get; set; }
+    public string BadgeCode
+    {
+        get
+        {
+            var code = Code.Trim();
+            return code.ToLowerInvariant() switch
+            {
+                "vi" => "VN",
+                "en" => "US",
+                "zh" or "zh-cn" => "CN",
+                "ko" => "KR",
+                "ja" => "JP",
+                _ when code.Length <= 3 => code.ToUpperInvariant(),
+                _ => code[..2].ToUpperInvariant()
+            };
+        }
+    }
 
     public bool IsSelected
     {

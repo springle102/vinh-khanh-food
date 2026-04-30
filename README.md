@@ -20,7 +20,6 @@ Hệ thống phục vụ 2 nhóm người dùng:
   - Xem POI trên bản đồ.
   - Xem chi tiết quán, món ăn, ưu đãi, tour.
   - Nghe audio thuyết minh đa ngôn ngữ.
-  - Dùng gói dữ liệu offline trên mobile.
 
 ## 2. Kiến trúc tổng thể
 
@@ -37,9 +36,9 @@ flowchart LR
 ### Kiến trúc theo vai trò
 
 - `admin-web` là lớp giao diện quản trị.
-- `backend-api` là trung tâm xử lý nghiệp vụ, phân quyền, bootstrap dữ liệu, audio, localization, offline package và analytics.
+- `backend-api` là trung tâm xử lý nghiệp vụ, phân quyền, bootstrap dữ liệu, audio, localization và analytics.
 - `SQL Server` là nơi lưu dữ liệu quản trị, POI, route, promotion, audit, app presence.
-- `mobile-app` tiêu thụ bootstrap/offline package và gửi ngược heartbeat, analytics, trạng thái sử dụng.
+- `mobile-app` tiêu thụ bootstrap dữ liệu online và gửi ngược heartbeat, analytics, trạng thái sử dụng.
 - `core` giữ contract và rule dùng chung để tránh lệch logic giữa backend và mobile.
 
 ## 3. Các module nghiệp vụ hiện có
@@ -53,7 +52,6 @@ flowchart LR
 - Dịch runtime theo ngôn ngữ client.
 - Tạo/gọi audio narration qua TTS và audio guide pregenerated.
 - Đồng bộ analytics từ mobile.
-- Tải gói offline package cho mobile.
 - Theo dõi QR download APK public.
 
 ## 4. Luồng kiến trúc hiện tại
@@ -68,7 +66,7 @@ flowchart LR
 
 ### 4.2. Luồng backend và dữ liệu
 
-1. `Program.cs` đăng ký controller, storage, localization, narration, offline package builder, translation/TTS client.
+1. `Program.cs` đăng ký controller, storage, localization, narration, translation/TTS client.
 2. `AdminDataRepository` là lớp truy cập dữ liệu trung tâm.
 3. Repository dùng ADO.NET + SQL Server trực tiếp, không dùng EF Core.
 4. Schema được kiểm tra/cập nhật theo pattern `Ensure...Schema()` trong repository, không dùng EF Migration.
@@ -76,12 +74,12 @@ flowchart LR
 
 ### 4.3. Luồng mobile app
 
-1. App khởi động từ `App.xaml.cs`, nạp ngôn ngữ và seed offline bundle nếu có.
-2. `MauiProgram.cs` đăng ký các service chính: data service, offline package, app presence, audio playback, route/tour state.
+1. App khởi động từ `App.xaml.cs`, nạp ngôn ngữ và khởi tạo cache SQLite cục bộ.
+2. `MauiProgram.cs` đăng ký các service chính: data service, app presence, audio playback, route/tour state.
 3. App lấy dữ liệu từ backend theo ngôn ngữ đang chọn.
 4. Khi app foreground, `AppPresenceService` gửi heartbeat định kỳ.
 5. Khi app background/stop, app cố gửi offline event và dừng heartbeat.
-6. Mobile có thể chạy online-first hoặc offline-first tùy trạng thái dữ liệu cục bộ.
+6. Mobile chạy online-first và dùng cache SQLite cục bộ làm fallback khi cần.
 
 ### 4.4. Luồng localization
 
@@ -97,13 +95,6 @@ flowchart LR
 2. Nếu đã có `AudioGuides` sẵn sàng phát thì dùng luôn.
 3. Nếu chưa có, backend có thể gọi TTS service để sinh audio.
 4. Khi nội dung nguồn POI thay đổi, backend đánh dấu audio cũ là outdated để regenerate.
-
-### 4.6. Luồng offline package
-
-1. Backend dựng gói offline tại `GET /api/mobile/offline-package`.
-2. Gói này dùng chung contract bootstrap, đã rút gọn để mobile lưu cục bộ.
-3. Mobile tải manifest, audio, hình ảnh và metadata về local storage/database.
-4. `OfflinePackageService` kiểm tra version, sync-state và chỉ cập nhật khi cần.
 
 ### 4.7. Luồng phân quyền và moderation
 
@@ -149,7 +140,6 @@ flowchart LR
 - `apps/backend-api/Program.cs`
 - `apps/backend-api/Infrastructure/AdminDataRepository.cs`
 - `apps/backend-api/Infrastructure/BootstrapLocalizationService.cs`
-- `apps/backend-api/Infrastructure/MobileOfflinePackageBuilder.cs`
 - `apps/backend-api/Infrastructure/PoiNarrationService.cs`
 
 ### Controller đáng chú ý
@@ -177,7 +167,6 @@ flowchart LR
 - `apps/mobile-app/App.xaml.cs`
 - `apps/mobile-app/MauiProgram.cs`
 - `apps/mobile-app/Services/FoodStreetMockDataService.cs`
-- `apps/mobile-app/Services/OfflinePackageService.cs`
 - `apps/mobile-app/Services/AppPresenceService.cs`
 - `apps/mobile-app/ViewModels/HomeMapViewModel*.cs`
 
@@ -404,7 +393,6 @@ Mặc định production nên để các cờ này tắt.
 ### Public/mobile data
 
 - `GET /api/mobile/bootstrap-package-version`
-- `GET /api/mobile/offline-package`
 - `GET /api/v1/tts`
 
 ## 14. Công cụ kiểm thử nhanh
@@ -434,7 +422,7 @@ Nếu cần onboard nhanh vào dự án, nên đọc theo thứ tự này:
 5. `apps/admin-web/src/lib/api.ts`
 6. `apps/mobile-app/MauiProgram.cs`
 7. `apps/mobile-app/Services/FoodStreetMockDataService.cs`
-8. `apps/mobile-app/Services/OfflinePackageService.cs`
+8. `apps/mobile-app/Services/PoiAudioPlaybackService.cs`
 
 ## 16. Tóm tắt ngắn
 
@@ -444,4 +432,4 @@ Nếu cần onboard nhanh vào dự án, nên đọc theo thứ tự này:
 - backend ASP.NET Core làm trung tâm nghiệp vụ,
 - SQL Server lưu dữ liệu,
 - mobile MAUI phục vụ người dùng cuối,
-- localization + audio + offline package là các trục kỹ thuật quan trọng nhất của hệ thống hiện tại.
+- localization, audio và analytics là các trục kỹ thuật quan trọng nhất của hệ thống hiện tại.

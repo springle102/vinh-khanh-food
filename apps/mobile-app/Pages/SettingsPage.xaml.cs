@@ -1,18 +1,20 @@
+using Microsoft.Extensions.Logging;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.ViewModels;
 
 namespace VinhKhanh.MobileApp.Pages;
 
-public partial class SettingsPage : ContentPage, IQueryAttributable
+public partial class SettingsPage : ContentPage
 {
     private readonly SettingsViewModel _viewModel;
     private readonly LocalizedPageBindingSubscription _localizedPageBinding;
-    private bool _shouldAutoDownload;
+    private readonly ILogger<SettingsPage> _logger;
 
     public SettingsPage()
     {
         InitializeComponent();
         _viewModel = ServiceHelper.GetService<SettingsViewModel>();
+        _logger = ServiceHelper.GetService<ILogger<SettingsPage>>();
         BindingContext = _viewModel;
         _localizedPageBinding = new(this);
     }
@@ -21,19 +23,21 @@ public partial class SettingsPage : ContentPage, IQueryAttributable
     {
         base.OnAppearing();
         _localizedPageBinding.Rebind();
-        await _viewModel.LoadAsync();
-        if (_shouldAutoDownload)
+        try
         {
-            _shouldAutoDownload = false;
-            await _viewModel.StartOfflineDownloadAsync();
+            await _viewModel.LoadAsync();
+            _viewModel.StartLiveRefresh();
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Settings page failed to load.");
+            _viewModel.StartLiveRefresh();
         }
     }
 
-    public void ApplyQueryAttributes(IDictionary<string, object> query)
+    protected override void OnDisappearing()
     {
-        _shouldAutoDownload =
-            query.TryGetValue("autoDownload", out var autoDownloadValue) &&
-            bool.TryParse(autoDownloadValue?.ToString(), out var shouldAutoDownload) &&
-            shouldAutoDownload;
+        _viewModel.StopLiveRefresh();
+        base.OnDisappearing();
     }
 }

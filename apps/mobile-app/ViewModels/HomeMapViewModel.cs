@@ -12,7 +12,6 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
 {
     private readonly IFoodStreetDataService _dataService;
     private readonly IMobileAnalyticsService _analyticsService;
-    private readonly IOfflinePackageService _offlinePackageService;
     private readonly IPoiAudioPlaybackService _poiAudioPlaybackService;
     private readonly IAutoNarrationService _autoNarrationService;
     private readonly ILogger<HomeMapViewModel> _logger;
@@ -44,7 +43,6 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     public HomeMapViewModel(
         IFoodStreetDataService dataService,
         IMobileAnalyticsService analyticsService,
-        IOfflinePackageService offlinePackageService,
         IAppLanguageService languageService,
         IPoiAudioPlaybackService poiAudioPlaybackService,
         IRouteService routeService,
@@ -57,7 +55,6 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
     {
         _dataService = dataService;
         _analyticsService = analyticsService;
-        _offlinePackageService = offlinePackageService;
         _poiAudioPlaybackService = poiAudioPlaybackService;
         _routeService = routeService;
         _routePoiFilterService = routePoiFilterService;
@@ -65,10 +62,7 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
         _autoNarrationService = autoNarrationService;
         _tourStateService = tourStateService;
         _logger = logger;
-        _offlineNoticePrimaryActionCommand = new(OpenOfflinePackageSettingsAsync);
-        _offlineNoticeSecondaryActionCommand = new(DismissOfflineNoticeAsync);
         _poiAudioPlaybackService.PlaybackStateChanged += OnPlaybackStateChanged;
-        _offlinePackageService.StateChanged += OnOfflinePackageStateChanged;
         PlayNarrationCommand = new(PlayNarrationAsync, () => CanToggleNarration);
         ApplyPlaybackSnapshot(_poiAudioPlaybackService.Snapshot);
         InitializeTourCommands();
@@ -382,8 +376,6 @@ public sealed partial class HomeMapViewModel : LocalizedViewModelBase
             LanguageService.CurrentLanguage,
             Pois.Count,
             SelectedPoi?.Id ?? string.Empty);
-        await RefreshOfflinePackageStateAsync();
-
         var hasVisibleState =
             Pois.Count > 0 ||
             AvailableTours.Count > 0 ||

@@ -11,7 +11,6 @@
     "serve:backend": "node ./scripts/run-backend.cjs serve",
     "dev:mobile:android": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-mobile-android.ps1",
     "configure:mobile-api": "node ./scripts/configure-mobile-api.cjs",
-    "seed:mobile-offline": "python ./scripts/generate-mobile-offline-package.py",
     "open:android:devices": "powershell -ExecutionPolicy Bypass -File ./scripts/open-android-device-manager.ps1",
     "build": "node ./scripts/run-admin-script.cjs build",
     "build:admin": "node ./scripts/run-admin-script.cjs build",

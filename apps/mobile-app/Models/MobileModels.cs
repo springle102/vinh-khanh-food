@@ -53,7 +53,7 @@ public sealed class UserSettings
     public bool AutoNarrationEnabled { get; set; } = true;
     public int GeofenceRadiusMeters { get; set; } = 10;
     public bool PreferPreparedAudio { get; set; } = true;
-    public string ApiBaseUrl { get; set; } = "http://localhost:5080";
+    public string ApiBaseUrl { get; set; } = "https://vinh-khanh-food-tour-f2ddbxcgbabmfehr.eastasia-01.azurewebsites.net";
 }
 
 public sealed class ApiEnvelope<T>
@@ -78,8 +78,6 @@ public sealed class MobileSettingsModel
     public string SupportEmail { get; set; } = string.Empty;
     public string DefaultLanguage { get; set; } = "vi";
     public string FallbackLanguage { get; set; } = "en";
-    public string MapProvider { get; set; } = "google-maps";
-    public string TtsProvider { get; set; } = "elevenlabs";
     public int GeofenceRadiusMeters { get; set; } = 10;
     public int GeofenceCooldownMinutes { get; set; } = 20;
     public List<AppLanguage> SupportedLanguages { get; set; } = [];

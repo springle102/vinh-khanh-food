@@ -216,8 +216,10 @@ public sealed partial class AdminDataRepository
     private SystemSetting GetSettings(SqlConnection connection, SqlTransaction? transaction)
     {
         const string settingSql = """
-            SELECT Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, MapProvider,
-                   StorageProvider, TtsProvider, GeofenceRadiusMeters, AnalyticsRetentionDays
+            SELECT Id, AppName, SupportEmail, SupportPhone, ContactAddress, SupportInstructions,
+                   SupportHours, ContactUpdatedAtUtc,
+                   DefaultLanguage, FallbackLanguage, StorageProvider,
+                   GeofenceRadiusMeters, AnalyticsRetentionDays
             FROM dbo.SystemSettings
             WHERE Id = 1;
             """;
@@ -238,14 +240,28 @@ public sealed partial class AdminDataRepository
                 {
                     AppName = ReadString(settingReader, "AppName"),
                     SupportEmail = ReadString(settingReader, "SupportEmail"),
+                    SupportPhone = ReadString(settingReader, "SupportPhone"),
+                    ContactAddress = ReadString(settingReader, "ContactAddress"),
+                    SupportInstructions = ReadString(settingReader, "SupportInstructions"),
+                    SupportHours = ReadString(settingReader, "SupportHours"),
+                    ContactUpdatedAtUtc = ReadDateTimeOffset(settingReader, "ContactUpdatedAtUtc"),
                     DefaultLanguage = ReadString(settingReader, "DefaultLanguage"),
                     FallbackLanguage = ReadString(settingReader, "FallbackLanguage"),
-                    MapProvider = ReadString(settingReader, "MapProvider"),
                     StorageProvider = ReadString(settingReader, "StorageProvider"),
-                    TtsProvider = ReadString(settingReader, "TtsProvider"),
                     GeofenceRadiusMeters = ReadInt(settingReader, "GeofenceRadiusMeters"),
                     AnalyticsRetentionDays = ReadInt(settingReader, "AnalyticsRetentionDays")
                 };
+                _logger.LogInformation(
+                    "[SystemSettingsSql] loaded current contact settings. id=1; hasPhone={HasPhone}; hasEmail={HasEmail}; hasAddress={HasAddress}; hasComplaintGuide={HasComplaintGuide}; contactUpdatedAtUtc={ContactUpdatedAtUtc}",
+                    !string.IsNullOrWhiteSpace(setting.SupportPhone),
+                    !string.IsNullOrWhiteSpace(setting.SupportEmail),
+                    !string.IsNullOrWhiteSpace(setting.ContactAddress),
+                    !string.IsNullOrWhiteSpace(setting.SupportInstructions),
+                    setting.ContactUpdatedAtUtc);
+            }
+            else
+            {
+                _logger.LogWarning("[SystemSettingsSql] no SystemSettings row found for id=1; returning empty defaults.");
             }
         }
 
@@ -263,7 +279,56 @@ public sealed partial class AdminDataRepository
             }
         }
 
+        ApplyLegacyOfflinePackageSettingsIfAvailable(connection, transaction, setting);
+
         return NormalizeSystemSetting(setting, logWarnings: true);
+    }
+
+    private void ApplyLegacyOfflinePackageSettingsIfAvailable(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        SystemSetting setting)
+    {
+        var hasDownloadsEnabled = ColumnExists(connection, transaction, "SystemSettings", "OfflinePackageDownloadsEnabled");
+        var hasMaxSize = ColumnExists(connection, transaction, "SystemSettings", "OfflinePackageMaxSizeMb");
+        var hasDescription = ColumnExists(connection, transaction, "SystemSettings", "OfflinePackageDescription");
+        if (!hasDownloadsEnabled && !hasMaxSize && !hasDescription)
+        {
+            setting.OfflinePackageDownloadsEnabled = false;
+            setting.OfflinePackageMaxSizeMb = 0;
+            setting.OfflinePackageDescription = string.Empty;
+            return;
+        }
+
+        var downloadsExpression = hasDownloadsEnabled
+            ? "COALESCE(OfflinePackageDownloadsEnabled, CAST(0 AS bit))"
+            : "CAST(0 AS bit)";
+        var maxSizeExpression = hasMaxSize
+            ? "COALESCE(OfflinePackageMaxSizeMb, 0)"
+            : "0";
+        var descriptionExpression = hasDescription
+            ? "COALESCE(OfflinePackageDescription, N'')"
+            : "N''";
+
+        using var command = CreateCommand(
+            connection,
+            transaction,
+            $"""
+            SELECT {downloadsExpression} AS OfflinePackageDownloadsEnabled,
+                   {maxSizeExpression} AS OfflinePackageMaxSizeMb,
+                   {descriptionExpression} AS OfflinePackageDescription
+            FROM dbo.SystemSettings
+            WHERE Id = 1;
+            """);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return;
+        }
+
+        setting.OfflinePackageDownloadsEnabled = ReadBool(reader, "OfflinePackageDownloadsEnabled");
+        setting.OfflinePackageMaxSizeMb = Math.Max(0, ReadInt(reader, "OfflinePackageMaxSizeMb"));
+        setting.OfflinePackageDescription = ReadString(reader, "OfflinePackageDescription").Trim();
     }
 
     private AdminUser? GetUserByCredentials(SqlConnection connection, SqlTransaction? transaction, string email, string password)

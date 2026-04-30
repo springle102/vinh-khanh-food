@@ -41,15 +41,12 @@ public static class MauiProgram
 
         builder.Services.AddSingleton<IAppLanguageService, AppLanguageService>();
         builder.Services.AddSingleton<IMobileApiBaseUrlService, MobileApiBaseUrlService>();
+        builder.Services.AddSingleton<IMobileSystemSettingsService, MobileSystemSettingsService>();
 
-        builder.Services.AddSingleton<IOfflineStorageService, OfflineStorageService>();
-        builder.Services.AddSingleton<IBundledOfflinePackageSeedService, BundledOfflinePackageSeedService>();
         builder.Services.AddSingleton<MobileOfflineDatabaseService>();
         builder.Services.AddSingleton<IMobileOfflineDatabaseService>(sp => sp.GetRequiredService<MobileOfflineDatabaseService>());
         builder.Services.AddSingleton<IMobileDatasetRepository>(sp => sp.GetRequiredService<MobileOfflineDatabaseService>());
         builder.Services.AddSingleton<IMobileSyncQueueRepository>(sp => sp.GetRequiredService<MobileOfflineDatabaseService>());
-        builder.Services.AddSingleton<OfflinePackageService>();
-        builder.Services.AddSingleton<IOfflinePackageService>(sp => sp.GetRequiredService<OfflinePackageService>());
         builder.Services.AddSingleton<FoodStreetApiDataService>();
         builder.Services.AddSingleton<IFoodStreetDataService>(sp => sp.GetRequiredService<FoodStreetApiDataService>());
         builder.Services.AddSingleton<IMobileAnalyticsService, MobileAnalyticsService>();
@@ -57,7 +54,6 @@ public static class MauiProgram
         builder.Services.AddSingleton<PoiAudioPlaybackService>();
         builder.Services.AddSingleton<IPoiAudioPlaybackService>(sp => sp.GetRequiredService<PoiAudioPlaybackService>());
         builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<AppPresenceService>());
-        builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<OfflinePackageService>());
         builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<FoodStreetApiDataService>());
         builder.Services.AddSingleton<IAppLifecycleAwareService>(sp => sp.GetRequiredService<PoiAudioPlaybackService>());
         builder.Services.AddSingleton<ILocationService, DeviceLocationService>();

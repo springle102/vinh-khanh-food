@@ -14,6 +14,7 @@ public sealed class TextToSpeechOptions
     public const string AudioPublicBaseUrlConfigKey = "AUDIO_PUBLIC_BASE_URL";
     public const string AutoRegenerateWhenTextChangesConfigKey = "AUDIO_AUTO_REGENERATE_WHEN_TEXT_CHANGES";
     public const string AutoGenerateWhenPoiSavedConfigKey = "AUDIO_AUTO_GENERATE_WHEN_POI_SAVED";
+    public const string DeleteSupersededAudioFilesConfigKey = "AUDIO_DELETE_SUPERSEDED_FILES";
 
     public const string DefaultVoiceIdValue = "JBFqnCBsd6RMkjVDRZzb";
     public const string DefaultModelIdValue = "eleven_flash_v2_5";
@@ -32,6 +33,7 @@ public sealed class TextToSpeechOptions
     public string? AudioPublicBaseUrl { get; set; }
     public bool AutoRegenerateWhenTextChanges { get; set; } = true;
     public bool AutoGenerateWhenPoiSaved { get; set; }
+    public bool DeleteSupersededAudioFiles { get; set; }
     public Dictionary<string, string> VoiceIdsByLanguage { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public static void ApplyConfiguration(TextToSpeechOptions options, IConfiguration configuration)
@@ -69,6 +71,11 @@ public sealed class TextToSpeechOptions
             configuration,
             AutoGenerateWhenPoiSavedConfigKey,
             options.AutoGenerateWhenPoiSaved,
+            false);
+        options.DeleteSupersededAudioFiles = ResolveBool(
+            configuration,
+            DeleteSupersededAudioFilesConfigKey,
+            options.DeleteSupersededAudioFiles,
             false);
 
         var configuredVoiceIds = configuration
@@ -214,6 +221,7 @@ public sealed class TextToSpeechOptions
             {
                 AutoRegenerateWhenTextChangesConfigKey => configuration["AudioGeneration:AutoRegenerateWhenTextChanges"],
                 AutoGenerateWhenPoiSavedConfigKey => configuration["AudioGeneration:AutoGenerateWhenPoiSaved"],
+                DeleteSupersededAudioFilesConfigKey => configuration["AudioGeneration:DeleteSupersededFiles"],
                 _ => null
             },
             currentValue.ToString(),

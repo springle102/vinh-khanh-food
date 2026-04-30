@@ -7,19 +7,23 @@ namespace VinhKhanh.MobileApp;
 
 public partial class App : Application
 {
+    private static readonly TimeSpan InitialRuntimeRefreshDelay = TimeSpan.FromSeconds(2.5);
+    private static readonly TimeSpan RuntimeRefreshDebounce = TimeSpan.FromSeconds(4);
+
     private readonly IAppLanguageService _languageService;
-    private readonly IBundledOfflinePackageSeedService _bundledSeedService;
     private readonly IMobileOfflineDatabaseService _offlineDatabaseService;
     private readonly IReadOnlyList<IAppLifecycleAwareService> _lifecycleAwareServices;
     private readonly ILogger<App>? _logger;
+    private readonly SemaphoreSlim _runtimeRefreshLock = new(1, 1);
     private bool _languageInitializationStarted;
+    private bool _initialRuntimeRefreshScheduled;
+    private DateTimeOffset _lastRuntimeRefreshAt = DateTimeOffset.MinValue;
 
     public App(IServiceProvider services)
     {
         InitializeComponent();
         ServiceHelper.Services = services;
         _languageService = services.GetRequiredService<IAppLanguageService>();
-        _bundledSeedService = services.GetRequiredService<IBundledOfflinePackageSeedService>();
         _offlineDatabaseService = services.GetRequiredService<IMobileOfflineDatabaseService>();
         _lifecycleAwareServices = services.GetServices<IAppLifecycleAwareService>().ToArray();
         _logger = services.GetService<ILogger<App>>();
@@ -57,7 +61,16 @@ public partial class App : Application
     }
 
     private void OnWindowActivated(object? sender, EventArgs e)
-        => _ = RefreshRuntimeStateAsync("activated");
+    {
+        if (!_initialRuntimeRefreshScheduled)
+        {
+            _initialRuntimeRefreshScheduled = true;
+            _ = RefreshRuntimeStateAfterInitialRenderAsync();
+            return;
+        }
+
+        _ = RefreshRuntimeStateAsync("activated");
+    }
 
     private void OnWindowResumed(object? sender, EventArgs e)
         => _ = RefreshRuntimeStateAsync("resumed");
@@ -75,8 +88,6 @@ public partial class App : Application
     {
         try
         {
-            _logger?.LogInformation("[AppStart] Ensuring bundled offline seed is installed.");
-            await _bundledSeedService.EnsureInstalledAsync();
             await _offlineDatabaseService.EnsureInitializedAsync();
             await _languageService.InitializeAsync();
             _logger?.LogInformation(
@@ -89,10 +100,37 @@ public partial class App : Application
         }
     }
 
-    private async Task RefreshRuntimeStateAsync(string reason)
+    private async Task RefreshRuntimeStateAfterInitialRenderAsync()
     {
         try
         {
+            await Task.Delay(InitialRuntimeRefreshDelay);
+            await RefreshRuntimeStateAsync("initial-activation");
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[AppState] Failed to schedule initial runtime refresh.");
+        }
+    }
+
+    private async Task RefreshRuntimeStateAsync(string reason)
+    {
+        if (!await _runtimeRefreshLock.WaitAsync(0))
+        {
+            _logger?.LogDebug("[AppState] Runtime refresh skipped because another refresh is running. reason={Reason}", reason);
+            return;
+        }
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (now - _lastRuntimeRefreshAt < RuntimeRefreshDebounce)
+            {
+                _logger?.LogDebug("[AppState] Runtime refresh debounced. reason={Reason}", reason);
+                return;
+            }
+
+            _lastRuntimeRefreshAt = now;
             _logger?.LogInformation("[AppState] Refreshing runtime services after window {Reason}.", reason);
             foreach (var service in _lifecycleAwareServices)
             {
@@ -102,6 +140,10 @@ public partial class App : Application
         catch (Exception exception)
         {
             _logger?.LogWarning(exception, "[AppState] Failed to refresh runtime services after window {Reason}.", reason);
+        }
+        finally
+        {
+            _runtimeRefreshLock.Release();
         }
     }
 

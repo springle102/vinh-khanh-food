@@ -24,17 +24,22 @@ import type {
 
 const DEFAULT_SUPPORTED_LANGUAGES: SystemSetting["supportedLanguages"] = ["vi", "en", "zh-CN", "ko", "ja"];
 
-const normalizeTtsProvider = (_value: string | undefined): SystemSetting["ttsProvider"] => "elevenlabs";
-
 const normalizeSystemSetting = (settings: SystemSetting): SystemSetting => ({
   ...settings,
+  appName: settings.appName || "Vinh Khanh Food Guide",
+  supportEmail: settings.supportEmail || "",
+  supportPhone: settings.supportPhone || "0900000000",
+  contactAddress: settings.contactAddress || "",
+  supportInstructions:
+    settings.supportInstructions || "Vui long lien he bo phan ho tro neu ban can khieu nai hoac can tro giup.",
+  supportHours: settings.supportHours || "",
+  contactUpdatedAtUtc: settings.contactUpdatedAtUtc || "",
   defaultLanguage: settings.defaultLanguage || "vi",
   fallbackLanguage: settings.fallbackLanguage || "en",
   supportedLanguages:
     settings.supportedLanguages && settings.supportedLanguages.length > 0
       ? [...settings.supportedLanguages]
       : [...DEFAULT_SUPPORTED_LANGUAGES],
-  ttsProvider: normalizeTtsProvider(settings.ttsProvider),
 });
 
 const EMPTY_ADMIN_STATE: AdminDataState = {
@@ -54,12 +59,15 @@ const EMPTY_ADMIN_STATE: AdminDataState = {
   settings: {
     appName: "",
     supportEmail: "",
+    supportPhone: "0900000000",
+    contactAddress: "",
+    supportInstructions: "Vui long lien he bo phan ho tro neu ban can khieu nai hoac can tro giup.",
+    supportHours: "",
+    contactUpdatedAtUtc: "",
     defaultLanguage: "vi",
     fallbackLanguage: "en",
     supportedLanguages: [...DEFAULT_SUPPORTED_LANGUAGES],
-    mapProvider: "openstreetmap",
     storageProvider: "cloudinary",
-    ttsProvider: "elevenlabs",
     geofenceRadiusMeters: 0,
     analyticsRetentionDays: 0,
   },
@@ -155,7 +163,6 @@ type AdminDataContextValue = {
     translation: Omit<Translation, "id" | "updatedAt" | "updatedBy"> & { id?: string },
     actor: AdminUser,
   ) => Promise<Translation>;
-  saveSettings: (settings: SystemSetting, actor: AdminUser) => Promise<void>;
   saveMediaAsset: (
     asset: Omit<MediaAsset, "id" | "createdAt"> & { id?: string },
     actor: AdminUser,
@@ -432,19 +439,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
     [refreshData],
   );
 
-  const saveSettings = useCallback(
-    async (settingsDraft: SystemSetting, actor: AdminUser) => {
-      await adminApi.saveSettings({
-        ...normalizeSystemSetting(settingsDraft),
-        actorName: actor.name,
-        actorRole: actor.role,
-      });
-
-      await refreshData();
-    },
-    [refreshData],
-  );
-
   const saveMediaAsset = useCallback(
     async (
       asset: Omit<MediaAsset, "id" | "createdAt"> & { id?: string },
@@ -485,7 +479,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       deleteRoute,
       saveAudioGuide,
       saveTranslation,
-      saveSettings,
       saveMediaAsset,
       saveFoodItem,
     }),
@@ -501,7 +494,6 @@ export const AdminDataProvider = ({ children }: PropsWithChildren) => {
       savePromotion,
       saveRoute,
       deleteRoute,
-      saveSettings,
       saveTranslation,
       saveUser,
       saveUserStatus,

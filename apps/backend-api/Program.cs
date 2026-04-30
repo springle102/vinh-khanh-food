@@ -35,7 +35,6 @@ builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<GeneratedAudioStorageService>();
 builder.Services.AddSingleton<ResponseUrlNormalizer>();
 builder.Services.AddScoped<BootstrapLocalizationService>();
-builder.Services.AddScoped<MobileOfflinePackageBuilder>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<PoiNarrationService>();

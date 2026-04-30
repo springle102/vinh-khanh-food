@@ -54,9 +54,11 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private static readonly IReadOnlyDictionary<string, string> FallbackPoiImages =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["poi-snail-signature"] = DefaultBackdropImageUrl,
-            ["poi-bbq-night"] = DefaultBackdropImageUrl,
-            ["poi-sweet-lane"] = DefaultBackdropImageUrl
+            ["ca-phe-che"] = "/storage/images/pois/20260418113747792-d2631d25bd8f42b2a2ffad2d2ffc1eca.jpeg",
+            ["oc-loan"] = "/storage/images/pois/20260420082328041-b9759e3ad25f4a2e9c6164987fbd3e52.jpg",
+            ["oc-oanh-1"] = "/storage/images/pois/20260418114238581-5458cbb19c3c4207b0a6cb246ac275e9.jpg",
+            ["oc-phat"] = "/storage/images/pois/20260418101246920-8ad4ae1cabbe427bbb224e5e4ac2abfb.jpg",
+            ["sushi-ko"] = "/storage/images/pois/20260418113300732-db188c6d687646b396ddffbdee8b783f.jpg"
         };
 
 #if false
@@ -85,78 +87,211 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     [
         new()
         {
-            Id = "poi-snail-signature",
-            Title = "Quán Ốc Vĩnh Khánh Signature",
-            ShortDescription = "Quán ốc đặc trưng với thực đơn đa dạng, phù hợp khách lần đầu đến khu phố.",
-            Address = "42 Vĩnh Khánh, Phường Khánh Hội, TP.HCM",
-            Category = "Ốc đặc sản",
-            PriceRange = "80.000 - 280.000 VND",
-            ThumbnailUrl = FallbackPoiImages["poi-snail-signature"],
-            Latitude = 10.75803,
-            Longitude = 106.70162,
-            IsFeatured = true,
-            TriggerRadius = 40d,
-            Priority = 4,
-            PlaceTier = PoiPlaceTier.Premium,
-            HeatIntensity = 1.0,
-            DistanceText = "45 phút"
-        },
-        new()
-        {
-            Id = "poi-bbq-night",
-            Title = "Nhà Hàng Sushi Ko",
-            ShortDescription = "Điểm hải sản & đồ sống nổi bật với sushi, sashimi và nhịp sống phố đêm.",
-            Address = "126 Vĩnh Khánh, Phường Khánh Hội, TP.HCM",
-            Category = "Hải sản & đồ sống",
-            PriceRange = "120.000 - 350.000 VND",
-            ThumbnailUrl = FallbackPoiImages["poi-bbq-night"],
-            Latitude = 10.763724,
-            Longitude = 106.701693,
-            IsFeatured = true,
-            TriggerRadius = 35d,
-            Priority = 5,
-            PlaceTier = PoiPlaceTier.Premium,
-            HeatIntensity = 0.86,
-            DistanceText = "50 phút"
-        },
-        new()
-        {
-            Id = "poi-sweet-lane",
-            Title = "Hẻm Cà Phê Vĩnh Khánh",
-            ShortDescription = "Điểm cà phê & trà phù hợp để nghỉ chân giữa hành trình ăn uống.",
-            Address = "88/4 Vĩnh Khánh, Phường Vĩnh Hội, TP.HCM",
-            Category = "Cà phê & trà",
+            Id = "ca-phe-che",
+            Title = "Cà phê Chè",
+            ShortDescription = "Quán tráng miệng và cà phê nhẹ nhàng, phù hợp nghỉ chân sau khi ăn hải sản.",
+            Address = "Chung cư H1, Hoàng Diệu, Phường Khánh Hội, Quận 4, TP.HCM",
+            Category = "Cà phê & tráng miệng",
             PriceRange = "25.000 - 75.000 VND",
-            ThumbnailUrl = FallbackPoiImages["poi-sweet-lane"],
-            Latitude = 10.75712,
-            Longitude = 106.70302,
+            ThumbnailUrl = FallbackPoiImages["ca-phe-che"],
+            Latitude = 10.762195,
+            Longitude = 106.701499,
             IsFeatured = false,
-            TriggerRadius = 30d,
+            TriggerRadius = 20d,
             Priority = 2,
             PlaceTier = PoiPlaceTier.Basic,
-            HeatIntensity = 0.62,
+            HeatIntensity = 0.68,
+            DistanceText = "20 phút"
+        },
+        new()
+        {
+            Id = "oc-loan",
+            Title = "Nhà hàng Ốc Loan",
+            ShortDescription = string.Empty,
+            Address = "Nhà Hàng Ốc Loan, Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam",
+            Category = "Ốc & Hải sản",
+            PriceRange = "50.000-150.000",
+            ThumbnailUrl = FallbackPoiImages["oc-loan"],
+            Latitude = 10.761159,
+            Longitude = 106.702695,
+            IsFeatured = false,
+            TriggerRadius = 25d,
+            Priority = 4,
+            PlaceTier = PoiPlaceTier.Basic,
+            HeatIntensity = 0.82,
+            DistanceText = "25 phút"
+        },
+        new()
+        {
+            Id = "oc-oanh-1",
+            Title = "Ốc Oanh 1",
+            ShortDescription = string.Empty,
+            Address = "534 hẻm 42/237 Hoàng Diệu, Phường Khánh Hội, Quận 4, TP.HCM",
+            Category = "Ốc & Hải sản",
+            PriceRange = "40.000 - 120.000 VND",
+            ThumbnailUrl = FallbackPoiImages["oc-oanh-1"],
+            Latitude = 10.761415,
+            Longitude = 106.702834,
+            IsFeatured = false,
+            TriggerRadius = 25d,
+            Priority = 3,
+            PlaceTier = PoiPlaceTier.Premium,
+            HeatIntensity = 0.76,
+            DistanceText = "25 phút"
+        },
+        new()
+        {
+            Id = "oc-phat",
+            Title = "Ốc Phát",
+            ShortDescription = "Quán ốc đầu phố với thực đơn hải sản đa dạng, phù hợp nhóm bạn và khách lần đầu đến Vĩnh Khánh.",
+            Address = "Ốc Phát, Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam",
+            Category = "Ốc & Hải sản",
+            PriceRange = "50.000 - 110.000 VND",
+            ThumbnailUrl = FallbackPoiImages["oc-phat"],
+            Latitude = 10.761902,
+            Longitude = 106.702158,
+            IsFeatured = true,
+            TriggerRadius = 30d,
+            Priority = 5,
+            PlaceTier = PoiPlaceTier.Basic,
+            HeatIntensity = 1.00,
+            DistanceText = "30 phút"
+        },
+        new()
+        {
+            Id = "sushi-ko",
+            Title = "Nhà Hàng Sushi Ko",
+            ShortDescription = "Điểm dừng món Nhật gần phố ẩm thực Vĩnh Khánh, nổi bật với sushi và hải sản chế biến tươi.",
+            Address = "122/37/15 Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM",
+            Category = "Hải sản & món Nhật",
+            PriceRange = "50.000 - 150.000 VND",
+            ThumbnailUrl = FallbackPoiImages["sushi-ko"],
+            Latitude = 10.760772,
+            Longitude = 106.704798,
+            IsFeatured = true,
+            TriggerRadius = 25d,
+            Priority = 4,
+            PlaceTier = PoiPlaceTier.Basic,
+            HeatIntensity = 0.84,
             DistanceText = "25 phút"
         }
     ];
 
     private static readonly IReadOnlyList<MapHeatPoint> FallbackHeatPoints =
     [
-        new() { Latitude = 10.75803, Longitude = 106.70162, Intensity = 1.00 },
-        new() { Latitude = 10.75850, Longitude = 106.70188, Intensity = 0.92 },
-        new() { Latitude = 10.75900, Longitude = 106.70150, Intensity = 0.85 },
-        new() { Latitude = 10.76020, Longitude = 106.70176, Intensity = 0.70 },
-        new() { Latitude = 10.76310, Longitude = 106.70152, Intensity = 0.78 },
-        new() { Latitude = 10.76372, Longitude = 106.70169, Intensity = 0.92 },
-        new() { Latitude = 10.75712, Longitude = 106.70302, Intensity = 0.64 },
-        new() { Latitude = 10.75672, Longitude = 106.70285, Intensity = 0.54 }
+        new() { Latitude = 10.761902, Longitude = 106.702158, Intensity = 1.00 },
+        new() { Latitude = 10.760772, Longitude = 106.704798, Intensity = 0.84 },
+        new() { Latitude = 10.761159, Longitude = 106.702695, Intensity = 0.82 },
+        new() { Latitude = 10.761415, Longitude = 106.702834, Intensity = 0.76 },
+        new() { Latitude = 10.762195, Longitude = 106.701499, Intensity = 0.68 }
+    ];
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> FallbackPoiTags =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ca-phe-che"] = ["cà phê", "chè", "tráng miệng"],
+            ["oc-loan"] = ["gia đình", "hải sản", "ốc"],
+            ["oc-oanh-1"] = ["gia đình", "mỡ hành", "ốc"],
+            ["oc-phat"] = ["hải sản", "ốc", "tụ tập"],
+            ["sushi-ko"] = ["hải sản", "món Nhật", "sushi"]
+        };
+
+    private static readonly IReadOnlyList<FoodItemDto> FallbackFoodItems =
+    [
+        new()
+        {
+            Id = "food-che-khuc-bach",
+            PoiId = "ca-phe-che",
+            Name = "Matcha Latte",
+            Description = "Matcha Latte được làm từ bột matcha Nhật Bản, thức uống phù hợp với các bạn gen Z trẻ trung năng động.",
+            PriceRange = "35.000 VND",
+            ImageUrl = "/storage/images/food-items/20260418114004257-3b8fb21766a54283bdb3922680752610.jpg"
+        },
+        new()
+        {
+            Id = "food-37e487ed",
+            PoiId = "oc-loan",
+            Name = "Ốc bươu nướng muối ớt",
+            Description = string.Empty,
+            PriceRange = "80.000",
+            ImageUrl = "/storage/images/food-items/20260420082517595-ab9d950d953b4a8f820734d5a1f9e91f.jpg"
+        },
+        new()
+        {
+            Id = "food-so-diep",
+            PoiId = "oc-oanh-1",
+            Name = "Sò điệp nướng mỡ hành",
+            Description = "Sò điệp nướng thơm, phủ mỡ hành và đậu phộng rang.",
+            PriceRange = "40.000 VND",
+            ImageUrl = "/storage/images/food-items/20260418114249365-62422ad719d84075aa07c44621da3a08.jpg"
+        },
+        new()
+        {
+            Id = "food-oc-giac",
+            PoiId = "oc-phat",
+            Name = "Ốc giác xào rau muống",
+            Description = "Ốc giác thái miếng, xào cùng rau muống giòn và nước sốt đậm vị.",
+            PriceRange = "129.000 VND",
+            ImageUrl = "/storage/images/food-items/20260418101318762-9877e771be5c4d71bb025fc66ac3040c.jpg"
+        },
+        new()
+        {
+            Id = "food-oc-mong-tay",
+            PoiId = "oc-phat",
+            Name = "Ốc móng tay xào bơ tỏi",
+            Description = "Ốc móng tay xào nhanh với bơ, tỏi và rau thơm, hợp dùng cùng bia lạnh.",
+            PriceRange = "79.000 VND",
+            ImageUrl = "/storage/images/food-items/20260418101330404-89fc4289c8ab488d935ea06bb814b4ee.webp"
+        },
+        new()
+        {
+            Id = "food-sushi-kajiki",
+            PoiId = "sushi-ko",
+            Name = "Kajiki Maguro Yaki",
+            Description = "Cá kiếm nướng kiểu Nhật, ướp sốt đậm nhẹ và nướng vừa chín.",
+            PriceRange = "138.000 VND",
+            ImageUrl = "/storage/images/food-items/20260418113323609-bdbd6dc0c1d04469865ddafb49c2dfe6.jpg"
+        },
+        new()
+        {
+            Id = "food-sushi-zaru-soba",
+            PoiId = "sushi-ko",
+            Name = "Zaru Soba",
+            Description = "Mì soba lạnh đặt trên khay tre, dùng kèm nước chấm thanh nhẹ.",
+            PriceRange = "142.000 VND",
+            ImageUrl = "/storage/images/food-items/20260418113329577-0dd004c0b7f04a02b74200e08df5d5f9.jpg"
+        }
+    ];
+
+    private static readonly IReadOnlyList<PromotionDto> FallbackPromotions =
+    [
+        new()
+        {
+            Id = "promo-ca-phe-che-sweet",
+            PoiId = "ca-phe-che",
+            Title = "Tặng topping chè",
+            Description = "Tặng một phần topping khi gọi combo cà phê và chè khúc bạch.",
+            StartAt = DateTimeOffset.Parse("2026-04-15T12:40:21.7542574+07:00", CultureInfo.InvariantCulture),
+            EndAt = DateTimeOffset.Parse("2026-05-09T12:40:21.7542574+07:00", CultureInfo.InvariantCulture),
+            Status = "active"
+        },
+        new()
+        {
+            Id = "promo-oc-phat-combo",
+            PoiId = "oc-phat",
+            Title = "Combo ốc cho nhóm 4 người",
+            Description = "Ưu đãi combo gồm ba món ốc bán chạy và một phần nghêu hấp Thái cho nhóm bạn.",
+            StartAt = DateTimeOffset.Parse("2026-04-11T12:40:21.7542574+07:00", CultureInfo.InvariantCulture),
+            EndAt = DateTimeOffset.Parse("2026-05-18T12:40:21.7542574+07:00", CultureInfo.InvariantCulture),
+            Status = "active"
+        }
     ];
 
     private readonly SemaphoreSlim _bootstrapLock = new(1, 1);
     private readonly AsyncLocal<string?> _languageOverride = new();
     private readonly IAppLanguageService _languageService;
     private readonly IMobileApiBaseUrlService _apiBaseUrlService;
-    private readonly IOfflineStorageService _offlineStorageService;
-    private readonly IBundledOfflinePackageSeedService _bundledSeedService;
+    private readonly IMobileSystemSettingsService _systemSettingsService;
     private readonly IMobileDatasetRepository _mobileDatasetRepository;
     private readonly IMobileSyncQueueRepository _syncQueueRepository;
     private readonly ILogger<FoodStreetApiDataService> _logger;
@@ -172,52 +307,41 @@ public sealed partial class FoodStreetApiDataService : IFoodStreetDataService
     private string? _resolvedBaseUrl;
     private readonly string _sessionId = Guid.NewGuid().ToString("N");
     private bool _localDatasetLoadAttempted;
-    private bool _offlinePackageLoadAttempted;
     private readonly ConcurrentDictionary<string, Task<PoiExperienceDetail?>> _inflightPoiDetailLoads = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PoiExperienceDetail> _poiDetailCache = new(StringComparer.OrdinalIgnoreCase);
 
     public FoodStreetApiDataService(
         IAppLanguageService languageService,
         IMobileApiBaseUrlService apiBaseUrlService,
-        IOfflineStorageService offlineStorageService,
-        IBundledOfflinePackageSeedService bundledSeedService,
+        IMobileSystemSettingsService systemSettingsService,
         IMobileDatasetRepository mobileDatasetRepository,
         IMobileSyncQueueRepository syncQueueRepository,
-        IOfflinePackageService offlinePackageService,
         ILogger<FoodStreetApiDataService> logger)
     {
         _languageService = languageService;
         _apiBaseUrlService = apiBaseUrlService;
-        _offlineStorageService = offlineStorageService;
-        _bundledSeedService = bundledSeedService;
+        _systemSettingsService = systemSettingsService;
         _mobileDatasetRepository = mobileDatasetRepository;
         _syncQueueRepository = syncQueueRepository;
         _logger = logger;
-        offlinePackageService.StateChanged += OnOfflinePackageStateChanged;
         Connectivity.Current.ConnectivityChanged += OnConnectivityChanged;
     }
 
     public async Task<IReadOnlyList<LanguageOption>> GetLanguagesAsync(CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
-        var snapshot = await GetBootstrapSnapshotAsync(cancellationToken: cancellationToken);
-        var source = snapshot?.SupportedLanguages.Count > 0
-            ? snapshot.SupportedLanguages
-            : BuildSupportedLanguages(null);
-
-        var languages = source.Select(language =>
+        var languageSettings = await _systemSettingsService.GetLanguageSettingsAsync(
+            forceRefresh: true,
+            cancellationToken);
+        var languages = languageSettings.Languages
+            .Where(language => !string.IsNullOrWhiteSpace(language.Code))
+            .GroupBy(language => AppLanguage.NormalizeCode(language.Code), StringComparer.OrdinalIgnoreCase)
+            .Select(group => CreateLanguageOption(group.Key, group.First().DisplayName))
+            .ToList();
+        if (languages.Count == 0)
         {
-            var normalizedCode = AppLanguage.NormalizeCode(language.Code);
-            return new LanguageOption
-            {
-                Code = normalizedCode,
-                Flag = language.Flag?.Trim() ?? string.Empty,
-                DisplayName = language.DisplayName?.Trim() ?? normalizedCode,
-                IsPremium = false,
-                IsLocked = false,
-                IsSelected = string.Equals(normalizedCode, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase)
-            };
-        }).ToList();
+            languages.Add(CreateLanguageOption(AppLanguage.DefaultLanguage));
+        }
 
         _logger.LogInformation(
             "[MobilePerf] languages loaded. language={LanguageCode}; count={Count}; elapsedMs={ElapsedMs}",
@@ -720,16 +844,15 @@ public sealed partial class FoodStreetApiDataService
         await _bootstrapLock.WaitAsync(cancellationToken);
         try
         {
+            await EnsureAllowedLanguageSelectionAsync();
             var currentLanguageCode = SelectedLanguageCode;
             cancellationToken.ThrowIfCancellationRequested();
             if (HasAnyNetworkAccess())
             {
                 await TryLoadLocalDatasetAsync(currentLanguageCode);
-                await TryLoadOfflinePackageAsync(currentLanguageCode);
             }
             else
             {
-                await TryLoadOfflinePackageAsync(currentLanguageCode);
                 await TryLoadLocalDatasetAsync(currentLanguageCode);
             }
 
@@ -849,13 +972,23 @@ public sealed partial class FoodStreetApiDataService
 
     private async Task<DataSyncStateDto?> FetchSyncStateAsync(HttpClient client, CancellationToken cancellationToken)
     {
+        var requestUrl = BuildAbsoluteRequestUrl(client, SyncStateEndpoint);
+        _logger.LogInformation(
+            "[BootstrapFetch] GET {Url}",
+            requestUrl);
         using var response = await client.GetAsync(SyncStateEndpoint, cancellationToken);
+        var content = await response.Content.ReadAsStringAsync(cancellationToken);
+        _logger.LogInformation(
+            "[BootstrapFetch] sync-state response url={Url}; statusCode={StatusCode}; body={Body}",
+            requestUrl,
+            (int)response.StatusCode,
+            TruncateForLog(content));
         if (!response.IsSuccessStatusCode)
         {
             return null;
         }
 
-        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<DataSyncStateDto>>(JsonOptions, cancellationToken);
+        var envelope = JsonSerializer.Deserialize<ApiEnvelope<DataSyncStateDto>>(content, JsonOptions);
         return envelope?.Success == true ? envelope.Data : null;
     }
 
@@ -918,18 +1051,43 @@ public sealed partial class FoodStreetApiDataService
         string reason)
     {
         var stopwatch = Stopwatch.StartNew();
-        using var response = await client.GetAsync(BuildBootstrapEndpoint(requestedLanguageCode), cancellationToken);
+        var endpoint = BuildBootstrapEndpoint(requestedLanguageCode);
+        var requestUrl = BuildAbsoluteRequestUrl(client, endpoint);
+        _logger.LogInformation(
+            "[BootstrapFetch] GET {Url}",
+            requestUrl);
+        using var response = await client.GetAsync(endpoint, cancellationToken);
+        var bootstrapEnvelopeJson = await response.Content.ReadAsStringAsync(cancellationToken);
+        _logger.LogInformation(
+            "[BootstrapFetch] response url={Url}; statusCode={StatusCode}; body={Body}",
+            requestUrl,
+            (int)response.StatusCode,
+            TruncateForLog(bootstrapEnvelopeJson));
         if (!response.IsSuccessStatusCode)
         {
             return _bootstrapSnapshot;
         }
 
-        var bootstrapEnvelopeJson = await response.Content.ReadAsStringAsync(cancellationToken);
         var envelope = JsonSerializer.Deserialize<ApiEnvelope<AdminBootstrapDto>>(bootstrapEnvelopeJson, JsonOptions);
         if (envelope?.Success != true || envelope.Data is null)
         {
+            _logger.LogWarning(
+                "[BootstrapFetch] deserialize failed. url={Url}; success={Success}; dataNull={DataNull}; message={Message}",
+                requestUrl,
+                envelope?.Success,
+                envelope?.Data is null,
+                envelope?.Message ?? string.Empty);
             return _bootstrapSnapshot;
         }
+
+        _logger.LogInformation(
+            "[BootstrapFetch] deserialize result. url={Url}; pois={PoiCount}; translations={TranslationCount}; audioGuides={AudioGuideCount}; routes={RouteCount}; languages={LanguageCount}",
+            requestUrl,
+            envelope.Data.Pois.Count,
+            envelope.Data.Translations.Count,
+            envelope.Data.AudioGuides.Count,
+            envelope.Data.Routes.Count,
+            envelope.Data.Settings?.SupportedLanguages?.Count ?? 0);
 
         if (!IsSelectedLanguage(requestedLanguageCode))
         {
@@ -943,7 +1101,6 @@ public sealed partial class FoodStreetApiDataService
 
         using var _ = BeginLanguageScope(requestedLanguageCode);
         var nextBootstrapSource = envelope.Data;
-        await ApplyCurrentOfflineAssetMapAsync(nextBootstrapSource, cancellationToken);
         var snapshot = CreateSnapshot(nextBootstrapSource);
 
         if (_bootstrapSnapshot is not null &&
@@ -1114,7 +1271,6 @@ public sealed partial class FoodStreetApiDataService
             return null;
         }
 
-        await ApplyCurrentOfflineAssetMapAsync(envelope.Data, cancellationToken);
         return BuildPoiDetailFromDto(envelope.Data, requestedLanguageCode);
     }
 
@@ -1318,6 +1474,24 @@ public sealed partial class FoodStreetApiDataService
     private static bool HasAnyNetworkAccess()
         => Connectivity.Current.NetworkAccess is not NetworkAccess.None
             and not NetworkAccess.Unknown;
+
+    private static string BuildAbsoluteRequestUrl(HttpClient client, string relativeUrl)
+        => client.BaseAddress is null
+            ? relativeUrl
+            : new Uri(client.BaseAddress, relativeUrl).ToString();
+
+    private static string TruncateForLog(string? value, int maxLength = 2000)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Replace("\r", string.Empty).Replace("\n", " ");
+        return normalized.Length <= maxLength
+            ? normalized
+            : $"{normalized[..maxLength]}...";
+    }
 
     private async Task<MobileRuntimeAppSettings> LoadRuntimeSettingsAsync()
     {
@@ -1588,33 +1762,36 @@ public sealed partial class FoodStreetApiDataService
         var appSupportedLanguageCodes = AppLanguage.SupportedLanguages
             .Select(item => AppLanguage.NormalizeCode(item.Code))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var backendSupportedLanguages = settings?.SupportedLanguages?
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Select(AppLanguage.NormalizeCode)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(code => appSupportedLanguageCodes.Contains(code))
+            .ToList()
+            ?? [];
 
         void AddCode(string? code)
         {
             var normalizedCode = AppLanguage.NormalizeCode(code);
             if (!string.IsNullOrWhiteSpace(normalizedCode) &&
                 appSupportedLanguageCodes.Contains(normalizedCode) &&
+                (backendSupportedLanguages.Count == 0 || backendSupportedLanguages.Contains(normalizedCode, StringComparer.OrdinalIgnoreCase)) &&
                 !orderedCodes.Contains(normalizedCode, StringComparer.OrdinalIgnoreCase))
             {
                 orderedCodes.Add(normalizedCode);
             }
         }
 
-        AddCode(_languageService.CurrentLanguage);
+        AddCode(settings?.DefaultLanguage);
 
-        foreach (var definition in AppLanguage.SupportedLanguages)
-        {
-            AddCode(definition.Code);
-        }
-
-        foreach (var code in settings?.SupportedLanguages ?? [])
+        foreach (var code in backendSupportedLanguages)
         {
             AddCode(code);
         }
 
         if (orderedCodes.Count == 0)
         {
-            orderedCodes.AddRange(AppLanguage.SupportedLanguages.Select(item => AppLanguage.NormalizeCode(item.Code)));
+            orderedCodes.Add(AppLanguage.DefaultLanguage);
         }
 
         return orderedCodes
@@ -1639,7 +1816,7 @@ public sealed partial class FoodStreetApiDataService
 
 #endif
 
-    private LanguageOption CreateLanguageOption(string code, bool isPremium = false, bool isLocked = false)
+    private LanguageOption CreateLanguageOption(string code, string? displayName = null, bool isPremium = false, bool isLocked = false)
     {
         var normalizedCode = AppLanguage.NormalizeCode(code);
         var template = Languages.FirstOrDefault(item =>
@@ -1649,7 +1826,9 @@ public sealed partial class FoodStreetApiDataService
         {
             Code = normalizedCode,
             Flag = template?.Flag?.Trim() ?? "🌐",
-            DisplayName = template?.DisplayName?.Trim() ?? normalizedCode,
+            DisplayName = string.IsNullOrWhiteSpace(displayName)
+                ? template?.DisplayName?.Trim() ?? normalizedCode
+                : displayName.Trim(),
             IsPremium = isPremium,
             IsLocked = isLocked,
             IsSelected = string.Equals(normalizedCode, _languageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase)
@@ -1660,7 +1839,7 @@ public sealed partial class FoodStreetApiDataService
     {
         var supportedLanguages = (settings?.SupportedLanguages?.Count ?? 0) > 0
             ? settings!.SupportedLanguages.Select(AppLanguage.NormalizeCode).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
-            : ["vi", "en", "zh-CN", "ko", "ja"];
+            : [AppLanguage.DefaultLanguage];
 
         return new PremiumPurchaseOffer
         {
@@ -1677,7 +1856,7 @@ public sealed partial class FoodStreetApiDataService
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return supportedLanguages.Count == 0
-            ? new HashSet<string>(["vi", "en", "zh-CN", "ko", "ja"], StringComparer.OrdinalIgnoreCase)
+            ? new HashSet<string>([AppLanguage.DefaultLanguage], StringComparer.OrdinalIgnoreCase)
             : supportedLanguages;
     }
 
@@ -1920,7 +2099,7 @@ public sealed partial class FoodStreetApiDataService
             return featuredPoiImage;
         }
 
-        if (poiImages.TryGetValue("poi-bbq-night", out var streetImage) && !string.IsNullOrWhiteSpace(streetImage))
+        if (poiImages.TryGetValue("oc-phat", out var streetImage) && !string.IsNullOrWhiteSpace(streetImage))
         {
             return streetImage;
         }
@@ -1950,7 +2129,8 @@ public sealed partial class FoodStreetApiDataService
         IReadOnlyList<TranslationDto>? translations,
         string currentLanguage,
         string? entityType = null,
-        string? entityId = null)
+        string? entityId = null,
+        IReadOnlyList<string>? fallbackCandidates = null)
     {
         if (translations is null || translations.Count == 0)
         {
@@ -1959,11 +2139,13 @@ public sealed partial class FoodStreetApiDataService
         }
 
         var requestedLanguage = AppLanguage.NormalizeCode(currentLanguage);
-        foreach (var candidate in GetTranslationFallbackCandidates(requestedLanguage))
+        foreach (var candidate in fallbackCandidates ?? GetTranslationFallbackCandidates(requestedLanguage))
         {
+            var normalizedCandidate = AppLanguage.NormalizeCode(candidate);
             var match = translations.FirstOrDefault(item =>
                 HasTranslationContent(item, candidate) &&
-                string.Equals(item.LanguageCode, candidate, StringComparison.OrdinalIgnoreCase));
+                (string.Equals(item.LanguageCode, candidate, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(AppLanguage.NormalizeCode(item.LanguageCode), normalizedCandidate, StringComparison.OrdinalIgnoreCase)));
             if (match is not null)
             {
                 if (!AppLanguage.GetCandidateCodes(requestedLanguage, includeEnglishFallback: false)

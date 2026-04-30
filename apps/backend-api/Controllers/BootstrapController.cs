@@ -19,6 +19,7 @@ public sealed class BootstrapController(
     private static readonly TimeSpan PublicBootstrapCacheTtl = TimeSpan.FromSeconds(45);
 
     [HttpGet("bootstrap")]
+    [HttpGet("/api/mobile/bootstrap")]
     public async Task<ActionResult<ApiResponse<AdminBootstrapResponse>>> GetBootstrap(
         [FromQuery] string? languageCode,
         [FromQuery] string? scope,
@@ -88,6 +89,12 @@ public sealed class BootstrapController(
         }
         Response.Headers["X-Bootstrap-Scope"] = normalizedScope;
         Response.Headers["X-Bootstrap-Cache"] = admin is null ? "miss" : "bypass-admin";
+
+        logger.LogInformation(
+            "[MobileBootstrap] settings loaded. enabledLanguagesCount={EnabledLanguagesCount}; contactExists={ContactExists}; syncVersion={Version}",
+            bootstrap.Settings.SupportedLanguages.Count,
+            HasContactSettings(bootstrap.Settings),
+            bootstrap.SyncState?.Version ?? syncState.Version);
 
         logger.LogInformation(
             "[BootstrapPerf] cache={Cache}; scope={Scope}; adminUserId={AdminUserId}; role={Role}; languageCode={LanguageCode}; version={Version}; pois={PoiCount}; foodItems={FoodItemCount}; promotions={PromotionCount}; audioGuides={AudioGuideCount}; elapsedMs={ElapsedMs}",
@@ -195,6 +202,14 @@ public sealed class BootstrapController(
     private static bool IsPublishedPoi(Poi poi)
         => string.Equals(poi.Status, "published", StringComparison.OrdinalIgnoreCase) &&
            poi.IsActive;
+
+    private static bool HasContactSettings(SystemSetting settings)
+        => !string.IsNullOrWhiteSpace(settings.AppName) ||
+           !string.IsNullOrWhiteSpace(settings.SupportPhone) ||
+           !string.IsNullOrWhiteSpace(settings.SupportEmail) ||
+           !string.IsNullOrWhiteSpace(settings.ContactAddress) ||
+           !string.IsNullOrWhiteSpace(settings.SupportInstructions) ||
+           !string.IsNullOrWhiteSpace(settings.SupportHours);
 
     private static int EstimateBootstrapCacheSize(AdminBootstrapResponse bootstrap)
         => Math.Max(

@@ -21,21 +21,26 @@ function Find-LatestMobileApk {
     param([string]$RepoRoot)
 
     $searchRoots = @(
-        (Join-Path $RepoRoot "apps/mobile-app/bin/Release/net10.0-android"),
-        (Join-Path $RepoRoot "apps/mobile-app/bin/Debug/net10.0-android")
+        (Join-Path $RepoRoot "apps/mobile-app/bin/Release"),
+        (Join-Path $RepoRoot "apps/mobile-app/bin/Debug")
     )
 
     $candidates = @()
     foreach ($root in $searchRoots) {
         if (Test-Path -LiteralPath $root) {
-            $candidates += Get-ChildItem -LiteralPath $root -Filter "*.apk" -File |
-                Where-Object { $_.Name -like "*Signed.apk" -or $_.Name -notlike "*.idsig" }
+            $candidates += Get-ChildItem -LiteralPath $root -Recurse -Filter "*.apk" -File |
+                Where-Object {
+                    $_.FullName -like "*net*-android*" -and
+                    $_.Name -notlike "*.idsig"
+                }
         }
     }
 
     return $candidates |
         Sort-Object `
+            @{ Expression = { $_.FullName -like "*\Release\*" }; Descending = $true }, `
             @{ Expression = { $_.Name -like "*Signed.apk" }; Descending = $true }, `
+            @{ Expression = { $_.FullName -like "*\publish\*" }; Descending = $true }, `
             @{ Expression = { $_.LastWriteTimeUtc }; Descending = $true } |
         Select-Object -First 1
 }

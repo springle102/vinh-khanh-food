@@ -177,9 +177,20 @@ public sealed partial class FoodStreetApiDataService
             Id = poi.Id,
             Category = LocalizeCategory(poi.Category),
             Address = LocalizeAddress(poi.Address, poi.Id),
+            PriceRange = poi.PriceRange,
             Latitude = poi.Latitude,
             Longitude = poi.Longitude,
             IsFeatured = poi.IsFeatured,
+            Tags = FallbackPoiTags.TryGetValue(poi.Id, out var tags)
+                ? tags.Select(LocalizeTag).Where(item => !string.IsNullOrWhiteSpace(item)).ToList()
+                : [],
+            FoodItems = BuildFoodItems(
+                FallbackFoodItems.Where(item => string.Equals(item.PoiId, poi.Id, StringComparison.OrdinalIgnoreCase)).ToList(),
+                new Dictionary<string, IReadOnlyList<TranslationDto>>(StringComparer.OrdinalIgnoreCase),
+                new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)).ToList(),
+            Promotions = BuildPromotions(
+                FallbackPromotions.Where(item => string.Equals(item.PoiId, poi.Id, StringComparison.OrdinalIgnoreCase)).ToList(),
+                new Dictionary<string, IReadOnlyList<TranslationDto>>(StringComparer.OrdinalIgnoreCase)).ToList(),
             Images =
             [
                 poi.ThumbnailUrl,
@@ -366,13 +377,18 @@ public sealed partial class FoodStreetApiDataService
             .Select(item =>
             {
                 promotionTranslationsById.TryGetValue(item.Id, out var promotionTranslations);
-                var translation = SelectTranslation(promotionTranslations, CurrentLanguageCode, "promotion", item.Id);
+                var translation = SelectTranslation(
+                    promotionTranslations,
+                    CurrentLanguageCode,
+                    "promotion",
+                    item.Id,
+                    GetPromotionTranslationFallbackCandidates(CurrentLanguageCode));
                 var title = FirstNonEmpty(
                     GetTranslationText(translation, value => value.Title),
-                    GetSourceTextForCurrentLanguage(item.Title));
+                    GetOriginalPromotionText(item.Title));
                 var description = FirstNonEmpty(
                     GetTranslationText(translation, value => value.FullText, value => value.ShortText),
-                    GetSourceTextForCurrentLanguage(item.Description));
+                    GetOriginalPromotionText(item.Description));
 
                 return new PoiPromotionDetail
                 {
@@ -390,6 +406,25 @@ public sealed partial class FoodStreetApiDataService
                 !string.IsNullOrWhiteSpace(item.Title) ||
                 !string.IsNullOrWhiteSpace(item.Description))
             .ToList();
+    }
+
+    private static IReadOnlyList<string> GetPromotionTranslationFallbackCandidates(string currentLanguage)
+    {
+        var candidates = new List<string>();
+        AddTranslationFallbackCandidates(
+            candidates,
+            AppLanguage.GetCandidateCodes(currentLanguage, includeEnglishFallback: false));
+        AddTranslationFallbackCandidates(candidates, [AppLanguage.DefaultLanguage, "vi-VN"]);
+        AddTranslationFallbackCandidates(candidates, [AppLanguage.FallbackLanguage, "en-US"]);
+        return candidates;
+    }
+
+    private static string GetOriginalPromotionText(string? value)
+    {
+        var normalizedValue = TextEncodingHelper.NormalizeDisplayText(value);
+        return LocalizationFallbackPolicy.LooksLikeTechnicalIdentifier(normalizedValue)
+            ? string.Empty
+            : normalizedValue.Trim();
     }
 
     private static int ResolvePromotionSortOrder(string? status)
@@ -421,12 +456,16 @@ public sealed partial class FoodStreetApiDataService
         return NormalizeLookupKey(normalizedTag) switch
         {
             "an-vat" => SelectLocalizedText(CreateLocalizedMap("Ăn vặt", "Snacks", "小吃", "간식", "軽食", "Snacks")),
+            "ca-phe" => SelectLocalizedText(CreateLocalizedMap("Cà phê", "Coffee", "咖啡", "커피", "コーヒー", "Café")),
             "che" => SelectLocalizedText(CreateLocalizedMap("Chè", "Sweet soup", "甜汤", "베트남 디저트", "ベトナム甘味", "Dessert vietnamien")),
             "gia-dinh" => SelectLocalizedText(CreateLocalizedMap("Gia đình", "Family friendly", "适合家庭", "가족에게 좋음", "家族向け", "Adapté aux familles")),
             "dac-san" => SelectLocalizedText(CreateLocalizedMap("Đặc sản", "Signature dish", "招牌菜", "시그니처 메뉴", "名物料理", "Spécialité")),
+            "mo-hanh" => SelectLocalizedText(CreateLocalizedMap("Mỡ hành", "Scallion oil", "葱油", "파기름", "ネギ油", "Huile d'oignon vert")),
+            "mon-nhat" => SelectLocalizedText(CreateLocalizedMap("Món Nhật", "Japanese food", "日式料理", "일본 요리", "和食", "Cuisine japonaise")),
             "oc" => SelectLocalizedText(CreateLocalizedMap("Ốc", "Snails", "螺贝", "달팽이 요리", "貝料理", "Escargots")),
             "do-song" => SelectLocalizedText(CreateLocalizedMap("Đồ sống", "Raw dishes", "生食", "생식", "生もの", "Plats crus")),
             "hai-san" => SelectLocalizedText(CreateLocalizedMap("Hải sản", "Seafood", "海鲜", "해산물", "海鮮", "Fruits de mer")),
+            "trang-mieng" => SelectLocalizedText(CreateLocalizedMap("Tráng miệng", "Dessert", "甜点", "디저트", "デザート", "Dessert")),
             "tu-tap" => SelectLocalizedText(CreateLocalizedMap("Tụ tập", "Group-friendly", "聚会", "모임", "集まり向け", "Idéal en groupe")),
             "sushi" => SelectLocalizedText(CreateLocalizedMap("Sushi", "Sushi", "寿司", "스시", "寿司", "Sushi")),
             _ => LocalizationFallbackPolicy.SourceTextForLanguage(normalizedTag, CurrentLanguageCode)

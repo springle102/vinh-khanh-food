@@ -15,7 +15,7 @@ sequenceDiagram
     actor Tourist as Du khách
     participant MapVM as HomeMapViewModel
     participant AudioSvc as PoiAudioPlaybackService
-    participant Cache as Audio cache/offline package
+    participant Cache as Audio cache
     participant PoiAudioApi as PoisController
     participant AudioLoader as PoiNarrationAudioService
     participant Player as Plugin.Maui.Audio
@@ -41,9 +41,6 @@ sequenceDiagram
         AudioSvc->>Cache: TryGetCachedAudioAsync(audioCacheKey)
         alt Có file cache cục bộ hợp lệ
             Cache-->>AudioSvc: CachedAudioAsset(source=local_cache)
-        else Có offline package asset
-            AudioSvc->>Cache: TryResolvePackagedAudioAssetAsync()
-            Cache-->>AudioSvc: CachedAudioAsset(source=offline_package)
         else Cần tải prepared audio
             AudioSvc->>PoiAudioApi: GET /api/v1/pois/{poiId}/audio?languageCode=...
             PoiAudioApi->>AudioLoader: GetAudioAsync(poiId, language)

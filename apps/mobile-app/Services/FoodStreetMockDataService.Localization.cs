@@ -43,27 +43,41 @@ public sealed partial class FoodStreetApiDataService
     {
         return poiId switch
         {
-            "poi-snail-signature" => CreateLocalizedMap(
-                "Quán Ốc Vĩnh Khánh Signature",
-                "Vinh Khanh Signature Snail House",
-                "永庆招牌螺店",
-                "빈카인 시그니처 달팽이집",
-                "ヴィンカイン名物貝料理店",
-                "Maison Signature des Escargots Vinh Khanh"),
-            "poi-bbq-night" => CreateLocalizedMap(
+            "ca-phe-che" => CreateLocalizedMap(
+                "Cà phê Chè",
+                "Tea Coffee",
+                "茶咖啡",
+                "티 커피",
+                "ティーコーヒー",
+                "Café Thé"),
+            "oc-loan" => CreateLocalizedMap(
+                "Nhà hàng Ốc Loan",
+                "Oc Loan Restaurant",
+                "Ốc Loan 餐厅",
+                "옥 로안 레스토랑",
+                "Ốc Loan レストラン",
+                "Restaurant Oc Loan"),
+            "oc-oanh-1" => CreateLocalizedMap(
+                "Ốc Oanh 1",
+                "Oc Oanh 1",
+                "Ốc Oanh 1",
+                "옥 오아인 1",
+                "Ốc Oanh 1",
+                "Oc Oanh 1"),
+            "oc-phat" => CreateLocalizedMap(
+                "Ốc Phát",
+                "Oc Phat",
+                "Ốc Phát",
+                "옥 팟",
+                "Ốc Phát",
+                "Oc Phat"),
+            "sushi-ko" => CreateLocalizedMap(
                 "Nhà Hàng Sushi Ko",
-                "Sushi Ko Seafood House",
-                "寿司Ko海鲜馆",
-                "스시 코 해산물 하우스",
-                "寿司こう 海鮮ハウス",
-                "Maison des Fruits de Mer Sushi Ko"),
-            "poi-sweet-lane" => CreateLocalizedMap(
-                "Hẻm Cà Phê Vĩnh Khánh",
-                "Vinh Khanh Coffee & Tea Alley",
-                "永庆咖啡茶巷",
-                "빈카인 커피 & 티 골목",
-                "ヴィンカイン コーヒー&ティー路地",
-                "Ruelle Café & Thé Vinh Khanh"),
+                "Sushi Ko Restaurant",
+                "Sushi Ko 餐厅",
+                "스시 코 레스토랑",
+                "寿司Ko レストラン",
+                "Restaurant Sushi Ko"),
             _ => CreateFallbackTranslationMap(fallbackTitle, "Vinh Khanh food spot")
         };
     }
@@ -72,27 +86,41 @@ public sealed partial class FoodStreetApiDataService
     {
         return poiId switch
         {
-            "poi-snail-signature" => CreateLocalizedMap(
-                "Quán ốc đặc trưng với thực đơn đa dạng, phù hợp khách lần đầu đến khu phố.",
-                "A signature snail restaurant with a varied menu that is easy for first-time visitors to enjoy.",
-                "这家招牌螺食店菜单丰富，很适合第一次来这条美食街的游客。",
-                "메뉴가 다양해 이 거리를 처음 찾는 방문자도 편하게 즐길 수 있는 대표 달팽이 맛집입니다.",
-                "メニューが豊富で、この通りを初めて訪れる人でも楽しみやすい名物の貝料理店です。",
-                "Une adresse signature aux coquillages avec une carte variée, idéale pour une première découverte de la rue."),
-            "poi-bbq-night" => CreateLocalizedMap(
-                "Điểm hải sản & đồ sống nổi bật với sushi, sashimi và nhịp sống phố đêm.",
-                "A seafood and raw-dish stop known for sushi, sashimi, and Vinh Khanh's lively night energy.",
-                "这里主打寿司、刺身与海鲜生食，也是感受永庆夜间节奏的热门一站。",
-                "스시와 사시미, 신선한 해산물 요리로 빈카인 밤거리의 분위기를 느끼기 좋은 곳입니다.",
-                "寿司や刺身、新鮮な海鮮料理でヴィンカインの夜の活気を感じられる立ち寄り先です。",
-                "Une halte fruits de mer et plats crus, réputée pour ses sushis, ses sashimis et l'énergie nocturne de Vinh Khanh."),
-            "poi-sweet-lane" => CreateLocalizedMap(
-                "Điểm cà phê & trà phù hợp để nghỉ chân giữa hành trình ăn uống.",
-                "A coffee and tea stop that gives the food journey a relaxed mid-route break.",
-                "这是一处适合在美食行程中途停下来喝咖啡与茶的轻松站点。",
-                "미식 여정 중간에 커피와 차로 잠시 쉬어 가기 좋은 곳입니다.",
-                "食べ歩きの途中でコーヒーやお茶を楽しみながらひと休みできる場所です。",
-                "Une pause café et thé idéale pour souffler au milieu du parcours gourmand."),
+            "ca-phe-che" => CreateLocalizedMap(
+                "Quán tráng miệng và cà phê nhẹ nhàng, phù hợp nghỉ chân sau khi ăn hải sản.",
+                "A gentle dessert and coffee stop, good for resting after seafood.",
+                "一家轻松的甜品和咖啡店，适合吃完海鲜后休息。",
+                "해산물 식사 후 쉬어 가기 좋은 디저트와 커피 장소입니다.",
+                "海鮮料理のあとに休憩しやすい、穏やかなデザートとコーヒーの店です。",
+                "Une halte douce pour dessert et café après les fruits de mer."),
+            "oc-loan" => CreateLocalizedMap(
+                "Hải sản tươi, ốc to và nêm nếm đậm đà theo khẩu vị miền Nam.",
+                "Fresh seafood, plump snails, and bold southern-style seasoning.",
+                "海鲜新鲜，螺类饱满，调味浓郁并带有南部风味。",
+                "신선한 해산물과 통통한 달팽이 요리, 남부식 진한 양념이 특징입니다.",
+                "新鮮な海鮮、大ぶりの貝、南部らしい濃い味付けが魅力です。",
+                "Fruits de mer frais, coquillages généreux et assaisonnement du Sud bien marqué."),
+            "oc-oanh-1" => CreateLocalizedMap(
+                "Quán ốc quen thuộc trên tuyến Vĩnh Khánh, nổi bật với sò huyết rang me và sò điệp nướng mỡ hành.",
+                "A familiar Vinh Khanh snail stop, known for tamarind blood cockles and scallops with scallion oil.",
+                "永庆街上一家熟悉的螺类餐馆，以罗望子炒血蚶和葱油烤扇贝出名。",
+                "빈카인 거리의 익숙한 달팽이 맛집으로, 타마린드 꼬막과 파기름 가리비가 유명합니다.",
+                "ヴィンカイン通りの定番貝料理店で、タマリンド味の赤貝とネギ油焼きホタテが人気です。",
+                "Une adresse de coquillages familière de Vinh Khanh, connue pour les coques au tamarin et les coquilles Saint-Jacques à l'huile d'oignon vert."),
+            "oc-phat" => CreateLocalizedMap(
+                "Quán ốc đầu phố với thực đơn hải sản đa dạng, phù hợp nhóm bạn và khách lần đầu đến Vĩnh Khánh.",
+                "A street-entry snail restaurant with varied seafood, good for groups and first-time visitors.",
+                "街口的螺类海鲜店，菜单多样，适合朋友聚会和第一次到访的游客。",
+                "거리 초입의 달팽이·해산물 식당으로, 친구 모임과 첫 방문객에게 잘 어울립니다.",
+                "通りの入口にある貝料理店で、海鮮メニューが幅広く、グループや初訪問に向いています。",
+                "Une adresse de coquillages en début de rue, variée et pratique pour les groupes comme pour une première visite."),
+            "sushi-ko" => CreateLocalizedMap(
+                "Điểm dừng món Nhật gần phố ẩm thực Vĩnh Khánh, nổi bật với sushi và hải sản chế biến tươi.",
+                "A Japanese food stop near Vinh Khanh food street, known for sushi and fresh seafood dishes.",
+                "永庆美食街附近的日式餐厅，以寿司和新鲜海鲜料理为特色。",
+                "빈카인 음식 거리 근처의 일본식 식당으로, 스시와 신선한 해산물 요리가 돋보입니다.",
+                "ヴィンカインの美食街近くにある和食店で、寿司と新鮮な海鮮料理が魅力です。",
+                "Une halte japonaise près de la rue gourmande Vinh Khanh, réputée pour les sushis et les fruits de mer frais."),
             _ => CreateFallbackTranslationMap(fallbackSummary, "A food stop in the Vinh Khanh area.")
         };
     }
@@ -105,27 +133,21 @@ public sealed partial class FoodStreetApiDataService
     {
         return poiId switch
         {
-            "poi-snail-signature" => CreateLocalizedMap(
-                "Quán ốc signature phù hợp để mở đầu hành trình ẩm thực, nổi bật với món ốc xào, ốc nướng và các đĩa hải sản để chia sẻ.",
-                "This signature snail stop opens the food journey well, with stir-fried snails, grilled shellfish, and shareable seafood platters.",
-                "这里很适合作为美食之旅的开场站点，以炒螺、烤贝类和适合分享的海鲜拼盘而受欢迎。",
-                "이곳은 미식 코스의 시작점으로 잘 어울리며, 볶은 달팽이와 구운 조개, 함께 나눠 먹기 좋은 해산물 플래터로 유명합니다.",
-                "ストリートフード巡りの最初の一軒にぴったりで、炒めた貝料理や焼き貝、シェアしやすい海鮮プレートで知られています。",
-                "Cette adresse signature ouvre parfaitement le parcours gourmand avec ses escargots sautés, ses coquillages grillés et ses plateaux de fruits de mer à partager."),
-            "poi-bbq-night" => CreateLocalizedMap(
-                "Không gian hải sản & đồ sống này phù hợp với nhóm bạn muốn gọi sushi, sashimi và các phần ăn chia sẻ trong nhịp sống phố đêm Vĩnh Khánh.",
-                "This seafood and raw-dish stop suits groups who want sushi, sashimi, and shareable plates in Vinh Khanh's lively night scene.",
-                "这处海鲜与生食据点很适合结伴前来，点寿司、刺身与适合分享的菜品，感受永庆夜间氛围。",
-                "이 해산물·생식 명소는 스시와 사시미, 함께 나눠 먹기 좋은 메뉴를 즐기며 빈카인 밤거리를 느끼고 싶은 일행에게 잘 어울립니다.",
-                "この海鮮・生ものスポットは、寿司や刺身、シェアしやすい料理を楽しみながらヴィンカインの夜を味わいたいグループに向いています。",
-                "Cette adresse fruits de mer et plats crus convient parfaitement aux groupes qui veulent partager sushis, sashimis et assiettes à plusieurs dans l'ambiance nocturne de Vinh Khanh."),
-            "poi-sweet-lane" => CreateLocalizedMap(
-                "Hẻm cà phê là điểm dừng để nghỉ chân, thường được chọn sau các món mặn và hải sản để cân bằng lại hành trình với cà phê sữa hoặc trà trái cây.",
-                "This coffee lane works well as a pause stop after savory seafood dishes, especially for iced coffee or fruit tea.",
-                "这条咖啡小巷适合作为海鲜与咸食之后的休息站，用冰咖啡或水果茶让整段行程更平衡。",
-                "이 커피 골목은 해산물과 짭짤한 요리 뒤에 아이스커피나 과일차로 동선을 정리하기 좋은 휴식 코스입니다.",
-                "このコーヒー路地は、海鮮や塩気のある料理のあとにアイスコーヒーやフルーツティーでひと息つくのにちょうど良い立ち寄り先です。",
-                "Cette ruelle café est idéale pour faire une pause après les plats salés et les fruits de mer, autour d'un café glacé ou d'un thé fruité."),
+            "ca-phe-che" => CreateFallbackTranslationMap(
+                "Chào mừng bạn đến với Cà phê Chè. Sau những món ốc và hải sản đậm vị, đây là nơi phù hợp để nghỉ chân bằng một ly cà phê hoặc chén chè mát. Không gian nhẹ nhàng, dễ ngồi trò chuyện và rất hợp để kết thúc hành trình ẩm thực Vĩnh Khánh bằng một vị ngọt dễ chịu.",
+                "Welcome to Tea Coffee. After rich snail and seafood dishes, this is a calm place to rest with coffee or sweet soup."),
+            "oc-loan" => CreateFallbackTranslationMap(
+                "Điểm cộng lớn nhất của Ốc Loan là hải sản luôn tươi rói, các loại ốc to, mập mạp và được nêm nếm rất đậm đà, thiên một chút xíu về khẩu vị ngọt đặc trưng của miền Nam. Nếu có dịp ghé quán, bạn nhất định nên gọi thử những món quen thuộc nhưng cực kỳ \"bắt miệng\" như: sò huyết xào me chua ngọt sền sệt, ốc hương xào bơ tỏi thơm lừng chấm kèm bánh mì, hay một phần sụn gà chiên nước mắm giòn rụm để nhâm nhi.",
+                "Oc Loan is known for fresh seafood, plump snails, and rich southern-style seasoning."),
+            "oc-oanh-1" => CreateFallbackTranslationMap(
+                "Bạn đang dừng chân tại Ốc Oanh 1, một tọa độ hải sản quen thuộc trên tuyến Vĩnh Khánh. Quầy ốc phía trước giúp bạn nhìn thấy nguyên liệu trước khi gọi món. Nếu thích vị chua ngọt, hãy chọn sò huyết rang me. Nếu thích mùi thơm béo, sò điệp nướng mỡ hành là lựa chọn rất dễ nhớ.",
+                "Oc Oanh 1 is a familiar Vinh Khanh seafood stop where you can see the snails before ordering."),
+            "oc-phat" => CreateFallbackTranslationMap(
+                "Bạn đang ở Ốc Phát, một trong những điểm dừng dễ tiếp cận nhất khi bắt đầu khám phá phố ẩm thực Vĩnh Khánh. Hãy thử các món ốc hương rang muối, nghêu hấp Thái hoặc ốc móng tay xào bơ tỏi. Điểm hấp dẫn của quán là không khí tụ tập rộn ràng, món lên nhanh và hương hải sản lan rất rõ trong buổi tối Quận 4.",
+                "Oc Phat is an easy first stop on Vinh Khanh food street, with lively seafood dishes for groups."),
+            "sushi-ko" => CreateFallbackTranslationMap(
+                "Chào mừng bạn đến với Nhà Hàng Sushi Ko. Đây là điểm dừng dành cho những ai yêu thích hương vị Nhật Bản giữa khu phố ẩm thực Vĩnh Khánh. Quán nổi bật với sushi, mì soba lạnh và các món cá nướng được chuẩn bị kỹ lưỡng. Hãy dành ít phút cảm nhận sự đối lập thú vị giữa nhịp phố sôi động bên ngoài và phong cách ẩm thực tinh tế bên trong.",
+                "Sushi Ko is a Japanese food stop near Vinh Khanh, known for sushi, cold soba, and carefully prepared grilled fish."),
             _ => CreateFallbackTranslationMap(fallbackSummary, "A food stop in the Vinh Khanh area.")
         };
     }
@@ -351,6 +373,13 @@ public sealed partial class FoodStreetApiDataService
                 "해산물 & 생식",
                 "海鮮・生もの",
                 "Fruits de mer & plats crus")),
+            "hai-san-mon-nhat" => SelectLocalizedText(CreateLocalizedMap(
+                "Hải sản & món Nhật",
+                "Seafood & Japanese food",
+                "海鲜与日式料理",
+                "해산물 & 일본 요리",
+                "海鮮と和食",
+                "Fruits de mer & cuisine japonaise")),
             "ca-phe-tra" => SelectLocalizedText(CreateLocalizedMap(
                 "Cà phê & trà",
                 "Coffee & tea",
@@ -358,6 +387,13 @@ public sealed partial class FoodStreetApiDataService
                 "커피 & 차",
                 "コーヒー&ティー",
                 "Café & thé")),
+            "ca-phe-trang-mieng" => SelectLocalizedText(CreateLocalizedMap(
+                "Cà phê & tráng miệng",
+                "Coffee & dessert",
+                "咖啡与甜点",
+                "커피 & 디저트",
+                "コーヒー&デザート",
+                "Café & dessert")),
             "mon-ngot" => SelectLocalizedText(CreateLocalizedMap(
                 "Cà phê & trà",
                 "Coffee & tea",
@@ -390,33 +426,55 @@ public sealed partial class FoodStreetApiDataService
         }
 
         var text = TextEncodingHelper.NormalizeDisplayText(address);
-        var normalizedKey = NormalizeLookupKey(text);
-
-        return normalizedKey switch
+        if (!string.IsNullOrWhiteSpace(poiId))
         {
-            "42-vinh-khanh-phuong-khanh-hoi-tp-hcm" => SelectLocalizedText(CreateLocalizedMap(
-                "42 Vĩnh Khánh, Phường Khánh Hội, TP.HCM",
-                "42 Vinh Khanh, Khanh Hoi Ward, Ho Chi Minh City",
-                "42 永庆街，庆会坊，胡志明市",
-                "호찌민시 카인호이동 빈카인 42",
-                "ホーチミン市カインホイ街区ヴィンカイン42",
-                "42 Vinh Khanh, quartier Khanh Hoi, Hô-Chi-Minh-Ville")),
-            "126-vinh-khanh-phuong-khanh-hoi-tp-hcm" => SelectLocalizedText(CreateLocalizedMap(
-                "126 Vĩnh Khánh, Phường Khánh Hội, TP.HCM",
-                "126 Vinh Khanh, Khanh Hoi Ward, Ho Chi Minh City",
-                "126 永庆街，庆会坊，胡志明市",
-                "호찌민시 카인호이동 빈카인 126",
-                "ホーチミン市カインホイ街区ヴィンカイン126",
-                "126 Vinh Khanh, quartier Khanh Hoi, Hô-Chi-Minh-Ville")),
-            "88-4-vinh-khanh-phuong-vinh-hoi-tp-hcm" => SelectLocalizedText(CreateLocalizedMap(
-                "88/4 Vĩnh Khánh, Phường Vĩnh Hội, TP.HCM",
-                "88/4 Vinh Khanh, Vinh Hoi Ward, Ho Chi Minh City",
-                "胡志明市永会坊永庆街 88/4 号",
-                "호찌민시 빈호이동 빈카인 88/4",
-                "ホーチミン市ヴィンホイ街区ヴィンカイン88/4",
-                "88/4 Vinh Khanh, quartier Vinh Hoi, Hô-Chi-Minh-Ville")),
-            _ => ApplyAddressLocalization(text)
-        };
+            var localizedAddress = poiId switch
+            {
+                "ca-phe-che" => SelectLocalizedText(CreateLocalizedMap(
+                    "Chung cư H1, Hoàng Diệu, Phường Khánh Hội, Quận 4, TP.HCM",
+                    "H1 Apartment, Hoang Dieu, Khanh Hoi Ward, District 4, Ho Chi Minh City",
+                    "胡志明市第四郡庆会坊黄耀街 H1 公寓",
+                    "호찌민시 4군 카인호이동 호앙디에우 H1 아파트",
+                    "ホーチミン市4区カインホイ街区ホアンジエウ H1アパート",
+                    "Appartement H1, Hoang Dieu, quartier Khanh Hoi, district 4, Hô-Chi-Minh-Ville")),
+                "oc-loan" => SelectLocalizedText(CreateLocalizedMap(
+                    "Nhà Hàng Ốc Loan, Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam",
+                    "Oc Loan Restaurant, Vinh Khanh, Khanh Hoi Ward, District 4, Ho Chi Minh City, Vietnam",
+                    "越南胡志明市第四郡庆会坊永庆街 Ốc Loan 餐厅",
+                    "베트남 호찌민시 4군 카인호이동 빈카인 옥 로안 레스토랑",
+                    "ベトナム・ホーチミン市4区カインホイ街区ヴィンカイン Ốc Loan レストラン",
+                    "Restaurant Oc Loan, Vinh Khanh, quartier Khanh Hoi, district 4, Hô-Chi-Minh-Ville, Vietnam")),
+                "oc-oanh-1" => SelectLocalizedText(CreateLocalizedMap(
+                    "534 hẻm 42/237 Hoàng Diệu, Phường Khánh Hội, Quận 4, TP.HCM",
+                    "534 alley 42/237 Hoang Dieu, Khanh Hoi Ward, District 4, Ho Chi Minh City",
+                    "胡志明市第四郡庆会坊黄耀街 42/237 巷 534 号",
+                    "호찌민시 4군 카인호이동 호앙디에우 42/237 골목 534",
+                    "ホーチミン市4区カインホイ街区ホアンジエウ42/237路地534",
+                    "534 ruelle 42/237 Hoang Dieu, quartier Khanh Hoi, district 4, Hô-Chi-Minh-Ville")),
+                "oc-phat" => SelectLocalizedText(CreateLocalizedMap(
+                    "Ốc Phát, Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM, Việt Nam",
+                    "Oc Phat, Vinh Khanh, Khanh Hoi Ward, District 4, Ho Chi Minh City, Vietnam",
+                    "越南胡志明市第四郡庆会坊永庆街 Ốc Phát",
+                    "베트남 호찌민시 4군 카인호이동 빈카인 옥 팟",
+                    "ベトナム・ホーチミン市4区カインホイ街区ヴィンカイン Ốc Phát",
+                    "Oc Phat, Vinh Khanh, quartier Khanh Hoi, district 4, Hô-Chi-Minh-Ville, Vietnam")),
+                "sushi-ko" => SelectLocalizedText(CreateLocalizedMap(
+                    "122/37/15 Vĩnh Khánh, Phường Khánh Hội, Quận 4, TP.HCM",
+                    "122/37/15 Vinh Khanh, Khanh Hoi Ward, District 4, Ho Chi Minh City",
+                    "胡志明市第四郡庆会坊永庆街 122/37/15",
+                    "호찌민시 4군 카인호이동 빈카인 122/37/15",
+                    "ホーチミン市4区カインホイ街区ヴィンカイン122/37/15",
+                    "122/37/15 Vinh Khanh, quartier Khanh Hoi, district 4, Hô-Chi-Minh-Ville")),
+                _ => string.Empty
+            };
+
+            if (!string.IsNullOrWhiteSpace(localizedAddress))
+            {
+                return localizedAddress;
+            }
+        }
+
+        return ApplyAddressLocalization(text);
     }
 
     private string ApplyAddressLocalization(string address)

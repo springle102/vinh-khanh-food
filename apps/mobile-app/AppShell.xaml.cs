@@ -31,6 +31,7 @@ public partial class AppShell : Shell
         Loaded -= OnLoaded;
         Dispatcher.Dispatch(async () =>
         {
+            await Task.Delay(350);
             var route = AppRoutes.Root(_startupRoute);
             if (!string.Equals(CurrentState?.Location?.OriginalString, route, StringComparison.Ordinal))
             {

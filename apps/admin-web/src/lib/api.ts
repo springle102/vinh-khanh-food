@@ -13,7 +13,6 @@ import type {
   PlaceOwnerRegistrationRecord,
   Promotion,
   ResolvedPoiNarration,
-  SystemSetting,
   TourRoute,
   Translation,
 } from "../data/types";
@@ -92,6 +91,26 @@ export type PoiAudioGenerationResult = {
   attemptedVoiceId?: string | null;
   attemptedModelId?: string | null;
   outputFormat?: string | null;
+};
+
+export type AppLanguageSettingsResponse = {
+  defaultLanguage: LanguageCode;
+  languages: Array<{
+    code: LanguageCode;
+    displayName: string;
+    isEnabled: boolean;
+    isDefault: boolean;
+  }>;
+};
+
+export type SystemContactSettingsResponse = {
+  appName: string;
+  supportPhone: string;
+  supportEmail: string;
+  contactAddress: string;
+  supportInstructions: string;
+  supportHours: string;
+  contactUpdatedAtUtc: string;
 };
 
 type PoiSavePayload = {
@@ -768,12 +787,22 @@ export const adminApi = {
       payload,
       { signal },
     ),
-  saveSettings: (
-    settings: SystemSetting & {
-      actorName: string;
-      actorRole: AdminUser["role"];
-    },
-  ) => jsonRequest<SystemSetting>("/api/v1/settings", "PUT", settings),
+  saveLanguageSettings: (settings: {
+    defaultLanguage: LanguageCode;
+    enabledLanguages: LanguageCode[];
+    actorName: string;
+    actorRole: AdminUser["role"];
+  }) => jsonRequest<AppLanguageSettingsResponse>("/api/v1/settings/languages", "PATCH", settings),
+  saveContactSettings: (settings: {
+    appName: string;
+    supportPhone: string;
+    supportEmail: string;
+    contactAddress: string;
+    supportInstructions: string;
+    supportHours: string;
+    actorName: string;
+    actorRole: AdminUser["role"];
+  }) => jsonRequest<SystemContactSettingsResponse>("/api/v1/settings/contact", "PATCH", settings),
   saveMediaAsset: (asset: {
     id?: string;
     entityType: MediaAsset["entityType"];

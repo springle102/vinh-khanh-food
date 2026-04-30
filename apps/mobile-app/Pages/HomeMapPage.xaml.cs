@@ -125,8 +125,15 @@ public partial class HomeMapPage : ContentPage, IQueryAttributable
         base.OnDisappearing();
         StopAutoRefreshLoop();
         AbortTourPanelAnimations();
-        await _viewModel.StopLocationTrackingAsync();
-        await _viewModel.SuspendNarrationAsync();
+        try
+        {
+            await _viewModel.StopLocationTrackingAsync();
+            await _viewModel.SuspendNarrationAsync();
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "[HomeMapPage] Failed to suspend runtime state while leaving the map page.");
+        }
     }
 
     protected override void OnSizeAllocated(double width, double height)

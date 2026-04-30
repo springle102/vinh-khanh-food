@@ -54,6 +54,10 @@ public sealed class PoiPregeneratedAudioService(
         var existing = GetPoiAudioGuides(poiId, actor)
             .FirstOrDefault(item => PremiumAccessCatalog.LanguageCodesMatch(item.LanguageCode, normalizedLanguageCode));
         var previousAudioFilePath = existing?.AudioFilePath;
+        var existingPreparedAudioExists = existing is not null && HasGeneratedAudioStorageFile(existing);
+        var canKeepExistingPreparedAudio = existing is not null &&
+            existingPreparedAudioExists &&
+            AudioGuideCatalog.IsReadyForPlayback(existing);
         var options = optionsAccessor.Value;
         var effectiveLanguageCode = PremiumAccessCatalog.NormalizeLanguageCode(narration.EffectiveLanguageCode);
         var ttsProviderLanguageCode = LanguageRegistry.GetTtsProviderCode(effectiveLanguageCode);
@@ -72,6 +76,30 @@ public sealed class PoiPregeneratedAudioService(
 
         if (translationFellBackToSource)
         {
+            if (canKeepExistingPreparedAudio)
+            {
+                logger.LogWarning(
+                    "Skipped POI audio generation because runtime translation fell back to source; keeping existing prepared audio active. poiId={PoiId}; requestedLanguage={RequestedLanguage}; effectiveLanguage={EffectiveLanguage}; audioGuideId={AudioGuideId}; audioUrl={AudioUrl}; audioFilePath={AudioFilePath}",
+                    poiId,
+                    normalizedLanguageCode,
+                    effectiveLanguageCode,
+                    existing!.Id,
+                    existing.AudioUrl,
+                    existing.AudioFilePath);
+
+                return new PoiAudioGenerationResult(
+                    poiId,
+                    normalizedLanguageCode,
+                    effectiveLanguageCode,
+                    false,
+                    false,
+                    true,
+                    "Khong tao audio vi dich runtime that bai; audio hien co duoc giu lai.",
+                    transcriptText,
+                    textHash,
+                    existing);
+            }
+
             var failedGuide = SaveGuide(
                 existing?.Id,
                 actor,
@@ -121,6 +149,29 @@ public sealed class PoiPregeneratedAudioService(
 
         if (string.IsNullOrWhiteSpace(transcriptText))
         {
+            if (canKeepExistingPreparedAudio)
+            {
+                logger.LogWarning(
+                    "Skipped POI audio generation because narration text is empty; keeping existing prepared audio active. poiId={PoiId}; languageCode={LanguageCode}; audioGuideId={AudioGuideId}; audioUrl={AudioUrl}; audioFilePath={AudioFilePath}",
+                    poiId,
+                    normalizedLanguageCode,
+                    existing!.Id,
+                    existing.AudioUrl,
+                    existing.AudioFilePath);
+
+                return new PoiAudioGenerationResult(
+                    poiId,
+                    normalizedLanguageCode,
+                    effectiveLanguageCode,
+                    false,
+                    false,
+                    true,
+                    "Noi dung thuyet minh rong, audio hien co duoc giu lai.",
+                    transcriptText,
+                    textHash,
+                    existing);
+            }
+
             var failedGuide = SaveGuide(
                 existing?.Id,
                 actor,
@@ -128,22 +179,22 @@ public sealed class PoiPregeneratedAudioService(
                     "poi",
                     poiId,
                     normalizedLanguageCode,
-                    existing?.AudioUrl ?? string.Empty,
-                    existing?.SourceType ?? AudioGuideCatalog.SourceTypeGenerated,
+                    string.Empty,
+                    AudioGuideCatalog.SourceTypeGenerated,
                     AudioGuideCatalog.PublicStatusMissing,
                     actor.Name,
                     TranscriptText: string.Empty,
-                    AudioFilePath: existing?.AudioFilePath,
-                    AudioFileName: existing?.AudioFileName,
+                    AudioFilePath: string.Empty,
+                    AudioFileName: string.Empty,
                     Provider: AudioGuideCatalog.ProviderElevenLabs,
                     VoiceId: voiceId,
                     ModelId: modelId,
                     OutputFormat: outputFormat,
-                    DurationInSeconds: existing?.DurationInSeconds,
-                    FileSizeBytes: existing?.FileSizeBytes,
+                    DurationInSeconds: null,
+                    FileSizeBytes: null,
                     TextHash: textHash,
                     ContentVersion: textHash,
-                    GeneratedAt: existing?.GeneratedAt,
+                    GeneratedAt: null,
                     GenerationStatus: AudioGuideCatalog.GenerationStatusFailed,
                     ErrorMessage: "Narration text is empty for this POI/language.",
                     IsOutdated: true,
@@ -170,7 +221,7 @@ public sealed class PoiPregeneratedAudioService(
             string.Equals(existing.OutputFormat, outputFormat, StringComparison.OrdinalIgnoreCase) &&
             !existing.IsOutdated &&
             AudioGuideCatalog.IsReadyForPlayback(existing) &&
-            generatedAudioStorageService.Exists(existing.AudioFilePath))
+            existingPreparedAudioExists)
         {
             logger.LogInformation(
                 "Skipped POI audio generation because an up-to-date file already exists. poiId={PoiId}; languageCode={LanguageCode}; audioGuideId={AudioGuideId}",
@@ -191,33 +242,60 @@ public sealed class PoiPregeneratedAudioService(
                 existing);
         }
 
-        SaveGuide(
-            existing?.Id,
-            actor,
-            new AudioGuideUpsertRequest(
-                "poi",
+        if (!request.ForceRegenerate &&
+            existing is not null &&
+            AudioGuideCatalog.IsReadyForPlayback(existing) &&
+            !existingPreparedAudioExists)
+        {
+            logger.LogWarning(
+                "[AudioGenerate] Existing POI audio guide points to a missing generated file; regenerating and updating database. poiId={PoiId}; languageCode={LanguageCode}; audioGuideId={AudioGuideId}; audioUrl={AudioUrl}; audioFilePath={AudioFilePath}",
                 poiId,
                 normalizedLanguageCode,
-                string.Empty,
-                AudioGuideCatalog.SourceTypeGenerated,
-                AudioGuideCatalog.PublicStatusProcessing,
-                actor.Name,
-                TranscriptText: transcriptText,
-                AudioFilePath: string.Empty,
-                AudioFileName: string.Empty,
-                Provider: AudioGuideCatalog.ProviderElevenLabs,
-                VoiceId: voiceId,
-                ModelId: modelId,
-                OutputFormat: outputFormat,
-                DurationInSeconds: null,
-                FileSizeBytes: null,
-                TextHash: textHash,
-                ContentVersion: textHash,
-                GeneratedAt: null,
-                GenerationStatus: AudioGuideCatalog.GenerationStatusPending,
-                ErrorMessage: null,
-                IsOutdated: false,
-                VoiceType: existing?.VoiceType ?? "standard"));
+                existing.Id,
+                existing.AudioUrl,
+                existing.AudioFilePath);
+        }
+
+        if (canKeepExistingPreparedAudio)
+        {
+            logger.LogInformation(
+                "[AudioGenerate] Keeping existing prepared audio active while regenerating. poiId={PoiId}; languageCode={LanguageCode}; audioGuideId={AudioGuideId}; audioUrl={AudioUrl}; audioFilePath={AudioFilePath}",
+                poiId,
+                normalizedLanguageCode,
+                existing!.Id,
+                existing.AudioUrl,
+                existing.AudioFilePath);
+        }
+        else
+        {
+            SaveGuide(
+                existing?.Id,
+                actor,
+                new AudioGuideUpsertRequest(
+                    "poi",
+                    poiId,
+                    normalizedLanguageCode,
+                    string.Empty,
+                    AudioGuideCatalog.SourceTypeGenerated,
+                    AudioGuideCatalog.PublicStatusProcessing,
+                    actor.Name,
+                    TranscriptText: transcriptText,
+                    AudioFilePath: string.Empty,
+                    AudioFileName: string.Empty,
+                    Provider: AudioGuideCatalog.ProviderElevenLabs,
+                    VoiceId: voiceId,
+                    ModelId: modelId,
+                    OutputFormat: outputFormat,
+                    DurationInSeconds: null,
+                    FileSizeBytes: null,
+                    TextHash: textHash,
+                    ContentVersion: textHash,
+                    GeneratedAt: null,
+                    GenerationStatus: AudioGuideCatalog.GenerationStatusPending,
+                    ErrorMessage: null,
+                    IsOutdated: false,
+                    VoiceType: existing?.VoiceType ?? "standard"));
+        }
 
         try
         {
@@ -337,6 +415,36 @@ public sealed class PoiPregeneratedAudioService(
                 ttsException?.ProviderErrorCode,
                 ttsException?.ProviderErrorMessage,
                 ttsException?.ResponseBody);
+
+            if (canKeepExistingPreparedAudio)
+            {
+                logger.LogWarning(
+                    "[AudioGenerate] Keeping existing prepared audio because the replacement generation failed. poiId={PoiId}; languageCode={LanguageCode}; audioGuideId={AudioGuideId}; audioUrl={AudioUrl}; audioFilePath={AudioFilePath}",
+                    poiId,
+                    normalizedLanguageCode,
+                    existing!.Id,
+                    existing.AudioUrl,
+                    existing.AudioFilePath);
+
+                return new PoiAudioGenerationResult(
+                    poiId,
+                    normalizedLanguageCode,
+                    effectiveLanguageCode,
+                    false,
+                    false,
+                    true,
+                    $"Generate audio that bai: {failureMessage}. Audio hien co duoc giu lai.",
+                    transcriptText,
+                    textHash,
+                    existing,
+                    ttsException?.StatusCode is null ? null : (int)ttsException.StatusCode.Value,
+                    ttsException?.ProviderErrorCode,
+                    ttsException?.ProviderErrorMessage,
+                    ttsException?.ResponseBody,
+                    ttsException?.VoiceId ?? voiceId,
+                    ttsException?.ModelId ?? modelId,
+                    outputFormat);
+            }
 
             var failedGuide = SaveGuide(
                 existing?.Id,
@@ -685,6 +793,18 @@ public sealed class PoiPregeneratedAudioService(
             return;
         }
 
+        if (!optionsAccessor.Value.DeleteSupersededAudioFiles)
+        {
+            logger.LogInformation(
+                "[AudioCleanup] Preserved superseded POI audio file. poiId={PoiId}; languageCode={LanguageCode}; reason={Reason}; preservedPath={PreservedPath}; activePath={ActivePath}",
+                poiId,
+                languageCode,
+                reason,
+                normalizedPreviousPath,
+                normalizedCurrentPath);
+            return;
+        }
+
         if (!generatedAudioStorageService.DeleteIfExists(normalizedPreviousPath))
         {
             return;
@@ -920,7 +1040,7 @@ public sealed class PoiPregeneratedAudioService(
         candidates.Add(normalized);
     }
 
-    private static bool ShouldGenerate(AudioGuide? existing, PoiAudioBulkGenerationRequest request)
+    private bool ShouldGenerate(AudioGuide? existing, PoiAudioBulkGenerationRequest request)
     {
         if (existing is null)
         {
@@ -943,8 +1063,30 @@ public sealed class PoiPregeneratedAudioService(
             return request.IncludeMissing;
         }
 
+        if (IsGeneratedAudioGuide(existing) && !HasGeneratedAudioStorageFile(existing))
+        {
+            logger.LogWarning(
+                "[AudioGenerate] Existing generated audio guide is marked ready but the file is missing; including it in bulk generation. poiId={PoiId}; languageCode={LanguageCode}; audioGuideId={AudioGuideId}; audioUrl={AudioUrl}; audioFilePath={AudioFilePath}",
+                existing.EntityId,
+                existing.LanguageCode,
+                existing.Id,
+                existing.AudioUrl,
+                existing.AudioFilePath);
+            return request.IncludeMissing;
+        }
+
         return false;
     }
+
+    private bool HasGeneratedAudioStorageFile(AudioGuide audioGuide)
+        => generatedAudioStorageService.Exists(audioGuide.AudioFilePath) ||
+           generatedAudioStorageService.Exists(audioGuide.AudioUrl);
+
+    private static bool IsGeneratedAudioGuide(AudioGuide audioGuide)
+        => string.Equals(
+            AudioGuideCatalog.NormalizeSourceType(audioGuide.SourceType),
+            AudioGuideCatalog.SourceTypeGenerated,
+            StringComparison.OrdinalIgnoreCase);
 
     private IReadOnlyList<string> GetGenerationLanguages()
     {

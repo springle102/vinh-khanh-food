@@ -1914,32 +1914,77 @@ public sealed partial class AdminDataRepository
                     Id INT NOT NULL PRIMARY KEY,
                     AppName NVARCHAR(150) NOT NULL,
                     SupportEmail NVARCHAR(200) NOT NULL,
+                    SupportHours NVARCHAR(120) NOT NULL DEFAULT N'',
+                    ContactUpdatedAtUtc DATETIMEOFFSET(7) NOT NULL DEFAULT SYSUTCDATETIME(),
                     DefaultLanguage NVARCHAR(20) NOT NULL,
                     FallbackLanguage NVARCHAR(20) NOT NULL,
-                    MapProvider NVARCHAR(50) NOT NULL,
                     StorageProvider NVARCHAR(50) NOT NULL,
-                    TtsProvider NVARCHAR(50) NOT NULL,
                     GeofenceRadiusMeters INT NOT NULL,
                     AnalyticsRetentionDays INT NOT NULL
                 );
             END;
 
-            IF COL_LENGTH(N'dbo.SystemSettings', N'TtsProvider') IS NULL
-                ALTER TABLE dbo.SystemSettings ADD TtsProvider NVARCHAR(50) NULL;
-
             IF COL_LENGTH(N'dbo.SystemSettings', N'AnalyticsRetentionDays') IS NULL
                 ALTER TABLE dbo.SystemSettings ADD AnalyticsRetentionDays INT NULL;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'SupportPhone') IS NULL
+                ALTER TABLE dbo.SystemSettings ADD SupportPhone NVARCHAR(50) NULL;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'ContactAddress') IS NULL
+                ALTER TABLE dbo.SystemSettings ADD ContactAddress NVARCHAR(300) NULL;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'SupportInstructions') IS NULL
+                ALTER TABLE dbo.SystemSettings ADD SupportInstructions NVARCHAR(2000) NULL;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'SupportHours') IS NULL
+                ALTER TABLE dbo.SystemSettings ADD SupportHours NVARCHAR(120) NULL;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'ContactUpdatedAtUtc') IS NULL
+                ALTER TABLE dbo.SystemSettings ADD ContactUpdatedAtUtc DATETIMEOFFSET(7) NULL;
             """);
 
         ExecuteNonQuery(
             connection,
             null,
             """
+            IF NOT EXISTS (SELECT 1 FROM dbo.SystemSettings WHERE Id = 1)
+            BEGIN
+                INSERT INTO dbo.SystemSettings (
+                    Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage,
+                    StorageProvider, GeofenceRadiusMeters, AnalyticsRetentionDays,
+                    SupportPhone, ContactAddress, SupportInstructions,
+                    SupportHours, ContactUpdatedAtUtc
+                )
+                VALUES (
+                    1,
+                    N'Vinh Khanh Food Guide',
+                    N'support@vinhkhanhfood.local',
+                    N'vi',
+                    N'en',
+                    N'cloudinary',
+                    30,
+                    180,
+                    N'0900000000',
+                    N'Vinh Khanh Food Street, Ho Chi Minh City',
+                    N'Vui long lien he bo phan ho tro neu ban can khieu nai hoac can tro giup.',
+                    N'',
+                    SYSUTCDATETIME()
+                );
+            END;
+
             UPDATE dbo.SystemSettings
-            SET TtsProvider = COALESCE(NULLIF(LTRIM(RTRIM(TtsProvider)), N''), N'elevenlabs'),
-                AnalyticsRetentionDays = COALESCE(AnalyticsRetentionDays, 180)
-            WHERE NULLIF(LTRIM(RTRIM(TtsProvider)), N'') IS NULL
-               OR AnalyticsRetentionDays IS NULL;
+            SET AnalyticsRetentionDays = COALESCE(AnalyticsRetentionDays, 180),
+                SupportPhone = COALESCE(NULLIF(LTRIM(RTRIM(SupportPhone)), N''), N'0900000000'),
+                ContactAddress = COALESCE(ContactAddress, N''),
+                SupportInstructions = COALESCE(NULLIF(LTRIM(RTRIM(SupportInstructions)), N''), N'Vui long lien he bo phan ho tro neu ban can khieu nai hoac can tro giup.'),
+                SupportHours = COALESCE(SupportHours, N''),
+                ContactUpdatedAtUtc = COALESCE(ContactUpdatedAtUtc, SYSUTCDATETIME())
+            WHERE AnalyticsRetentionDays IS NULL
+               OR NULLIF(LTRIM(RTRIM(SupportPhone)), N'') IS NULL
+               OR ContactAddress IS NULL
+               OR SupportInstructions IS NULL
+               OR SupportHours IS NULL
+               OR ContactUpdatedAtUtc IS NULL;
 
             IF COL_LENGTH(N'dbo.SystemSettings', N'GuestReviewEnabled') IS NOT NULL
             BEGIN
@@ -1961,15 +2006,44 @@ public sealed partial class AdminDataRepository
                 ALTER TABLE dbo.SystemSettings DROP COLUMN GuestReviewEnabled;
             END;
 
-            IF EXISTS (
-                SELECT 1
-                FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
-                    AND name = N'TtsProvider'
-                    AND is_nullable = 1
-            )
+            IF COL_LENGTH(N'dbo.SystemSettings', N'TtsProvider') IS NOT NULL
             BEGIN
-                ALTER TABLE dbo.SystemSettings ALTER COLUMN TtsProvider NVARCHAR(50) NOT NULL;
+                DECLARE @ttsProviderConstraint sysname;
+
+                SELECT TOP 1 @ttsProviderConstraint = defaultConstraint.name
+                FROM sys.default_constraints defaultConstraint
+                INNER JOIN sys.columns columnInfo
+                    ON columnInfo.object_id = defaultConstraint.parent_object_id
+                   AND columnInfo.column_id = defaultConstraint.parent_column_id
+                WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.SystemSettings')
+                  AND columnInfo.name = N'TtsProvider';
+
+                IF @ttsProviderConstraint IS NOT NULL
+                BEGIN
+                    EXEC(N'ALTER TABLE dbo.SystemSettings DROP CONSTRAINT [' + @ttsProviderConstraint + N']');
+                END;
+
+                ALTER TABLE dbo.SystemSettings DROP COLUMN TtsProvider;
+            END;
+
+            IF COL_LENGTH(N'dbo.SystemSettings', N'MapProvider') IS NOT NULL
+            BEGIN
+                DECLARE @mapProviderConstraint sysname;
+
+                SELECT TOP 1 @mapProviderConstraint = defaultConstraint.name
+                FROM sys.default_constraints defaultConstraint
+                INNER JOIN sys.columns columnInfo
+                    ON columnInfo.object_id = defaultConstraint.parent_object_id
+                   AND columnInfo.column_id = defaultConstraint.parent_column_id
+                WHERE defaultConstraint.parent_object_id = OBJECT_ID(N'dbo.SystemSettings')
+                  AND columnInfo.name = N'MapProvider';
+
+                IF @mapProviderConstraint IS NOT NULL
+                BEGIN
+                    EXEC(N'ALTER TABLE dbo.SystemSettings DROP CONSTRAINT [' + @mapProviderConstraint + N']');
+                END;
+
+                ALTER TABLE dbo.SystemSettings DROP COLUMN MapProvider;
             END;
 
             IF EXISTS (
@@ -1981,6 +2055,61 @@ public sealed partial class AdminDataRepository
             )
             BEGIN
                 ALTER TABLE dbo.SystemSettings ALTER COLUMN AnalyticsRetentionDays INT NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
+                    AND name = N'SupportPhone'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.SystemSettings ALTER COLUMN SupportPhone NVARCHAR(50) NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
+                    AND name = N'ContactAddress'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.SystemSettings ALTER COLUMN ContactAddress NVARCHAR(300) NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
+                    AND name = N'SupportInstructions'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.SystemSettings ALTER COLUMN SupportInstructions NVARCHAR(2000) NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
+                    AND name = N'SupportHours'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.SystemSettings ALTER COLUMN SupportHours NVARCHAR(120) NOT NULL;
+            END;
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.SystemSettings')
+                    AND name = N'ContactUpdatedAtUtc'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.SystemSettings ALTER COLUMN ContactUpdatedAtUtc DATETIMEOFFSET(7) NOT NULL;
             END;
 
             IF COL_LENGTH(N'dbo.SystemSettings', N'PremiumUnlockPriceUsd') IS NOT NULL
@@ -2017,6 +2146,35 @@ public sealed partial class AdminDataRepository
                     PRIMARY KEY (SettingId, LanguageType, LanguageCode),
                     CONSTRAINT FK_SystemSettingLanguages_SystemSettings FOREIGN KEY (SettingId) REFERENCES dbo.SystemSettings(Id)
                 );
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM dbo.SystemSettingLanguages
+                WHERE SettingId = 1 AND LanguageType = N'supported'
+            )
+            BEGIN
+                INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode)
+                VALUES
+                    (1, N'supported', N'vi'),
+                    (1, N'supported', N'en'),
+                    (1, N'supported', N'zh-CN'),
+                    (1, N'supported', N'ko'),
+                    (1, N'supported', N'ja');
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM dbo.SystemSettingLanguages
+                WHERE SettingId = 1
+                  AND LanguageType = N'supported'
+                  AND LanguageCode = (SELECT DefaultLanguage FROM dbo.SystemSettings WHERE Id = 1)
+            )
+            BEGIN
+                INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode)
+                SELECT 1, N'supported', DefaultLanguage
+                FROM dbo.SystemSettings
+                WHERE Id = 1;
             END;
             """);
     }
@@ -2424,27 +2582,21 @@ public sealed partial class AdminDataRepository
         IReadOnlyList<Poi> visiblePois)
     {
         var visiblePoiIds = visiblePois.Select(poi => poi.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var now = DateTimeOffset.UtcNow;
         return promotions
-            .Where(promotion => visiblePoiIds.Contains(promotion.PoiId) && IsPromotionVisibleToPublic(promotion, now))
+            .Where(promotion => visiblePoiIds.Contains(promotion.PoiId) && IsPromotionVisibleToPublic(promotion))
             .Select(CopyPublicPromotion)
             .ToList();
     }
 
-    private static bool IsPromotionVisibleToPublic(Promotion promotion, DateTimeOffset now)
+    private static bool IsPromotionVisibleToPublic(Promotion promotion)
     {
+        var now = DateTimeOffset.UtcNow;
         if (promotion.IsDeleted || promotion.EndAt <= now)
         {
             return false;
         }
 
-        if (string.Equals(promotion.Status, "active", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return string.Equals(promotion.Status, "upcoming", StringComparison.OrdinalIgnoreCase) &&
-            (promotion.VisibleFrom ?? promotion.StartAt) <= now;
+        return string.Equals(promotion.Status, "active", StringComparison.OrdinalIgnoreCase);
     }
 
     private static Promotion CopyPublicPromotion(Promotion promotion)

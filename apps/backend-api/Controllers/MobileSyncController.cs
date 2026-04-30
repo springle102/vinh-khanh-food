@@ -10,7 +10,6 @@ namespace VinhKhanh.BackendApi.Controllers;
 [Route("api/mobile")]
 public sealed class MobileSyncController(
     AdminDataRepository repository,
-    MobileOfflinePackageBuilder mobileOfflinePackageBuilder,
     ILogger<MobileSyncController> logger) : ControllerBase
 {
     [HttpGet("bootstrap-package-version")]
@@ -35,29 +34,6 @@ public sealed class MobileSyncController(
 
         Response.Headers["X-Data-Version"] = syncState.Version;
         return Ok(ApiResponse<MobileDatasetVersionResponse>.Ok(response));
-    }
-
-    [HttpGet("offline-package")]
-    public async Task<ActionResult<ApiResponse<AdminBootstrapResponse>>> GetOfflinePackage(
-        [FromQuery] string? languageCode,
-        CancellationToken cancellationToken)
-    {
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var offlinePackage = await mobileOfflinePackageBuilder.BuildAsync(languageCode, cancellationToken);
-        Response.Headers["X-Data-Version"] = offlinePackage.SyncState?.Version ?? string.Empty;
-        Response.Headers["X-Offline-Package-Language"] = PremiumAccessCatalog.NormalizeLanguageCode(languageCode);
-        Response.Headers["X-Offline-Package-Translations"] = offlinePackage.Translations.Count.ToString();
-        Response.Headers["X-Offline-Package-AudioGuides"] = offlinePackage.AudioGuides.Count.ToString();
-
-        logger.LogInformation(
-            "[OfflinePackage] Responded with mobile offline package. requestedLanguage={RequestedLanguage}; version={Version}; translations={TranslationCount}; audioGuides={AudioGuideCount}; elapsedMs={ElapsedMs}",
-            languageCode,
-            offlinePackage.SyncState?.Version,
-            offlinePackage.Translations.Count,
-            offlinePackage.AudioGuides.Count,
-            stopwatch.Elapsed.TotalMilliseconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
-
-        return Ok(ApiResponse<AdminBootstrapResponse>.Ok(offlinePackage));
     }
 
     [HttpPost("sync/logs")]

@@ -32,7 +32,6 @@ const appSettings = {
   },
   RoutingBaseUrl: "https://router.project-osrm.org/",
   RoutingProfile: "driving",
-  UseOfflineFirst: true,
   EnableSync: true,
 };
 

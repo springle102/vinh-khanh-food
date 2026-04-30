@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
 using VinhKhanh.MobileApp.Helpers;
 using VinhKhanh.MobileApp.Models;
@@ -8,145 +9,187 @@ namespace VinhKhanh.MobileApp.ViewModels;
 
 public sealed class SettingsViewModel : LocalizedViewModelBase
 {
+    private static readonly TimeSpan LiveSettingsRefreshInterval = TimeSpan.FromSeconds(2);
+
     private readonly IFoodStreetDataService _dataService;
-    private readonly IOfflinePackageService _offlinePackageService;
+    private readonly IMobileSystemSettingsService _systemSettingsService;
+    private readonly IAutoNarrationService _autoNarrationService;
+    private readonly ILogger<SettingsViewModel> _logger;
     private readonly AsyncCommand<LanguageOption> _selectLanguageCommand;
-    private readonly AsyncCommand _downloadOfflinePackageCommand;
-    private readonly AsyncCommand _updateOfflinePackageCommand;
-    private readonly AsyncCommand _deleteOfflinePackageCommand;
-    private readonly AsyncCommand _cancelOfflinePackageCommand;
-    private OfflinePackageState _offlinePackageState = OfflinePackageState.Empty;
-    private long? _availableFreeSpaceBytes;
+    private readonly AsyncCommand _toggleContactInfoCommand;
+    private SystemContactInfo _contactInfo = new();
+    private bool _isAutoNarrationEnabled;
+    private bool _isContactDetailsVisible;
+    private string _loadErrorText = string.Empty;
+    private CancellationTokenSource? _liveRefreshCts;
 
     public SettingsViewModel(
         IFoodStreetDataService dataService,
-        IOfflinePackageService offlinePackageService,
-        IAppLanguageService languageService)
+        IMobileSystemSettingsService systemSettingsService,
+        IAutoNarrationService autoNarrationService,
+        IAppLanguageService languageService,
+        ILogger<SettingsViewModel> logger)
         : base(languageService)
     {
         _dataService = dataService;
-        _offlinePackageService = offlinePackageService;
+        _systemSettingsService = systemSettingsService;
+        _autoNarrationService = autoNarrationService;
+        _logger = logger;
+        _isAutoNarrationEnabled = _autoNarrationService.IsEnabled;
         _selectLanguageCommand = new(SelectLanguageAsync);
-        _downloadOfflinePackageCommand = new(DownloadOfflinePackageAsync, () => !_offlinePackageState.IsBusy && _offlinePackageState.CanReachServer);
-        _updateOfflinePackageCommand = new(UpdateOfflinePackageAsync, CanUpdateOfflinePackage);
-        _deleteOfflinePackageCommand = new(DeleteOfflinePackageAsync, () => !_offlinePackageState.IsBusy && _offlinePackageState.IsInstalled);
-        _cancelOfflinePackageCommand = new(CancelOfflinePackageAsync, () => _offlinePackageState.IsBusy);
-        _offlinePackageService.StateChanged += OnOfflinePackageStateChanged;
+        _toggleContactInfoCommand = new(ToggleContactInfoAsync);
     }
 
     public ObservableCollection<LanguageOption> Languages { get; } = [];
 
     public string HeaderTitleText => LanguageService.GetText("settings_title");
     public string LanguageTitleText => LanguageService.GetText("settings_language_title");
-    public string OfflinePackageTitleText => LanguageService.GetText("settings_offline_package_title");
-    public string OfflinePackageDescriptionText => LanguageService.GetText("settings_offline_package_description");
-    public string OfflinePackageStatusCaptionText => LanguageService.GetText("settings_offline_package_status_label");
-    public string OfflinePackageSizeCaptionText => LanguageService.GetText("settings_offline_package_size_label");
-    public string OfflinePackageUpdatedCaptionText => LanguageService.GetText("settings_offline_package_updated_label");
-    public string OfflinePackageVersionCaptionText => LanguageService.GetText("settings_offline_package_version_label");
-    public string OfflinePackageSpaceCaptionText => LanguageService.GetText("settings_offline_package_space_label");
-    public string OfflinePackagePoiCountCaptionText => LanguageService.GetText("settings_offline_package_poi_count");
-    public string OfflinePackageAudioCountCaptionText => LanguageService.GetText("settings_offline_package_audio_count");
-    public string OfflinePackageImageCountCaptionText => LanguageService.GetText("settings_offline_package_image_count");
-    public string OfflinePackageTourCountCaptionText => LanguageService.GetText("settings_offline_package_tour_count");
-    public string OfflinePackageDownloadButtonText => LanguageService.GetText("settings_offline_package_download_button");
-    public string OfflinePackageUpdateButtonText => LanguageService.GetText("settings_offline_package_update_button");
-    public string OfflinePackageDeleteButtonText => LanguageService.GetText("settings_offline_package_delete_button");
-    public string OfflinePackageCancelButtonText => LanguageService.GetText("settings_offline_package_cancel_button");
-
-    public string OfflinePackageStatusText => _offlinePackageState.Status switch
+    public string LanguageSectionText => ToSectionText(LanguageTitleText);
+    public string AutoNarrationSectionText => ToSectionText(LanguageService.GetText("settings_auto_narration_section"));
+    public string AutoNarrationTitleText => LanguageService.GetText("settings_auto_narration_title");
+    public string AutoNarrationDescriptionText => LanguageService.GetText("settings_auto_narration_description");
+    public string FeedbackSectionText => ToSectionText(LanguageService.GetText("settings_feedback_section"));
+    public string ContactTitleText => LanguageService.GetText("settings_contact_title");
+    public string ContactActionText => IsContactDetailsVisible
+        ? LanguageService.GetText("settings_contact_hide")
+        : LanguageService.GetText("settings_contact_open");
+    public string ContactSystemNameCaptionText => LanguageService.GetText("settings_contact_system_name");
+    public string ContactPhoneCaptionText => LanguageService.GetText("settings_contact_phone");
+    public string ContactEmailCaptionText => LanguageService.GetText("settings_contact_email");
+    public string ContactAddressCaptionText => LanguageService.GetText("settings_contact_address");
+    public string ContactSupportHoursCaptionText => LanguageService.GetText("settings_contact_support_hours");
+    public string ContactInstructionsCaptionText => LanguageService.GetText("settings_contact_instructions");
+    public string ContactSystemNameText => RequiredContactValue(_contactInfo.SystemName, _contactInfo.AppName);
+    public string ContactPhoneText => RequiredContactValue(_contactInfo.Phone, _contactInfo.SupportPhone);
+    public string ContactEmailText => FirstContactValue(_contactInfo.Email, _contactInfo.SupportEmail);
+    public string ContactAddressText => FirstContactValue(_contactInfo.Address, _contactInfo.ContactAddress);
+    public string ContactSupportHoursText => FirstContactValue(_contactInfo.SupportHours);
+    public string ContactInstructionsText => RequiredContactValue(_contactInfo.ComplaintGuide, _contactInfo.SupportInstructions);
+    public string ContactUpdatedText => BuildContactUpdatedText();
+    public string LoadErrorText => _loadErrorText;
+    public bool HasLoadError => !string.IsNullOrWhiteSpace(_loadErrorText);
+    public bool IsAutoNarrationEnabled
     {
-        OfflinePackageLifecycleStatus.Preparing => LanguageService.GetText("settings_offline_package_status_preparing"),
-        OfflinePackageLifecycleStatus.Downloading => string.Format(
-            LanguageService.CurrentCulture,
-            LanguageService.GetText("settings_offline_package_status_downloading"),
-            _offlinePackageState.ProgressPercent),
-        OfflinePackageLifecycleStatus.Validating => LanguageService.GetText("settings_offline_package_status_validating"),
-        OfflinePackageLifecycleStatus.Installing => LanguageService.GetText("settings_offline_package_status_installing"),
-        OfflinePackageLifecycleStatus.Completed => LanguageService.GetText("settings_offline_package_status_completed"),
-        OfflinePackageLifecycleStatus.Canceled => LanguageService.GetText("settings_offline_package_status_canceled"),
-        OfflinePackageLifecycleStatus.Error => LanguageService.GetText("settings_offline_package_status_error"),
-        OfflinePackageLifecycleStatus.Deleting => LanguageService.GetText("settings_offline_package_status_deleting"),
-        _ when _offlinePackageState.IsInstalled => LanguageService.GetText("settings_offline_package_status_ready"),
-        _ => LanguageService.GetText("settings_offline_package_status_not_installed")
-    };
+        get => _isAutoNarrationEnabled;
+        set
+        {
+            if (!SetProperty(ref _isAutoNarrationEnabled, value))
+            {
+                return;
+            }
 
-    public string OfflinePackageSizeText => _offlinePackageState.Metadata?.PackageSizeBytes > 0
-        ? FormatFileSize(_offlinePackageState.Metadata.PackageSizeBytes)
-        : LanguageService.GetText("settings_offline_package_size_pending");
+            _ = SetAutoNarrationEnabledAsync(value);
+        }
+    }
 
-    public string OfflinePackageUpdatedText => _offlinePackageState.Metadata?.LastUpdatedAtUtc > DateTimeOffset.MinValue
-        ? _offlinePackageState.Metadata!.LastUpdatedAtUtc.ToLocalTime().ToString("g", LanguageService.CurrentCulture)
-        : LanguageService.GetText("settings_offline_package_not_downloaded");
-
-    public string OfflinePackageVersionText => !string.IsNullOrWhiteSpace(_offlinePackageState.InstalledVersion)
-        ? _offlinePackageState.InstalledVersion
-        : LanguageService.GetText("settings_offline_package_not_downloaded");
-
-    public string OfflinePackageSpaceText => _availableFreeSpaceBytes.HasValue
-        ? FormatFileSize(_availableFreeSpaceBytes.Value)
-        : LanguageService.GetText("settings_offline_package_space_unknown");
-
-    public string OfflinePackageProgressText => _offlinePackageState.IsBusy
-        ? string.Format(
-            LanguageService.CurrentCulture,
-            LanguageService.GetText("settings_offline_package_progress_format"),
-            _offlinePackageState.DownloadedFileCount,
-            _offlinePackageState.TotalFileCount,
-            _offlinePackageState.ProgressPercent)
-        : string.Empty;
-
-    public string OfflinePackageUpdateHintText => !_offlinePackageState.CanReachServer
-        ? LanguageService.GetText("settings_offline_package_update_no_network")
-        : _offlinePackageState.IsUpdateAvailable
-            ? LanguageService.GetText("settings_offline_package_update_available")
-            : LanguageService.GetText("settings_offline_package_update_latest");
-
-    public string OfflinePackageErrorText => _offlinePackageState.ErrorMessage;
-
-    public int OfflinePackagePoiCount => _offlinePackageState.Metadata?.PoiCount ?? 0;
-    public int OfflinePackageAudioCount => _offlinePackageState.Metadata?.AudioCount ?? 0;
-    public int OfflinePackageImageCount => _offlinePackageState.Metadata?.ImageCount ?? 0;
-    public int OfflinePackageTourCount => _offlinePackageState.Metadata?.TourCount ?? 0;
-    public double OfflinePackageProgressValue => _offlinePackageState.ProgressFraction;
-    public bool IsOfflinePackageBusy => _offlinePackageState.IsBusy;
-    public bool IsOfflinePackageInstalled => _offlinePackageState.IsInstalled;
-    public bool HasOfflinePackageError => !string.IsNullOrWhiteSpace(_offlinePackageState.ErrorMessage);
-    public bool HasOfflinePackageProgress => _offlinePackageState.IsBusy;
-    public bool HasOfflinePackageSpaceInfo => _availableFreeSpaceBytes.HasValue;
-    public bool IsOfflinePackageUpdateAvailable => _offlinePackageState.IsUpdateAvailable;
-    public bool HasOfflinePackageUpdateHint => IsOfflinePackageInstalled || !_offlinePackageState.CanReachServer;
-    public bool ShowOfflinePackageDownloadButton => !IsOfflinePackageInstalled;
-    public bool ShowOfflinePackageInstalledActions => IsOfflinePackageInstalled;
-    public bool ShowOfflinePackageUpdateButton =>
-        IsOfflinePackageInstalled &&
-        (_offlinePackageState.IsUpdateAvailable || _offlinePackageState.Status == OfflinePackageLifecycleStatus.Error);
+    public bool IsContactDetailsVisible => _isContactDetailsVisible;
+    public bool HasContactEmail => HasContactValue(_contactInfo.Email, _contactInfo.SupportEmail);
+    public bool HasContactAddress => HasContactValue(_contactInfo.Address, _contactInfo.ContactAddress);
+    public bool HasContactSupportHours => HasContactValue(_contactInfo.SupportHours);
+    public bool HasContactUpdatedAt => ResolveContactUpdatedAt() is not null;
 
     public AsyncCommand<LanguageOption> SelectLanguageCommand => _selectLanguageCommand;
-    public AsyncCommand DownloadOfflinePackageCommand => _downloadOfflinePackageCommand;
-    public AsyncCommand UpdateOfflinePackageCommand => _updateOfflinePackageCommand;
-    public AsyncCommand DeleteOfflinePackageCommand => _deleteOfflinePackageCommand;
-    public AsyncCommand CancelOfflinePackageCommand => _cancelOfflinePackageCommand;
+    public AsyncCommand ToggleContactInfoCommand => _toggleContactInfoCommand;
 
     public async Task LoadAsync()
         => await LoadSettingsAsync();
 
-    public async Task StartOfflineDownloadAsync()
-        => await DownloadOfflinePackageAsync();
+    public void StartLiveRefresh()
+    {
+        if (_liveRefreshCts is not null)
+        {
+            return;
+        }
+
+        _liveRefreshCts = new CancellationTokenSource();
+        _ = RunLiveRefreshAsync(_liveRefreshCts.Token);
+    }
+
+    public void StopLiveRefresh()
+    {
+        var cts = _liveRefreshCts;
+        if (cts is null)
+        {
+            return;
+        }
+
+        _liveRefreshCts = null;
+        cts.Cancel();
+    }
 
     protected override async Task ReloadLocalizedStateAsync()
     {
-        Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
-        RefreshOfflinePackageBindings();
+        try
+        {
+            Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
+            _contactInfo = await _systemSettingsService.GetContactSettingsAsync(forceRefresh: true);
+            ClearLoadError();
+            RefreshLocalizedBindings();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            SetLoadError(LanguageService.GetText("settings_load_error"));
+            _logger.LogError(exception, "[Settings] Localized reload failed.");
+        }
     }
 
     private async Task LoadSettingsAsync()
     {
-        await _dataService.EnsureAllowedLanguageSelectionAsync();
-        Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
-        _availableFreeSpaceBytes = _offlinePackageService.TryGetAvailableFreeSpaceBytes();
-        ApplyOfflinePackageState(await _offlinePackageService.RefreshStatusAsync());
-        RefreshLocalizedBindings();
+        try
+        {
+            await _dataService.EnsureAllowedLanguageSelectionAsync();
+            Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
+            _contactInfo = await _systemSettingsService.GetContactSettingsAsync(forceRefresh: true) ?? new SystemContactInfo();
+            LogLoadedSettings("initial_load");
+            ClearLoadError();
+            RefreshLocalizedBindings();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(exception, "[Settings] Load failed.");
+            SetLoadError(LanguageService.GetText("settings_load_error"));
+            _contactInfo ??= new SystemContactInfo();
+            RefreshLocalizedBindings();
+        }
+    }
+
+    private async Task RunLiveRefreshAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(LiveSettingsRefreshInterval);
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                try
+                {
+                    await RefreshLiveSettingsAsync(cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    _logger.LogWarning(exception, "[Settings] Live refresh failed.");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshLiveSettingsAsync(CancellationToken cancellationToken)
+    {
+        var languages = await _dataService.GetLanguagesAsync(cancellationToken);
+        var contactInfo = await _systemSettingsService.GetContactSettingsAsync(
+            forceRefresh: true,
+            cancellationToken);
+
+        await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            Languages.ReplaceRange(languages);
+            _contactInfo = contactInfo ?? new SystemContactInfo();
+            LogLoadedSettings("live_refresh");
+            ClearLoadError();
+            RefreshLocalizedBindings();
+        });
     }
 
     private async Task SelectLanguageAsync(LanguageOption? language)
@@ -156,108 +199,141 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
             return;
         }
 
-        var normalizedCode = AppLanguage.NormalizeCode(language.Code);
-        if (string.Equals(normalizedCode, LanguageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase))
+        try
         {
-            Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
+            var normalizedCode = AppLanguage.NormalizeCode(language.Code);
+            if (string.Equals(normalizedCode, LanguageService.CurrentLanguage, StringComparison.OrdinalIgnoreCase))
+            {
+                Languages.ReplaceRange(await _dataService.GetLanguagesAsync());
+                return;
+            }
+
+            foreach (var item in Languages)
+            {
+                item.IsSelected = string.Equals(
+                    AppLanguage.NormalizeCode(item.Code),
+                    normalizedCode,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+
+            await LanguageService.SetLanguageAsync(normalizedCode);
+            ClearLoadError();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(exception, "[Settings] Language selection failed.");
+            SetLoadError(LanguageService.GetText("settings_load_error"));
+        }
+    }
+
+    private async Task ToggleContactInfoAsync()
+    {
+        try
+        {
+            if (!IsContactDetailsVisible)
+            {
+                _contactInfo = await _systemSettingsService.GetContactSettingsAsync(forceRefresh: true) ?? new SystemContactInfo();
+            }
+
+            _isContactDetailsVisible = !_isContactDetailsVisible;
+            ClearLoadError();
+            RefreshLocalizedBindings();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(exception, "[Settings] Contact panel failed to toggle.");
+            _contactInfo ??= new SystemContactInfo();
+            SetLoadError(LanguageService.GetText("settings_contact_load_error"));
+            _isContactDetailsVisible = true;
+            RefreshLocalizedBindings();
+        }
+    }
+
+    private async Task SetAutoNarrationEnabledAsync(bool isEnabled)
+    {
+        try
+        {
+            await _autoNarrationService.SetEnabledAsync(isEnabled);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "[Settings] Auto narration toggle failed.");
+            var restoredValue = _autoNarrationService.IsEnabled;
+            if (_isAutoNarrationEnabled != restoredValue)
+            {
+                _isAutoNarrationEnabled = restoredValue;
+                OnPropertyChanged(nameof(IsAutoNarrationEnabled));
+            }
+
+            SetLoadError(LanguageService.GetText("settings_load_error"));
+        }
+    }
+
+    private void SetLoadError(string message)
+    {
+        _loadErrorText = string.IsNullOrWhiteSpace(message)
+            ? LanguageService.GetText("settings_load_error")
+            : message;
+        OnPropertyChanged(nameof(LoadErrorText));
+        OnPropertyChanged(nameof(HasLoadError));
+    }
+
+    private void ClearLoadError()
+    {
+        if (string.IsNullOrWhiteSpace(_loadErrorText))
+        {
             return;
         }
 
-        foreach (var item in Languages)
-        {
-            item.IsSelected = string.Equals(
-                AppLanguage.NormalizeCode(item.Code),
-                normalizedCode,
-                StringComparison.OrdinalIgnoreCase);
-        }
-
-        await LanguageService.SetLanguageAsync(normalizedCode);
+        _loadErrorText = string.Empty;
+        OnPropertyChanged(nameof(LoadErrorText));
+        OnPropertyChanged(nameof(HasLoadError));
     }
 
-    private async Task DownloadOfflinePackageAsync()
+    private string RequiredContactValue(params string?[] values)
     {
-        var nextState = await _offlinePackageService.DownloadOrUpdateAsync();
-        ApplyOfflinePackageState(nextState);
-        if (nextState.Status == OfflinePackageLifecycleStatus.Completed && Shell.Current is not null)
-        {
-            await Shell.Current.DisplayAlertAsync(
-                LanguageService.GetText("settings_offline_package_success_title"),
-                LanguageService.GetText("settings_offline_package_success_message"),
-                LanguageService.GetText("common_ok"));
-        }
+        var value = FirstContactValue(values);
+        return string.IsNullOrWhiteSpace(value)
+            ? LanguageService.GetText("settings_contact_not_updated")
+            : value;
     }
 
-    private async Task UpdateOfflinePackageAsync()
-        => await DownloadOfflinePackageAsync();
+    private static bool HasContactValue(params string?[] values)
+        => !string.IsNullOrWhiteSpace(FirstContactValue(values));
 
-    private async Task DeleteOfflinePackageAsync()
+    private static string FirstContactValue(params string?[] values)
+        => values
+               .Select(value => value?.Trim() ?? string.Empty)
+               .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ??
+           string.Empty;
+
+    private string BuildContactUpdatedText()
     {
-        if (Shell.Current is null)
-        {
-            return;
-        }
-
-        var shouldDelete = await Shell.Current.DisplayAlertAsync(
-            LanguageService.GetText("settings_offline_package_delete_title"),
-            LanguageService.GetText("settings_offline_package_delete_message"),
-            LanguageService.GetText("settings_offline_package_delete_confirm"),
-            LanguageService.GetText("common_cancel"));
-        if (!shouldDelete)
-        {
-            return;
-        }
-
-        ApplyOfflinePackageState(await _offlinePackageService.DeleteAsync());
+        var updatedAt = ResolveContactUpdatedAt();
+        return updatedAt is null
+            ? string.Empty
+            : string.Format(
+                LanguageService.CurrentCulture,
+                LanguageService.GetText("settings_contact_updated"),
+                updatedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm", LanguageService.CurrentCulture));
     }
 
-    private async Task CancelOfflinePackageAsync()
+    private DateTimeOffset? ResolveContactUpdatedAt()
+        => _contactInfo.UpdatedAtUtc ?? _contactInfo.ContactUpdatedAtUtc;
+
+    private void LogLoadedSettings(string source)
     {
-        await _offlinePackageService.CancelAsync();
-        ApplyOfflinePackageState(await _offlinePackageService.RefreshStatusAsync());
+        _logger.LogInformation(
+            "[Settings] settings bound to UI. source={Source}; languagesCount={LanguagesCount}; hasSystemName={HasSystemName}; hasPhone={HasPhone}; hasEmail={HasEmail}; hasAddress={HasAddress}; hasComplaintGuide={HasComplaintGuide}",
+            source,
+            Languages.Count,
+            !string.IsNullOrWhiteSpace(ContactSystemNameText) && ContactSystemNameText != LanguageService.GetText("settings_contact_not_updated"),
+            !string.IsNullOrWhiteSpace(ContactPhoneText) && ContactPhoneText != LanguageService.GetText("settings_contact_not_updated"),
+            HasContactEmail,
+            HasContactAddress,
+            !string.IsNullOrWhiteSpace(ContactInstructionsText) && ContactInstructionsText != LanguageService.GetText("settings_contact_not_updated"));
     }
 
-    private void OnOfflinePackageStateChanged(object? sender, OfflinePackageState state)
-        => MainThread.BeginInvokeOnMainThread(() => ApplyOfflinePackageState(state));
-
-    private void ApplyOfflinePackageState(OfflinePackageState state)
-    {
-        _offlinePackageState = state;
-        _availableFreeSpaceBytes = _offlinePackageService.TryGetAvailableFreeSpaceBytes();
-        RefreshOfflinePackageBindings();
-    }
-
-    private void RefreshOfflinePackageBindings()
-    {
-        RefreshLocalizedBindings();
-        _downloadOfflinePackageCommand.NotifyCanExecuteChanged();
-        _updateOfflinePackageCommand.NotifyCanExecuteChanged();
-        _deleteOfflinePackageCommand.NotifyCanExecuteChanged();
-        _cancelOfflinePackageCommand.NotifyCanExecuteChanged();
-    }
-
-    private bool CanUpdateOfflinePackage()
-        => !_offlinePackageState.IsBusy &&
-           _offlinePackageState.IsInstalled &&
-           _offlinePackageState.CanReachServer &&
-           (_offlinePackageState.IsUpdateAvailable || _offlinePackageState.Status == OfflinePackageLifecycleStatus.Error);
-
-    private string FormatFileSize(long bytes)
-    {
-        if (bytes <= 0)
-        {
-            return "0 MB";
-        }
-
-        var units = new[] { "B", "KB", "MB", "GB" };
-        var value = (double)bytes;
-        var unitIndex = 0;
-        while (value >= 1024d && unitIndex < units.Length - 1)
-        {
-            value /= 1024d;
-            unitIndex++;
-        }
-
-        var format = unitIndex == 0 ? "0" : unitIndex == 1 ? "0.0" : "0.##";
-        return string.Format(LanguageService.CurrentCulture, "{0:" + format + "} {1}", value, units[unitIndex]);
-    }
+    private string ToSectionText(string value)
+        => (value ?? string.Empty).Trim().ToUpper(LanguageService.CurrentCulture);
 }

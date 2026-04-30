@@ -427,13 +427,9 @@ public sealed class BootstrapLocalizationService(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (supportedLanguages.Count == 0)
         {
-            supportedLanguages.UnionWith(PremiumAccessCatalog.FreeLanguages);
-            supportedLanguages.UnionWith(PremiumAccessCatalog.PremiumLanguages);
+            supportedLanguages.Add(LanguageRegistry.DefaultLanguageCode);
         }
 
-        supportedLanguages.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.DefaultLanguage));
-        supportedLanguages.Add(PremiumAccessCatalog.NormalizeLanguageCode(settings.FallbackLanguage));
-        supportedLanguages.Add("vi");
         return supportedLanguages.Contains(targetLanguageCode);
     }
 }

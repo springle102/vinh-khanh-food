@@ -371,11 +371,14 @@ CREATE TABLE dbo.SystemSettings (
     Id INT NOT NULL PRIMARY KEY,
     AppName NVARCHAR(200) NOT NULL,
     SupportEmail NVARCHAR(200) NOT NULL,
+    SupportPhone NVARCHAR(50) NOT NULL,
+    ContactAddress NVARCHAR(300) NOT NULL,
+    SupportInstructions NVARCHAR(2000) NOT NULL,
+    SupportHours NVARCHAR(120) NOT NULL,
+    ContactUpdatedAtUtc DATETIMEOFFSET(7) NOT NULL,
     DefaultLanguage NVARCHAR(20) NOT NULL,
     FallbackLanguage NVARCHAR(20) NOT NULL,
-    MapProvider NVARCHAR(50) NOT NULL,
     StorageProvider NVARCHAR(50) NOT NULL,
-    TtsProvider NVARCHAR(50) NOT NULL,
     GeofenceRadiusMeters INT NOT NULL,
     AnalyticsRetentionDays INT NOT NULL
 );
@@ -508,8 +511,18 @@ INSERT INTO dbo.Promotions (Id, PoiId, Title, [Description], StartAt, EndAt, [St
 (N'promo-oc-phat-combo', N'oc-phat', N'Combo ốc cho nhóm 4 người', N'Ưu đãi combo gồm ba món ốc bán chạy và một phần nghêu hấp Thái cho nhóm bạn.', '2026-04-11T12:40:21.7542574+07:00', '2026-05-18T12:40:21.7542574+07:00', N'active', '2026-04-11T12:40:21.7542574+07:00', N'user-super', N'user-owner-oc', 0);
 GO
 
-INSERT INTO dbo.SystemSettings (Id, AppName, SupportEmail, DefaultLanguage, FallbackLanguage, MapProvider, StorageProvider, TtsProvider, GeofenceRadiusMeters, AnalyticsRetentionDays) VALUES
-(1, N'Hệ thống quản trị thuyết minh Vĩnh Khánh', N'support@vinhkhanh.vn', N'vi', N'en', N'openstreetmap', N'local', N'elevenlabs', 60, 180);
+INSERT INTO dbo.SystemSettings (
+    Id, AppName, SupportEmail, SupportPhone, ContactAddress, SupportInstructions,
+    SupportHours, ContactUpdatedAtUtc,
+    DefaultLanguage, FallbackLanguage, StorageProvider,
+    GeofenceRadiusMeters, AnalyticsRetentionDays
+) VALUES
+(1, N'Hệ thống quản trị thuyết minh Vĩnh Khánh', N'support@vinhkhanh.vn', N'0900000000',
+ N'Vinh Khanh Food Street, Ho Chi Minh City',
+ N'Vui lòng liên hệ bộ phận hỗ trợ nếu bạn cần khiếu nại hoặc cần trợ giúp.',
+ N'08:00 - 21:00 hằng ngày',
+ SYSDATETIMEOFFSET(),
+ N'vi', N'en', N'local', 60, 180);
 GO
 
 INSERT INTO dbo.SystemSettingLanguages (SettingId, LanguageType, LanguageCode) VALUES

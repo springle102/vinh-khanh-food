@@ -20,11 +20,11 @@ public static class LanguageRegistry
 
     private static readonly IReadOnlyList<SupportedLanguageDefinition> Definitions =
     [
-        new("vi", "Tiếng Việt", "vi-VN", "vi", "vi", "vi", "JBFqnCBsd6RMkjVDRZzb", DefaultTtsModelId),
+        new("vi", "Ti\u1EBFng Vi\u1EC7t", "vi-VN", "vi", "vi", "vi", "JBFqnCBsd6RMkjVDRZzb", DefaultTtsModelId),
         new("en", "English", "en-US", "en", "en", "en", "EXAVITQu4vr4xnSDxMaL", DefaultTtsModelId),
-        new(SimplifiedChineseCode, "中文", "zh-CN", "zh-CN", "zh", "zh-CN", TextToSpeechOptions.DefaultVoiceIdValue, DefaultTtsModelId),
-        new("ko", "한국어", "ko-KR", "ko", "ko", "ko", "onwK4e9ZLuTAKqWW03F9", DefaultTtsModelId),
-        new("ja", "日本語", "ja-JP", "ja", "ja", "ja", "XrExE9yKIg1WjnnlVkGX", DefaultTtsModelId)
+        new(SimplifiedChineseCode, "\u4E2D\u6587", "zh-CN", "zh-CN", "zh", "zh-CN", TextToSpeechOptions.DefaultVoiceIdValue, DefaultTtsModelId),
+        new("ko", "\uD55C\uAD6D\uC5B4", "ko-KR", "ko", "ko", "ko", "onwK4e9ZLuTAKqWW03F9", DefaultTtsModelId),
+        new("ja", "\u65E5\u672C\u8A9E", "ja-JP", "ja", "ja", "ja", "XrExE9yKIg1WjnnlVkGX", DefaultTtsModelId)
     ];
 
     private static readonly IReadOnlyDictionary<string, SupportedLanguageDefinition> DefinitionsByInternalCode =

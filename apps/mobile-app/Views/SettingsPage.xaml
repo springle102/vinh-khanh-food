@@ -56,7 +56,7 @@
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                             <VerticalStackLayout Spacing="4">
                                 <Label Text="Ưu tiên audio có sẵn" FontSize="16" FontAttributes="Bold" />
-                                <Label Text="Nếu có gói offline, app sẽ phát file audio đã tải sẵn" FontSize="12" TextColor="{StaticResource BrandInkSoft}" />
+                                <Label Text="Nếu audio đã có trong cache, app sẽ phát file đã tải sẵn" FontSize="12" TextColor="{StaticResource BrandInkSoft}" />
                             </VerticalStackLayout>
                             <Switch x:Name="PreparedAudioSwitch" Grid.Column="1" Toggled="OnPreparedAudioToggled" />
                         </Grid>

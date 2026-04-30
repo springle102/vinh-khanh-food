@@ -81,6 +81,17 @@ public sealed partial class AdminDataRepository
         return ExecuteScalarInt(connection, transaction, sql, "dbo", tableName) > 0;
     }
 
+    private static bool ColumnExists(SqlConnection connection, SqlTransaction? transaction, string tableName, string columnName)
+    {
+        const string sql = """
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?;
+            """;
+
+        return ExecuteScalarInt(connection, transaction, sql, "dbo", tableName, columnName) > 0;
+    }
+
     private static bool HasAdminAuditLogTable(SqlConnection connection, SqlTransaction? transaction = null)
         => TableExists(connection, transaction, "AdminAuditLogs");
 

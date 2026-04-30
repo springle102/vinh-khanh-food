@@ -271,19 +271,82 @@ public sealed record PromotionUpsertRequest(
     string ActorRole,
     DateTimeOffset? VisibleFrom = null);
 
-public sealed record SystemSettingUpsertRequest(
-    string AppName,
-    string SupportEmail,
+public sealed record AppLanguageSettingsUpdateRequest(
     string DefaultLanguage,
-    string FallbackLanguage,
-    List<string> SupportedLanguages,
-    string MapProvider,
-    string StorageProvider,
-    string TtsProvider,
-    int GeofenceRadiusMeters,
-    int AnalyticsRetentionDays,
+    List<string> EnabledLanguages,
     string ActorName,
     string ActorRole);
+
+public sealed record AppLanguageSettingResponse(
+    string Code,
+    string DisplayName,
+    bool IsEnabled,
+    bool IsDefault);
+
+public sealed record AppLanguageSettingsResponse(
+    string DefaultLanguage,
+    IReadOnlyList<AppLanguageSettingResponse> Languages);
+
+public sealed record MobileLanguageOptionResponse(
+    string Code,
+    string DisplayName);
+
+public sealed record MobileLanguageSettingsResponse(
+    string DefaultLanguage,
+    IReadOnlyList<MobileLanguageOptionResponse> Languages)
+{
+    public IReadOnlyList<string> EnabledLanguages { get; init; } =
+        Languages.Select(language => language.Code).ToList();
+}
+
+public sealed record MobileSystemSettingsResponse(
+    MobileLanguageSettingsResponse Languages,
+    MobileContactSettingsResponse Contact,
+    MobileOfflinePackageSettingsResponse OfflinePackage)
+{
+    public IReadOnlyList<string> EnabledLanguages => Languages.EnabledLanguages;
+}
+
+public sealed record MobileContactSettingsResponse(
+    string SystemName,
+    string Phone,
+    string Email,
+    string Address,
+    string ComplaintGuide,
+    string SupportHours,
+    DateTimeOffset UpdatedAtUtc)
+{
+    public string AppName => SystemName;
+    public string SupportPhone => Phone;
+    public string SupportEmail => Email;
+    public string ContactAddress => Address;
+    public string SupportInstructions => ComplaintGuide;
+    public DateTimeOffset ContactUpdatedAtUtc => UpdatedAtUtc;
+}
+
+public sealed record MobileOfflinePackageSettingsResponse(
+    bool DownloadsEnabled,
+    int MaxPackageSizeMb,
+    string Description);
+
+public sealed record SystemContactSettingsUpdateRequest(
+    string AppName,
+    string SupportPhone,
+    string SupportEmail,
+    string ContactAddress,
+    string SupportInstructions,
+    string? SupportHours,
+    string ActorName,
+    string ActorRole);
+
+public sealed record SystemContactSettingsResponse(
+    string AppName,
+    string SupportPhone,
+    string SupportEmail,
+    string ContactAddress,
+    string SupportInstructions,
+    string SupportHours,
+    DateTimeOffset ContactUpdatedAtUtc);
 
 public sealed record DashboardAudioLanguageMetricResponse(
     string LanguageCode,

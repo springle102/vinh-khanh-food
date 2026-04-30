@@ -8,44 +8,37 @@ public sealed partial class FoodStreetApiDataService : IAppLifecycleAwareService
 {
     public async Task<string> EnsureAllowedLanguageSelectionAsync()
     {
-        var snapshot = await GetBootstrapSnapshotAsync();
-        var appSupportedLanguageCodes = AppLanguage.SupportedLanguages
+        var languageSettings = await _systemSettingsService.GetLanguageSettingsAsync(forceRefresh: true);
+        var allowedLanguageCodes = languageSettings.Languages
             .Select(item => AppLanguage.NormalizeCode(item.Code))
             .Where(code => !string.IsNullOrWhiteSpace(code))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-        if (appSupportedLanguageCodes.Count == 0)
+        if (allowedLanguageCodes.Count == 0)
         {
-            appSupportedLanguageCodes.Add(AppLanguage.DefaultLanguage);
+            allowedLanguageCodes.Add(AppLanguage.DefaultLanguage);
         }
 
         var currentLanguageCode = AppLanguage.NormalizeCode(_languageService.CurrentLanguage);
-        if (appSupportedLanguageCodes.Contains(currentLanguageCode, StringComparer.OrdinalIgnoreCase))
+        if (allowedLanguageCodes.Contains(currentLanguageCode, StringComparer.OrdinalIgnoreCase))
         {
-            var backendAdvertisedLanguageCodes = snapshot?.SupportedLanguages
-                .Select(item => AppLanguage.NormalizeCode(item.Code))
-                .Where(code => !string.IsNullOrWhiteSpace(code))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList()
-                ?? [];
-
-            if (backendAdvertisedLanguageCodes.Count > 0 &&
-                !backendAdvertisedLanguageCodes.Contains(currentLanguageCode, StringComparer.OrdinalIgnoreCase))
-            {
-                _logger.LogWarning(
-                    "[LanguageGuard] Keeping user-selected language '{CurrentLanguage}' even though the current bootstrap does not advertise it. BackendLanguages={BackendLanguages}",
-                    currentLanguageCode,
-                    string.Join(",", backendAdvertisedLanguageCodes));
-            }
-
             return currentLanguageCode;
         }
 
+        var fallbackLanguageCode = AppLanguage.NormalizeCode(languageSettings.DefaultLanguage);
+        if (!allowedLanguageCodes.Contains(fallbackLanguageCode, StringComparer.OrdinalIgnoreCase))
+        {
+            fallbackLanguageCode = allowedLanguageCodes.Contains(AppLanguage.DefaultLanguage, StringComparer.OrdinalIgnoreCase)
+                ? AppLanguage.DefaultLanguage
+                : allowedLanguageCodes[0];
+        }
+
         _logger.LogWarning(
-            "[LanguageGuard] Current language '{CurrentLanguage}' is not supported by the app. Restoring to an app-supported language without consulting bootstrap data.",
-            currentLanguageCode);
-        return await _languageService.RestoreToAllowedLanguageAsync();
+            "[LanguageGuard] Current language '{CurrentLanguage}' is disabled by backend settings. Restoring to '{FallbackLanguage}'. allowed={AllowedLanguages}",
+            currentLanguageCode,
+            fallbackLanguageCode,
+            string.Join(",", allowedLanguageCodes));
+        return await _languageService.SetLanguageAsync(fallbackLanguageCode);
     }
 
     public Task<string> RestoreToAllowedLanguageAsync()
@@ -63,7 +56,6 @@ public sealed partial class FoodStreetApiDataService : IAppLifecycleAwareService
 
     private void InvalidateBootstrapSnapshot()
     {
-        _offlinePackageLoadAttempted = false;
         _bootstrapSource = null;
         _bootstrapSourceLanguageCode = null;
         _bootstrapSnapshot = null;

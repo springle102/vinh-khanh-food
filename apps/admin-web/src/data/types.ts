@@ -12,7 +12,6 @@ export type MediaType = "image" | "video";
 export type PromotionStatus = "upcoming" | "active";
 export type PoiChangeRequestStatus = "pending" | "approved" | "rejected";
 export type DeviceType = "android" | "web";
-export type TtsProvider = "elevenlabs";
 export type UsageEventType = "poi_view" | "audio_play" | "qr_scan" | "apk_download_access" | "offer_view";
 export type PoiPlaceTier = 0 | 1;
 
@@ -280,12 +279,15 @@ export interface AuditLog {
 export interface SystemSetting {
   appName: string;
   supportEmail: string;
+  supportPhone: string;
+  contactAddress: string;
+  supportInstructions: string;
+  supportHours: string;
+  contactUpdatedAtUtc: string;
   defaultLanguage: LanguageCode;
   fallbackLanguage: LanguageCode;
   supportedLanguages: LanguageCode[];
-  mapProvider: "google" | "mapbox" | "openstreetmap";
   storageProvider: "cloudinary" | "s3";
-  ttsProvider: TtsProvider;
   geofenceRadiusMeters: number;
   analyticsRetentionDays: number;
 }

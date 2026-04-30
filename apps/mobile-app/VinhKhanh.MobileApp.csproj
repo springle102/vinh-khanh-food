@@ -32,6 +32,10 @@
     <NoWarn>$(NoWarn);XA1037</NoWarn>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)' == 'Release|net10.0-android'">
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+  </PropertyGroup>
+
   <ItemGroup>
     <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#F59E0B" />
     <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#F59E0B" BaseSize="128,128" />
