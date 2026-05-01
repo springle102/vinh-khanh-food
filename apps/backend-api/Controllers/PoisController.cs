@@ -17,6 +17,7 @@ public sealed class PoisController(
     PoiPregeneratedAudioService poiPregeneratedAudioService,
     BootstrapLocalizationService bootstrapLocalizationService,
     ResponseUrlNormalizer responseUrlNormalizer,
+    IBlobStorageService blobStorageService,
     IMemoryCache memoryCache,
     IOptions<TextToSpeechOptions> textToSpeechOptions,
     ILogger<PoisController> logger) : ControllerBase
@@ -200,6 +201,31 @@ public sealed class PoisController(
         try
         {
             var actor = adminRequestContextResolver.TryGetCurrentAdmin();
+            var narration = await poiNarrationService.ResolveAsync(
+                id,
+                languageCode,
+                actor,
+                cancellationToken);
+            var redirectAudioUrl = TryResolvePreparedAudioRedirectUrl(narration?.AudioGuide);
+            if (!string.IsNullOrWhiteSpace(redirectAudioUrl) && narration is not null)
+            {
+                Response.Headers["X-Ui-Playback-Key"] = narration.UiPlaybackKey;
+                Response.Headers["X-Audio-Cache-Key"] = narration.AudioCacheKey;
+                Response.Headers["X-Audio-Guide-Id"] = narration.AudioGuide?.Id ?? string.Empty;
+                Response.Headers["X-Audio-Content-Version"] = narration.AudioGuide?.ContentVersion ?? string.Empty;
+                Response.Headers["X-Audio-Source"] = narration.AudioGuide?.SourceType ?? "prepared_audio_redirect";
+                Response.Headers["X-Effective-Language-Code"] = narration.EffectiveLanguageCode;
+                Response.Headers.ETag = $"\"{narration.AudioCacheKey}\"";
+                Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, proxy-revalidate";
+                logger.LogInformation(
+                    "[AudioRedirect] Redirecting prepared POI audio to external storage. poiId={PoiId}; requestedLanguage={RequestedLanguage}; audioGuideId={AudioGuideId}; targetUrl={TargetUrl}",
+                    id,
+                    languageCode,
+                    narration.AudioGuide?.Id,
+                    redirectAudioUrl);
+                return Redirect(redirectAudioUrl);
+            }
+
             var audio = await poiNarrationAudioService.GetAudioAsync(
                 id,
                 languageCode,
@@ -251,6 +277,61 @@ public sealed class PoisController(
                 StatusCodes.Status502BadGateway,
                 ApiResponse<string>.Fail("Unable to load pre-generated audio at this time."));
         }
+    }
+
+    private string? TryResolvePreparedAudioRedirectUrl(AudioGuide? audioGuide)
+    {
+        if (!AudioGuideCatalog.IsReadyForPlayback(audioGuide))
+        {
+            return null;
+        }
+
+        var blobPath = blobStorageService.TryGetBlobPathFromPublicUrl(audioGuide!.AudioUrl) ??
+                       blobStorageService.TryGetBlobPathFromPublicUrl(audioGuide.AudioFilePath);
+        if (!string.IsNullOrWhiteSpace(blobPath))
+        {
+            return blobStorageService.GetPublicUrl(blobPath);
+        }
+
+        if (Uri.TryCreate(audioGuide.AudioUrl?.Trim(), UriKind.Absolute, out var absoluteUri) &&
+            !absoluteUri.AbsolutePath.StartsWith("/storage/", StringComparison.OrdinalIgnoreCase))
+        {
+            return audioGuide.AudioUrl.Trim();
+        }
+
+        var legacyLocalAudioPath = TryResolveLegacyLocalAudioPath(audioGuide.AudioUrl) ??
+                                   TryResolveLegacyLocalAudioPath(audioGuide.AudioFilePath);
+        if (!string.IsNullOrWhiteSpace(legacyLocalAudioPath))
+        {
+            var localFallbackUrl = responseUrlNormalizer.ToAbsoluteUrl(legacyLocalAudioPath);
+            logger.LogWarning(
+                "[BlobMigration] Redirecting POI audio to legacy local App Service fallback. audioGuideId={AudioGuideId}; localPath={LocalPath}; fallbackUrl={FallbackUrl}",
+                audioGuide.Id,
+                legacyLocalAudioPath,
+                localFallbackUrl);
+            return localFallbackUrl;
+        }
+
+        return null;
+    }
+
+    private static string? TryResolveLegacyLocalAudioPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim();
+        if (Uri.TryCreate(normalized, UriKind.Absolute, out var absoluteUri))
+        {
+            normalized = absoluteUri.AbsolutePath;
+        }
+
+        normalized = Uri.UnescapeDataString(normalized).TrimStart('/').Replace('\\', '/');
+        return normalized.StartsWith("storage/audio/", StringComparison.OrdinalIgnoreCase)
+            ? $"/{normalized}"
+            : null;
     }
 
     [HttpPost]

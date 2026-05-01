@@ -97,6 +97,30 @@ const buildNarrationPreviewText = (title: string, shortText: string, fullText: s
 
 const isPoiEntityType = (entityType: string) => entityType === "poi" || entityType === "place";
 
+const isLegacyLocalAssetUrl = (value?: string | null) => {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const url = new URL(trimmed, "https://app.local");
+    return url.pathname.startsWith("/storage/") || url.pathname.startsWith("/downloads/");
+  } catch {
+    return trimmed.startsWith("/storage/") ||
+      trimmed.startsWith("storage/") ||
+      trimmed.startsWith("/downloads/") ||
+      trimmed.startsWith("downloads/");
+  }
+};
+
+const StorageStatus = ({ value }: { value?: string | null }) => (
+  <StatusBadge
+    status={isLegacyLocalAssetUrl(value) ? "missing" : value ? "ready" : "processing"}
+    label={isLegacyLocalAssetUrl(value) ? "Local fallback" : value ? "Blob/external URL" : "No file"}
+  />
+);
+
 export const MediaPage = () => {
   const { state, isBootstrapping, saveAudioGuide, saveMediaAsset, saveTranslation } = useAdminData();
   const { user } = useAuth();
@@ -465,6 +489,9 @@ export const MediaPage = () => {
           <p className="mt-1 truncate text-xs text-ink-500">
             {item.audioUrl || "Chưa có file audio"}
           </p>
+          <div className="mt-2">
+            <StorageStatus value={item.audioUrl || item.audioFilePath} />
+          </div>
         </div>
       ),
     },
@@ -550,6 +577,9 @@ export const MediaPage = () => {
       render: (item) => (
         <div>
           <StatusBadge status={item.type === "image" ? "published" : "processing"} label={item.type} />
+          <div className="mt-2">
+            <StorageStatus value={item.url} />
+          </div>
           <p className="mt-2 truncate text-xs text-ink-500">{item.url}</p>
         </div>
       ),
@@ -728,7 +758,7 @@ export const MediaPage = () => {
                     className="field-input file:mr-4 file:rounded-2xl file:border-0 file:bg-primary-50 file:px-4 file:py-2 file:font-semibold file:text-primary-700"
                   />
                   <p className="text-xs text-ink-500">
-                    File MP3 sẽ được upload lên backend storage trước khi lưu audio guide.
+                    File MP3 se duoc upload len Azure Blob Storage truoc khi luu audio guide.
                   </p>
                   {isUploadingAudio ? (
                     <div className="rounded-2xl bg-sand-50 px-4 py-3 text-sm text-ink-600">
@@ -736,7 +766,13 @@ export const MediaPage = () => {
                     </div>
                   ) : null}
                   {audioForm.audioUrl ? (
-                    <audio controls src={audioForm.audioUrl} className="w-full" />
+                    <div className="space-y-2">
+                      <audio controls src={audioForm.audioUrl} className="w-full" />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StorageStatus value={audioForm.audioUrl} />
+                        <p className="break-all text-xs text-ink-500">{audioForm.audioUrl}</p>
+                      </div>
+                    </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-sand-200 bg-sand-50 px-4 py-3 text-sm text-ink-500">
                       Chưa có file MP3 nào được chọn.
@@ -1007,8 +1043,8 @@ export const MediaPage = () => {
             previewType={mediaForm.type === "image" ? "image" : "video"}
             helperText={
               mediaForm.type === "image"
-                ? "Ảnh từ thiết bị sẽ được tải lên backend storage trước khi lưu tài nguyên media."
-                : "Video từ thiết bị sẽ được tải lên backend storage trước khi lưu tài nguyên media."
+                ? "Anh tu thiet bi se duoc tai len Azure Blob Storage truoc khi luu tai nguyen media."
+                : "Video tu thiet bi se duoc tai len Azure Blob Storage truoc khi luu tai nguyen media."
             }
             emptyText={
               mediaForm.type === "image"
@@ -1016,6 +1052,13 @@ export const MediaPage = () => {
                 : "Chưa có video nào được tải lên."
             }
           />
+
+          {mediaForm.url ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-sand-50 px-4 py-3">
+              <StorageStatus value={mediaForm.url} />
+              <p className="break-all text-xs text-ink-500">{mediaForm.url}</p>
+            </div>
+          ) : null}
 
           {editingMediaAsset ? (
             <div className="grid gap-4 md:grid-cols-2">

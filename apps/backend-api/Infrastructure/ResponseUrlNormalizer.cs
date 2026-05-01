@@ -1,11 +1,15 @@
 using System.Net;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using VinhKhanh.BackendApi.Contracts;
 using VinhKhanh.BackendApi.Models;
 
 namespace VinhKhanh.BackendApi.Infrastructure;
 
-public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccessor)
+public sealed class ResponseUrlNormalizer(
+    IHttpContextAccessor httpContextAccessor,
+    IBlobStorageService blobStorageService,
+    ILogger<ResponseUrlNormalizer> logger)
 {
     public string ToAbsoluteUrl(string? value)
     {
@@ -15,6 +19,19 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
         }
 
         var normalized = value.Trim();
+        var blobPath = blobStorageService.TryGetBlobPathFromPublicUrl(normalized);
+        if (!string.IsNullOrWhiteSpace(blobPath))
+        {
+            return blobStorageService.GetPublicUrl(blobPath);
+        }
+
+        if (IsLegacyLocalAssetPath(normalized))
+        {
+            logger.LogWarning(
+                "[BlobMigration] API response still contains a local App Service asset path. value={AssetPath}",
+                normalized);
+        }
+
         var request = httpContextAccessor.HttpContext?.Request;
         if (Uri.TryCreate(normalized, UriKind.Absolute, out var absoluteUri))
         {
@@ -198,6 +215,19 @@ public sealed class ResponseUrlNormalizer(IHttpContextAccessor httpContextAccess
         }
 
         return normalizedAudioUrl;
+    }
+
+    private static bool IsLegacyLocalAssetPath(string value)
+    {
+        var normalized = value.Trim();
+        if (Uri.TryCreate(normalized, UriKind.Absolute, out var absoluteUri))
+        {
+            normalized = absoluteUri.AbsolutePath;
+        }
+
+        normalized = normalized.TrimStart('/').Replace('\\', '/');
+        return normalized.StartsWith("storage/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("downloads/", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool ShouldPreferAudioFilePath(string audioUrl, string normalizedAudioFilePath)

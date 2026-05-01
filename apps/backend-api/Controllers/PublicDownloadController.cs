@@ -12,23 +12,24 @@ namespace VinhKhanh.BackendApi.Controllers;
 [ApiExplorerSettings(IgnoreApi = true)]
 public sealed class PublicDownloadController(
     IOptions<MobileDistributionOptions> mobileDistributionOptions,
-    IWebHostEnvironment environment,
+    IOptions<BlobStorageOptions> blobStorageOptions,
+    IBlobStorageService blobStorageService,
     AdminDataRepository repository,
     ILogger<PublicDownloadController> logger) : ControllerBase
 {
     private readonly MobileDistributionOptions _options = mobileDistributionOptions.Value;
-    private readonly IWebHostEnvironment _environment = environment;
+    private readonly BlobStorageOptions _blobOptions = blobStorageOptions.Value;
+    private readonly IBlobStorageService _blobStorageService = blobStorageService;
     private readonly AdminDataRepository _repository = repository;
     private readonly ILogger<PublicDownloadController> _logger = logger;
 
     [HttpGet("/app")]
-    [HttpGet("/download")]
     public IActionResult Index()
     {
         var appName = string.IsNullOrWhiteSpace(_options.AppDisplayName)
             ? "Ứng dụng"
             : _options.AppDisplayName.Trim();
-        var trackedApkUrl = _options.GetDownloadApkUrl(Request);
+        var trackedApkUrl = _options.GetPublicDownloadAppUrl(Request);
 
         Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, proxy-revalidate";
         Response.Headers.Pragma = "no-cache";
@@ -38,15 +39,23 @@ public sealed class PublicDownloadController(
         return Content(BuildHtml(appName, trackedApkUrl, trackedApkUrl), "text/html; charset=utf-8", Encoding.UTF8);
     }
 
+    [HttpGet("/download")]
+    public Task<IActionResult> Download()
+        => HandlePublicAppDownloadAsync(streamFile: true);
+
+    [HttpHead("/download")]
+    public Task<IActionResult> DownloadHead()
+        => HandlePublicAppDownloadAsync(streamFile: false);
+
     [HttpGet(MobileDistributionOptions.PublicDownloadAppApiPath)]
     [HttpGet(MobileDistributionOptions.PublicDownloadAppApiAliasPath)]
-    public IActionResult DownloadApp()
-        => HandlePublicAppDownload(streamFile: true);
+    public Task<IActionResult> DownloadApp()
+        => HandlePublicAppDownloadAsync(streamFile: true);
 
     [HttpHead(MobileDistributionOptions.PublicDownloadAppApiPath)]
     [HttpHead(MobileDistributionOptions.PublicDownloadAppApiAliasPath)]
-    public IActionResult DownloadAppHead()
-        => HandlePublicAppDownload(streamFile: false);
+    public Task<IActionResult> DownloadAppHead()
+        => HandlePublicAppDownloadAsync(streamFile: false);
 
     [HttpGet("/api/public/diagnostics/qr-scan-count")]
     public ActionResult<ApiResponse<QrScanDiagnosticsResponse>> GetQrScanCount()
@@ -68,7 +77,7 @@ public sealed class PublicDownloadController(
         return Ok(ApiResponse<QrScanDiagnosticsResponse>.Ok(diagnostics));
     }
 
-    private IActionResult HandlePublicAppDownload(bool streamFile)
+    private async Task<IActionResult> HandlePublicAppDownloadAsync(bool streamFile)
     {
         var requestPath = Request.Path.Value ?? MobileDistributionOptions.PublicDownloadAppApiPath;
         var userAgent = Request.Headers.UserAgent.ToString();
@@ -109,48 +118,49 @@ public sealed class PublicDownloadController(
             }
         }
 
-        var apkFilePath = ResolveApkFilePath();
-        if (!System.IO.File.Exists(apkFilePath))
+        var apkBlobPath = _blobStorageService.NormalizeBlobPath(_blobOptions.ApkFolder, _options.GetApkFileName());
+        if (!_blobStorageService.IsConfigured)
         {
             _logger.LogWarning(
-                "[QrScanDownloadApi] APK file not found after qr_scan attempt. path={Path}; method={Method}; qrScanSucceeded={QrScanSucceeded}; qrScanCreated={QrScanCreated}; streamFile=false; apkFilePath={ApkFilePath}",
+                "[QrScanDownloadApi] Blob storage is not configured for APK redirect. path={Path}; method={Method}; qrScanSucceeded={QrScanSucceeded}; qrScanCreated={QrScanCreated}; streamFile=false; blobPath={BlobPath}",
                 requestPath,
                 Request.Method,
                 qrScanSucceeded,
                 qrScanCreated,
-                apkFilePath);
-            return NotFound("APK file not found.");
+                apkBlobPath);
+            return BlobDownloadUnavailable();
         }
 
-        var apkFileInfo = new FileInfo(apkFilePath);
+        if (!await _blobStorageService.ExistsAsync(apkBlobPath, HttpContext.RequestAborted))
+        {
+            _logger.LogWarning(
+                "[QrScanDownloadApi] Blob APK not found after qr_scan attempt. path={Path}; method={Method}; qrScanSucceeded={QrScanSucceeded}; qrScanCreated={QrScanCreated}; streamFile=false; blobPath={BlobPath}",
+                requestPath,
+                Request.Method,
+                qrScanSucceeded,
+                qrScanCreated,
+                apkBlobPath);
+            return BlobDownloadUnavailable();
+        }
+
+        var apkUrl = _blobStorageService.GetPublicUrl(apkBlobPath);
         WriteApkDownloadHeaders(Response, _options.GetApkFileName());
         Response.Headers["X-VK-QR-Tracking"] = "api";
         Response.Headers["X-VK-QR-Scan-Succeeded"] = qrScanSucceeded ? "true" : "false";
         Response.Headers["X-VK-QR-Scan-Created"] = qrScanCreated ? "true" : "false";
 
         _logger.LogInformation(
-            "[QrScanDownloadApi] Response ready. path={Path}; method={Method}; qrScanSucceeded={QrScanSucceeded}; qrScanCreated={QrScanCreated}; qrScanEventId={QrScanEventId}; streamFile={StreamFile}; fileSizeBytes={FileSizeBytes}; idempotencyKey={IdempotencyKey}",
+            "[QrScanDownloadApi] Redirect ready. path={Path}; method={Method}; qrScanSucceeded={QrScanSucceeded}; qrScanCreated={QrScanCreated}; qrScanEventId={QrScanEventId}; streamFile=false; blobPath={BlobPath}; targetUrl={TargetUrl}; idempotencyKey={IdempotencyKey}",
             requestPath,
             Request.Method,
             qrScanSucceeded,
             qrScanCreated,
             string.IsNullOrWhiteSpace(qrScanEventId) ? "none" : qrScanEventId,
-            streamFile,
-            apkFileInfo.Length,
+            apkBlobPath,
+            apkUrl,
             idempotencyKey);
 
-        if (!streamFile)
-        {
-            Response.ContentType = "application/vnd.android.package-archive";
-            Response.ContentLength = apkFileInfo.Length;
-            return new EmptyResult();
-        }
-
-        return PhysicalFile(
-            apkFilePath,
-            "application/vnd.android.package-archive",
-            _options.GetApkFileName(),
-            enableRangeProcessing: true);
+        return Redirect(apkUrl);
     }
 
     private static string BuildHtml(string appName, string trackedApkUrl, string displayApkUrl)
@@ -294,44 +304,6 @@ public sealed class PublicDownloadController(
     private static string EscapeHtml(string value)
         => WebUtility.HtmlEncode(value);
 
-    private string ResolveApkFilePath()
-    {
-        var webRoot = _environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot");
-        var normalizedWebRoot = Path.GetFullPath(webRoot);
-        string? firstCandidate = null;
-        foreach (var relativeFilePath in _options.GetApkRelativeFilePathCandidates())
-        {
-            var candidatePath = Path.GetFullPath(Path.Combine(normalizedWebRoot, relativeFilePath));
-            EnsurePathInsideWebRoot(normalizedWebRoot, candidatePath);
-            firstCandidate ??= candidatePath;
-
-            if (System.IO.File.Exists(candidatePath))
-            {
-                return candidatePath;
-            }
-        }
-
-        if (firstCandidate is not null)
-        {
-            return firstCandidate;
-        }
-
-        var apkFilePath = Path.GetFullPath(Path.Combine(normalizedWebRoot, _options.GetApkRelativeFilePath()));
-        EnsurePathInsideWebRoot(normalizedWebRoot, apkFilePath);
-        return apkFilePath;
-    }
-
-    private static void EnsurePathInsideWebRoot(string normalizedWebRoot, string apkFilePath)
-    {
-        var webRootWithSeparator = normalizedWebRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
-                                   Path.DirectorySeparatorChar;
-
-        if (!apkFilePath.StartsWith(webRootWithSeparator, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("Configured APK path must be inside wwwroot.");
-        }
-    }
-
     private static void WriteApkDownloadHeaders(HttpResponse response, string? fileName)
     {
         response.Headers.CacheControl = "no-store, no-cache, must-revalidate, proxy-revalidate";
@@ -343,5 +315,41 @@ public sealed class PublicDownloadController(
         {
             response.Headers["Content-Disposition"] = $"attachment; filename=\"{fileName}\"";
         }
+    }
+
+    private ContentResult BlobDownloadUnavailable()
+    {
+        Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        return Content(
+            BuildUnavailableHtml(_options.AppDisplayName),
+            "text/html; charset=utf-8",
+            Encoding.UTF8);
+    }
+
+    private static string BuildUnavailableHtml(string? appDisplayName)
+    {
+        var safeAppName = EscapeHtml(string.IsNullOrWhiteSpace(appDisplayName) ? "ung dung" : appDisplayName.Trim());
+        return $$"""
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chua san sang tai {{safeAppName}}</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 1rem; font-family: "Segoe UI", Arial, sans-serif; color: #1f2937; background: #fffaf2; }
+    main { width: min(460px, 100%); padding: 1.5rem; border: 1px solid rgba(217,119,6,.18); border-radius: 18px; background: #fff; box-shadow: 0 20px 48px rgba(120,53,15,.12); }
+    h1 { margin: 0 0 .75rem; font-size: 1.6rem; }
+    p { margin: 0; line-height: 1.6; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>File tai ve chua san sang</h1>
+    <p>He thong da ghi nhan luot quet ma QR, nhung file cai dat {{safeAppName}} hien chua co tren kho Blob Storage. Vui long thu lai sau.</p>
+  </main>
+</body>
+</html>
+""";
     }
 }

@@ -595,7 +595,9 @@ public sealed partial class PoiAudioPlaybackService : IPoiAudioPlaybackService, 
         CancellationToken cancellationToken)
     {
         var apiBaseUrl = await GetApiBaseUrlAsync();
-        var preparedAudioEndpoint = ResolvePreparedAudioEndpoint(request, apiBaseUrl);
+        var preparedAudioEndpoint = request.Candidates.Count == 0
+            ? ResolvePreparedAudioEndpoint(request, apiBaseUrl)
+            : null;
         if (preparedAudioEndpoint is not null)
         {
             CachedAudioAsset? cachedFromPreparedEndpoint = null;

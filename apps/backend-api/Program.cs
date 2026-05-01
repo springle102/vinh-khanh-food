@@ -31,8 +31,10 @@ builder.Logging.AddDebug();
 
 builder.Services.AddSingleton<AdminDataRepository>();
 builder.Services.AddScoped<AdminRequestContextResolver>();
+builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<GeneratedAudioStorageService>();
+builder.Services.AddScoped<BlobBackfillService>();
 builder.Services.AddSingleton<ResponseUrlNormalizer>();
 builder.Services.AddScoped<BootstrapLocalizationService>();
 builder.Services.AddHttpContextAccessor();
@@ -55,6 +57,8 @@ builder.Services.AddOptions<TextToSpeechOptions>()
     .Configure<IConfiguration>((options, configuration) => TextToSpeechOptions.ApplyConfiguration(options, configuration));
 builder.Services.AddOptions<MobileDistributionOptions>()
     .Configure<IConfiguration>((options, configuration) => MobileDistributionOptions.ApplyConfiguration(options, configuration));
+builder.Services.AddOptions<BlobStorageOptions>()
+    .Configure<IConfiguration>((options, configuration) => BlobStorageOptions.ApplyConfiguration(options, configuration));
 builder.Services.AddHttpClient<GeocodingProxyService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(8);
@@ -114,6 +118,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 var mobileDistributionOptions = app.Services.GetRequiredService<IOptions<MobileDistributionOptions>>().Value;
+var blobStorageOptions = app.Services.GetRequiredService<IOptions<BlobStorageOptions>>().Value;
 var trackedQrApkPath = mobileDistributionOptions.PublicDownloadApkPath;
 
 app.UseForwardedHeaders();
@@ -205,12 +210,15 @@ app.Use(async (context, next) =>
                 "[QrScanDownloadMiddleware] Request skipped. path={Path}; method={Method}; qrScanWritten=false; streamFile=false; reason=path-or-method-not-tracked",
                 requestPath,
                 context.Request.Method);
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
         }
 
         await next();
         return;
     }
 
+    var blobStorageService = context.RequestServices.GetRequiredService<IBlobStorageService>();
     var metadata = PublicDownloadAnalytics.BuildQrScanMetadata(context.Request, requestPath);
     var idempotencyKey = PublicDownloadAnalytics.BuildQrScanIdempotencyKey(context.Request, requestPath);
     var qrScanSucceeded = false;
@@ -247,51 +255,51 @@ app.Use(async (context, next) =>
         }
     }
 
-    var apkFilePath = ResolveTrackedApkFilePath(webRoot, mobileDistributionOptions);
-    if (!System.IO.File.Exists(apkFilePath))
+    var apkBlobPath = blobStorageService.NormalizeBlobPath(
+        blobStorageOptions.ApkFolder,
+        mobileDistributionOptions.GetApkFileName());
+    if (!blobStorageService.IsConfigured)
     {
         app.Logger.LogWarning(
-            "[QrScanDownloadMiddleware] APK file not found after qr_scan attempt. path={Path}; method={Method}; qrScanSucceeded={QrScanSucceeded}; qrScanCreated={QrScanCreated}; streamFile=false; apkFilePath={ApkFilePath}",
+            "[QrScanDownloadMiddleware] Blob storage is not configured for APK redirect. path={Path}; method={Method}; qrScanSucceeded={QrScanSucceeded}; qrScanCreated={QrScanCreated}; blobPath={BlobPath}",
             requestPath,
             context.Request.Method,
             qrScanSucceeded,
             qrScanCreated,
-            apkFilePath);
-        context.Response.StatusCode = StatusCodes.Status404NotFound;
-        context.Response.ContentType = "text/plain; charset=utf-8";
-        await context.Response.WriteAsync("APK file not found.");
+            apkBlobPath);
+        await WriteBlobDownloadUnavailableAsync(context, mobileDistributionOptions.AppDisplayName);
         return;
     }
 
-    var apkFileInfo = new FileInfo(apkFilePath);
+    if (!await blobStorageService.ExistsAsync(apkBlobPath, context.RequestAborted))
+    {
+        app.Logger.LogWarning(
+            "[QrScanDownloadMiddleware] Blob APK not found after qr_scan attempt. path={Path}; method={Method}; qrScanSucceeded={QrScanSucceeded}; qrScanCreated={QrScanCreated}; streamFile=false; blobPath={BlobPath}",
+            requestPath,
+            context.Request.Method,
+            qrScanSucceeded,
+            qrScanCreated,
+            apkBlobPath);
+        await WriteBlobDownloadUnavailableAsync(context, mobileDistributionOptions.AppDisplayName);
+        return;
+    }
+
+    var apkUrl = blobStorageService.GetPublicUrl(apkBlobPath);
     WriteApkDownloadHeaders(context.Response, mobileDistributionOptions.GetApkFileName());
     context.Response.Headers["X-VK-QR-Tracking"] = "middleware";
     context.Response.Headers["X-VK-QR-Scan-Succeeded"] = qrScanSucceeded ? "true" : "false";
     context.Response.Headers["X-VK-QR-Scan-Created"] = qrScanCreated ? "true" : "false";
     app.Logger.LogInformation(
-        "[QrScanDownloadMiddleware] APK response ready. path={Path}; method={Method}; qrScanSucceeded={QrScanSucceeded}; qrScanCreated={QrScanCreated}; qrScanEventId={QrScanEventId}; streamFile={StreamFile}; fileSizeBytes={FileSizeBytes}",
+        "[QrScanDownloadMiddleware] APK redirect ready. path={Path}; method={Method}; qrScanSucceeded={QrScanSucceeded}; qrScanCreated={QrScanCreated}; qrScanEventId={QrScanEventId}; streamFile=false; blobPath={BlobPath}; targetUrl={TargetUrl}",
         requestPath,
         context.Request.Method,
         qrScanSucceeded,
         qrScanCreated,
         string.IsNullOrWhiteSpace(qrScanEventId) ? "none" : qrScanEventId,
-        HttpMethods.IsGet(context.Request.Method),
-        apkFileInfo.Length);
+        apkBlobPath,
+        apkUrl);
 
-    if (HttpMethods.IsHead(context.Request.Method))
-    {
-        context.Response.StatusCode = StatusCodes.Status200OK;
-        context.Response.ContentType = "application/vnd.android.package-archive";
-        context.Response.ContentLength = apkFileInfo.Length;
-        return;
-    }
-
-    await Results.File(
-            apkFilePath,
-            contentType: "application/vnd.android.package-archive",
-            fileDownloadName: mobileDistributionOptions.GetApkFileName(),
-            enableRangeProcessing: true)
-        .ExecuteAsync(context);
+    context.Response.Redirect(apkUrl, permanent: false);
 });
 
 var staticFileContentTypeProvider = new FileExtensionContentTypeProvider();
@@ -304,10 +312,20 @@ app.UseStaticFiles(new StaticFileOptions
         var path = context.Context.Request.Path.Value ?? string.Empty;
         if (path.StartsWith("/storage/audio/", StringComparison.OrdinalIgnoreCase))
         {
+            app.Logger.LogWarning(
+                "[BlobMigration] Serving legacy local audio fallback through App Service. path={Path}",
+                path);
             context.Context.Response.Headers.CacheControl = "public, max-age=604800, immutable";
             context.Context.Response.Headers.Remove("Pragma");
             context.Context.Response.Headers.Remove("Expires");
             return;
+        }
+
+        if (path.StartsWith("/storage/", StringComparison.OrdinalIgnoreCase))
+        {
+            app.Logger.LogWarning(
+                "[BlobMigration] Serving legacy local media fallback through App Service. path={Path}",
+                path);
         }
 
         if (string.Equals(Path.GetExtension(path), ".apk", StringComparison.OrdinalIgnoreCase))
@@ -376,43 +394,6 @@ static bool ShouldHandleTrackedApkDownload(HttpRequest request, MobileDistributi
     return options.IsDownloadApkPath(requestPath);
 }
 
-static string ResolveTrackedApkFilePath(string webRoot, MobileDistributionOptions options)
-{
-    var normalizedWebRoot = Path.GetFullPath(webRoot);
-    string? firstCandidate = null;
-    foreach (var relativeFilePath in options.GetApkRelativeFilePathCandidates())
-    {
-        var candidatePath = Path.GetFullPath(Path.Combine(normalizedWebRoot, relativeFilePath));
-        EnsurePathInsideWebRoot(normalizedWebRoot, candidatePath);
-        firstCandidate ??= candidatePath;
-
-        if (System.IO.File.Exists(candidatePath))
-        {
-            return candidatePath;
-        }
-    }
-
-    if (firstCandidate is not null)
-    {
-        return firstCandidate;
-    }
-
-    var apkFilePath = Path.GetFullPath(Path.Combine(normalizedWebRoot, options.GetApkRelativeFilePath()));
-    EnsurePathInsideWebRoot(normalizedWebRoot, apkFilePath);
-    return apkFilePath;
-}
-
-static void EnsurePathInsideWebRoot(string normalizedWebRoot, string apkFilePath)
-{
-    var webRootWithSeparator = normalizedWebRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
-                               Path.DirectorySeparatorChar;
-
-    if (!apkFilePath.StartsWith(webRootWithSeparator, StringComparison.OrdinalIgnoreCase))
-    {
-        throw new InvalidOperationException("Configured APK path must be inside wwwroot.");
-    }
-}
-
 static void WriteApkDownloadHeaders(HttpResponse response, string? fileName)
 {
     response.Headers.CacheControl = "no-store, no-cache, must-revalidate, proxy-revalidate";
@@ -424,6 +405,40 @@ static void WriteApkDownloadHeaders(HttpResponse response, string? fileName)
     {
         response.Headers["Content-Disposition"] = $"attachment; filename=\"{fileName}\"";
     }
+}
+
+static async Task WriteBlobDownloadUnavailableAsync(HttpContext context, string? appDisplayName)
+{
+    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+    context.Response.ContentType = "text/html; charset=utf-8";
+    context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, proxy-revalidate";
+    context.Response.Headers.Pragma = "no-cache";
+    context.Response.Headers.Expires = "0";
+
+    var safeAppName = WebUtility.HtmlEncode(
+        string.IsNullOrWhiteSpace(appDisplayName) ? "ung dung" : appDisplayName.Trim());
+    await context.Response.WriteAsync($$"""
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chua san sang tai {{safeAppName}}</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 1rem; font-family: Segoe UI, Arial, sans-serif; color: #1f2937; background: #fffaf2; }
+    main { width: min(460px, 100%); padding: 1.5rem; border: 1px solid rgba(217,119,6,.18); border-radius: 18px; background: #fff; box-shadow: 0 20px 48px rgba(120,53,15,.12); }
+    h1 { margin: 0 0 .75rem; font-size: 1.6rem; }
+    p { margin: 0; line-height: 1.6; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>File tai ve chua san sang</h1>
+    <p>He thong da ghi nhan luot quet ma QR, nhung file cai dat {{safeAppName}} hien chua co tren kho Blob Storage. Vui long thu lai sau.</p>
+  </main>
+</body>
+</html>
+""");
 }
 
 static string[] NormalizeConfiguredValues(IEnumerable<string> values)

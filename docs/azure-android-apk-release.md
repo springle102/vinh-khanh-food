@@ -1,4 +1,4 @@
-# Huong dan phat hanh APK Android qua Azure App Service
+# Huong dan phat hanh APK/media qua Azure Blob Storage
 
 Host production hien tai:
 
@@ -6,72 +6,64 @@ Host production hien tai:
 
 ## Muc tieu
 
-- Trang download public: `/app`
-- Link QR/APK chinh: `https://vinh-khanh-food-tour-f2ddbxcgbabmfehr.eastasia-01.azurewebsites.net/downloads/vinh-khanh-food-guide/tour.apk`
-- Endpoint trung gian co tracking, giu tuong thich: `/api/downloads/apk` va `/api/public/download/app`
-- Static APK fallback cu van duoc alias: `/downloads/vinh-khanh-food-guide.apk` va `/downloads/vinh-khanh-food-tour.apk`
-- Mobile app production goi dung backend Azure production moi.
+- App Service chi xu ly API, analytics va redirect.
+- APK/audio/image/media nam tren Azure Blob Storage.
+- `/download`, `/app`, `/api/downloads/apk`, `/api/public/download/app` van ghi `qr_scan`, sau do redirect sang Blob URL.
+- Du lieu local cu trong `wwwroot/storage` duoc backfill len Blob va cap nhat DB dan dan.
 
-## Cach hoat dong
+## Cau hinh Azure App Service
 
-1. QR tro truc tiep den `/downloads/vinh-khanh-food-guide/tour.apk`.
-2. Backend middleware bat request APK truoc `UseStaticFiles`, ghi `qr_scan` vao `dbo.AppUsageEvents`, roi stream file APK.
-3. Moi request `GET` den link APK tao mot event `qr_scan` moi; `HEAD` chi dung de verify va khong tang dem.
-4. Endpoint `/api/downloads/apk` va `/api/public/download/app` van ghi `qr_scan` roi tra file APK, dung khi can link API trung gian.
-5. Dashboard admin tinh tong QR scan tu database Azure SQL qua `AppUsageEvents`, khong luu tam trong memory.
-6. Luong POI view va audio listen van dung event type rieng va khong bi thay doi.
+Set cac App Settings sau tren Azure Portal:
 
-## File chinh
+- `BlobStorage__ConnectionString`
+- `BlobStorage__ContainerName=public-assets`
+- `BlobStorage__PublicBaseUrl=https://<storage-account>.blob.core.windows.net/public-assets`
+- `BlobStorage__ApkFolder=downloads`
+- `BlobStorage__AudioFolder=audio`
+- `BlobStorage__MediaFolder=media`
 
-- `apps/backend-api/Program.cs`
-- `apps/backend-api/Controllers/PublicDownloadController.cs`
-- `apps/backend-api/Infrastructure/MobileDistributionOptions.cs`
-- `apps/backend-api/appsettings.json`
-- `apps/mobile-app/Resources/Raw/appsettings.json`
-- `scripts/package-azure-backend.ps1`
-- `apk-host/index.html`
+Khong hard-code connection string vao source. Neu dung custom domain/CDN cho Blob, tro `BlobStorage__PublicBaseUrl` ve public base URL do.
+Container can cho phep public blob read hoac duoc front bang CDN public, vi mobile/browser se tai file truc tiep tu URL nay.
 
-## Dat file APK truoc khi deploy
+## Package deploy
 
-Dat file APK vao:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-azure-backend.ps1
+```
 
-- Source path chinh: `apps/backend-api/wwwroot/downloads/vinh-khanh-food-guide/tour.apk`
+Script tao 2 file:
 
-Script package cung copy alias de giu link cu:
+- Backend zip cho App Service: `.artifacts/azure-backend/vinh-khanh-backend-*.zip`
+- Goi asset de upload/backfill Blob: `.artifacts/azure-backend/vinh-khanh-blob-assets.zip`
 
-- `apps/backend-api/wwwroot/downloads/vinh-khanh-food-guide.apk`
-- `apps/backend-api/wwwroot/downloads/vinh-khanh-food-tour.apk`
+Backend zip khong con dong goi `wwwroot/downloads` va `wwwroot/storage`.
 
-Publish path chinh:
+## Upload/backfill asset
 
-- `.artifacts/azure-backend/publish/wwwroot/downloads/vinh-khanh-food-guide/tour.apk`
+1. Upload APK trong blob asset bundle vao:
+   - `downloads/tour.apk`
+2. Chay endpoint noi bo bang token Super Admin:
+   - `POST /api/v1/admin/blob-backfill/run`
+   - body dry-run: `{ "dryRun": true }`
+   - body chay that: `{ "dryRun": false }`
+3. Endpoint se quet `wwwroot/downloads`, `wwwroot/storage`, upload file chua co len Blob va cap nhat DB cho `AudioGuides`, `MediaAssets`, `FoodItems`, `Routes`.
 
-## URL de demo
+## URL demo
 
-- Download page:
-  `https://vinh-khanh-food-tour-f2ddbxcgbabmfehr.eastasia-01.azurewebsites.net/app`
-- QR/direct APK link:
-  `https://vinh-khanh-food-tour-f2ddbxcgbabmfehr.eastasia-01.azurewebsites.net/downloads/vinh-khanh-food-guide/tour.apk`
-- Tracked APK API endpoint:
-  `https://vinh-khanh-food-tour-f2ddbxcgbabmfehr.eastasia-01.azurewebsites.net/api/downloads/apk`
-- Legacy tracked APK API endpoint:
-  `https://vinh-khanh-food-tour-f2ddbxcgbabmfehr.eastasia-01.azurewebsites.net/api/public/download/app`
-- QR diagnostics:
-  `https://vinh-khanh-food-tour-f2ddbxcgbabmfehr.eastasia-01.azurewebsites.net/api/public/diagnostics/qr-scan-count`
+- Download page: `/app`
+- QR/download tracked: `/download`
+- Legacy tracked endpoints: `/api/downloads/apk`, `/api/public/download/app`
+- QR diagnostics: `/api/public/diagnostics/qr-scan-count`
 
 ## Kiem tra sau deploy
 
-1. Mo QR/direct APK link va dam bao browser tai file APK.
-2. Goi QR diagnostics truoc/sau khi mo link APK, `qrScanCount` va `dashboardQrTotal` phai tang.
-3. Mo dashboard admin va bam lam moi, tong QR scan phai khop database.
-4. Goi API POI view/audio listen smoke test de dam bao thong ke POI va audio khong bi anh huong.
-5. Neu App Service dung app settings override file json, set:
-   - `MobileDistribution__PublicBaseUrl`
-   - `MobileDistribution__MobileApiBaseUrl`
-   - `MobileDistribution__PublicDownloadApkPath=/downloads/vinh-khanh-food-guide/tour.apk`
+1. Mo `/download`: backend ghi `qr_scan` va redirect 302 sang Blob URL.
+2. Goi nhieu request tai APK: traffic file di qua Blob, App Service khong stream APK.
+3. Generate audio trong admin: file duoc upload len Blob, DB luu Blob URL/path, mobile phat truc tiep URL do.
+4. API bootstrap/POI detail khong tra `localhost`, `ngrok`, hoac URL `/storage/...` moi; neu gap local fallback, log co marker `[BlobMigration]`.
+5. Dashboard van ghi nhan `qr_scan`, `poi_view`, `audio_play`.
 
 ## Ghi chu
 
-- Khong can migration moi; bang `dbo.AppUsageEvents` hien tai da luu duoc `qr_scan`.
-- Khong xoa du lieu QR/POI/audio hien co.
-- Cac URL localhost trong README/script dev duoc giu lai neu chi phuc vu chay local.
+- Fallback local `/storage/...` chi de giu tuong thich trong giai doan backfill.
+- Sau khi backfill xong va DB khong con local path, co the xoa file nang khoi App Service.

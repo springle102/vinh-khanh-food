@@ -1,9 +1,0 @@
-<component name="libraryTable">
-  <library name="androidx.concurrent.concurrent-futures-ktx">
-    <CLASSES>
-      <root url="jar://$PROJECT_DIR$/.dotnet-home/.nuget/packages/xamarin.androidx.concurrent.futures.ktx/1.2.0.5/jar/androidx.concurrent.concurrent-futures-ktx.jar!/" />
-    </CLASSES>
-    <JAVADOC />
-    <SOURCES />
-  </library>
-</component>

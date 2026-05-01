@@ -287,7 +287,7 @@ export interface SystemSetting {
   defaultLanguage: LanguageCode;
   fallbackLanguage: LanguageCode;
   supportedLanguages: LanguageCode[];
-  storageProvider: "cloudinary" | "s3";
+  storageProvider: "cloudinary" | "s3" | "azure-blob";
   geofenceRadiusMeters: number;
   analyticsRetentionDays: number;
 }

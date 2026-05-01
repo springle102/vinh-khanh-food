@@ -440,4 +440,6 @@ public sealed record StoredFileResponse(
     string Url,
     string FileName,
     string ContentType,
-    long Size);
+    long Size,
+    string? BlobPath = null,
+    string StorageProvider = "local");

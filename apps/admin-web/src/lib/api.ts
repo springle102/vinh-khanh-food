@@ -49,6 +49,22 @@ export type StoredFileResponse = {
   fileName: string;
   contentType: string;
   size: number;
+  blobPath?: string | null;
+  storageProvider?: string;
+};
+
+export type BlobBackfillResult = {
+  dryRun: boolean;
+  scanned: number;
+  uploaded: number;
+  skipped: number;
+  databaseUpdated: number;
+  failed: number;
+  recentItems: Array<{
+    status: string;
+    source: string;
+    target: string;
+  }>;
 };
 
 export type TextTranslationResponse = {
@@ -599,6 +615,8 @@ export const adminApi = {
       body: formData,
     });
   },
+  runBlobBackfill: (dryRun = true) =>
+    jsonRequest<BlobBackfillResult>("/api/v1/admin/blob-backfill/run", "POST", { dryRun }),
   reverseGeocode: (lat: number, lng: number, signal?: AbortSignal) =>
     request<GeocodingLocation>(
       `/api/v1/geocoding/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`,

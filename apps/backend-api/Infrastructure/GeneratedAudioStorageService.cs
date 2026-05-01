@@ -5,7 +5,9 @@ namespace VinhKhanh.BackendApi.Infrastructure;
 public sealed class GeneratedAudioStorageService(
     IWebHostEnvironment environment,
     ILogger<GeneratedAudioStorageService> logger,
-    Microsoft.Extensions.Options.IOptions<TextToSpeechOptions> optionsAccessor)
+    Microsoft.Extensions.Options.IOptions<TextToSpeechOptions> optionsAccessor,
+    Microsoft.Extensions.Options.IOptions<BlobStorageOptions> blobStorageOptionsAccessor,
+    IBlobStorageService blobStorageService)
 {
     private static readonly Regex InvalidFileSegmentPattern = new("[^a-zA-Z0-9_-]+", RegexOptions.Compiled);
 
@@ -36,6 +38,41 @@ public sealed class GeneratedAudioStorageService(
         var fileExtension = ResolveFileExtension(outputFormat, contentType);
         var relativeDirectory = $"{relativeRoot}/pois/{safePoiId}/{safeLanguageCode}";
         var fileName = $"{safePoiId}-{safeLanguageCode}-{contentVersionSuffix}-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}{fileExtension}";
+        var resolvedContentType = string.IsNullOrWhiteSpace(contentType) ? "audio/mpeg" : contentType;
+
+        if (blobStorageService.IsConfigured)
+        {
+            var blobOptions = blobStorageOptionsAccessor.Value;
+            var blobPath = blobStorageService.NormalizeBlobPath(blobOptions.AudioFolder, safeLanguageCode, safePoiId, fileName);
+            await using var audioStream = new MemoryStream(content, writable: false);
+            var uploaded = await blobStorageService.UploadAsync(
+                audioStream,
+                blobPath,
+                resolvedContentType,
+                cancellationToken);
+
+            logger.LogInformation(
+                "[AudioGenerate] Generated audio uploaded to Blob Storage. poiId={PoiId}; requestedLanguage={RequestedLanguage}; storageLanguage={StorageLanguage}; blobPath={BlobPath}; sizeBytes={SizeBytes}",
+                poiId,
+                languageCode,
+                storageLanguageCode,
+                uploaded.BlobPath,
+                content.LongLength);
+
+            return new StoredGeneratedAudioFile(
+                uploaded.BlobPath,
+                fileName,
+                string.Empty,
+                uploaded.PublicUrl,
+                uploaded.ContentType,
+                content.LongLength);
+        }
+
+        logger.LogWarning(
+            "[AudioGenerate] Blob storage is not configured; generated audio will be saved under local wwwroot. poiId={PoiId}; languageCode={LanguageCode}",
+            poiId,
+            languageCode);
+
         var absoluteDirectory = ResolveAbsoluteDirectory(relativeDirectory);
         var absolutePath = Path.Combine(absoluteDirectory, fileName);
 
@@ -66,12 +103,25 @@ public sealed class GeneratedAudioStorageService(
             fileName,
             absolutePath,
             publicUrl,
-            string.IsNullOrWhiteSpace(contentType) ? "audio/mpeg" : contentType,
+            resolvedContentType,
             content.LongLength);
     }
 
     public bool Exists(string? relativePathOrUrl)
     {
+        if (blobStorageService.IsBlobUrlOrPath(relativePathOrUrl))
+        {
+            try
+            {
+                return blobStorageService.ExistsAsync(relativePathOrUrl!.Trim()).GetAwaiter().GetResult();
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "[AudioStorage] Blob exists check failed. value={Value}", relativePathOrUrl);
+                return false;
+            }
+        }
+
         var absolutePath = TryResolveAbsolutePath(relativePathOrUrl);
         return !string.IsNullOrWhiteSpace(absolutePath) && File.Exists(absolutePath);
     }
@@ -84,7 +134,12 @@ public sealed class GeneratedAudioStorageService(
         }
 
         var normalized = relativePathOrUrl.Trim();
-        if (Path.IsPathRooted(normalized))
+        if (blobStorageService.IsBlobUrlOrPath(normalized))
+        {
+            return null;
+        }
+
+        if (Path.IsPathFullyQualified(normalized))
         {
             return normalized;
         }
@@ -122,6 +177,19 @@ public sealed class GeneratedAudioStorageService(
 
     public bool DeleteIfExists(string? relativePathOrUrl)
     {
+        if (blobStorageService.IsBlobUrlOrPath(relativePathOrUrl))
+        {
+            try
+            {
+                return blobStorageService.DeleteAsync(relativePathOrUrl!.Trim()).GetAwaiter().GetResult();
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "[AudioStorage] Blob delete failed. value={Value}", relativePathOrUrl);
+                return false;
+            }
+        }
+
         var absolutePath = TryResolveAbsolutePath(relativePathOrUrl);
         if (string.IsNullOrWhiteSpace(absolutePath) || !File.Exists(absolutePath))
         {
@@ -135,6 +203,12 @@ public sealed class GeneratedAudioStorageService(
     public string BuildPublicUrl(string relativePath)
     {
         var normalizedRelativePath = relativePath.Replace('\\', '/').TrimStart('/');
+        if (blobStorageService.IsBlobUrlOrPath(normalizedRelativePath))
+        {
+            var blobPath = blobStorageService.TryGetBlobPathFromPublicUrl(normalizedRelativePath) ?? normalizedRelativePath;
+            return blobStorageService.GetPublicUrl(blobPath);
+        }
+
         var options = optionsAccessor.Value;
         var relativeRoot = NormalizeRelativeRoot(options.AudioStorageRoot);
         var suffix = normalizedRelativePath.StartsWith(relativeRoot, StringComparison.OrdinalIgnoreCase)

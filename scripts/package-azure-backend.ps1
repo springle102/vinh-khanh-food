@@ -80,14 +80,37 @@ function Copy-ApkFile {
     }
 }
 
+function Copy-DirectoryIfExists {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+
+    if (-not (Test-Path -LiteralPath $SourcePath)) {
+        return
+    }
+
+    New-Item -ItemType Directory -Force -Path $DestinationPath | Out-Null
+    Get-ChildItem -LiteralPath $SourcePath -Force |
+        Copy-Item -Destination $DestinationPath -Recurse -Force
+}
+
+function Remove-PublishDirectoryIfExists {
+    param([string]$PathValue)
+
+    if (Test-Path -LiteralPath $PathValue) {
+        Remove-Item -LiteralPath $PathValue -Recurse -Force
+    }
+}
+
 $repoRoot = Resolve-WorkspacePath "."
 $backendProject = Join-Path $repoRoot "apps/backend-api/VinhKhanh.BackendApi.csproj"
 $backendWwwrootDownloads = Join-Path $repoRoot "apps/backend-api/wwwroot/downloads"
-$downloadApkPath = Join-Path $backendWwwrootDownloads "vinh-khanh-food-guide/tour.apk"
-$legacyGuideDownloadApkPath = Join-Path $backendWwwrootDownloads "vinh-khanh-food-guide.apk"
-$legacyTourDownloadApkPath = Join-Path $backendWwwrootDownloads "vinh-khanh-food-tour.apk"
+$backendWwwrootStorage = Join-Path $repoRoot "apps/backend-api/wwwroot/storage"
 $outputRootPath = Resolve-WorkspacePath $OutputRoot
 $publishPath = Join-Path $outputRootPath "publish"
+$blobAssetsPath = Join-Path $outputRootPath "blob-assets"
+$blobAssetsZipPath = Join-Path $outputRootPath "vinh-khanh-blob-assets.zip"
 
 if ([string]::IsNullOrWhiteSpace($PackageName)) {
     $PackageName = "vinh-khanh-backend-{0}.zip" -f (Get-Date -Format "yyyyMMddHHmmss")
@@ -115,15 +138,23 @@ if (-not (Test-ApkHasDex $MobileApkPath)) {
     throw "APK '$MobileApkPath' khong co classes.dex. Hay clean/rebuild mobile truoc khi package."
 }
 
-Copy-ApkFile -SourcePath $MobileApkPath -DestinationPath $downloadApkPath
-Copy-ApkFile -SourcePath $MobileApkPath -DestinationPath $legacyGuideDownloadApkPath
-Copy-ApkFile -SourcePath $MobileApkPath -DestinationPath $legacyTourDownloadApkPath
-
 if (Test-Path -LiteralPath $publishPath) {
     Remove-Item -LiteralPath $publishPath -Recurse -Force
 }
 
+if (Test-Path -LiteralPath $blobAssetsPath) {
+    Remove-Item -LiteralPath $blobAssetsPath -Recurse -Force
+}
+
 New-Item -ItemType Directory -Force -Path $outputRootPath | Out-Null
+New-Item -ItemType Directory -Force -Path $blobAssetsPath | Out-Null
+
+$blobDownloadsPath = Join-Path $blobAssetsPath "downloads"
+Copy-ApkFile -SourcePath $MobileApkPath -DestinationPath (Join-Path $blobDownloadsPath "tour.apk")
+Copy-ApkFile -SourcePath $MobileApkPath -DestinationPath (Join-Path $blobDownloadsPath "vinh-khanh-food-guide.apk")
+Copy-ApkFile -SourcePath $MobileApkPath -DestinationPath (Join-Path $blobDownloadsPath "vinh-khanh-food-tour.apk")
+Copy-DirectoryIfExists -SourcePath $backendWwwrootDownloads -DestinationPath (Join-Path $blobAssetsPath "legacy-wwwroot-downloads")
+Copy-DirectoryIfExists -SourcePath $backendWwwrootStorage -DestinationPath (Join-Path $blobAssetsPath "legacy-wwwroot-storage")
 
 $env:DOTNET_CLI_HOME = Join-Path $repoRoot ".dotnet-home"
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1"
@@ -145,14 +176,8 @@ if (Test-Path -LiteralPath $nestedPublishPath) {
     Remove-Item -LiteralPath $nestedPublishPath -Recurse -Force
 }
 
-$publishedApkPath = Join-Path $publishPath "wwwroot/downloads/vinh-khanh-food-guide/tour.apk"
-if (-not (Test-Path -LiteralPath $publishedApkPath)) {
-    throw "Publish output thieu wwwroot/downloads/vinh-khanh-food-guide/tour.apk."
-}
-
-if (-not (Test-ApkHasDex $publishedApkPath)) {
-    throw "Published APK khong co classes.dex."
-}
+Remove-PublishDirectoryIfExists (Join-Path $publishPath "wwwroot/downloads")
+Remove-PublishDirectoryIfExists (Join-Path $publishPath "wwwroot/storage")
 
 $publishedAppSettingsPath = Join-Path $publishPath "appsettings.json"
 if (Test-Path -LiteralPath $publishedAppSettingsPath) {
@@ -168,10 +193,15 @@ if (Test-Path -LiteralPath $packagePath) {
     Remove-Item -LiteralPath $packagePath -Force
 }
 
+if (Test-Path -LiteralPath $blobAssetsZipPath) {
+    Remove-Item -LiteralPath $blobAssetsZipPath -Force
+}
+
 Compress-Archive -Path (Join-Path $publishPath "*") -DestinationPath $packagePath -Force
+Compress-Archive -Path (Join-Path $blobAssetsPath "*") -DestinationPath $blobAssetsZipPath -Force
 
 $audioFileCount = 0
-$audioRoot = Join-Path $publishPath "wwwroot/storage/audio/pois"
+$audioRoot = Join-Path $blobAssetsPath "legacy-wwwroot-storage/audio/pois"
 if (Test-Path -LiteralPath $audioRoot) {
     $audioFileCount = (Get-ChildItem -LiteralPath $audioRoot -Recurse -File | Measure-Object).Count
 }
@@ -179,7 +209,9 @@ if (Test-Path -LiteralPath $audioRoot) {
 Write-Output "Azure backend package ready."
 Write-Output "Publish path: $publishPath"
 Write-Output "Zip package: $packagePath"
-Write-Output "Mobile APK: $publishedApkPath"
-Write-Output "Tracked QR download endpoint: /downloads/vinh-khanh-food-guide/tour.apk"
+Write-Output "Blob asset bundle: $blobAssetsZipPath"
+Write-Output "Mobile APK blob path: downloads/tour.apk"
+Write-Output "Tracked QR download endpoint: /download -> Blob downloads/tour.apk"
 Write-Output "QR diagnostics endpoint: /api/public/diagnostics/qr-scan-count"
-Write-Output "POI audio files: $audioFileCount"
+Write-Output "Backend package excludes heavy wwwroot/downloads and wwwroot/storage."
+Write-Output "Legacy POI audio files preserved in blob asset bundle: $audioFileCount"

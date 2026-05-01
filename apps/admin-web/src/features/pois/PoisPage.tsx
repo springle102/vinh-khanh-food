@@ -141,6 +141,30 @@ const createPoiFoodItemForm = (
 
 const isPoiEntityType = (entityType: string) => entityType === "poi" || entityType === "place";
 
+const isLegacyLocalAssetUrl = (value?: string | null) => {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const url = new URL(trimmed, "https://app.local");
+    return url.pathname.startsWith("/storage/") || url.pathname.startsWith("/downloads/");
+  } catch {
+    return trimmed.startsWith("/storage/") ||
+      trimmed.startsWith("storage/") ||
+      trimmed.startsWith("/downloads/") ||
+      trimmed.startsWith("downloads/");
+  }
+};
+
+const StorageStatus = ({ value }: { value?: string | null }) => (
+  <StatusBadge
+    status={isLegacyLocalAssetUrl(value) ? "missing" : value ? "ready" : "processing"}
+    label={isLegacyLocalAssetUrl(value) ? "Local fallback" : value ? "Blob/external URL" : "No file"}
+  />
+);
+
 const findPoiRepresentativeImage = (mediaAssets: MediaAsset[], poiId?: string) => {
   if (!poiId) {
     return null;
@@ -2738,6 +2762,12 @@ export const PoisPage = () => {
                   helperText="Ảnh mới sẽ được dùng làm hình đại diện chính của quán/POI này."
                   emptyText="POI này chưa có ảnh đại diện."
                 />
+                {poiImageForm.url ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-sand-50 px-4 py-3">
+                    <StorageStatus value={poiImageForm.url} />
+                    <p className="break-all text-xs text-ink-500">{poiImageForm.url}</p>
+                  </div>
+                ) : null}
 
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2854,6 +2884,12 @@ export const PoisPage = () => {
                             helperText="Upload ảnh mới để thay hình đại diện của món ăn."
                             emptyText="Món này chưa có ảnh đại diện."
                           />
+                          {foodItem.imageUrl ? (
+                            <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-sand-50 px-4 py-3">
+                              <StorageStatus value={foodItem.imageUrl} />
+                              <p className="break-all text-xs text-ink-500">{foodItem.imageUrl}</p>
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -2869,7 +2905,7 @@ export const PoisPage = () => {
                 <div>
                   <label className="field-label">Nguồn audio</label>
                   <Select disabled={isPoiModalViewOnly || isOwner} value={form.audioSourceType} onChange={(event) => setForm((current) => ({ ...current, audioSourceType: event.target.value as AudioGuide["sourceType"] }))}>
-                    <option value="generated">Audio tạo sẵn từ backend</option>
+                    <option value="generated">Audio tạo sẵn từ TTS</option>
                     <option value="uploaded">Tệp MP3 tải lên</option>
                   </Select>
                 </div>
@@ -2916,10 +2952,10 @@ export const PoisPage = () => {
                     </Button>
                   </div>
                   <p className="text-xs text-ink-500">
-                    Khi bạn sửa nội dung thuyết minh, audio hiện tại sẽ được đánh dấu cũ và backend có thể tạo lại theo cấu hình.
+                    Khi bạn sửa nội dung thuyết minh, audio hiện tại sẽ được đánh dấu cũ và hệ thống có thể tạo lại rồi upload lên Blob Storage.
                   </p>
                   {isGeneratingAudio ? (
-                    <p className="text-sm text-ink-600">Đang tạo audio trên backend...</p>
+                    <p className="text-sm text-ink-600">Đang tạo audio và upload lên Blob Storage...</p>
                   ) : null}
                   {audioActionMessage ? (
                     <p className="text-sm text-emerald-700">{audioActionMessage}</p>
@@ -2928,6 +2964,9 @@ export const PoisPage = () => {
                     <div className="rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink-600">
                       <p><span className="font-semibold text-ink-900">URL audio:</span> {currentFormAudioGuide?.audioUrl || "Chưa có"}</p>
                       <p className="mt-2"><span className="font-semibold text-ink-900">Đường dẫn tệp:</span> {currentFormAudioGuide?.audioFilePath || "Chưa có"}</p>
+                      <div className="mt-2">
+                        <StorageStatus value={currentFormAudioGuide?.audioUrl || currentFormAudioGuide?.audioFilePath} />
+                      </div>
                       <p className="mt-2"><span className="font-semibold text-ink-900">Thời điểm tạo:</span> {currentFormAudioGuide?.generatedAt ? formatDateTime(currentFormAudioGuide.generatedAt) : "Chưa có"}</p>
                     </div>
                     <div className="rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink-600">
@@ -2937,7 +2976,14 @@ export const PoisPage = () => {
                     </div>
                   </div>
                   {currentFormAudioGuide?.audioUrl ? (
-                    <audio controls src={currentFormAudioGuide.audioUrl} className="w-full" />
+                    <div className="space-y-2">
+                      <audio controls src={currentFormAudioGuide.audioUrl} className="w-full" />
+                      {isLegacyLocalAssetUrl(currentFormAudioGuide.audioUrl) ? (
+                        <p className="text-xs font-medium text-rose-700">
+                          Audio nay van dang dung local fallback. Hay chay Blob backfill hoac generate lai.
+                        </p>
+                      ) : null}
+                    </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-sand-200 bg-white px-4 py-3 text-sm text-ink-500">
                       Chưa có file audio tạo sẵn cho ngôn ngữ này.
@@ -2963,6 +3009,10 @@ export const PoisPage = () => {
                   {form.audioUrl ? (
                     <div className="space-y-2">
                       <audio controls src={form.audioUrl} className="w-full" />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StorageStatus value={form.audioUrl} />
+                        <p className="break-all text-xs text-ink-500">{form.audioUrl}</p>
+                      </div>
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-sand-200 bg-sand-50 px-4 py-3 text-sm text-ink-500">

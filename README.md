@@ -28,9 +28,9 @@ flowchart LR
     A["Admin Web\nReact + TypeScript + Vite"] --> B["Backend API\nASP.NET Core .NET 10"]
     M["Mobile App\n.NET MAUI"] --> B
     B --> D["SQL Server"]
-    B --> S["Storage\nwwwroot/storage + audio files"]
+    B --> S["Azure Blob Storage\nAPK / audio / image / media"]
     B --> T["External Services\nElevenLabs / Translation / Geocoding"]
-    B --> P["Public APK Download\nwwwroot/downloads"]
+    B --> P["Public download\nanalytics + Blob redirect"]
 ```
 
 ### Kiến trúc theo vai trò
@@ -311,9 +311,27 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package-azure-backend.ps1
 Script này sẽ:
 
 - publish backend,
-- nhúng APK mobile vào `wwwroot/downloads`,
-- kiểm tra package output,
-- tạo file zip sẵn cho Azure App Service.
+- tạo backend zip không kèm file nặng trong `wwwroot/downloads` hoặc `wwwroot/storage`,
+- tạo thêm `.artifacts/azure-backend/vinh-khanh-blob-assets.zip` để upload/backfill APK/audio/image lên Azure Blob Storage,
+- kiểm tra package output và đảm bảo các cờ seed DB production không bị bật.
+
+Trên Azure App Service cần cấu hình Blob bằng environment variables/App Settings:
+
+- `BlobStorage__ConnectionString`
+- `BlobStorage__ContainerName`
+- `BlobStorage__PublicBaseUrl`
+- `BlobStorage__ApkFolder=downloads`
+- `BlobStorage__AudioFolder=audio`
+- `BlobStorage__MediaFolder=media`
+
+Container Blob cần cho phép public blob read hoặc đứng sau CDN public, vì APK/audio/image sẽ được tải trực tiếp từ URL này.
+
+Sau khi cấu hình Blob, Super Admin có thể chạy backfill nội bộ:
+
+```http
+POST /api/v1/admin/blob-backfill/run
+{ "dryRun": true }
+```
 
 Ngoài ra có thể dùng:
 
